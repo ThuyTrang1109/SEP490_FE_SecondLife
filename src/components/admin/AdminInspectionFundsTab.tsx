@@ -613,11 +613,6 @@ export const AdminInspectionFundsTab: React.FC<AdminInspectionFundsTabProps> = (
                           }`}>
                             {ord.orderType === 'AT_HOME' ? 'Tại nhà' : 'Tại Lab Hub'}
                           </span>
-                          {ord.cashShippingSimulation && (
-                            <span className="text-[9px] px-1.5 py-0.2 rounded font-bold bg-amber-100 text-amber-900">
-                              Sandbox Tiền Mặt
-                            </span>
-                          )}
                         </div>
                       </td>
 

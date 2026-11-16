@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createElement } from 'react';
+import { createElement, type ComponentProps } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { LalamoveProgress } from '../components/common/LalamoveProgress';
+import { CenterShipmentModal } from '../pages/inspection-center/orders/CenterShipmentModal';
 import type { ShipmentBackend } from '../types';
 import { canReadCenterInspectionShipments, getCenterDispatchStage, getInboundShipmentProgress, getLatestInboundShipment, shouldTrackCenterInspectionShipments, shouldTrackInboundShipment } from '../utils/inspectionCenterData';
 import { canBookHubBuyerDelivery, getHubBuyerShipmentLabel, getLatestInspectionShipment, isPaidHubBuyerDelivery } from '../utils/inspectionCenterData';
@@ -63,6 +64,81 @@ test('return tracking retains an existing non-cancelled shipment, including unce
   assert.equal(canBookHubBuyerDelivery(uncertain), false);
   assert.match(getHubReturnProgress(uncertain).label, /Chờ đối soát/);
   assert.equal(getHubReturnState([shipment('out', 'CENTER_TO_BUYER', 'DELIVERED')]).received, false);
+});
+
+test('the shipment modal offers only the outbound action allowed by the inspection and payment status', () => {
+  type Props = ComponentProps<typeof CenterShipmentModal>;
+  const order: Props['shipmentModalOrder'] = {
+    id: 'inspection',
+    postId: 'post',
+    inspectionCenterId: 'hub',
+    orderType: 'AT_CENTER',
+    status: 'PASSED',
+    conditionScore: 90,
+    feeSettledAt: '2026-11-15T07:00:00Z',
+    returnShippingReserveFee: 50000,
+  };
+  const currentUser: Props['currentUser'] = { id: 'hub', name: 'Hub', email: 'hub@example.test', role: 'inspection_center' };
+  const inbound = shipment('inbound', 'SELLER_TO_CENTER', 'DELIVERED');
+  const shipments: Props['shipments'] = {
+    bookingBuyerOrderId: null,
+    bookingReturnId: null,
+    buyerShipments: new Map([[order.id, null]]),
+    closeShipmentModal: () => {},
+    deniedShipmentOrders: new Set(),
+    handleBookBuyerDelivery: async () => {},
+    handleSyncCenterShipment: async () => {},
+    hasLoadedShipmentModal: true,
+    hubReturns: new Map([[order.id, getHubReturnState([inbound])]]),
+    inboundShipments: new Map(),
+    inspectionShipments: [],
+    isLoadingShipments: false,
+    setReturnQuoteOrder: () => {},
+    setShipmentError: () => {},
+    setShipmentSuccess: () => {},
+    shipmentError: null,
+    shipmentModalRequestRef: { current: 0 },
+    shipmentSuccess: null,
+    syncingShipments: new Set(),
+  };
+  const render = (changes: Partial<typeof order>, data: Partial<typeof shipments> = {}) =>
+    renderToStaticMarkup(createElement(CenterShipmentModal, {
+      centerProfile: null, currentUser, shipmentModalOrder: { ...order, ...changes }, shipments: { ...shipments, ...data },
+    }));
+  const buyerAction = /Tạo vận đơn giao người mua/;
+  const returnAction = /Tạo vận đơn trả người bán/;
+  const paid = { status: 'DELIVERING_TO_BUYER', linkedOrderId: 'purchase', finalPaymentPaidAt: '2026-11-15T08:00:00Z' };
+  const declined = { status: 'CANCELLED', note: 'Người mua từ chối mua tiếp sau kiểm định. Lý do: Đổi ý' };
+
+  for (const changes of [
+    { status: 'INSPECTING' },
+    { status: 'PASSED' },
+    { status: 'DELIVERING_TO_BUYER', linkedOrderId: 'purchase' },
+    { status: 'CANCELLED', note: 'Trung tâm đã hủy đơn' },
+    { status: 'CANCELLED', note: 'Người mua không thanh toán tiền hàng trong vòng 6 giờ sau khi kiểm định đạt chuẩn.' },
+    { ...paid, orderType: 'AT_HOME' },
+  ]) {
+    const html = render(changes);
+    assert.match(html, /Lộ Trình Vận Đơn/);
+    assert.doesNotMatch(html, buyerAction);
+    assert.doesNotMatch(html, returnAction);
+  }
+
+  assert.match(render(paid), buyerAction);
+  assert.doesNotMatch(render(paid), returnAction);
+  for (const changes of [{ status: 'FAILED' }, declined]) {
+    assert.match(render(changes), returnAction);
+    assert.doesNotMatch(render(changes), buyerAction);
+  }
+
+  assert.doesNotMatch(render(paid, { hasLoadedShipmentModal: false }), buyerAction);
+  assert.doesNotMatch(render(paid, {
+    buyerShipments: new Map([[order.id, shipment('outbound', 'CENTER_TO_BUYER', 'READY_TO_PICK')]]),
+  }), buyerAction);
+  assert.doesNotMatch(render(declined, { hubReturns: new Map([[order.id, getHubReturnState([])]]) }), returnAction);
+  assert.doesNotMatch(render(declined, {
+    hubReturns: new Map([[order.id, getHubReturnState([inbound, shipment('return', 'CENTER_TO_SELLER', 'READY_TO_PICK')])]]),
+  }), returnAction);
 });
 
 test('a delivered return shows the wallet check without changing failed inspection appeal eligibility', () => {

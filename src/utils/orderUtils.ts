@@ -769,4 +769,168 @@ export const resolveInspectionCenter = (order?: any): ResolvedInspectionCenter =
   };
 };
 
+/**
+ * Tự động chọn Trung tâm kiểm định (Hub) gần người bán nhất
+ * Ưu tiên:
+ * 1. Khoảng cách Haversine (km) theo toạ độ GPS của người bán và Hub
+ * 2. Phân tích từ khoá địa chỉ/tỉnh thành của người bán (Hà Nội & miền Bắc, Đà Nẵng & miền Trung, TP.HCM & miền Nam)
+ * 3. Fallback: Hub đầu tiên trong danh sách
+ */
+export const resolveNearestHubToSeller = <
+  T extends {
+    id: string;
+    name: string;
+    city?: string;
+    address?: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
+  }
+>(
+  hubs: T[],
+  sellerAddress?: string,
+  sellerLocation?: string,
+  sellerCoords?: { lat?: number; lng?: number }
+): T | undefined => {
+  if (!hubs || hubs.length === 0) return undefined;
+  if (hubs.length === 1) return hubs[0];
+
+  const fullSellerText = `${sellerAddress || ''} ${sellerLocation || ''}`
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+  const haversineKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
+
+  const hubsWithCoords = hubs.filter(
+    (h) => typeof h.latitude === 'number' && typeof h.longitude === 'number' && !isNaN(h.latitude) && !isNaN(h.longitude)
+  );
+
+  // 1. Nếu có toạ độ của cả người bán và Hub, tính khoảng cách thực tế (ưu tiên nếu trong bán kính hợp lý < 400km)
+  if (
+    typeof sellerCoords?.lat === 'number' &&
+    typeof sellerCoords?.lng === 'number' &&
+    !isNaN(sellerCoords.lat) &&
+    !isNaN(sellerCoords.lng) &&
+    hubsWithCoords.length > 0
+  ) {
+    let nearest = hubsWithCoords[0];
+    let minDistance = Infinity;
+    for (const hub of hubsWithCoords) {
+      const dist = haversineKm(sellerCoords.lat, sellerCoords.lng, hub.latitude!, hub.longitude!);
+      if (dist < minDistance) {
+        minDistance = dist;
+        nearest = hub;
+      }
+    }
+    if (minDistance < 400) {
+      return nearest;
+    }
+  }
+
+  // 2. Phân tích từ khoá địa chỉ/tỉnh thành của người bán
+  const isHanoi =
+    fullSellerText.includes('hanoi') ||
+    fullSellerText.includes('caugiay') ||
+    fullSellerText.includes('dongda') ||
+    fullSellerText.includes('badinh') ||
+    fullSellerText.includes('hoankiem') ||
+    fullSellerText.includes('haibatrung') ||
+    fullSellerText.includes('hoangmai') ||
+    fullSellerText.includes('thanhxuan') ||
+    fullSellerText.includes('tayho') ||
+    fullSellerText.includes('longbien') ||
+    fullSellerText.includes('namtuliem') ||
+    fullSellerText.includes('bactuliem') ||
+    fullSellerText.includes('hadong') ||
+    fullSellerText.includes('bacninh') ||
+    fullSellerText.includes('haiphong') ||
+    fullSellerText.includes('hungyen') ||
+    fullSellerText.includes('ninhbinh') ||
+    fullSellerText.includes('haiduong') ||
+    fullSellerText.includes('vinhphuc');
+
+  if (isHanoi) {
+    const hnHs = hubs.find((c) => {
+      const clean = `${c.id} ${c.name} ${c.city || ''} ${c.address || ''}`
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+      return clean.includes('hanoi') || clean.includes('hn');
+    });
+    if (hnHs) return hnHs;
+  }
+
+  const isDanang =
+    fullSellerText.includes('danang') ||
+    fullSellerText.includes('hue') ||
+    fullSellerText.includes('quangnam') ||
+    fullSellerText.includes('quangngai');
+
+  if (isDanang) {
+    const dnHs = hubs.find((c) => {
+      const clean = `${c.id} ${c.name} ${c.city || ''} ${c.address || ''}`
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+      return clean.includes('danang') || clean.includes('dn');
+    });
+    if (dnHs) return dnHs;
+  }
+
+  const isHcm =
+    fullSellerText.includes('hochiminh') ||
+    fullSellerText.includes('saigon') ||
+    fullSellerText.includes('sgn') ||
+    fullSellerText.includes('hcm') ||
+    fullSellerText.includes('binhduong') ||
+    fullSellerText.includes('dongnai') ||
+    fullSellerText.includes('vungtau') ||
+    fullSellerText.includes('bariavungtau') ||
+    fullSellerText.includes('longan') ||
+    fullSellerText.includes('thuduc');
+
+  if (isHcm) {
+    const hcmHs = hubs.find((c) => {
+      const clean = `${c.id} ${c.name} ${c.city || ''} ${c.address || ''}`
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+      return clean.includes('hochiminh') || clean.includes('saigon') || clean.includes('hcm');
+    });
+    if (hcmHs) return hcmHs;
+  }
+
+  // 3. Fallback: Nếu không khớp từ khoá nhưng có Hub có toạ độ, chọn Hub có khoảng cách nhỏ nhất
+  if (
+    typeof sellerCoords?.lat === 'number' &&
+    typeof sellerCoords?.lng === 'number' &&
+    !isNaN(sellerCoords.lat) &&
+    !isNaN(sellerCoords.lng) &&
+    hubsWithCoords.length > 0
+  ) {
+    let nearest = hubsWithCoords[0];
+    let minDistance = Infinity;
+    for (const hub of hubsWithCoords) {
+      const dist = haversineKm(sellerCoords.lat, sellerCoords.lng, hub.latitude!, hub.longitude!);
+      if (dist < minDistance) {
+        minDistance = dist;
+        nearest = hub;
+      }
+    }
+    return nearest;
+  }
+
+  return hubs[0];
+};
+
 

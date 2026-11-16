@@ -245,17 +245,23 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
   const [realReputation, setRealReputation] = useState<SellerReputationDto | null>(null);
   const [aiEstimate, setAiEstimate] = useState<any>(null);
   useEffect(() => {
+    let cancelled = false;
     if (listing.sellerId) {
       reputationService.getSellerReputation(listing.sellerId).then((rep) => {
-        if (rep) setRealReputation(rep);
+        if (!cancelled && rep) setRealReputation(rep);
       });
     }
+    return () => {
+      cancelled = true;
+    };
   }, [listing.sellerId]);
 
   useEffect(() => {
+    let cancelled = false;
     if (listing.id) {
       // 1. Luôn tải chi tiết bài đăng công khai để lấy đầy đủ hình ảnh, thông số kiện hàng vận chuyển & địa chỉ chuẩn
       postService.getListingDetail(listing.id).then((detail) => {
+        if (cancelled) return;
         if (detail) {
           setPublicDetail(detail);
           if (detail.aiSuggestedPrice) {
@@ -268,7 +274,9 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
           }
         }
       }).catch((err) => {
-        console.warn('[ListingDetailModal] Lỗi lấy chi tiết bài đăng công khai:', err);
+        if (!cancelled) {
+          console.warn('[ListingDetailModal] Lỗi lấy chi tiết bài đăng công khai:', err);
+        }
       });
 
       // 2. Nếu là chính chủ người bán xem, tải thêm thông tin quản trị riêng của bài đăng
@@ -277,6 +285,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
         setSellerDetailError(null);
         postService.getMyPostDetail(listing.id)
           .then((detail) => {
+            if (cancelled) return;
             if (detail) {
               setSellerDetail(detail);
               if (detail.aiSuggestedPrice) {
@@ -290,6 +299,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
             }
           })
           .catch((err: any) => {
+            if (cancelled) return;
             console.warn('[ListingDetailModal] Lỗi lấy chi tiết bài đăng qua GET /api/v1/posts/my-posts/{postId}:', err);
             if (err?.status === 404) {
               setSellerDetailError(lang === 'vi' ? 'Bài đăng không tồn tại trên hệ thống.' : 'Listing not found.');
@@ -300,11 +310,13 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
             }
           })
           .finally(() => {
-            setIsLoadingSellerDetail(false);
+            if (!cancelled) {
+              setIsLoadingSellerDetail(false);
+            }
           });
 
         postService.getLatestPriceEstimate(listing.id).then((est) => {
-          if (est) setAiEstimate(est);
+          if (!cancelled && est) setAiEstimate(est);
         }).catch(() => { });
       } else {
         if (listing.aiPriceEstimation) {
@@ -326,6 +338,9 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
         }
       }
     }
+    return () => {
+      cancelled = true;
+    };
   }, [listing.id, isOwnListing, listing.aiSuggestedPrice, listing.aiPriceEstimation, lang]);
 
   const displayReviews = reviewsTab === 'product' ? productReviews : sellerReviews;
@@ -360,7 +375,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
             {isInspected && (
               <span className="bg-emerald-600 text-white text-[10px] font-black px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-xs border border-emerald-400/30">
                 <ShieldCheck className="w-3 h-3 text-emerald-100" />
-                <span>{lang === 'vi' ? 'Đã Kiểm Định Đạt Chuẩn' : 'Inspected & Passed'}</span>
+                <span>{lang === 'vi' ? 'Đã đạt kiểm định tại Hub' : 'Hub Inspected & Passed'}</span>
               </span>
             )}
             <span className="text-[10px] text-[#24263e]/80 font-bold truncate max-w-[220px]">

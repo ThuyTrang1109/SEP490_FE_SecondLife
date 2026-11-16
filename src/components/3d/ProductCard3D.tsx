@@ -164,7 +164,7 @@ export const ProductCard3D: React.FC<ProductCard3DProps> = ({
           {isInspected && (
             <div className="flex items-center gap-1 text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/80 w-fit mt-1">
               <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
-              <span>{lang === 'vi' ? 'Đã kiểm định đạt chuẩn Hub' : 'Hub Inspected & Passed'}</span>
+              <span>{lang === 'vi' ? 'Đã đạt kiểm định tại Hub' : 'Hub Inspected & Passed'}</span>
             </div>
           )}
         </div>

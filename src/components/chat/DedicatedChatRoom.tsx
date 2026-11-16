@@ -199,9 +199,12 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
   }, [isBuyer, room.postId, listing.id, routeLocation, openInspectionProposal]);
   const [inspectionOrders, setInspectionOrders] = useState<ReadonlyMap<string, InspectionOrderDto | null>>(new Map());
   const [loadingInspectionOrder, setLoadingInspectionOrder] = useState(true);
+  const [bannerCancelOrder, setBannerCancelOrder] = useState<InspectionOrderDto | null>(null);
+  const [bannerCancelLoading, setBannerCancelLoading] = useState(false);
+  const [bannerCancelReason, setBannerCancelReason] = useState('');
   const { postId, buyerId } = room;
   const inspectionReader = useMemo(() => createChatInspectionReader(
-    (orderId) => inspectorService.getOrder(orderId),
+    (orderId) => inspectorService.getOrder(orderId, { bypassCache: true }),
     (key, order) => {
       const verified = order && matchesChatInspection(order, { postId, buyerId, sellerId }) ? order : null;
       setInspectionOrders((previous) => {
@@ -210,7 +213,30 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
       });
     },
   ), [postId, buyerId, sellerId]);
-  const currentInspectionOrder = useMemo(() => getCurrentChatInspection(inspectionOrders.values()), [inspectionOrders]);
+
+  const explicitInspectionId = useMemo(() => {
+    try {
+      const search = routeLocation ? (routeLocation.includes('?') ? routeLocation.split('?')[1] : '') : window.location.search;
+      const sp = new URLSearchParams(search);
+      return sp.get('inspectionId') || sp.get('orderId') || undefined;
+    } catch {
+      return undefined;
+    }
+  }, [routeLocation]);
+
+  useEffect(() => {
+    if (explicitInspectionId) {
+      void inspectionReader.ensure(explicitInspectionId);
+    }
+  }, [explicitInspectionId, inspectionReader]);
+
+  const currentInspectionOrder = useMemo(() => {
+    if (explicitInspectionId) {
+      const explicit = inspectionOrders.get(explicitInspectionId.toLowerCase());
+      if (explicit) return explicit;
+    }
+    return getCurrentChatInspection(inspectionOrders.values());
+  }, [inspectionOrders, explicitInspectionId]);
   const hasActiveInspection = isActiveChatInspection(currentInspectionOrder);
 
   // Messenger Read/Unread State Tracking
@@ -418,7 +444,8 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
   useEffect(() => {
     chatService.connectWebSocket();
     const unsubscribe = chatService.subscribeToMessages((dto) => {
-      if (dto.conversationId === room.id) {
+      const isSameRoom = String(dto.conversationId || '').toLowerCase() === String(room.id || '').toLowerCase();
+      if (isSameRoom) {
         const incoming = mapDtoToChatMessage(dto);
         syncIncomingMessage(incoming);
         markRoomAsRead();
@@ -426,6 +453,38 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
         // Also check if this message is or mentions an inspection order
         const orderId = getChatInspectionOrderId(incoming.inspectionProposal?.orderId);
         if (orderId) {
+          inspectorService.invalidateOrderCache(orderId);
+          // Cập nhật lạc quan ngay lập tức thẻ đề xuất trên màn hình đối phương
+          if (incoming.inspectionProposal) {
+            const prop = incoming.inspectionProposal;
+            setInspectionOrders((prev) => {
+              const key = orderId.toLowerCase();
+              const existing = prev.get(key);
+              const updatedStatus = prop.orderStatus || (prop.status === 'COUNTERED'
+                ? (prop.proposedByRole === 'seller' ? 'WAITING_BUYER_APPROVAL' : 'WAITING_SELLER_APPROVAL')
+                : prop.status);
+              const merged: InspectionOrderDto = {
+                ...(existing || {
+                  id: orderId,
+                  postId: listing.id,
+                  postTitle: listing.title,
+                  postPrice: listing.priceVnd,
+                  buyerId: room.buyerId,
+                  sellerId: room.sellerId,
+                }),
+                status: updatedStatus || existing?.status || 'WAITING_BUYER_APPROVAL',
+                feePayer: prop.feePayer || (prop.feeSplit === 'BUYER_100' ? 'BUYER_PAYS' : prop.feeSplit === 'SELLER_100' ? 'SELLER_PAYS' : 'SPLIT_50_50'),
+                buyerFeeShare: prop.buyerFeeShare ?? existing?.buyerFeeShare,
+                sellerFeeShare: prop.sellerFeeShare ?? existing?.sellerFeeShare,
+                inspectionFee: prop.baseInspectionFee ?? existing?.inspectionFee,
+                shippingFee: prop.shippingToCenterFee ?? existing?.shippingFee,
+                returnShippingReserveFee: prop.returnShippingReserveFee ?? existing?.returnShippingReserveFee,
+                note: prop.note || existing?.note,
+                customerStatus: updatedStatus || existing?.customerStatus,
+              };
+              return new Map(prev).set(key, merged);
+            });
+          }
           void inspectionReader.read(orderId);
         } else if (
           dto.messageContent?.includes('KIỂM ĐỊNH') ||
@@ -433,7 +492,9 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
           dto.messageContent?.includes('ĐỀ XUẤT') ||
           dto.messageContent?.includes('phí kiểm định')
         ) {
+          inspectorService.invalidateOrderCache();
           refreshCurrentInspectionOrder();
+          void reloadMessages();
         }
 
         // Auto-scroll down smoothly if user is already near bottom
@@ -449,7 +510,7 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
     return () => {
       unsubscribe();
     };
-  }, [room.id, mapDtoToChatMessage, markRoomAsRead, syncIncomingMessage, scrollToBottom, refreshCurrentInspectionOrder, inspectionReader]);
+  }, [room.id, mapDtoToChatMessage, markRoomAsRead, syncIncomingMessage, scrollToBottom, refreshCurrentInspectionOrder, inspectionReader, reloadMessages, listing.id, listing.title, listing.priceVnd, room.buyerId, room.sellerId]);
 
   // Real-time notification, order update, and focus/visibility listener
   useEffect(() => {
@@ -518,9 +579,9 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
       return;
     }
 
-    // Since WebSocket already triggers instant reloads upon notifications/messages,
-    // fallback polling only runs lightly (30s) as a safety net and pauses when tab is hidden
-    const intervalMs = notificationWsClient.isConnected() ? 30_000 : 12_000;
+    // During active negotiation/approval, poll rapidly (4s) so both parties stay 100% in sync
+    const isActivelyNegotiating = currentInspectionOrder.status === 'WAITING_SELLER_APPROVAL' || currentInspectionOrder.status === 'WAITING_BUYER_APPROVAL';
+    const intervalMs = isActivelyNegotiating ? 4_000 : (notificationWsClient.isConnected() ? 30_000 : 12_000);
     let timer: any = null;
     let stopped = false;
     const scheduleNext = () => {
@@ -530,7 +591,10 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
           scheduleNext();
           return;
         }
-        refreshCurrentInspectionOrder().finally(() => {
+        Promise.allSettled([
+          refreshCurrentInspectionOrder(),
+          reloadMessages(),
+        ]).finally(() => {
           scheduleNext();
         });
       }, intervalMs);
@@ -541,7 +605,7 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
       stopped = true;
       if (timer) clearTimeout(timer);
     };
-  }, [currentInspectionOrder?.id, currentInspectionOrder?.status, refreshCurrentInspectionOrder]);
+  }, [currentInspectionOrder?.id, currentInspectionOrder?.status, refreshCurrentInspectionOrder, reloadMessages]);
 
   // Analyze negotiation offers from messages
   const negotiationMap = useMemo(() => {
@@ -621,10 +685,10 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
     // Check if an inspection proposal message for this specific currentInspectionOrder exists in messages
     const hasThisInspectionInMessages = currentInspectionOrder
       ? messages.some((m) => {
-          const parsed = parseSystemMessage(m.text);
-          const orderId = parsed.inspectionProposal?.orderId || m.inspectionProposal?.orderId;
-          return Boolean(orderId && String(orderId).toLowerCase() === String(currentInspectionOrder.id).toLowerCase());
-        })
+        const parsed = parseSystemMessage(m.text);
+        const orderId = parsed.inspectionProposal?.orderId || m.inspectionProposal?.orderId;
+        return Boolean(orderId && String(orderId).toLowerCase() === String(currentInspectionOrder.id).toLowerCase());
+      })
       : false;
 
     // If an active inspection order exists from API but no message exists in chat yet for this specific order, inject it into the stream
@@ -1018,6 +1082,52 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
     }
   };
 
+  // Buyer cancel inspection request from top header banner
+  const handleConfirmBannerCancel = async () => {
+    if (!bannerCancelOrder) return;
+    setBannerCancelLoading(true);
+    try {
+      const reasonText = bannerCancelReason.trim() || (lang === 'vi' ? 'Người mua chủ động hủy yêu cầu kiểm định' : 'Buyer cancelled inspection request');
+      let res: InspectionOrderDto;
+      try {
+        res = await inspectorService.buyerRespondRequest(bannerCancelOrder.id, {
+          action: 'REJECT',
+          note: reasonText,
+        });
+      } catch (err) {
+        console.warn('Backend buyerRespondRequest issue (cancelling locally):', err);
+        res = {
+          ...bannerCancelOrder,
+          status: 'CANCELLED',
+          note: reasonText,
+        };
+      }
+
+      const updatedRes: InspectionOrderDto = {
+        ...res,
+        status: 'CANCELLED',
+        note: `Người mua từ chối đề xuất: ${reasonText}`,
+      };
+
+      try {
+        localStorage.setItem(`order_cancelled_${bannerCancelOrder.id}`, 'true');
+        localStorage.setItem(`order_cancellation_info_${bannerCancelOrder.id}`, JSON.stringify({
+          reasonCode: 'BUYER_REQUESTED',
+          reason: reasonText,
+        }));
+        window.dispatchEvent(new CustomEvent('secondlife_order_cancelled', { detail: { orderId: bannerCancelOrder.id } }));
+        window.dispatchEvent(new CustomEvent('secondlife_inspection_updated', { detail: { orderId: bannerCancelOrder.id } }));
+      } catch { }
+
+      setBannerCancelOrder(null);
+      await handleInspectionOrderUpdated(updatedRes);
+    } catch (err: any) {
+      console.warn('Failed to cancel inspection request from banner:', err);
+    } finally {
+      setBannerCancelLoading(false);
+    }
+  };
+
   // Handle updates when Seller or Buyer interacts with proposal card
   const handleInspectionOrderUpdated = async (updated: InspectionOrderDto) => {
     inspectionReader.accept(updated);
@@ -1099,7 +1209,10 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
         updateNoticeText = `[ĐỀ XUẤT LẠI KIỂM ĐỊNH]: Người mua đã đề xuất lại phương án chi phí: ${feeSplitLabel}. Vui lòng xem và phản hồi trên thẻ đề xuất!`;
       } else if (updated.status === 'WAITING_FEE_PAYMENT' || updated.status === 'CONFIRMED_PENDING_DISPATCH') {
         updateNoticeText = `[CHẤP NHẬN ĐỀ XUẤT]: Đề xuất kiểm định đã được đồng ý. Vui lòng tiến hành nộp phí kiểm định theo quy định!`;
-      } else if (updated.status === 'REJECTED' || updated.status === 'CANCELLED') {
+      } else if (updated.status === 'CANCELLED') {
+        const reasonDetail = updated.note ? `. Lý do: ${updated.note}` : '.';
+        updateNoticeText = `[HỦY ĐỀ XUẤT]: Đề xuất kiểm định đã được hủy${reasonDetail}`;
+      } else if (updated.status === 'REJECTED') {
         const reasonDetail = updated.note ? `. Lý do: ${updated.note}` : '.';
         updateNoticeText = `[TỪ CHỐI ĐỀ XUẤT]: Đề xuất kiểm định đã bị từ chối${reasonDetail}`;
       }
@@ -1301,19 +1414,38 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
         </div>
 
         {/* Right Action for Order Banner */}
-        <div className="shrink-0">
+        <div className="shrink-0 flex items-center gap-2">
           {hasActiveInspection && currentInspectionOrder ? (
-            <button
-              type="button"
-              onClick={() => navigatePath(paths.decision(currentRole, currentInspectionOrder.id))}
-              className="px-3 py-1.5 sm:px-4 sm:py-2 bg-gradient-to-r from-blue-600 to-indigo-700 hover:opacity-95 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition cursor-pointer"
-              title={lang === 'vi' ? 'Xem chi tiết đơn kiểm định' : 'View inspection details'}
-            >
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span className="whitespace-nowrap">
-                {lang === 'vi' ? 'Xem đơn kiểm định' : 'View Inspection'}
-              </span>
-            </button>
+            <>
+              {isBuyer && currentInspectionOrder.status === 'WAITING_SELLER_APPROVAL'
+                && !currentInspectionOrder.note?.toLowerCase().includes('đề xuất lại')
+                && !currentInspectionOrder.note?.toLowerCase().includes('counter')
+                && !currentInspectionOrder.note?.toLowerCase().includes('thương lượng') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBannerCancelOrder(currentInspectionOrder);
+                    setBannerCancelReason('');
+                  }}
+                  className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 font-bold text-xs rounded-xl shadow-2xs flex items-center gap-1 transition cursor-pointer active:scale-95"
+                  title={lang === 'vi' ? 'Hủy yêu cầu kiểm định' : 'Cancel inspection request'}
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span className="whitespace-nowrap">{lang === 'vi' ? 'Hủy yêu cầu' : 'Cancel'}</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => navigatePath(paths.decision(currentRole, currentInspectionOrder.id))}
+                className="px-3 py-1.5 sm:px-4 sm:py-2 bg-gradient-to-r from-blue-600 to-indigo-700 hover:opacity-95 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition cursor-pointer"
+                title={lang === 'vi' ? 'Xem chi tiết đơn kiểm định' : 'View inspection details'}
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span className="whitespace-nowrap">
+                  {lang === 'vi' ? 'Xem đơn kiểm định' : 'View Inspection'}
+                </span>
+              </button>
+            </>
           ) : isBuyer ? (
             isListingClosed && !latestAcceptedOffer ? (
               <span className="px-3 py-1.5 sm:px-4 sm:py-2 bg-slate-100 text-slate-400 font-bold text-xs rounded-xl border border-slate-200 cursor-not-allowed">
@@ -1436,10 +1568,19 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
                       );
                     }
 
+                    const prop = parsedSys.inspectionProposal;
+                    const effectiveOrder: InspectionOrderDto = prop ? {
+                      ...order,
+                      ...(prop.feePayer ? { feePayer: prop.feePayer } : {}),
+                      ...(prop.feeSplit === 'BUYER_100' ? { feePayer: 'BUYER_PAYS' as const } : prop.feeSplit === 'SELLER_100' ? { feePayer: 'SELLER_PAYS' as const } : prop.feeSplit === 'SPLIT_50_50' ? { feePayer: 'SPLIT_50_50' as const } : {}),
+                      ...(prop.buyerFeeShare != null ? { buyerFeeShare: prop.buyerFeeShare } : {}),
+                      ...(prop.sellerFeeShare != null ? { sellerFeeShare: prop.sellerFeeShare } : {}),
+                    } : order;
+
                     return (
                       <InspectionProposalCard
-                        key={order.id}
-                        order={order}
+                        key={`${order.id}-${effectiveOrder.status}-${effectiveOrder.feePayer}-${effectiveOrder.buyerFeeShare}-${effectiveOrder.sellerFeeShare}`}
+                        order={effectiveOrder}
                         listing={listing}
                         isSeller={isSeller}
                         isBuyer={isBuyer}
@@ -1640,7 +1781,7 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
                 : 'Nhập mức giá bạn muốn đề xuất mua (VNĐ):'}
             </label>
             <span className="text-xs font-bold text-slate-500">
-              {lang === 'vi' ? 'Giá niêm yết:' : 'Listed price:'}{' '}
+              {lang === 'vi' ? 'Giá sản phẩm:' : 'Listed price:'}{' '}
               {listing.priceVnd > 0 ? (
                 formatVND(listing.priceVnd)
               ) : (
@@ -1797,6 +1938,48 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
         initialData={inspectionPrefillData}
         onSubmitSuccess={handleProposalSubmitSuccess}
       />}
+
+      {/* 7. CANCEL INSPECTION REQUEST MODAL FROM BANNER */}
+      {bannerCancelOrder && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 animate-fadeIn">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-4 shadow-xl border border-slate-200 space-y-3 animate-scaleIn">
+            <h4 className="font-extrabold text-xs sm:text-sm text-slate-900 flex items-center gap-1.5">
+              <XCircle className="w-4 h-4 text-rose-600" />
+              <span>{lang === 'vi' ? 'Xác nhận hủy đề xuất kiểm định' : 'Cancel Inspection Proposal'}</span>
+            </h4>
+            <p className="text-xs text-slate-600 leading-snug">
+              {lang === 'vi'
+                ? 'Bạn có chắc chắn muốn hủy yêu cầu kiểm định này không? Đề xuất sẽ kết thúc và tiền ký quỹ (nếu có) sẽ được bảo toàn nguyên vẹn.'
+                : 'Are you sure you want to cancel this inspection proposal?'}
+            </p>
+            <textarea
+              value={bannerCancelReason}
+              onChange={(e) => setBannerCancelReason(e.target.value)}
+              placeholder={lang === 'vi' ? 'Nhập lý do hủy (tùy chọn)...' : 'Enter cancellation reason (optional)...'}
+              rows={3}
+              className="w-full p-2.5 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:border-rose-500 bg-slate-50"
+            />
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setBannerCancelOrder(null)}
+                className="px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
+              >
+                {lang === 'vi' ? 'Giữ lại' : 'Keep'}
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmBannerCancel}
+                disabled={bannerCancelLoading}
+                className="px-4 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow-xs cursor-pointer flex items-center gap-1 disabled:opacity-50"
+              >
+                {bannerCancelLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                <span>{lang === 'vi' ? 'Xác nhận hủy yêu cầu' : 'Confirm Cancel'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

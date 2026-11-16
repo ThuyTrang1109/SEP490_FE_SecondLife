@@ -13,6 +13,62 @@ export function isExpiredInspectionPurchase(status?: string | null, note?: strin
   return status === 'CANCELLED' && Boolean(note?.includes('Người mua không thanh toán tiền hàng trong vòng 6 giờ sau khi kiểm định đạt chuẩn.'));
 }
 
+export interface InspectionRejectionDetails {
+  inspectorNote: string;
+  buyerRejectReason: string;
+  isBuyerPurchaseRejected: boolean;
+}
+
+export function extractInspectionRejectionDetails(note?: string | null): InspectionRejectionDetails {
+  if (!note) return { inspectorNote: '', buyerRejectReason: '', isBuyerPurchaseRejected: false };
+  const raw = String(note).trim();
+  const marker = 'Người mua từ chối mua tiếp sau kiểm định. Lý do:';
+  const markerIndex = raw.indexOf(marker);
+  if (markerIndex !== -1) {
+    const inspectorPart = raw.slice(0, markerIndex).replace(/\|\s*$/, '').trim();
+    const buyerPart = raw.slice(markerIndex + marker.length).trim();
+    return {
+      inspectorNote: inspectorPart,
+      buyerRejectReason: buyerPart || 'Thay đổi nhu cầu sử dụng / Lý do cá nhân',
+      isBuyerPurchaseRejected: true,
+    };
+  }
+
+  const altMarker = 'Người mua từ chối mua tiếp sau kiểm định';
+  const altIndex = raw.indexOf(altMarker);
+  if (altIndex !== -1) {
+    const inspectorPart = raw.slice(0, altIndex).replace(/\|\s*$/, '').trim();
+    const buyerPart = raw.slice(altIndex + altMarker.length).replace(/^[:\s.\-Lý do]+/, '').trim();
+    return {
+      inspectorNote: inspectorPart,
+      buyerRejectReason: buyerPart || 'Thay đổi nhu cầu sử dụng / Lý do cá nhân',
+      isBuyerPurchaseRejected: true,
+    };
+  }
+
+  return {
+    inspectorNote: raw,
+    buyerRejectReason: raw,
+    isBuyerPurchaseRejected: false,
+  };
+}
+
+export function formatOrderCancellationReason(
+  rawReason?: string | null,
+  lang: Language = 'vi'
+): string {
+  if (!rawReason) return '';
+  const rejection = extractInspectionRejectionDetails(rawReason);
+  if (rejection.isBuyerPurchaseRejected) {
+    return rejection.buyerRejectReason || (lang === 'vi' ? 'Người mua từ chối mua tiếp sau kiểm định' : 'Buyer declined purchase after inspection');
+  }
+  const cleanReason = String(rawReason)
+    .replace(/\[(Tem|Grade|Điểm|Bao bì|Phụ kiện|Photos):.*?\]/gi, '')
+    .split(/\|\s*Người mua từ chối/i)[0]
+    .trim();
+  return cleanReason || String(rawReason).trim();
+}
+
 export function getCustomerInspectionStatus(status?: string | null, customerStatus?: string | null, inspectorId?: string | null) {
   if (customerStatus) return customerStatus.toUpperCase();
   const current = (status || '').toUpperCase();
@@ -32,8 +88,11 @@ export function getInspectionPurchaseDecision(
   if (payment?.finalPaymentPaidAt || payment?.linkedOrderId) return 'accepted';
 
   // The inspection API records an explicit rejection in the note and also uses CANCELLED for other reasons.
-  const note = details ? details.note : order?.inspectionNote;
-  if (status === 'CANCELLED' && note?.includes('Người mua từ chối mua tiếp sau kiểm định. Lý do:')) return 'rejected';
+  const note = details?.note || order?.inspectionNote || (order as any)?.note;
+  if (status === 'CANCELLED' && (
+    Boolean(note?.includes('Người mua từ chối mua tiếp sau kiểm định')) ||
+    extractInspectionRejectionDetails(note).isBuyerPurchaseRejected
+  )) return 'rejected';
   if (status === 'PASSED' || status === 'INSPECTION_PASSED' ||
       (!details?.status && !order?.inspectionStatus && order?.escrowStatus === 'INSPECTION_PASSED')) return 'pending';
   return null;
@@ -74,18 +133,31 @@ export function getBuyerInspectionStage(order: InspectionOrderState): BuyerInspe
   return 'waiting';
 }
 
-export function inspectionPurchaseDecisionLabel(decision: PurchaseDecision, lang: Language) {
+export function inspectionPurchaseDecisionLabel(
+  decision: PurchaseDecision,
+  lang: Language,
+  isSeller: boolean = false,
+) {
+  if (decision === 'pending') {
+    if (isSeller) {
+      return lang === 'vi' ? 'Chờ người mua quyết định' : 'Awaiting buyer decision';
+    }
+    return lang === 'vi' ? 'Chờ quyết định từ bạn' : 'Awaiting your decision';
+  }
   const labels = {
-    pending: ['Chờ người mua quyết định', 'Awaiting buyer decision'],
-    accepted: ['Người mua đã mua tiếp', 'Buyer continued with purchase'],
-    rejected: ['Người mua từ chối mua', 'Buyer declined the purchase'],
+    accepted: isSeller
+      ? ['Người mua đã mua tiếp', 'Buyer continued with purchase']
+      : ['Bạn đã xác nhận mua tiếp', 'You continued with purchase'],
+    rejected: isSeller
+      ? ['Người mua từ chối mua', 'Buyer declined the purchase']
+      : ['Bạn đã từ chối mua tiếp', 'You declined the purchase'],
   };
   return labels[decision][lang === 'vi' ? 0 : 1];
 }
 
-export function buyerInspectionStageLabel(stage: BuyerInspectionStage, lang: Language) {
-  if (stage === 'decision') return inspectionPurchaseDecisionLabel('pending', lang);
-  if (stage === 'rejected') return inspectionPurchaseDecisionLabel('rejected', lang);
+export function buyerInspectionStageLabel(stage: BuyerInspectionStage, lang: Language, isSeller: boolean = false) {
+  if (stage === 'decision') return inspectionPurchaseDecisionLabel('pending', lang, isSeller);
+  if (stage === 'rejected') return inspectionPurchaseDecisionLabel('rejected', lang, isSeller);
   const labels = {
     waiting: ['Đang chờ kiểm định', 'Awaiting inspection'],
     inspecting: ['Đang kiểm định', 'Inspection in progress'],

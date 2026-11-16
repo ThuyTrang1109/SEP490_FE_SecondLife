@@ -5,7 +5,7 @@ import { Negotiation } from '../../types';
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Listing, EscrowOrder, EscrowStatus, Language, UserWallet, ShippingQuoteResponseDto, ShippingRouteErrorDetails, ShippingLeg, InspectionCenter, UserProfile, InspectionProposalPrefillData } from '../../types';
 import { translations, formatVND } from '../../utils/translations';
-import { getBoughtListingIds, markListingAsBought, markListingAsAvailable, reconcileBoughtListingIds, safeJsonParse, resolveInspectionCenter } from '../../utils/orderUtils';
+import { getBoughtListingIds, markListingAsBought, markListingAsAvailable, reconcileBoughtListingIds, safeJsonParse, resolveInspectionCenter, resolveNearestHubToSeller } from '../../utils/orderUtils';
 import {
   ArrowLeft,
   MessageSquare,
@@ -521,6 +521,24 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [inspectionMethod, setInspectionMethod] = useState<'AT_CENTER' | 'AT_HOME'>('AT_CENTER');
   const [feeSplit, setFeeSplit] = useState<'BUYER_100' | 'SPLIT_50_50' | 'SELLER_100'>('BUYER_100');
 
+  // Auto-resolve nearest Inspection Center to SELLER based on GPS coordinates / distance and address text
+  const findNearestCenterToSeller = useCallback(
+    (hubs: InspectionCenter[]): InspectionCenter | undefined => {
+      const targetSellerAddress = listing.sellerAddress || listing.location || (listing as any).seller?.address || '';
+      const targetSellerLocation = listing.location || '';
+      const sellerCoords = {
+        lat: typeof (listing as any).latitude === 'number' && !isNaN((listing as any).latitude)
+          ? (listing as any).latitude
+          : (typeof (listing as any).seller?.latitude === 'number' ? (listing as any).seller.latitude : sellerCityInfo.lat),
+        lng: typeof (listing as any).longitude === 'number' && !isNaN((listing as any).longitude)
+          ? (listing as any).longitude
+          : (typeof (listing as any).seller?.longitude === 'number' ? (listing as any).seller.longitude : sellerCityInfo.lng),
+      };
+      return resolveNearestHubToSeller(hubs, targetSellerAddress, targetSellerLocation, sellerCoords);
+    },
+    [listing.sellerAddress, listing.location, (listing as any).latitude, (listing as any).longitude, (listing as any).seller, sellerCityInfo]
+  );
+
   // Load Inspection Centers / Hubs from API
   useEffect(() => {
     let isMounted = true;
@@ -530,10 +548,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         const hubs = await inspectorService.getInspectionCenters();
         if (isMounted && hubs && hubs.length > 0) {
           setInspectionCenters(hubs);
-          // If current selectedCenterId is not in new list, pick the first one
+          // Automatically pick the nearest center to seller (fixed, user cannot change)
           setSelectedCenterId((prev) => {
-            if (hubs.some((h) => h.id === prev)) return prev;
-            return hubs[0].id;
+            const nearest = findNearestCenterToSeller(hubs);
+            return nearest?.id || prev || hubs[0].id;
           });
         }
       } catch (err) {
@@ -546,34 +564,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [findNearestCenterToSeller]);
 
-  // Auto suggest/select inspection center based on buyer province
+  // Auto select inspection center nearest to SELLER (seller warehouse/location)
   useEffect(() => {
-    if (!selectedProvinceName || inspectionCenters.length === 0) return;
-    const provLower = selectedProvinceName.toLowerCase();
-    if (provLower.includes('hà nội') || provLower.includes('ha noi')) {
-      const hn = inspectionCenters.find((c) => c.id.includes('hn') || c.city.toLowerCase().includes('hà nội'));
-      if (hn) setSelectedCenterId(hn.id);
-    } else if (
-      provLower.includes('đà nẵng') ||
-      provLower.includes('da nang') ||
-      provLower.includes('huế') ||
-      provLower.includes('quảng')
-    ) {
-      const dn = inspectionCenters.find((c) => c.id.includes('dn') || c.city.toLowerCase().includes('đà nẵng'));
-      if (dn) setSelectedCenterId(dn.id);
-    } else if (
-      provLower.includes('hồ chí minh') ||
-      provLower.includes('ho chi minh') ||
-      provLower.includes('sài gòn') ||
-      provLower.includes('bình dương') ||
-      provLower.includes('đồng nai')
-    ) {
-      const hcm = inspectionCenters.find((c) => c.id.includes('hcm') || c.city.toLowerCase().includes('hồ chí minh'));
-      if (hcm) setSelectedCenterId(hcm.id);
+    if (inspectionCenters.length === 0 || selectedCenterId) return;
+    const nearest = findNearestCenterToSeller(inspectionCenters);
+    if (nearest?.id) {
+      setSelectedCenterId(nearest.id);
     }
-  }, [selectedProvinceName, inspectionCenters]);
+  }, [inspectionCenters, findNearestCenterToSeller, selectedCenterId]);
 
   // Lalamove Shipping Quote State
   const [ghnQuote, setGhnQuote] = useState<ShippingQuoteResponseDto | null>(null);
@@ -1067,7 +1067,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     }
   };
 
-  const fetchInspectionQuote = useCallback(async (lat?: number, lng?: number, centerId?: string) => {
+  const fetchInspectionQuote = useCallback(async (lat?: number, lng?: number) => {
     if (!listing.id) return;
 
     if (inspectionQuoteAbortControllerRef.current) {
@@ -1083,14 +1083,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setInspectionQuoteErrorCode(null);
     setInspectionQuoteErrorStatus(null);
     try {
-      const targetCenterId = isValidUuid(centerId) ? centerId : (isValidUuid(selectedCenterId) ? selectedCenterId : undefined);
+      // Hệ thống chỉ định trạm gần người bán nhất (không cho đổi thủ công).
+      // Luôn truyền inspectionCenterId: undefined để Backend tự động định tuyến trạm tối ưu theo kho người bán trong DB.
       const buyerLatitude = lat ?? deliveryLatitude;
       const buyerLongitude = lng ?? deliveryLongitude;
       const q = await inspectorService.getQuote({
         postId: listing.id,
         buyerLatitude,
         buyerLongitude,
-        inspectionCenterId: targetCenterId,
+        inspectionCenterId: undefined,
         orderType: inspectionMethod || 'AT_CENTER',
         negotiationId: validNegotiationId,
       }, { signal: controller.signal });
@@ -1098,8 +1099,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       if (requestId !== inspectionQuoteRequestIdRef.current) return;
 
       if (q) {
+        if (q.inspectionCenterId && q.inspectionCenterId !== selectedCenterId) {
+          setSelectedCenterId(q.inspectionCenterId);
+        }
         officialInspectionQuote.current = {
-          quote: q, centerId: targetCenterId, method: inspectionMethod,
+          quote: q, centerId: q.inspectionCenterId || selectedCenterId, method: inspectionMethod,
           buyerLatitude, buyerLongitude, negotiationId: validNegotiationId,
         };
         setInspectionQuote(q);
@@ -1110,9 +1114,46 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       }
       console.warn('Could not fetch inspection quote:', err);
 
+      const status = typeof err?.status === 'number' ? err.status : undefined;
+      const errMsg = (err?.message || '').toLowerCase();
+
+      // Nếu gặp lỗi 409 do trung tâm đã chọn không khớp với khu vực kho người bán trong hệ thống,
+      // tự động chuyển sang chế độ AUTO và thử lại ngay lập tức
+      if (status === 409 && (errMsg.includes('không khả dụng trong khu vực kho người bán') || errMsg.includes('vui lòng chọn tự động'))) {
+        try {
+          const autoQuote = await inspectorService.getQuote({
+            postId: listing.id,
+            buyerLatitude: lat ?? deliveryLatitude,
+            buyerLongitude: lng ?? deliveryLongitude,
+            inspectionCenterId: undefined,
+            orderType: inspectionMethod || 'AT_CENTER',
+            negotiationId: validNegotiationId,
+          }, { signal: controller.signal });
+
+          if (requestId === inspectionQuoteRequestIdRef.current && autoQuote) {
+            if (autoQuote.inspectionCenterId) {
+              setSelectedCenterId(autoQuote.inspectionCenterId);
+            }
+            officialInspectionQuote.current = {
+              quote: autoQuote,
+              centerId: autoQuote.inspectionCenterId || selectedCenterId,
+              method: inspectionMethod,
+              buyerLatitude: lat ?? deliveryLatitude,
+              buyerLongitude: lng ?? deliveryLongitude,
+              negotiationId: validNegotiationId,
+            };
+            setInspectionQuote(autoQuote);
+            setInspectionQuoteError(null);
+            return;
+          }
+        } catch (autoErr) {
+          console.warn('Auto fallback inspection quote failed:', autoErr);
+        }
+      }
+
       // Fallback: Nếu BE chưa có checklist được duyệt cho loại sản phẩm (409) hoặc lỗi định giá,
       // gọi trực tiếp Lalamove tính cước từ người bán tới Trung tâm kiểm định để không để 0 đ
-      const activeCenter = inspectionCenters.find((c) => c.id === (centerId || selectedCenterId)) || selectedCenter;
+      const activeCenter = inspectionCenters.find((c) => c.id === selectedCenterId) || selectedCenter;
       if (inspectionMethod === 'AT_CENTER' && activeCenter && activeCenter.latitude && activeCenter.longitude) {
         try {
           const centerShipping = await shippingService.getShippingQuote({
@@ -1151,7 +1192,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               },
               shippingQuote: {
                 id: centerShipping.quoteId,
-                inspectionCenterId: centerId || selectedCenterId || activeCenter.id,
+                inspectionCenterId: selectedCenterId || activeCenter.id,
                 expiresAt: centerShipping.expiresAt || new Date(Date.now() + 30 * 60 * 1000).toISOString(),
                 outbound: {
                   leg: 'SELLER_TO_CENTER',
@@ -1183,7 +1224,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
       setInspectionQuote(null);
 
-      const status = typeof err?.status === 'number' ? err.status : undefined;
       const code = err?.code || (err as any)?.response?.data?.code;
       setInspectionQuoteErrorStatus(status ?? null);
       setInspectionQuoteErrorCode(code ?? null);
@@ -1220,13 +1260,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         setLoadingInspectionQuote(false);
       }
     }
-  }, [listing.id, deliveryLatitude, deliveryLongitude, selectedCenterId, inspectionMethod, inspectionCenters, selectedCenter, lang, validNegotiationId]);
+  }, [listing.id, deliveryLatitude, deliveryLongitude, inspectionMethod, selectedCenterId, lang, validNegotiationId]);
 
   useEffect(() => {
     if (deliveryOption === 'INSPECTION') {
-      fetchInspectionQuote(deliveryLatitude, deliveryLongitude, selectedCenterId);
+      fetchInspectionQuote(deliveryLatitude, deliveryLongitude);
     }
-  }, [deliveryOption, deliveryLatitude, deliveryLongitude, selectedCenterId, inspectionMethod, fetchInspectionQuote]);
+  }, [deliveryOption, deliveryLatitude, deliveryLongitude, inspectionMethod, fetchInspectionQuote]);
 
   // Inspection fee & split calculations
   const isInspected = deliveryOption === 'INSPECTION';
@@ -1628,7 +1668,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           if (inspErr?.status === 409 || errMsg.includes('409') || errMsg.includes('thay đổi') || errMsg.includes('mới')) {
             setOrderError(lang === 'vi' ? 'Báo giá hoặc tiêu chuẩn kiểm định đã có cập nhật mới từ hệ thống. Đang tải lại báo giá, vui lòng xác nhận số tiền mới trước khi bấm gửi.' : 'Inspection quote updated. Reloading quote, please confirm new pricing.');
             setInspectionQuote(null);
-            await fetchInspectionQuote(deliveryLatitude, deliveryLongitude, selectedCenterId);
+            await fetchInspectionQuote(deliveryLatitude, deliveryLongitude);
             setSubmittingOrder(false);
             return;
           }
@@ -2795,46 +2835,39 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       </div>
                     </div>
 
-                    {/* 1. Chọn Trung Tâm Kiểm Định */}
+                    {/* 1. Trạm Kiểm Định Tiếp Nhận (Chỉ định cố định gần kho Người bán) */}
                     <div className="space-y-2 bg-[#faf8f5] p-3.5 rounded-2xl border border-slate-200">
                       <div className="flex items-center justify-between">
                         <label className="text-[11px] font-extrabold text-[#24263e] uppercase tracking-wide flex items-center gap-1.5 flex-wrap">
                           <Building2 className="w-3.5 h-3.5 text-[#c34c36]" />
-                          <span>{lang === 'vi' ? '1. Chọn Trung Tâm Kiểm Định Tiếp Nhận' : '1. Select Inspection Hub'}</span>
+                          <span>{lang === 'vi' ? '1. Trung Tâm Kiểm Định Tiếp Nhận' : '1. Assigned Inspection Hub'}</span>
                           <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 font-extrabold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 shadow-xs">
                             <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                             {lang === 'vi' ? 'Hệ thống Trạm Hub Chính Thức' : 'Official Verified Hubs'}
                           </span>
                         </label>
-                        <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full border border-emerald-300">
-                          📍 {selectedCenter.city}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full border border-emerald-300">
+                            📍 {selectedCenter.city}
+                          </span>
+                          <span className="text-[9.5px] bg-blue-50 text-blue-700 font-bold px-2 py-0.5 rounded-full border border-blue-200">
+                            🎯 {lang === 'vi' ? 'Gần người bán nhất' : 'Nearest to seller'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Thông báo chỉ định trạm duy nhất theo kho người bán (không cho đổi) */}
+                      <div className="p-2 bg-blue-50/70 border border-blue-200/80 rounded-xl flex items-center gap-2 text-[10.5px] text-blue-900 font-medium">
+                        <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0" />
+                        <span>
+                          {lang === 'vi'
+                            ? 'Trạm kiểm định được hệ thống tự động chỉ định cố định theo vị trí kho người bán để tối ưu cước vận chuyển và thời gian nghiệm thu.'
+                            : 'Inspection center is automatically assigned based on seller warehouse location to minimize logistics fees and optimize inspection SLA.'}
                         </span>
                       </div>
 
-                      {inspectionCenters.length > 1 && (
-                        <div className="pt-1">
-                          <label className="block text-[10px] font-bold text-slate-500 mb-1">
-                            {lang === 'vi' ? 'Chọn trạm Hub tiếp nhận:' : 'Select Inspection Hub:'}
-                          </label>
-                          <select
-                            value={selectedCenterId}
-                            onChange={(e) => {
-                              setSelectedCenterId(e.target.value);
-                              fetchInspectionQuote(deliveryLatitude, deliveryLongitude, e.target.value);
-                            }}
-                            className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold bg-white text-slate-800 outline-none focus:border-[#c34c36] shadow-2xs cursor-pointer"
-                          >
-                            {inspectionCenters.map((hub) => (
-                              <option key={hub.id} value={hub.id}>
-                                {hub.name} {hub.address ? `- ${hub.address}` : ''}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
-
-                      {/* Chi tiết trung tâm đã chọn */}
-                      <div className="mt-2 p-2.5 bg-white rounded-xl border border-slate-200 text-[11px] space-y-1">
+                      {/* Chi tiết trung tâm đã chỉ định */}
+                      <div className="mt-1 p-2.5 bg-white rounded-xl border border-slate-200 text-[11px] space-y-1">
                         <div className="flex items-start justify-between gap-2">
                           <span className="font-bold text-slate-900 flex items-center gap-1">
                             <MapPin className="w-3.5 h-3.5 text-[#c34c36] shrink-0" />
@@ -2930,7 +2963,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                                     type="button"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      fetchInspectionQuote(deliveryLatitude, deliveryLongitude, selectedCenterId);
+                                      fetchInspectionQuote(deliveryLatitude, deliveryLongitude);
                                     }}
                                     className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-md text-[9px] font-bold cursor-pointer transition flex items-center gap-1"
                                   >
@@ -2998,7 +3031,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                                       type="button"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        fetchInspectionQuote(deliveryLatitude, deliveryLongitude, selectedCenterId);
+                                        fetchInspectionQuote(deliveryLatitude, deliveryLongitude);
                                       }}
                                       className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded font-bold cursor-pointer shrink-0 transition"
                                     >

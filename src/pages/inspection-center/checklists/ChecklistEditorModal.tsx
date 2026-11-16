@@ -74,7 +74,7 @@ export function ChecklistEditorModal({ catalogItems, categories, checklist, pric
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-fadeIn backdrop-blur-xs">
-      <div className="bg-white rounded-2xl max-w-3xl w-full p-5 sm:p-6 space-y-4 shadow-2xl border border-gray-100 max-h-[92vh] flex flex-col text-xs">
+      <div className="bg-white rounded-2xl max-w-4xl w-full p-5 sm:p-6 space-y-4 shadow-2xl border border-gray-100 max-h-[92vh] flex flex-col text-xs">
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-gray-100 shrink-0">
           <div className="flex items-center gap-2.5">
@@ -131,11 +131,13 @@ export function ChecklistEditorModal({ catalogItems, categories, checklist, pric
         {/* Scrollable Form Body */}
         <div className="space-y-3.5 flex-1 overflow-y-auto pr-1">
           {/* Item, Category & Complexity Level Selection */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-start">
             <div>
-              <label className="block font-bold text-slate-700 mb-1">
-                Danh mục thiết bị <span className="text-rose-500">*</span>
-              </label>
+              <div className="flex items-center justify-between h-6 mb-1.5">
+                <label className="font-bold text-slate-700 text-xs truncate">
+                  Danh mục thiết bị <span className="text-rose-500">*</span>
+                </label>
+              </div>
               <select
                 value={selectedCategoryId}
                 onChange={(e) => {
@@ -143,7 +145,7 @@ export function ChecklistEditorModal({ catalogItems, categories, checklist, pric
                   setSelectedCategoryId(catId);
                   setSelectedItemId('');
                 }}
-                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs focus:outline-none focus:border-[#c34c36]"
+                className="w-full h-10 px-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs focus:outline-none focus:border-[#c34c36]"
               >
                 <option value="">-- Chọn danh mục --</option>
                 {categories.map((c) => (
@@ -155,9 +157,11 @@ export function ChecklistEditorModal({ catalogItems, categories, checklist, pric
             </div>
 
             <div>
-              <label className="block font-bold text-slate-700 mb-1">
-                Loại thiết bị cụ thể (Item) <span className="text-rose-500">*</span>
-              </label>
+              <div className="flex items-center justify-between h-6 mb-1.5">
+                <label className="font-bold text-slate-700 text-xs truncate">
+                  Loại thiết bị cụ thể (Item) <span className="text-rose-500">*</span>
+                </label>
+              </div>
               <select
                 required
                 value={selectedItemId}
@@ -174,7 +178,7 @@ export function ChecklistEditorModal({ catalogItems, categories, checklist, pric
                     }
                   }
                 }}
-                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs focus:outline-none focus:border-[#c34c36]"
+                className="w-full h-10 px-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs focus:outline-none focus:border-[#c34c36]"
               >
                 <option value="">-- Chọn loại thiết bị --</option>
                 {catalogItems
@@ -191,16 +195,16 @@ export function ChecklistEditorModal({ catalogItems, categories, checklist, pric
             </div>
 
             <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="block font-bold text-slate-700">
-                  Cấp độ kiểm định đề xuất <span className="text-rose-500">*</span>
+              <div className="flex items-center justify-between h-6 mb-1.5 gap-1.5">
+                <label className="font-bold text-slate-700 text-xs truncate shrink-0" title="Cấp độ kiểm định đề xuất">
+                  Cấp độ đề xuất <span className="text-rose-500">*</span>
                 </label>
                 {isLevelFeeApproved(selectedComplexityLevel) ? (
-                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                    Giá đã duyệt: {formatVND(getApprovedFeeForLevel(selectedComplexityLevel)?.baseInspectionFee || 0)}
+                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 truncate whitespace-nowrap shrink-0">
+                    Đã duyệt: {formatVND(getApprovedFeeForLevel(selectedComplexityLevel)?.baseInspectionFee || 0)}
                   </span>
                 ) : (
-                  <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-200">
+                  <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-200 truncate whitespace-nowrap shrink-0">
                     Chưa duyệt giá
                   </span>
                 )}
@@ -208,16 +212,16 @@ export function ChecklistEditorModal({ catalogItems, categories, checklist, pric
               <select
                 value={selectedComplexityLevel}
                 onChange={(e) => setSelectedComplexityLevel(e.target.value as InspectionComplexityLevel)}
-                className={`w-full p-2.5 bg-slate-50 border rounded-xl font-bold text-xs focus:outline-none ${isLevelFeeApproved(selectedComplexityLevel)
+                className={`w-full h-10 px-3 bg-slate-50 border rounded-xl font-bold text-xs focus:outline-none ${isLevelFeeApproved(selectedComplexityLevel)
                   ? 'border-slate-200 text-slate-800 focus:border-[#c34c36]'
                   : 'border-amber-300 text-amber-900 bg-amber-50/30 focus:border-amber-500'
                   }`}
               >
                 {[
                   { level: 'L1' as InspectionComplexityLevel, label: 'L1 - Cơ bản (Quạt, ấm, bàn ủi...)' },
-                  { level: 'L2' as InspectionComplexityLevel, label: 'L2 - Nâng cao (Nồi cơm, lò vi sóng, hút bụi...)' },
-                  { level: 'L3' as InspectionComplexityLevel, label: 'L3 - Chuyên sâu (Máy giặt, máy sấy, máy rửa chén...)' },
-                  { level: 'L4' as InspectionComplexityLevel, label: 'L4 - Phức tạp (Tủ lạnh Side-by-Side, điều hòa...)' },
+                  { level: 'L2' as InspectionComplexityLevel, label: 'L2 - Nâng cao (Nồi cơm, lò vi sóng...)' },
+                  { level: 'L3' as InspectionComplexityLevel, label: 'L3 - Chuyên sâu (Máy giặt, máy sấy...)' },
+                  { level: 'L4' as InspectionComplexityLevel, label: 'L4 - Phức tạp (Tủ lạnh, điều hòa...)' },
                 ].map((opt) => {
                   const approved = isLevelFeeApproved(opt.level);
                   const pending = Boolean(getPendingProposalForLevel(opt.level));
@@ -228,27 +232,27 @@ export function ChecklistEditorModal({ catalogItems, categories, checklist, pric
                       disabled={!approved}
                       className={!approved ? 'text-slate-400 bg-slate-100' : 'text-slate-900'}
                     >
-                      {opt.label} {approved ? '✓ (Giá đã duyệt)' : pending ? '⚠ (Đang chờ Admin duyệt giá)' : '✕ (Chưa có giá duyệt)'}
+                      {opt.label} {approved ? '✓ (Đã duyệt)' : pending ? '⚠ (Chờ duyệt)' : '✕ (Chưa duyệt)'}
                     </option>
                   );
                 })}
               </select>
-
-              {!isLevelFeeApproved(selectedComplexityLevel) && (
-                <div className="mt-2 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2 shadow-2xs">
-                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                  <div className="space-y-0.5">
-                    <p className="font-bold text-[11px]">
-                      Cấp độ {selectedComplexityLevel} chưa có mức phí kiểm định được phê duyệt!
-                    </p>
-                    <p className="text-[10px] text-amber-700 leading-relaxed">
-                      Theo quy định, trung tâm cần có biểu phí cấp {selectedComplexityLevel} được Admin duyệt trước khi đề xuất bộ tiêu chuẩn kiểm định. Vui lòng chọn cấp độ khác đã được duyệt giá hoặc gửi đề xuất giá cấp {selectedComplexityLevel} trước.
-                    </p>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
+
+          {!isLevelFeeApproved(selectedComplexityLevel) && (
+            <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2 shadow-2xs">
+              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div className="space-y-0.5">
+                <p className="font-bold text-[11px]">
+                  Cấp độ {selectedComplexityLevel} chưa có mức phí kiểm định được phê duyệt!
+                </p>
+                <p className="text-[10px] text-amber-700 leading-relaxed">
+                  Theo quy định, trung tâm cần có biểu phí cấp {selectedComplexityLevel} được Admin duyệt trước khi đề xuất bộ tiêu chuẩn kiểm định. Vui lòng chọn cấp độ khác đã được duyệt giá hoặc gửi đề xuất giá cấp {selectedComplexityLevel} trước.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Checklist Title */}
           <div>

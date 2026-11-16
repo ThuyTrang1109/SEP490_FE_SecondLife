@@ -48,6 +48,8 @@ export function normalizeAdminInspectionFunds(raw: any): AdminInspectionOrderFun
     buyerCommitmentDeposit: fees.buyerCommitmentDeposit,
     cashShippingSimulation: fees.cashShippingSimulation,
     outboundCashPendingAmount: fees.outboundCashPendingAmount,
+    inspectionFeeSplit: raw.inspectionFeeSplit || raw.feeSplit || raw.feePayer || null,
+    feeSplit: raw.feeSplit || raw.inspectionFeeSplit || null,
     returnReserve: raw.returnReserve
       ? {
           plannedAmount: Number(raw.returnReserve.plannedAmount ?? 0),
@@ -152,6 +154,8 @@ export async function getAdminInspectionOrderFunds(
               buyerCommitmentDeposit: deposit,
               cashShippingSimulation: Boolean(insp.cashShippingSimulation),
               outboundCashPendingAmount: 0,
+              inspectionFeeSplit: (insp as any).inspectionFeeSplit || (insp as any).feeSplit || (insp as any).feePayer || null,
+              feeSplit: (insp as any).feeSplit || (insp as any).inspectionFeeSplit || null,
               returnReserve: {
                 plannedAmount: reserve,
                 heldAmount: Boolean(insp.feeSettledAt) ? 0 : reserve,

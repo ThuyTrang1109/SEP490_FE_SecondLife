@@ -1341,7 +1341,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                   {isListingInspectionPassed(item) && (
                     <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-600 text-white shadow-2xs ml-1.5">
                       <ShieldCheck className="w-2.5 h-2.5 text-emerald-100" />
-                      <span>{lang === 'vi' ? 'Đã Kiểm Định' : 'Inspected'}</span>
+                      <span>{lang === 'vi' ? 'Đã đạt kiểm định tại Hub' : 'Hub Inspected'}</span>
                     </span>
                   )}
                   {item.backendStatus === 'REJECTED' && item.rejectionReason && (

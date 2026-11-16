@@ -1,7 +1,10 @@
 import type {
   AdminCollectionStatus,
   AdminReturnReserveStatus,
+  AdminInspectionOrderFundsDTO,
+  AdminFundShipmentDTO,
 } from '../types/adminInspectionFunds';
+import { formatVND } from './translations';
 
 /**
  * Map collectionStatus to user-facing labels
@@ -215,5 +218,192 @@ export function formatAuditDateTime(dateStr?: string | null): string {
   } catch {
     return dateStr;
   }
+}
+
+export interface FeeSplitPlanInfo {
+  code: string;
+  label: string;
+  buyerPercent: number;
+  sellerPercent: number;
+}
+
+/**
+ * Resolves the inspection fee split plan (e.g. 50/50, buyer 100%, seller 100%)
+ */
+export function resolveFeeSplitPlan(funds?: AdminInspectionOrderFundsDTO | null): FeeSplitPlanInfo {
+  if (!funds) {
+    return { code: 'SPLIT_50_50', label: 'Chia đôi 50% - 50%', buyerPercent: 50, sellerPercent: 50 };
+  }
+
+  const rawSplit = (funds.inspectionFeeSplit || funds.feeSplit || (funds as any).feePayer || '').toUpperCase();
+
+  if (rawSplit === 'BUYER_100' || rawSplit === 'BUYER_PAYS') {
+    return { code: 'BUYER_100', label: 'Người mua chịu 100%', buyerPercent: 100, sellerPercent: 0 };
+  }
+  if (rawSplit === 'SELLER_100' || rawSplit === 'SELLER_PAYS') {
+    return { code: 'SELLER_100', label: 'Người bán chịu 100%', buyerPercent: 0, sellerPercent: 100 };
+  }
+  if (rawSplit === 'SPLIT_50_50') {
+    return { code: 'SPLIT_50_50', label: 'Chia đôi 50% - 50%', buyerPercent: 50, sellerPercent: 50 };
+  }
+
+  // Infer from amountDue of buyer & seller if not specified explicitly
+  const buyerDue = Number(funds.buyerPayment?.amountDue ?? funds.buyer?.amountDue ?? 0);
+  const sellerDue = Number(funds.sellerPayment?.amountDue ?? funds.seller?.amountDue ?? 0);
+
+  if (buyerDue > 0 && sellerDue === 0) {
+    return { code: 'BUYER_100', label: 'Người mua chịu 100%', buyerPercent: 100, sellerPercent: 0 };
+  }
+  if (sellerDue > 0 && buyerDue === 0) {
+    return { code: 'SELLER_100', label: 'Người bán chịu 100%', buyerPercent: 0, sellerPercent: 100 };
+  }
+  if (buyerDue > 0 && sellerDue > 0) {
+    if (Math.abs(buyerDue - sellerDue) < 1000) {
+      return { code: 'SPLIT_50_50', label: 'Chia đôi 50% - 50%', buyerPercent: 50, sellerPercent: 50 };
+    }
+    const totalDue = buyerDue + sellerDue;
+    const buyerPercent = Math.round((buyerDue / totalDue) * 100);
+    const sellerPercent = 100 - buyerPercent;
+    return {
+      code: 'CUSTOM',
+      label: `Tỷ lệ ${buyerPercent}% (Mua) - ${sellerPercent}% (Bán)`,
+      buyerPercent,
+      sellerPercent,
+    };
+  }
+
+  return { code: 'SPLIT_50_50', label: 'Chia đôi 50% - 50%', buyerPercent: 50, sellerPercent: 50 };
+}
+
+export interface ReturnReserveDetails {
+  plannedAmount: number;
+  heldAmount: number;
+  returnShipment: AdminFundShipmentDTO | null;
+  actualReturnFee: number;
+  hasActualReturnFee: boolean;
+  returnShipmentCode: string | null;
+  returnShipmentStatus: string | null;
+  splitPlan: FeeSplitPlanInfo;
+  surplusAmount: number;
+  buyerSurplusShare: number;
+  sellerSurplusShare: number;
+  refundStatus: 'SETTLED' | 'REFUNDED_UNUSED' | 'AWAITING_CONFIRMATION' | 'PROCESSING' | 'PENDING' | 'EXCEEDS_RESERVE';
+  refundStatusLabel: string;
+  refundStatusBadge: { bg: string; text: string; border: string };
+  refundDescription: string;
+}
+
+/**
+ * Computes return reserve breakdown:
+ * - Actual return shipping fee from Hub/Center to Seller
+ * - Order fee split ratio
+ * - Remaining surplus amount allocated to buyer and seller
+ * - Detailed refund status explanation
+ */
+export function resolveReturnReserveDetails(funds?: AdminInspectionOrderFundsDTO | null): ReturnReserveDetails {
+  const plannedAmount = Number(funds?.returnReserve?.plannedAmount ?? 0);
+  const heldAmount = Number(funds?.returnReserve?.heldAmount ?? 0);
+  const status = (funds?.returnReserve?.status || '').toUpperCase();
+
+  // Find return shipment: leg CENTER_TO_SELLER or HUB_TO_SELLER
+  const returnShipment =
+    funds?.shipments?.find((s) => {
+      const leg = (s.leg || '').toUpperCase();
+      return leg === 'CENTER_TO_SELLER' || leg === 'HUB_TO_SELLER';
+    }) || null;
+
+  const hasActualReturnFee = returnShipment?.actualFee != null && returnShipment.actualFee >= 0;
+  const actualReturnFee = hasActualReturnFee ? Number(returnShipment!.actualFee) : 0;
+  const returnShipmentCode = returnShipment?.orderCode || null;
+  const returnShipmentStatus = returnShipment?.status || null;
+
+  const splitPlan = resolveFeeSplitPlan(funds);
+
+  // If actual fee exceeds planned amount, surplus is 0
+  const surplusAmount = Math.max(0, plannedAmount - actualReturnFee);
+
+  // Split surplus according to splitPlan
+  let buyerSurplusShare = 0;
+  let sellerSurplusShare = 0;
+  if (splitPlan.code === 'SPLIT_50_50') {
+    buyerSurplusShare = Math.round(surplusAmount / 2);
+    sellerSurplusShare = surplusAmount - buyerSurplusShare;
+  } else if (splitPlan.code === 'BUYER_100') {
+    buyerSurplusShare = surplusAmount;
+    sellerSurplusShare = 0;
+  } else if (splitPlan.code === 'SELLER_100') {
+    buyerSurplusShare = 0;
+    sellerSurplusShare = surplusAmount;
+  } else {
+    buyerSurplusShare = Math.round((surplusAmount * splitPlan.buyerPercent) / 100);
+    sellerSurplusShare = surplusAmount - buyerSurplusShare;
+  }
+
+  // Determine refund status and explanation
+  const isSettled = status === 'SETTLED' || Boolean(funds?.settlement?.settledAt);
+  const isUnused = status === 'REFUNDED_UNUSED';
+  const isAwaitingConfirmation = status === 'AWAITING_CASH_CONFIRMATION';
+  const isExceeded = status === 'EXCEEDS_RESERVE' || (hasActualReturnFee && actualReturnFee > plannedAmount);
+  const isProcessing =
+    status === 'RETURN_IN_PROGRESS' ||
+    status === 'AWAITING_ACTUAL_FEE' ||
+    status === 'AWAITING_RECONCILIATION' ||
+    (returnShipment != null && !isSettled && !isUnused && !isExceeded);
+
+  let refundStatus: ReturnReserveDetails['refundStatus'] = 'PENDING';
+  let refundStatusLabel = 'Đang giữ bảo chứng';
+  let refundStatusBadge = { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200' };
+  let refundDescription = '';
+
+  if (isSettled) {
+    refundStatus = 'SETTLED';
+    refundStatusLabel = 'Đã hoàn tất quyết toán & hoàn ví';
+    refundStatusBadge = { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' };
+    const settledTimeStr = funds?.settlement?.settledAt ? ` vào lúc ${formatAuditDateTime(funds.settlement.settledAt)}` : '';
+    refundDescription = `Đã đối soát xong cước hoàn${settledTimeStr}. Tiền dư ${formatVND(surplusAmount)} đã được tự động hoàn vào ví Người mua (${formatVND(buyerSurplusShare)}) và ví Người bán (${formatVND(sellerSurplusShare)}) theo đúng tỷ lệ ${splitPlan.label}.`;
+  } else if (isUnused) {
+    refundStatus = 'REFUNDED_UNUSED';
+    refundStatusLabel = 'Đã hoàn toàn bộ tiền dự phòng (Không trả hàng)';
+    refundStatusBadge = { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' };
+    refundDescription = `Sản phẩm không phát sinh chuyển hoàn về người bán. Toàn bộ tiền dự phòng ${formatVND(plannedAmount)} đã được hoàn trả lại cho Người mua (${formatVND(buyerSurplusShare)}) và Người bán (${formatVND(sellerSurplusShare)}) theo tỷ lệ ${splitPlan.label}.`;
+  } else if (isExceeded) {
+    refundStatus = 'EXCEEDS_RESERVE';
+    refundStatusLabel = 'Cước thực tế vượt dự phòng';
+    refundStatusBadge = { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200' };
+    refundDescription = `Cước hoàn thực tế (${formatVND(actualReturnFee)}) vượt mức dự phòng kế hoạch (${formatVND(plannedAmount)}). Không còn tiền dư hoàn lại cho các bên.`;
+  } else if (isAwaitingConfirmation) {
+    refundStatus = 'AWAITING_CONFIRMATION';
+    refundStatusLabel = 'Đã giao về Seller · Chờ xác nhận cước';
+    refundStatusBadge = { bg: 'bg-orange-50', text: 'text-orange-800', border: 'border-orange-300' };
+    refundDescription = `Kiện hàng đã giao thành công về cho người bán. Đang chờ xác nhận chi cước hoàn thực tế trước khi tự động giải ngân tiền dư ${formatVND(surplusAmount)} về ví của các bên.`;
+  } else if (isProcessing) {
+    refundStatus = 'PROCESSING';
+    refundStatusLabel = 'Đang chuyển hoàn · Chờ quyết toán';
+    refundStatusBadge = { bg: 'bg-sky-50', text: 'text-sky-800', border: 'border-sky-300' };
+    refundDescription = `Đơn hoàn đang được vận chuyển về người bán. Sau khi đối soát cước thực tế${hasActualReturnFee ? ` (${formatVND(actualReturnFee)})` : ''}, số tiền dư dự kiến ${formatVND(surplusAmount)} sẽ được chia hoàn theo tỷ lệ ${splitPlan.label}.`;
+  } else {
+    refundStatus = 'PENDING';
+    refundStatusLabel = 'Đang tạm giữ dự phòng cước hoàn';
+    refundStatusBadge = { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200' };
+    refundDescription = `Khoản dự phòng cước hoàn ${formatVND(heldAmount || plannedAmount)} đang được giữ an toàn tại ví ký quỹ Escrow. Nếu phát sinh trả hàng, cước thực tế sẽ được trừ tại đây và số tiền dư chia trả theo đúng tỷ lệ ${splitPlan.label}.`;
+  }
+
+  return {
+    plannedAmount,
+    heldAmount,
+    returnShipment,
+    actualReturnFee,
+    hasActualReturnFee,
+    returnShipmentCode,
+    returnShipmentStatus,
+    splitPlan,
+    surplusAmount,
+    buyerSurplusShare,
+    sellerSurplusShare,
+    refundStatus,
+    refundStatusLabel,
+    refundStatusBadge,
+    refundDescription,
+  };
 }
 

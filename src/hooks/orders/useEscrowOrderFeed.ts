@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getOrderFeed, type OrderFeed } from '../services/orderFeedService';
-import type { OrderFeedQuery } from '../utils/escrowOrderFilters';
+import { getOrderFeed, type OrderFeed } from '../../services/orderFeedService';
+import type { OrderFeedQuery } from '../../utils/escrowOrderFilters';
 
 export function useEscrowOrderFeed(enabled: boolean, scope: string, query: OrderFeedQuery, orderId?: string) {
   const { filter, perspective, q, page } = query;

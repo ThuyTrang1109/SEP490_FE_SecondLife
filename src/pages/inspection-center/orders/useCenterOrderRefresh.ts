@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { isUserIdle } from '../../../services/apiClient';
+import { isUserIdle } from '../../../services';
 import { INBOUND_SHIPMENT_REFRESH_MS } from './shipmentTrackingConfig';
 
 interface Options {

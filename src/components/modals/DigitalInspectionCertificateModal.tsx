@@ -82,6 +82,13 @@ export function buildInspectionReportFromDto(dto: InspectionOrderDto | any, orde
   const verdict = rawStatus !== 'FAILED' &&
     (getInspectionTaskStage(rawStatus) === 'completed' || rawStatus.includes('PASS')) ? 'PASS' : 'FAIL';
 
+  const rawNote = dto.note || order?.note || (dto as any)?.summaryNotes || (order as any)?.summaryNotes || '';
+  const packagingMatch = rawNote.match(/\[Bao bì:\s*([^\]]+)\]/i);
+  const accessoriesMatch = rawNote.match(/\[Phụ kiện:\s*([^\]]+)\]/i);
+  const packagingCondition = packagingMatch ? packagingMatch[1].trim() : ((dto as any)?.packagingCondition || (dto as any)?.packagingStatus || (order as any)?.packagingCondition || (order as any)?.packagingStatus || null);
+  const accessoriesList = accessoriesMatch ? accessoriesMatch[1].trim() : ((dto as any)?.accessoriesNote || (order as any)?.accessoriesNote || null);
+  const cleanSummaryNotes = rawNote.replace(/\[(Tem|Grade|Điểm|Bao bì|Phụ kiện|Photos):.*?\]/gi, '').split(/\|\s*Người mua từ chối/i)[0].trim();
+
   return {
     id: `REP-${String(dto.id || order?.id || '').slice(0, 8)}`,
     orderId: dto.id || order?.id,
@@ -100,7 +107,9 @@ export function buildInspectionReportFromDto(dto: InspectionOrderDto | any, orde
     checklistResults: parsedChecklist,
     inspectorPhotos: parsedPhotos,
     evidencePhotoUrls: parsedPhotos,
-    summaryNotes: dto.note || order?.note || '',
+    summaryNotes: cleanSummaryNotes || rawNote || '',
+    packagingCondition: packagingCondition || undefined,
+    accessoriesList: accessoriesList || undefined,
   };
 }
 
@@ -248,6 +257,16 @@ export const DigitalInspectionCertificateModal: React.FC<DigitalInspectionCertif
   const realBrand = resolveOrderListing(listing).brand || (listing as any)?.brand || null;
   const rawModel = listing?.model || (listing as any)?.modelName;
   const realModel = rawModel && rawModel !== 'Verified Model' && rawModel !== 'Standard' ? rawModel : null;
+
+  // Trích xuất hiện trạng bao bì đóng gói & phụ kiện kèm theo lúc tiếp nhận
+  const rawCertificateNote = report?.summaryNotes || (order as any).note || (report as any)?.note || '';
+  const packMatch = rawCertificateNote.match(/\[Bao bì:\s*([^\]]+)\]/i);
+  const accMatch = rawCertificateNote.match(/\[Phụ kiện:\s*([^\]]+)\]/i);
+  const packagingCondition = (report as any)?.packagingCondition || (packMatch ? packMatch[1].trim() : ((report as any)?.packagingStatus || (order as any).packagingStatus || null));
+  const accessoriesList = (report as any)?.accessoriesList || (accMatch ? accMatch[1].trim() : ((report as any)?.accessoriesNote || (order as any).accessoriesNote || null));
+  const displaySummaryNotes = ((report?.summaryNotes || rawCertificateNote) as string)
+    .replace(/\[(Tem|Grade|Điểm|Bao bì|Phụ kiện|Photos):.*?\]/gi, '')
+    .trim();
 
   // Checklist tiêu chuẩn kỹ thuật (BỎ HOÀN TOÀN MOCK DATA 4 HẠNG MỤC TỰ SINH)
   const realChecklistResults = report?.checklistResults || [];
@@ -586,6 +605,24 @@ export const DigitalInspectionCertificateModal: React.FC<DigitalInspectionCertif
                   <strong className="text-slate-800">{hubName}</strong>
                 </div>
               </div>
+
+              {/* Hiện trạng đóng gói & Phụ kiện lúc tiếp nhận */}
+              {(packagingCondition || accessoriesList) && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1.5 border-t border-slate-100 text-slate-600">
+                  {packagingCondition && (
+                    <div>
+                      <span className="text-slate-400 text-[10px] print:text-[8.5px] block">Hiện trạng bao bì khi nhận:</span>
+                      <strong className="text-slate-800">{packagingCondition}</strong>
+                    </div>
+                  )}
+                  {accessoriesList && (
+                    <div>
+                      <span className="text-slate-400 text-[10px] print:text-[8.5px] block">Phụ kiện kèm theo ghi nhận:</span>
+                      <strong className="text-slate-800">{accessoriesList}</strong>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -693,12 +730,12 @@ export const DigitalInspectionCertificateModal: React.FC<DigitalInspectionCertif
               )}
             </div>
 
-            {report?.summaryNotes && (
+            {displaySummaryNotes && (
               <div className="p-2 print:p-1.5 rounded-xl print:rounded-lg bg-slate-50 border border-slate-200 text-xs print:text-[9px] space-y-0.5">
                 <span className="text-[9.5px] print:text-[8px] font-bold uppercase text-slate-400 tracking-wider block">
                   Ghi Chú Kết Luận Của Kỹ Thuật Viên:
                 </span>
-                <p className="italic text-slate-700 leading-relaxed font-medium">"{report.summaryNotes}"</p>
+                <p className="italic text-slate-700 leading-relaxed font-medium">"{displaySummaryNotes}"</p>
               </div>
             )}
           </div>

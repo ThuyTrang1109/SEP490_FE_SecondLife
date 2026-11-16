@@ -101,16 +101,17 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
   });
   const { centerProfile, centerProfileError, handleProfileUpdated, isLoadingCenterProfile, loadCenterProfile } = useCenterProfile({ showNotice });
   const shipments = useCenterShipments({
-    centerProfile,
     currentUser,
-    loadCenterProfile,
     loadingShipmentsRef,
     loadOrders,
     showNotice,
     showOrderShipments,
     trackedOrders,
   });
-  const { bookingReturnId, buyerShipments, deniedShipmentOrders, handleBookReturn, hubReturns, inboundShipments, isOrderReceivedAtHub, returnQuoteOrder, setDeniedShipmentOrders, setReturnQuoteOrder, shipmentModalOrder } = shipments;
+  const { bookingReturnId, buyerShipments, deniedShipmentOrders, handleBookReturn, hubReturns, inboundShipments, isOrderReceivedAtHub, returnQuoteOrder, setDeniedShipmentOrders, setReturnQuoteOrder } = shipments;
+  const openedShipmentOrder = shipments.shipmentModalOrder;
+  const shipmentModalOrder = openedShipmentOrder &&
+    (visibleOrderHistory?.items.find((order) => order.id === openedShipmentOrder.id) ?? openedShipmentOrder);
   const orderHistory = useCenterOrderHistory({
     hubReturns,
     visibleOrderHistory,

@@ -1,8 +1,8 @@
-import { MapPin, RefreshCw, Loader2, Plus, Truck, Package, AlertTriangle } from 'lucide-react';
+import { MapPin, RefreshCw, Loader2, Plus, Truck, Package } from 'lucide-react';
 import { LalamoveProgress } from '../../../components/common/LalamoveProgress';
 import { InspectionCashShipmentStatus } from '../../../components/inspection/InspectionCashShipmentStatus';
 import { UserProfile } from '../../../types';
-import { getHubReturnProgress, getReturnReserveMessage } from '../../../utils/inspectionCenterData';
+import { canBookCenterBuyerDelivery, canBookCenterReturn, getHubReturnProgress, getReturnReserveMessage } from '../../../utils/inspectionCenterData';
 import { resolveInspectionCenter } from '../../../utils/orderUtils';
 import { formatVND } from '../../../utils/translations';
 import type { useCenterProfile } from '../useCenterProfile';
@@ -13,68 +13,57 @@ interface Props {
   currentUser: UserProfile | null | undefined;
   shipmentModalOrder: NonNullable<ReturnType<typeof useCenterShipments>['shipmentModalOrder']>;
   shipments: Pick<ReturnType<typeof useCenterShipments>,
-    | 'canCreateInboundInModal'
+    | 'bookingBuyerOrderId'
+    | 'bookingReturnId'
+    | 'buyerShipments'
     | 'closeShipmentModal'
-    | 'handleCreateInspectionShipment'
+    | 'deniedShipmentOrders'
+    | 'handleBookBuyerDelivery'
     | 'handleSyncCenterShipment'
+    | 'hasLoadedShipmentModal'
+    | 'hubReturns'
     | 'inboundShipments'
     | 'inspectionShipments'
-    | 'isCreatingShipment'
     | 'isLoadingShipments'
-    | 'receiverAddress'
-    | 'receiverName'
-    | 'receiverPhone'
-    | 'senderAddress'
-    | 'senderName'
-    | 'senderPhone'
-    | 'setReceiverAddress'
-    | 'setReceiverName'
-    | 'setReceiverPhone'
-    | 'setSenderAddress'
-    | 'setSenderName'
-    | 'setSenderPhone'
+    | 'setReturnQuoteOrder'
     | 'setShipmentError'
     | 'setShipmentSuccess'
-    | 'setShipmentTab'
     | 'shipmentError'
     | 'shipmentModalRequestRef'
     | 'shipmentSuccess'
-    | 'shipmentTab'
     | 'syncingShipments'
   >;
 }
 
 export function CenterShipmentModal({ centerProfile, currentUser, shipmentModalOrder, shipments }: Props) {
   const {
-    canCreateInboundInModal,
+    bookingBuyerOrderId,
+    bookingReturnId,
+    buyerShipments,
     closeShipmentModal,
-    handleCreateInspectionShipment,
+    deniedShipmentOrders,
+    handleBookBuyerDelivery,
     handleSyncCenterShipment,
+    hasLoadedShipmentModal,
+    hubReturns,
     inboundShipments,
     inspectionShipments,
-    isCreatingShipment,
     isLoadingShipments,
-    receiverAddress,
-    receiverName,
-    receiverPhone,
-    senderAddress,
-    senderName,
-    senderPhone,
-    setReceiverAddress,
-    setReceiverName,
-    setReceiverPhone,
-    setSenderAddress,
-    setSenderName,
-    setSenderPhone,
+    setReturnQuoteOrder,
     setShipmentError,
     setShipmentSuccess,
-    setShipmentTab,
     shipmentError,
     shipmentModalRequestRef,
     shipmentSuccess,
-    shipmentTab,
     syncingShipments,
   } = shipments;
+
+  const orderId = shipmentModalOrder.id;
+  const hasCheckedShipments = hasLoadedShipmentModal && !deniedShipmentOrders.has(orderId);
+  const canBookReturn = hasCheckedShipments &&
+    canBookCenterReturn(shipmentModalOrder, currentUser?.id, currentUser?.role, hubReturns.get(orderId));
+  const canBookBuyerDelivery = hasCheckedShipments &&
+    canBookCenterBuyerDelivery(shipmentModalOrder, currentUser?.id, buyerShipments.get(orderId));
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in">
@@ -116,36 +105,40 @@ export function CenterShipmentModal({ centerProfile, currentUser, shipmentModalO
           </div>
         )}
 
-        {/* Tab switchers */}
-        <div className="flex items-center gap-2 border-b border-slate-100 pb-2 shrink-0">
-          <button
-            type="button"
-            onClick={() => setShipmentTab('tracking')}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${shipmentTab === 'tracking'
-              ? 'bg-[#24263e] text-white shadow-xs'
-              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-          >
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 pb-2 shrink-0">
+          <div className="inline-flex items-center gap-1.5 rounded-xl bg-[#24263e] px-3.5 py-1.5 text-xs font-bold text-white">
             <Package className="w-3.5 h-3.5" />
             <span>Lộ Trình Vận Đơn ({inspectionShipments.length})</span>
-          </button>
-          {canCreateInboundInModal && <button
-            type="button"
-            onClick={() => setShipmentTab('create')}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${shipmentTab === 'create'
-              ? 'bg-[#c34c36] text-white shadow-xs'
-              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Kích Hoạt Giao Vận Hub</span>
-          </button>}
+          </div>
+          {canBookReturn && (
+            <button
+              type="button"
+              disabled={bookingReturnId !== null}
+              onClick={() => {
+                closeShipmentModal();
+                setReturnQuoteOrder(shipmentModalOrder);
+              }}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-amber-700 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-amber-800 disabled:opacity-60 cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Tạo vận đơn trả người bán
+            </button>
+          )}
+          {canBookBuyerDelivery && (
+            <button
+              type="button"
+              disabled={bookingBuyerOrderId !== null}
+              onClick={() => void handleBookBuyerDelivery(shipmentModalOrder)}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-teal-700 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-teal-800 disabled:opacity-60 cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              {bookingBuyerOrderId === orderId ? 'Đang xử lý…' : 'Tạo vận đơn giao người mua'}
+            </button>
+          )}
         </div>
 
-        {/* Tab Content */}
         <div className="flex-1 overflow-y-auto space-y-4 subtle-scrollbar pr-1 text-xs">
-          {shipmentTab === 'tracking' ? (
-            isLoadingShipments ? (
+          {isLoadingShipments ? (
               <div className="py-12 flex flex-col items-center justify-center gap-2 text-slate-400">
                 <Loader2 className="w-6 h-6 animate-spin text-[#c34c36]" />
                 <span>Đang tải lộ trình vận chuyển từ máy chủ...</span>
@@ -154,13 +147,6 @@ export function CenterShipmentModal({ centerProfile, currentUser, shipmentModalO
               <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-2xl space-y-2">
                 <Truck className="w-8 h-8 text-slate-300 mx-auto" />
                 <p className="font-bold text-slate-700">Chưa có vận đơn nào cho đơn kiểm định này.</p>
-                {canCreateInboundInModal && <button
-                  type="button"
-                  onClick={() => setShipmentTab('create')}
-                  className="mt-2 px-4 py-2 bg-[#c34c36] text-white rounded-xl font-bold cursor-pointer hover:bg-[#a63f2d] transition"
-                >
-                  + Kích Hoạt Vận Đơn Ngay
-                </button>}
               </div>
             ) : (
               <div className="space-y-3">
@@ -189,7 +175,7 @@ export function CenterShipmentModal({ centerProfile, currentUser, shipmentModalO
                       <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-200/70">
                         <div className="flex items-center gap-2">
                           <span className="font-mono font-black text-slate-900 bg-white px-2.5 py-1 rounded-lg border border-slate-200 shadow-xs">
-                            {s.orderCode ? `#${s.orderCode}` : 'Chưa có mã vận đơn'}
+                            {s.orderCode ? `Mã Vận đơn: #${s.orderCode}` : 'Chưa có mã vận đơn'}
                           </span>
                           <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${legColorClass}`}>
                             {legBadgeTitle}
@@ -318,107 +304,6 @@ export function CenterShipmentModal({ centerProfile, currentUser, shipmentModalO
                   );
                 })}
               </div>
-            )
-          ) : (
-            <form onSubmit={handleCreateInspectionShipment} className="space-y-3.5">
-              {centerProfile && (!shipmentModalOrder.inspectionCenterId || shipmentModalOrder.inspectionCenterId === centerProfile.id) && (
-                <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-1.5 text-[11px]">
-                  <div className="font-bold text-slate-800">
-                    Điểm đến tiếp nhận: {centerProfile?.name || 'Trung Tâm Tiếp Nhận'}
-                  </div>
-                  <div className="text-slate-500 font-mono text-[10px]">
-                    Hotline: {centerProfile?.phone || 'Chưa thiết lập hotline'}
-                  </div>
-                  <div className="text-slate-600 text-[10px]">
-                    Địa chỉ: {centerProfile?.address || 'Chưa cấu hình địa chỉ tiếp nhận'}
-                  </div>
-                  {centerProfile && !centerProfile.shippingAddressConfigured && (
-                    <div className="p-2 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 font-bold text-[10px] flex items-center gap-1.5 mt-1">
-                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                      <span>Trung tâm chưa cấu hình địa chỉ tiếp nhận & GPS. Vui lòng mở mục "Thông tin trung tâm" để cập nhật.</span>
-                    </div>
-                  )}
-                </div>
-              )}
-              {/* Sender address section */}
-              <div className="space-y-2">
-                <label className="font-bold text-slate-700 block text-xs">
-                  Thông Tin Người Gửi (Nhà Người Bán)
-                </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <input
-                    type="text"
-                    required
-                    value={senderName}
-                    onChange={(e) => setSenderName(e.target.value)}
-                    placeholder="Tên người gửi..."
-                    className="p-2 rounded-xl border border-slate-200 text-xs focus:border-[#c34c36] outline-none"
-                  />
-                  <input
-                    type="text"
-                    required
-                    value={senderPhone}
-                    onChange={(e) => setSenderPhone(e.target.value)}
-                    placeholder="Số điện thoại người gửi..."
-                    className="p-2 rounded-xl border border-slate-200 text-xs focus:border-[#c34c36] outline-none font-mono"
-                  />
-                </div>
-                <input
-                  type="text"
-                  required
-                  value={senderAddress}
-                  onChange={(e) => setSenderAddress(e.target.value)}
-                  placeholder="Địa chỉ gửi hàng..."
-                  className="w-full p-2 rounded-xl border border-slate-200 text-xs focus:border-[#c34c36] outline-none"
-                />
-              </div>
-
-              {/* Receiver address section */}
-              <div className="space-y-2">
-                <label className="font-bold text-slate-700 block text-xs">
-                  Thông Tin Điểm Tiếp Nhận (Phòng Lab Hub)
-                </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <input
-                    type="text"
-                    required
-                    value={receiverName}
-                    onChange={(e) => setReceiverName(e.target.value)}
-                    placeholder="Tên người nhận..."
-                    className="p-2 rounded-xl border border-slate-200 text-xs focus:border-[#c34c36] outline-none"
-                  />
-                  <input
-                    type="text"
-                    required
-                    value={receiverPhone}
-                    onChange={(e) => setReceiverPhone(e.target.value)}
-                    placeholder="Số điện thoại nhận..."
-                    className="p-2 rounded-xl border border-slate-200 text-xs focus:border-[#c34c36] outline-none font-mono"
-                  />
-                </div>
-                <input
-                  type="text"
-                  required
-                  value={receiverAddress}
-                  onChange={(e) => setReceiverAddress(e.target.value)}
-                  placeholder="Địa chỉ nhận hàng..."
-                  className="w-full p-2 rounded-xl border border-slate-200 text-xs focus:border-[#c34c36] outline-none"
-                />
-              </div>
-
-              <div className="pt-2 flex justify-end">
-                <button
-                  type="submit"
-                  disabled={isCreatingShipment || Boolean(centerProfile && (!shipmentModalOrder.inspectionCenterId || shipmentModalOrder.inspectionCenterId === centerProfile.id) && !centerProfile.shippingAddressConfigured)}
-                  className="px-5 py-2.5 rounded-xl bg-[#c34c36] hover:bg-[#a63f2d] text-white font-bold text-xs flex items-center gap-2 cursor-pointer shadow-md disabled:opacity-50"
-                >
-                  {isCreatingShipment && <Loader2 className="w-4 h-4 animate-spin" />}
-                  <span>
-                    Tạo Vận Đơn Lấy Hàng Về Hub
-                  </span>
-                </button>
-              </div>
-            </form>
           )}
         </div>
 

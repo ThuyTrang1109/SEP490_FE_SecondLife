@@ -1,41 +1,34 @@
-import React, { useState, useEffect, useRef, type RefObject } from 'react';
-import { shippingService, InspectionOrderDto } from '../../../services';
-import { ApiError, isUserIdle } from '../../../services/apiClient';
-import { UserProfile, ShipmentBackend, CreateShipmentRequestDto } from '../../../types';
+import { useState, useEffect, useRef, type RefObject } from 'react';
+import { shippingService, InspectionOrderDto, ApiError, isUserIdle } from '../../../services';
+import { UserProfile, ShipmentBackend } from '../../../types';
 import { dialogService } from '../../../utils/dialogService';
 import { notifyInspectionCashConfirmed } from '../../../utils/inspectionCashShipping';
 import {
-  canBookHubBuyerDelivery,
+  canBookCenterBuyerDelivery,
+  canBookCenterReturn,
   canReadCenterInspectionShipments,
   getHubBuyerShipmentLabel,
-  getInboundShipmentProgress,
   getLatestInboundShipment,
   getLatestInspectionShipment,
   isPaidHubBuyerDelivery,
-  shouldTrackInboundShipment,
   getHubReturnProgress,
   getHubReturnState,
-  isCenterReturnEligible,
   isHubReturnCase,
   shouldSyncHubReturnOnOpen,
 } from '../../../utils/inspectionCenterData';
-import { resolveInspectionCenter } from '../../../utils/orderUtils';
 import { INBOUND_SHIPMENT_CONCURRENCY } from './shipmentTrackingConfig';
 import type { useCenterOrders } from './useCenterOrders';
-import type { useCenterProfile } from '../useCenterProfile';
 
 interface Options {
-  centerProfile: ReturnType<typeof useCenterProfile>['centerProfile'];
   currentUser: UserProfile | null | undefined;
-  loadCenterProfile: ReturnType<typeof useCenterProfile>['loadCenterProfile'];
-  loadingShipmentsRef: React.RefObject<boolean>;
+  loadingShipmentsRef: RefObject<boolean>;
   loadOrders: ReturnType<typeof useCenterOrders>['loadOrders'];
   showNotice: (msg: string) => void;
   showOrderShipments: boolean;
   trackedOrders: ReturnType<typeof useCenterOrders>['trackedOrders'];
 }
 
-export function useCenterShipments({ centerProfile, currentUser, loadCenterProfile, loadingShipmentsRef, loadOrders, showNotice, showOrderShipments, trackedOrders }: Options) {
+export function useCenterShipments({ currentUser, loadingShipmentsRef, loadOrders, showNotice, showOrderShipments, trackedOrders }: Options) {
   const [deniedShipmentOrders, setDeniedShipmentOrders] = useState<ReadonlySet<string>>(new Set());
   const [inboundShipments, setInboundShipments] = useState<ReadonlyMap<string, ShipmentBackend>>(new Map());
   const [buyerShipments, setBuyerShipments] = useState<ReadonlyMap<string, ShipmentBackend | null>>(new Map());
@@ -187,29 +180,19 @@ export function useCenterShipments({ centerProfile, currentUser, loadCenterProfi
   const [syncingShipments, setSyncingShipments] = useState<ReadonlySet<string>>(new Set());
   const [inspectionShipments, setInspectionShipments] = useState<ShipmentBackend[]>([]);
   const [isLoadingShipments, setIsLoadingShipments] = useState(false);
-  const [isCreatingShipment, setIsCreatingShipment] = useState(false);
-  const [shipmentTab, setShipmentTab] = useState<'tracking' | 'create'>('tracking');
-  const [senderName, setSenderName] = useState('');
-  const [senderPhone, setSenderPhone] = useState('');
-  const [senderAddress, setSenderAddress] = useState('');
-  const initialCenter = resolveInspectionCenter();
-  const [receiverName, setReceiverName] = useState(initialCenter.name);
-  const [receiverPhone, setReceiverPhone] = useState(initialCenter.phone);
-  const [receiverAddress, setReceiverAddress] = useState(initialCenter.address);
+  const [hasLoadedShipmentModal, setHasLoadedShipmentModal] = useState(false);
   const [shipmentError, setShipmentError] = useState<string | null>(null);
   const [shipmentSuccess, setShipmentSuccess] = useState<string | null>(null);
-  const canCreateInboundInModal = shipmentModalOrder && canReadCenterInspectionShipments(shipmentModalOrder, currentUser?.id) &&
-    shouldTrackInboundShipment(shipmentModalOrder);
-
   const handleBookReturn = async (order: InspectionOrderDto, maxReturnFee: number): Promise<string | null> => {
     const state = hubReturns.get(order.id);
-    if (returnBookingRef.current || !isCenterReturnEligible(order, currentUser?.id, currentUser?.role) ||
-      !state?.received || !canBookHubBuyerDelivery(state.shipment)) return 'Đơn hiện chưa sẵn sàng để đặt chuyến trả.';
+    if (returnBookingRef.current || !canBookCenterReturn(order, currentUser?.id, currentUser?.role, state)) {
+      return 'Đơn hiện chưa sẵn sàng để đặt chuyến trả.';
+    }
 
     returnBookingRef.current = order.id;
     setBookingReturnId(order.id);
     try {
-      const key = `hub_return_request_${order.id}_${state.shipment?.shipmentId || 'first'}`;
+      const key = `hub_return_request_${order.id}_${state?.shipment?.shipmentId || 'first'}`;
       let requestId = returnRequestIds.current.get(key);
       if (!requestId) {
         try { requestId = localStorage.getItem(key) || undefined; } catch { }
@@ -257,7 +240,8 @@ export function useCenterShipments({ centerProfile, currentUser, loadCenterProfi
 
   const handleBookBuyerDelivery = async (order: InspectionOrderDto) => {
     const previousShipment = buyerShipments.get(order.id);
-    if (bookingBuyerOrderRef.current || !isPaidHubBuyerDelivery(order) || !canBookHubBuyerDelivery(previousShipment)) return;
+    if (bookingBuyerOrderRef.current || !canBookCenterBuyerDelivery(order, currentUser?.id, previousShipment)) return;
+    const modalRequest = shipmentModalRequestRef.current;
     bookingBuyerOrderRef.current = order.id;
     setBookingBuyerOrderId(order.id);
     try {
@@ -283,6 +267,12 @@ export function useCenterShipments({ centerProfile, currentUser, loadCenterProfi
       });
       buyerBookingVersion.current++;
       setBuyerShipments((previous) => new Map(previous).set(order.id, shipment));
+      if (shipmentModalOrder?.id === order.id && modalRequest === shipmentModalRequestRef.current) {
+        setInspectionShipments((previous) => [
+          shipment,
+          ...previous.filter((item) => item.leg === 'CENTER_TO_BUYER' && item.shipmentId !== shipment.shipmentId),
+        ]);
+      }
       try {
         const raw = localStorage.getItem(`sl_order_shipments_${order.id}`) || localStorage.getItem(`order_shipments_${order.id}`);
         const parsed = raw ? JSON.parse(raw) : [];
@@ -299,36 +289,6 @@ export function useCenterShipments({ centerProfile, currentUser, loadCenterProfi
       bookingBuyerOrderRef.current = null;
       setBookingBuyerOrderId(null);
     }
-  };
-
-  const updateAddressesForLeg = (
-    ord: InspectionOrderDto,
-    profile = centerProfile
-  ) => {
-    // Lấy chính xác thông tin vị trí trung tâm kiểm định của đơn hàng hoặc tài khoản quản lý (không hardcode)
-    const center = resolveInspectionCenter({
-      ...ord,
-      inspectionCenterName: (currentUser as any)?.centerName || currentUser?.name || (ord as any).inspectionCenterName,
-      inspectionCenterAddress: (currentUser as any)?.address || (ord as any).inspectionCenterAddress,
-      inspectionCenterPhone: (currentUser as any)?.phone || (ord as any).inspectionCenterPhone,
-    });
-    const assignedProfile = profile && (!ord.inspectionCenterId || ord.inspectionCenterId === profile.id)
-      ? profile
-      : null;
-    const hubName = assignedProfile?.name || center.name;
-    const hubPhone = assignedProfile?.phone || center.phone;
-    const hubAddress = assignedProfile?.address || center.address;
-
-    const sName = ord.sellerName || 'Người bán';
-    const sPhone = (ord as any).sellerPhone || (ord as any).phone || '0912345678';
-    const sAddress = (ord as any).sellerAddress || (ord as any).address || (ord as any).location || 'Địa chỉ kho người bán';
-
-    setSenderName(sName);
-    setSenderPhone(sPhone);
-    setSenderAddress(sAddress);
-    setReceiverName(hubName);
-    setReceiverPhone(hubPhone);
-    setReceiverAddress(hubAddress);
   };
 
   const handleSyncCenterShipment = async (orderId: string, shipment: ShipmentBackend, modalRequest: number) => {
@@ -396,7 +356,7 @@ export function useCenterShipments({ centerProfile, currentUser, loadCenterProfi
     returnModalOrderIdRef.current = null;
     setShipmentModalOrder(ord);
     setInspectionShipments([]);
-    setShipmentTab('tracking');
+    setHasLoadedShipmentModal(false);
     setShipmentError(null);
     setShipmentSuccess(null);
 
@@ -408,30 +368,26 @@ export function useCenterShipments({ centerProfile, currentUser, loadCenterProfi
 
     if (returnDelivery) returnModalOrderIdRef.current = ord.id;
     const buyerDelivery = isPaidHubBuyerDelivery(ord);
-    if (!returnDelivery && !buyerDelivery) updateAddressesForLeg(ord);
     setIsLoadingShipments(true);
     try {
-      const [list, profile] = await Promise.all([
-        shippingService.getInspectionShipments(ord.id),
-        returnDelivery || buyerDelivery || centerProfile ? Promise.resolve(centerProfile) : loadCenterProfile(),
-      ]);
+      const list = await shippingService.getInspectionShipments(ord.id);
       if (request !== shipmentModalRequestRef.current) return;
-      if (returnDelivery || buyerDelivery) {
-        const leg = returnDelivery ? 'CENTER_TO_SELLER' : 'CENTER_TO_BUYER';
-        setInspectionShipments(list.filter((shipment) => shipment.leg === leg));
-        if (returnDelivery) {
-          const returnState = getHubReturnState(list);
-          setHubReturns((previous) => new Map(previous).set(ord.id, returnState));
-          if (shouldSyncHubReturnOnOpen(returnState.shipment)) {
-            void handleSyncCenterShipment(ord.id, returnState.shipment, request);
-          }
+      const leg = returnDelivery ? 'CENTER_TO_SELLER' : buyerDelivery ? 'CENTER_TO_BUYER' : 'SELLER_TO_CENTER';
+      setInspectionShipments(list.filter((shipment) => shipment.leg === leg));
+      if (returnDelivery) {
+        const returnState = getHubReturnState(list);
+        setHubReturns((previous) => new Map(previous).set(ord.id, returnState));
+        if (shouldSyncHubReturnOnOpen(returnState.shipment)) {
+          void handleSyncCenterShipment(ord.id, returnState.shipment, request);
         }
-      } else {
-        if (profile) updateAddressesForLeg(ord, profile);
-        const inbound = list.filter((shipment) => shipment.leg === 'SELLER_TO_CENTER');
-        setInspectionShipments(inbound);
-        setShipmentTab(inbound.length === 0 && shouldTrackInboundShipment(ord) ? 'create' : 'tracking');
+      } else if (buyerDelivery) {
+        setBuyerShipments((previous) => new Map(previous).set(ord.id, getLatestInspectionShipment(list, 'CENTER_TO_BUYER')));
       }
+      const inbound = getLatestInboundShipment(list);
+      if (inbound) {
+        setInboundShipments((previous) => new Map(previous).set(ord.id, inbound));
+      }
+      setHasLoadedShipmentModal(true);
     } catch (error) {
       if (request === shipmentModalRequestRef.current) setShipmentError(error instanceof Error ? error.message : 'Không tải được vận đơn kiểm định.');
     } finally {
@@ -439,57 +395,10 @@ export function useCenterShipments({ centerProfile, currentUser, loadCenterProfi
     }
   };
 
-  const handleCreateInspectionShipment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!shipmentModalOrder || !canCreateInboundInModal) return;
-    setIsCreatingShipment(true);
-    setShipmentError(null);
-    setShipmentSuccess(null);
-
-    const cleanPhone = (p: string, def: string) => {
-      const d = (p || '').replace(/\D/g, '');
-      if (/^(?:0|84)\d{9,10}$/.test(d)) return d.startsWith('84') ? '0' + d.slice(2) : d;
-      return def;
-    };
-
-    const sName = senderName.trim() || 'Người gửi';
-    const sPhone = cleanPhone(senderPhone, '0912345678');
-    const rName = receiverName.trim() || 'Người nhận';
-    const rPhone = cleanPhone(receiverPhone, '0908123456');
-
-    const assignedProfile = centerProfile &&
-      (!shipmentModalOrder.inspectionCenterId || shipmentModalOrder.inspectionCenterId === centerProfile.id)
-      ? centerProfile : null;
-    const hubCoords = assignedProfile?.latitude != null && assignedProfile?.longitude != null
-      ? { latitude: assignedProfile.latitude, longitude: assignedProfile.longitude }
-      : { latitude: 10.8415, longitude: 106.8098 };
-    const payload: CreateShipmentRequestDto = {
-      requestId: crypto.randomUUID(),
-      leg: 'SELLER_TO_CENTER',
-      fromAddress: { name: sName, phone: sPhone, latitude: 10.7769, longitude: 106.7009 },
-      toAddress: { name: rName, phone: rPhone, ...hubCoords },
-      reason: 'Điều phối vận đơn Hub: SELLER_TO_CENTER',
-    };
-
-    try {
-      const created = await shippingService.createInspectionShipment(shipmentModalOrder.id, payload);
-      setInspectionShipments((previous) => [created, ...previous.filter((item) => item.shipmentId !== created.shipmentId)]);
-      setShipmentTab('tracking');
-      if (created.lastError) setShipmentError(created.lastError);
-      else if (created.orderCode && created.status !== 'CANCELLED') setShipmentSuccess(`Đã tạo vận đơn #${created.orderCode}`);
-      else setShipmentSuccess(getInboundShipmentProgress(created).label);
-    } catch (error) {
-      setShipmentError(error instanceof Error ? error.message : 'Không thể tạo vận đơn kiểm định.');
-    } finally {
-      setIsCreatingShipment(false);
-    }
-  };
-
   return {
     bookingBuyerOrderId,
     bookingReturnId,
     buyerShipments,
-    canCreateInboundInModal,
     closeShipmentModal,
     deniedShipmentOrders,
     expandedBuyerOrderId,
@@ -497,41 +406,26 @@ export function useCenterShipments({ centerProfile, currentUser, loadCenterProfi
     expandedReturnOrderId,
     handleBookBuyerDelivery,
     handleBookReturn,
-    handleCreateInspectionShipment,
     handleOpenShipmentModal,
     handleSyncCenterShipment,
+    hasLoadedShipmentModal,
     hubReturns,
     inboundShipments,
     inspectionShipments,
-    isCreatingShipment,
     isLoadingShipments,
     isOrderReceivedAtHub,
-    receiverAddress,
-    receiverName,
-    receiverPhone,
     returnQuoteOrder,
-    senderAddress,
-    senderName,
-    senderPhone,
     setDeniedShipmentOrders,
     setExpandedBuyerOrderId,
     setExpandedInboundOrderId,
     setExpandedReturnOrderId,
-    setReceiverAddress,
-    setReceiverName,
-    setReceiverPhone,
     setReturnQuoteOrder,
-    setSenderAddress,
-    setSenderName,
-    setSenderPhone,
     setShipmentError,
     setShipmentSuccess,
-    setShipmentTab,
     shipmentError,
     shipmentModalOrder,
     shipmentModalRequestRef,
     shipmentSuccess,
-    shipmentTab,
     syncingShipments,
   };
 }

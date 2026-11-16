@@ -939,12 +939,14 @@ export interface SystemWalletData {
   revenueBalance: number;
   totalBalance: number;
   updatedAt: string;
+  totalHubPaid?: number;
+  inspectionHeldBalance?: number;
 }
 
 export interface SystemWalletTransaction {
   id: number;
   orderId: string;
-  type: 'OPENING_BALANCE' | 'PAYMENT_HOLD' | 'SETTLEMENT' | 'REFUND' | string;
+  type: 'OPENING_BALANCE' | 'PAYMENT_HOLD' | 'SETTLEMENT' | 'REFUND' | 'RETURN_SHIPPING_FEE' | string;
   heldDelta: number;
   shippingDelta: number;
   revenueDelta: number;
@@ -952,6 +954,14 @@ export interface SystemWalletTransaction {
   shippingBalanceAfter: number;
   revenueBalanceAfter: number;
   createdAt: string;
+}
+
+export interface SystemWalletTransactionFilter {
+  type?: string;
+  hasShipping?: boolean;
+  orderId?: string;
+  page?: number;
+  size?: number;
 }
 
 export interface SystemWalletTransactionsPage {

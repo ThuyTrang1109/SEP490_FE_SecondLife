@@ -32,6 +32,8 @@ export interface InspectionTravelTierDto {
   distanceChargedInTier?: number;
   feeInTier?: number;
   status?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface InspectionQuotePackageAtHome {
@@ -86,6 +88,9 @@ export interface InspectionQuoteResponse {
 
   inspectionConfiguration?: InspectionConfigurationResponse;
   shippingQuote?: InspectionShippingQuote;
+  inspectionCenterId?: string;
+  inspectionCenterName?: string;
+  distanceKm?: number;
 }
 
 export interface InspectionShippingQuoteLeg {
@@ -483,7 +488,23 @@ export interface InspectionSealScanRequest {
 // INSPECTOR SERVICE
 // ============================================================================
 
+const inspectionOrderCache = new Map<string, { data: InspectionOrderDto; timestamp: number }>();
+const inspectionOrderInFlight = new Map<string, Promise<InspectionOrderDto>>();
+const INSPECTION_ORDER_TTL_MS = 15_000;
+
 export const inspectorService = {
+  /**
+   * Xóa cache đơn kiểm định khi có cập nhật
+   */
+  invalidateOrderCache(orderId?: string) {
+    if (orderId) {
+      inspectionOrderCache.delete(orderId.toLowerCase());
+      inspectionOrderInFlight.delete(orderId.toLowerCase());
+    } else {
+      inspectionOrderCache.clear();
+      inspectionOrderInFlight.clear();
+    }
+  },
   // --------------------------------------------------------------------------
   // 1. BUYER & SELLER INSPECTION FLOW (/api/v1/inspection)
   // --------------------------------------------------------------------------
@@ -654,6 +675,7 @@ export const inspectorService = {
       body: JSON.stringify(payload),
       requiresAuth: true,
     });
+    this.invalidateOrderCache(orderId);
     return (res as any)?.data || res;
   },
 
@@ -673,6 +695,7 @@ export const inspectorService = {
       body: JSON.stringify(payload),
       requiresAuth: true,
     });
+    this.invalidateOrderCache(orderId);
     return (res as any)?.data || res;
   },
 
@@ -685,18 +708,46 @@ export const inspectorService = {
       method: 'POST',
       requiresAuth: true,
     });
+    this.invalidateOrderCache(orderId);
     return (res as any)?.data || res;
   },
 
   /**
    * Lấy chi tiết đơn kiểm định
+   * Tích hợp deduplication & in-flight cache để tránh gọi lặp / cancel request
    */
-  async getOrder(orderId: string, options?: Pick<RequestOptions, 'isBackground' | 'signal'>): Promise<InspectionOrderDto> {
-    const res = await requestGet<InspectionOrderDto>(`/inspection/orders/${orderId}`, {
-      ...options,
-      requiresAuth: true,
-    });
-    return (res as any)?.data || res;
+  async getOrder(orderId: string, options?: Pick<RequestOptions, 'isBackground' | 'signal'> & { bypassCache?: boolean }): Promise<InspectionOrderDto> {
+    if (!orderId) throw new Error('Order ID is required');
+
+    const cleanId = orderId.toLowerCase();
+    if (!options?.bypassCache && !options?.isBackground) {
+      const cached = inspectionOrderCache.get(cleanId);
+      if (cached && Date.now() - cached.timestamp < INSPECTION_ORDER_TTL_MS) {
+        return cached.data;
+      }
+      if (!options?.signal && inspectionOrderInFlight.has(cleanId)) {
+        return inspectionOrderInFlight.get(cleanId)!;
+      }
+    }
+
+    const fetchPromise = (async () => {
+      try {
+        const res = await requestGet<InspectionOrderDto>(`/inspection/orders/${orderId}`, {
+          ...options,
+          requiresAuth: true,
+        });
+        const data = ((res as any)?.data || res) as InspectionOrderDto;
+        inspectionOrderCache.set(cleanId, { data, timestamp: Date.now() });
+        return data;
+      } finally {
+        inspectionOrderInFlight.delete(cleanId);
+      }
+    })();
+
+    if (!options?.bypassCache && !options?.signal) {
+      inspectionOrderInFlight.set(cleanId, fetchPromise);
+    }
+    return fetchPromise;
   },
 
   /**
@@ -857,7 +908,7 @@ export const inspectorService = {
         const oId = String(o.id || o.orderId || '').toLowerCase();
         const norm = clean.toLowerCase();
         return oId === norm || oId.startsWith(norm) || (norm.length >= 6 && oId.includes(norm)) ||
-               (o.postTitle && o.postTitle.toLowerCase().includes(norm));
+          (o.postTitle && o.postTitle.toLowerCase().includes(norm));
       });
       if (match) return match;
     } catch (err) {
@@ -872,7 +923,7 @@ export const inspectorService = {
         const oId = String(o.id || o.orderId || '').toLowerCase();
         const norm = clean.toLowerCase();
         return oId === norm || oId.startsWith(norm) || (norm.length >= 6 && oId.includes(norm)) ||
-               (o.postTitle && o.postTitle.toLowerCase().includes(norm));
+          (o.postTitle && o.postTitle.toLowerCase().includes(norm));
       });
       if (matchAll) return matchAll;
     } catch (err) {
@@ -1576,3 +1627,36 @@ export const inspectorService = {
     return getAdminInspectionOrderFunds(inspectionOrderId);
   },
 };
+
+type PricingSource = Pick<typeof inspectorService,
+  'getTravelTiers' | 'getCurrentLevelFees' | 'getTierProposals' | 'getCenterLevelFeeProposals'>;
+
+function pendingLevelFees(items: InspectionFeeProposalResponse[]) {
+  return items.filter((item) => item.complexityLevel && ['PENDING', 'PENDING_APPROVAL'].includes(item.status));
+}
+
+/** The two proposal URLs return the same history; reuse a complete first page. */
+export async function loadCenterPricing(
+  page: number, status: string, includeSummary: boolean, source: PricingSource = inspectorService,
+) {
+  const [tiers, fees, history] = await Promise.allSettled([
+    includeSummary ? source.getTravelTiers() : Promise.resolve(null),
+    includeSummary ? source.getCurrentLevelFees() : Promise.resolve(null),
+    source.getTierProposals(status, page, 10),
+  ]);
+
+  let pending: PromiseSettledResult<InspectionFeeProposalResponse[]> | null = null;
+  if (includeSummary) {
+    if (history.status === 'fulfilled' && page === 0 && status === 'ALL'
+      && history.value.totalElements <= history.value.items.length) {
+      pending = { status: 'fulfilled', value: pendingLevelFees(history.value.items) };
+    } else {
+      // Pending level cards are independent of the history's page/status filter.
+      const [result] = await Promise.allSettled([source.getCenterLevelFeeProposals(0, 50, 'PENDING_APPROVAL')]);
+      pending = result.status === 'fulfilled'
+        ? { status: 'fulfilled', value: pendingLevelFees(result.value.items) }
+        : result;
+    }
+  }
+  return { tiers, fees, history, pending };
+}

@@ -6550,7 +6550,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 <span className="font-bold text-[#24263e] text-right line-clamp-1">{title}</span>
               </div>
               <div className="flex justify-between items-center gap-2">
-                <span className="text-slate-500">Giá niêm yết:</span>
+                <span className="text-slate-500">Giá sản phẩm:</span>
                 <span className="font-black text-[#c34c36] text-sm">{formatVND(finalPriceVnd)}</span>
               </div>
               <div className="flex justify-between items-center gap-2">

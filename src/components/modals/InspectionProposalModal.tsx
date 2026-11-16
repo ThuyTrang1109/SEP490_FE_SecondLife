@@ -12,7 +12,8 @@ import {
   Phone,
   Info,
   Truck,
-  Home
+  Home,
+  CheckCircle2
 } from 'lucide-react';
 import {
   inspectorService,
@@ -23,7 +24,6 @@ import { Listing, Language, UserProfile, InspectionCenter, InspectionProposalPre
 import { formatVND } from '../../utils/translations';
 import { formatLalamoveVehicle } from '../../utils/lalamoveVehicle';
 import { getReusableInspectionQuote, isInspectionQuoteExpired } from '../../utils/inspectionChatDraft';
-import { getCashInspectionFeeShares } from '../../utils/inspectionCashShipping';
 
 interface InspectionProposalModalProps {
   isOpen: boolean;
@@ -108,9 +108,14 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
         if (!isMounted) return;
         const list = Array.isArray(data) ? data : [];
         setCenters(list);
-        const userCity = (currentUser as any)?.city || currentUser?.provinceName || '';
-        const preferred = list.find((c) => c.city && userCity && c.city.toLowerCase().includes(userCity.toLowerCase())) || list[0];
-        setSelectedCenterId((id) => list.some((center) => center.id === id) ? id : (preferred?.id || ''));
+        // Ưu tiên giữ lại trạm đã được chỉ định tự động hoặc từ initialData, không đoán theo vị trí người mua
+        setSelectedCenterId((id) => {
+          if (id && list.some((center) => center.id === id)) return id;
+          if (initialData?.centerId && list.some((center) => center.id === initialData.centerId)) {
+            return initialData.centerId;
+          }
+          return id;
+        });
       })
       .catch((err) => {
         if (!isMounted) return;
@@ -124,11 +129,11 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
     return () => {
       isMounted = false;
     };
-  }, [isOpen, (currentUser as any)?.city, currentUser?.provinceName, lang]);
+  }, [isOpen, initialData?.centerId, lang]);
 
   // 2. Fetch Quote when Center or Method changes
-  const fetchQuote = useCallback(async (centerId: string, method: 'AT_CENTER' | 'AT_HOME') => {
-    if (!centerId || !listing.id) return;
+  const fetchQuote = useCallback(async (centerId?: string, method: 'AT_CENTER' | 'AT_HOME' = 'AT_CENTER') => {
+    if (!listing.id) return;
 
     quoteController.current?.abort();
     const controller = new AbortController();
@@ -147,7 +152,7 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
       try {
         q = await inspectorService.getQuote({
           postId: listing.id,
-          inspectionCenterId: centerId,
+          inspectionCenterId: centerId || undefined,
           orderType: 'AT_CENTER',
           buyerLatitude,
           buyerLongitude,
@@ -156,12 +161,28 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
       } catch (err: any) {
         if (controller.signal.aborted) return;
         quoteErr = err;
-        // If AT_CENTER failed (e.g. shipping address issue), try AT_HOME if method is AT_HOME
-        if (method === 'AT_HOME') {
+        // If 409 Conflict due to center outside seller warehouse region, fallback to AUTO routing
+        if (err?.status === 409 || err?.message?.includes('khu vực kho người bán') || err?.message?.includes('chọn tự động')) {
           try {
             q = await inspectorService.getQuote({
               postId: listing.id,
-              inspectionCenterId: centerId,
+              inspectionCenterId: undefined,
+              orderType: 'AT_CENTER',
+              buyerLatitude,
+              buyerLongitude,
+              negotiationId,
+            }, { signal: controller.signal });
+            quoteErr = null;
+          } catch (autoErr) {
+            quoteErr = autoErr;
+          }
+        }
+        // If AT_CENTER failed (e.g. shipping address issue), try AT_HOME if method is AT_HOME
+        if (!q && method === 'AT_HOME') {
+          try {
+            q = await inspectorService.getQuote({
+              postId: listing.id,
+              inspectionCenterId: undefined,
               orderType: 'AT_HOME',
               buyerLatitude,
               buyerLongitude,
@@ -183,10 +204,15 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
       const hasCenter = Boolean(q.shippingQuote && (q.atCenterPackage?.totalFee || q.atCenterTotalFee));
       const hasHome = Boolean(q.atHomePackage?.totalFee || q.atHomeTotalFee);
 
+      const resolvedCenterId = q.inspectionCenterId || centerId || '';
+      if (resolvedCenterId) {
+        setSelectedCenterId(resolvedCenterId);
+      }
+
       setQuotesState((prev) => {
-        const isSameCenter = prev.centerId === centerId;
+        const isSameCenter = prev.centerId === resolvedCenterId;
         return {
-          centerId,
+          centerId: resolvedCenterId,
           centerQuote: hasCenter ? q : (isSameCenter ? prev.centerQuote : null),
           homeQuote: hasHome ? q : (isSameCenter ? prev.homeQuote : null),
         };
@@ -214,7 +240,7 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
   }, [listing.id, buyerLatitude, buyerLongitude, negotiationId, lang]);
 
   useEffect(() => {
-    if (!isOpen || !selectedCenterId) return;
+    if (!isOpen) return;
 
     const hasCenterQuote =
       quotesState.centerId === selectedCenterId &&
@@ -226,25 +252,29 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
       Boolean(quotesState.homeQuote || quotesState.centerQuote?.atHomeTotalFee);
 
     const needQuote =
+      !quotesState.centerQuote ||
       quotesState.centerId !== selectedCenterId ||
       (inspectionMethod === 'AT_CENTER' && !hasCenterQuote) ||
       (inspectionMethod === 'AT_HOME' && !hasHomeQuote);
 
     if (needQuote) {
-      void fetchQuote(selectedCenterId, inspectionMethod);
+      void fetchQuote(selectedCenterId || undefined, inspectionMethod);
     }
     return () => quoteController.current?.abort();
   }, [selectedCenterId, inspectionMethod, isOpen, fetchQuote, quotesState]);
 
   if (!isOpen) return null;
 
-  // Selected center entity
-  const selectedCenter = centers.find((c) => c.id === selectedCenterId) ||
+  // Selected center entity (Cố định theo kho người bán)
+  const matchedCenter = centers.find((c) => c.id === selectedCenterId);
+  const selectedCenter = matchedCenter ||
     (initialData?.centerId === selectedCenterId && initialData?.centerName ? {
+      id: initialData.centerId,
       name: initialData.centerName,
       phone: initialData.centerPhone,
       address: initialData.centerAddress,
-    } : undefined);
+      city: initialData.centerAddress?.includes('Hà Nội') ? 'Thành phố Hà Nội' : initialData.centerAddress?.includes('Hồ Chí Minh') ? 'Thành phố Hồ Chí Minh' : undefined,
+    } : centers[0]);
 
   // Fee calculation from BE quote
   const isAtHome = inspectionMethod === 'AT_HOME';
@@ -301,17 +331,13 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
   const atCenterTotalFee = atCenterQuotedTotal ?? 0;
 
   const activeTotalFee = isAtHome ? atHomeTotalFee : atCenterTotalFee;
-  const cashShipping = !isAtHome && currentCenterQuote?.cashShippingSimulationEnabled === true;
-  const cashShares = cashShipping ? getCashInspectionFeeShares(activeTotalFee, atCenterOutboundFee, feePayer) : null;
   const splitOptions = isAtHome
     ? (currentHomeQuote?.atHomeSplitOptions || currentCenterQuote?.atHomeSplitOptions)
     : currentCenterQuote?.atCenterSplitOptions;
-  const halfFee = cashShipping
-    ? getCashInspectionFeeShares(activeTotalFee, atCenterOutboundFee, 'SPLIT_50_50').buyer
-    : splitOptions?.SPLIT_50_50 ?? Math.round(activeTotalFee / 2);
+  const halfFee = splitOptions?.SPLIT_50_50 ?? Math.round(activeTotalFee / 2);
   const formatQuotedFee = (fee: number | undefined) => (fee === undefined || fee === null ? '—' : formatVND(fee));
 
-  // Split calculation
+  // Split calculation chuẩn theo phương thức thanh toán ký quỹ qua Sàn (100% Cashless)
   let buyerShare = 0;
   let sellerShare = 0;
   if (feePayer === 'BUYER_PAYS') {
@@ -325,10 +351,6 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
     buyerShare = halfFee;
     sellerShare = activeTotalFee - buyerShare;
   }
-  if (cashShares) {
-    buyerShare = cashShares.buyer;
-    sellerShare = cashShares.seller;
-  }
 
   // Quote expiration
   const quoteExpiresAt = !isAtHome && currentCenterQuote?.shippingQuote?.expiresAt ? new Date(currentCenterQuote.shippingQuote.expiresAt) : null;
@@ -337,7 +359,7 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
   // Submit Handler
   const handleSubmitProposal = async () => {
     if (!selectedCenterId) {
-      setSubmitError(lang === 'vi' ? 'Vui lòng chọn trung tâm kiểm định tiếp nhận.' : 'Please select an inspection center.');
+      setSubmitError(lang === 'vi' ? 'Hệ thống chưa xác định được trung tâm kiểm định tiếp nhận phù hợp.' : 'Could not determine an assigned inspection center.');
       return;
     }
     if (!quote || loadingQuote || isQuoteExpired) {
@@ -469,43 +491,50 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
             </div>
           </div>
 
-          {/* 1. CHỌN TRUNG TÂM KIỂM ĐỊNH */}
+          {/* 1. TRUNG TÂM KIỂM ĐỊNH (CỐ ĐỊNH THEO KHO NGƯỜI BÁN) */}
           <div className="space-y-2 bg-[#faf8f5] p-3.5 rounded-2xl border border-slate-200">
             <div className="flex items-center justify-between">
-              <label className="text-[11px] font-extrabold text-[#24263e] uppercase tracking-wide flex items-center gap-1.5">
-                <Building2 className="w-3.5 h-3.5 text-blue-600" />
-                <span>{lang === 'vi' ? '1. Chọn Trung Tâm Kiểm Định Tiếp Nhận' : '1. Select Inspection Center'}</span>
+              <label className="text-[11px] font-extrabold text-[#24263e] uppercase tracking-wide flex items-center gap-1.5 flex-wrap">
+                <Building2 className="w-3.5 h-3.5 text-[#c34c36]" />
+                <span>{lang === 'vi' ? '1. Trung tâm kiểm định tiếp nhận' : '1. Assigned Inspection Hub'}</span>
+                <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 font-extrabold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 shadow-xs">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                  {lang === 'vi' ? 'Hệ thống trạm Hub chính thức' : 'Official Verified Hubs'}
+                </span>
               </label>
-              <span className="text-[10px] text-slate-500 font-semibold">
-                {centers.length} {lang === 'vi' ? 'trung tâm' : 'centers'}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {((selectedCenter as any)?.city || (selectedCenter?.address?.includes('Hà Nội') ? 'Thành phố Hà Nội' : selectedCenter?.address?.includes('Hồ Chí Minh') ? 'Thành phố Hồ Chí Minh' : null)) && (
+                  <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full border border-emerald-300">
+                    📍 {(selectedCenter as any).city || (selectedCenter?.address?.includes('Hà Nội') ? 'Thành phố Hà Nội' : 'Thành phố Hồ Chí Minh')}
+                  </span>
+                )}
+                <span className="text-[9.5px] bg-blue-50 text-blue-700 font-bold px-2 py-0.5 rounded-full border border-blue-200">
+                  🎯 {lang === 'vi' ? 'Gần người bán nhất' : 'Nearest to seller'}
+                </span>
+              </div>
+            </div>
+
+            {/* Thông báo chỉ định trạm duy nhất theo kho người bán (không cho đổi) */}
+            <div className="p-2 bg-blue-50/70 border border-blue-200/80 rounded-xl flex items-center gap-2 text-[10.5px] text-blue-900 font-medium">
+              <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0" />
+              <span>
+                {lang === 'vi'
+                  ? 'Trạm kiểm định được hệ thống tự động chỉ định cố định theo vị trí kho người bán để tối ưu cước vận chuyển và thời gian nghiệm thu.'
+                  : 'Inspection center is automatically assigned based on seller warehouse location to minimize logistics fees and optimize inspection SLA.'}
               </span>
             </div>
 
-            {loadingCenters ? (
+            {loadingCenters && !selectedCenter ? (
               <div className="py-3 flex items-center justify-center gap-2 text-xs text-slate-500 animate-pulse">
                 <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-                <span>{lang === 'vi' ? 'Đang tải danh sách trung tâm...' : 'Loading centers...'}</span>
+                <span>{lang === 'vi' ? 'Đang xác định trạm kiểm định gần kho người bán...' : 'Locating nearest hub to seller...'}</span>
               </div>
-            ) : centerError ? (
+            ) : centerError && !selectedCenter ? (
               <p className="text-xs text-rose-600 font-bold p-2 bg-rose-50 rounded-xl border border-rose-200">
                 {centerError}
               </p>
-            ) : (
-              <select
-                value={selectedCenterId}
-                onChange={(e) => setSelectedCenterId(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold bg-white text-slate-800 outline-none focus:border-blue-600 shadow-2xs cursor-pointer"
-              >
-                {centers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} {c.city ? `(${c.city})` : ''}
-                  </option>
-                ))}
-              </select>
-            )}
-
-            {selectedCenter && (
-              <div className="mt-2 p-2.5 bg-white rounded-xl border border-slate-200 text-[11px] space-y-1">
+            ) : selectedCenter ? (
+              <div className="mt-1 p-2.5 bg-white rounded-xl border border-slate-200 text-[11px] space-y-1">
                 <div className="flex items-start justify-between gap-2">
                   <span className="font-bold text-slate-900 flex items-center gap-1">
                     <MapPin className="w-3.5 h-3.5 text-[#c34c36] shrink-0" />
@@ -521,13 +550,28 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
                 {selectedCenter.address && (
                   <p className="text-[10px] text-slate-600 pl-4">{selectedCenter.address}</p>
                 )}
-                <div className="flex items-center gap-2 pl-4 pt-0.5 text-[9px] text-slate-500 font-medium">
-                  <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.2 rounded font-bold">
+                <div className="flex flex-wrap items-center gap-1.5 pl-4 pt-0.5 text-[9px] text-slate-500">
+                  <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded font-bold">
                     🔬 Trạm thẩm định chuẩn ISO/IEC 17025
                   </span>
+                  {Boolean((selectedCenter as any).activeInspectors) && (
+                    <span className="bg-slate-100 px-1.5 py-0.5 rounded font-medium text-slate-700">
+                      👨‍🔧 Đội ngũ: <strong>{(selectedCenter as any).activeInspectors} chuyên viên</strong>
+                    </span>
+                  )}
+                  {Boolean((selectedCenter as any).capacityPerDay) && (
+                    <span className="bg-slate-100 px-1.5 py-0.5 rounded font-medium text-slate-700">
+                      📦 Công suất: <strong>{(selectedCenter as any).capacityPerDay} máy/ngày</strong>
+                    </span>
+                  )}
+                  {Boolean((selectedCenter as any).passRatePercentage) && (
+                    <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded font-bold">
+                      ✅ Tỷ lệ thẩm định đạt: {(selectedCenter as any).passRatePercentage}%
+                    </span>
+                  )}
                 </div>
               </div>
-            )}
+            ) : null}
           </div>
 
           {/* 2. CHỌN PHƯƠNG THỨC KIỂM ĐỊNH */}
@@ -535,7 +579,7 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
             <div className="flex items-center justify-between">
               <label className="text-[11px] font-extrabold text-[#24263e] uppercase tracking-wide flex items-center gap-1.5">
                 <Truck className="w-3.5 h-3.5 text-blue-600" />
-                <span>{lang === 'vi' ? '2. Phương Thức Kiểm Định' : '2. Inspection Method'}</span>
+                <span>{lang === 'vi' ? '2. Phương thức kiểm định' : '2. Inspection Method'}</span>
               </label>
             </div>
             <div className="grid grid-cols-2 gap-2">
@@ -586,8 +630,8 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
                 <Coins className="w-3.5 h-3.5 text-amber-600" />
                 <span>
                   {inspectionMethod === 'AT_HOME'
-                    ? (lang === 'vi' ? '3. Báo Giá Kiểm Định Tại Nhà' : '3. On-site Inspection Fees')
-                    : (lang === 'vi' ? '3. Báo Giá Kiểm Định Tại Trung Tâm' : '3. Center Inspection Fees')}
+                    ? (lang === 'vi' ? '3. Báo giá kiểm định tại nhà' : '3. On-site inspection fees')
+                    : (lang === 'vi' ? '3. Báo giá kiểm định tại trung tâm' : '3. Center inspection fees')}
                 </span>
               </label>
               {quoteExpiresAt && !isQuoteExpired && (
@@ -728,7 +772,7 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
             <div className="flex items-center justify-between">
               <label className="text-[11px] font-extrabold text-[#24263e] uppercase tracking-wide flex items-center gap-1.5">
                 <Coins className="w-3.5 h-3.5 text-indigo-600" />
-                <span>{lang === 'vi' ? '4. Phương Án Chia Phí Kiểm Định' : '4. Fee Split Options'}</span>
+                <span>{lang === 'vi' ? '4. Phương án chia phí kiểm định' : '4. Fee split options'}</span>
               </label>
             </div>
 
@@ -790,20 +834,14 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
               </div>
             </div>
 
-            {cashShares && (
-              <div className="rounded-lg bg-amber-50 p-2 text-xs text-amber-900">
-                <strong>Mô phỏng Sandbox</strong>
-                <p>Cước seller ứng khi giao · {formatVND(atCenterOutboundFee)} (dự kiến)</p>
-              </div>
-            )}
             {/* Hiển thị chi tiết số tiền mỗi bên chịu */}
             <div className="p-2.5 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between">
               <div>
-                <span className="text-slate-500">{cashShares ? 'Buyer nộp trước' : lang === 'vi' ? 'Bạn thanh toán:' : 'You pay:'}</span>{' '}
+                <span className="text-slate-500">{lang === 'vi' ? 'Bạn thanh toán:' : 'You pay:'}</span>{' '}
                 <strong className="text-[#c34c36] font-black">{formatQuotedFee(quote ? buyerShare : undefined)}</strong>
               </div>
               <div>
-                <span className="text-slate-500">{cashShares ? 'Seller nộp trước' : lang === 'vi' ? 'Người bán chịu:' : 'Seller pays:'}</span>{' '}
+                <span className="text-slate-500">{lang === 'vi' ? 'Người bán chịu:' : 'Seller pays:'}</span>{' '}
                 <strong className="text-slate-800 font-bold">{formatQuotedFee(quote ? sellerShare : undefined)}</strong>
               </div>
             </div>

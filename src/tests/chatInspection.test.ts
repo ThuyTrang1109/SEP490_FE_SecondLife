@@ -66,3 +66,45 @@ test('the card uses the API verdict and amounts, with zero preserved and missing
   assert.doesNotMatch(card, /Đã thu đủ phí kiểm định/);
   assert.doesNotMatch(renderCard(passed), /166\.000|340\.000|391\.000|Thành phố Hồ Chí Minh|Đã đồng ý mở máy/);
 });
+
+test('the proposal card shows one current inspection status for both participants', () => {
+  const paidOrder = { ...passed, status: 'CONFIRMED_PENDING_DISPATCH' };
+  for (const currentRole of ['buyer', 'seller'] as const) {
+    const renderCard = (order: InspectionOrderDto) => renderToStaticMarkup(createElement(InspectionProposalCard, {
+      order, listing: buildChatProductListing(room), isSeller: currentRole === 'seller', isBuyer: currentRole === 'buyer',
+      currentRole, lang: 'vi', onOrderUpdated: () => {}, onRefreshOrder: async () => {},
+    }));
+    const inspecting = renderCard({ ...paidOrder, customerStatus: 'INSPECTING' });
+    assert.match(inspecting, />Đang kiểm định<\/span>/);
+    assert.doesNotMatch(inspecting, /Đã thu đủ phí|Chờ điều phối vận chuyển/);
+
+    const dispatched = renderCard({ ...paidOrder, status: 'DISPATCHED', customerStatus: 'INSPECTING' });
+    assert.match(dispatched, />Đang kiểm định<\/span>/);
+    assert.doesNotMatch(dispatched, /Đã thu đủ phí/);
+
+    const awaitingDispatch = renderCard(paidOrder);
+    assert.match(awaitingDispatch, />Đã thu đủ phí<\/span>/);
+    assert.doesNotMatch(awaitingDispatch, /Đang kiểm định/);
+  }
+});
+
+test('passed inspection card displays appropriate message for seller vs buyer', () => {
+  const passedOrder: InspectionOrderDto = { ...room, id: 'order-pass-123', status: 'PASSED', orderType: 'AT_CENTER' };
+
+  // Seller perspective
+  const sellerHtml = renderToStaticMarkup(createElement(InspectionProposalCard, {
+    order: passedOrder, listing: buildChatProductListing(room), isSeller: true, isBuyer: false,
+    currentRole: 'seller', lang: 'vi', onOrderUpdated: () => {}, onRefreshOrder: async () => {},
+  }));
+  assert.match(sellerHtml, /Sản phẩm đã kiểm định ĐẠT CHUẨN\. Đang chờ người mua xác nhận mua hàng\./);
+  assert.doesNotMatch(sellerHtml, /Bạn có thể mua tiếp/);
+
+  // Buyer perspective
+  const buyerHtml = renderToStaticMarkup(createElement(InspectionProposalCard, {
+    order: passedOrder, listing: buildChatProductListing(room), isSeller: false, isBuyer: true,
+    currentRole: 'buyer', lang: 'vi', onOrderUpdated: () => {}, onRefreshOrder: async () => {},
+  }));
+  assert.match(buyerHtml, /Sản phẩm đã kiểm định ĐẠT CHUẨN\. Bạn có thể mua tiếp\./);
+  assert.doesNotMatch(buyerHtml, /Đang chờ người mua xác nhận/);
+});
+

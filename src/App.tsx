@@ -10,7 +10,7 @@ import { getSortableOrderTimestamp, getBoughtListingIds, markListingAsBought, ma
 import { getBuyerInspectionStage } from './utils/inspectionPurchase';
 import { resolveCategoryAndItem, initCatalogCache, resolveOrderListing, resolveListingCategory, extractSellerOriginalPrice } from './utils/catalogCache';
 import { translateSystemNotification } from './utils/systemNotificationTranslator';
-import { useEscrowOrderFeed } from './hooks/useEscrowOrderFeed';
+import { useEscrowOrderFeed } from './hooks/orders/useEscrowOrderFeed';
 import { readOrderFeedQuery } from './utils/escrowOrderFilters';
 import { orderFeedItemToRaw } from './services/orderFeedService';
 import { mapEscrowOrder } from './utils/mapEscrowOrder';
@@ -33,7 +33,7 @@ import { notificationWsClient } from './services/notificationWsClient';
 import { ShieldCheck, Sparkles, CheckCircle2, Store, AlertTriangle } from 'lucide-react';
 import { authService, userService, topupService, walletService, orderService, inspectorService, negotiationService, postService, adminPostService, shippingService, sellerCreditService, chatService, getAccessToken, getRefreshToken, clearAuthTokens, getStoredUser, setStoredUser, isTokenExpired, isTokenExpiringSoon, recordUserActivity, resetActivityTimer, isUserIdle, refreshAccessToken, checkAndRenewSessionOnReturn, ChatRoomDto } from './services';
 import { inspectionCashConfirmedEvent } from './utils/inspectionCashShipping';
-import { isListingInspectionPassed, markListingInspectionPassed } from './utils/listingInspection';
+import { isListingInspectionPassed, markListingInspectionPassed, normalizeListingTitle, isOrderInspectionVerdictPassed } from './utils/listingInspection';
 
 // Code-split heavy views via lazyWithRetry to prevent dynamic import fetch errors
 const CreateListingView = lazyWithRetry(() => import('./pages/CreateListingView').then(m => ({ default: m.CreateListingView })), 'CreateListingView');
@@ -190,7 +190,7 @@ export default function App() {
               } else if (paRes && paRes.status === 'fulfilled' && paRes.value) {
                 pickupAddr = paRes.value;
               }
-            } catch (_) {}
+            } catch (_) { }
           }
 
           if (cancelled) return;
@@ -315,7 +315,7 @@ export default function App() {
     return () => { cancelled = true; };
   }, []);
 
-    // The unauthorized_session listener was moved below state declarations to utilize toast and modal.
+  // The unauthorized_session listener was moved below state declarations to utilize toast and modal.
 
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'register' | 'forgot'>('login');
@@ -374,11 +374,9 @@ export default function App() {
         console.warn('Failed to save inspection prefill to sessionStorage:', e);
       }
     }
-    const query = `?postId=${encodeURIComponent(listing.id)}${action ? `&action=${encodeURIComponent(action)}` : ''}${
-      prefill?.centerId ? `&centerId=${encodeURIComponent(prefill.centerId)}` : ''
-    }${prefill?.inspectionMethod ? `&method=${encodeURIComponent(prefill.inspectionMethod)}` : ''}${
-      prefill?.feeSplit ? `&feeSplit=${encodeURIComponent(prefill.feeSplit)}` : ''
-    }`;
+    const query = `?postId=${encodeURIComponent(listing.id)}${action ? `&action=${encodeURIComponent(action)}` : ''}${prefill?.centerId ? `&centerId=${encodeURIComponent(prefill.centerId)}` : ''
+      }${prefill?.inspectionMethod ? `&method=${encodeURIComponent(prefill.inspectionMethod)}` : ''}${prefill?.feeSplit ? `&feeSplit=${encodeURIComponent(prefill.feeSplit)}` : ''
+      }`;
     navigatePath(paths.chat(navigationRole) + query);
   };
   const openProduct = (listing: Listing, own = false) => {
@@ -495,7 +493,7 @@ export default function App() {
     authService.logout().finally(() => {
       try {
         notificationWsClient.disconnect();
-      } catch {}
+      } catch { }
       clearNotificationsOnLogout();
       clearAuthTokens();
       resetActivityTimer();
@@ -530,7 +528,7 @@ export default function App() {
         sessionStorage.removeItem('secondlife_center_active_tab');
         sessionStorage.removeItem('secondlife_orders_filter_tab');
         sessionStorage.removeItem('secondlife_inspection_decision_order_id');
-      } catch {}
+      } catch { }
 
       // Force a hard reload to ensure all memory states and third-party scripts are cleared
       try {
@@ -538,7 +536,7 @@ export default function App() {
         cleanUrl.search = '';
         cleanUrl.hash = '';
         window.history.replaceState(null, '', paths.products);
-      } catch (e) {}
+      } catch (e) { }
       window.location.reload();
     });
   };
@@ -631,7 +629,7 @@ export default function App() {
           }
         });
       }
-    } catch {}
+    } catch { }
 
     result.sort((a, b) => {
       const timeA = getSortableOrderTimestamp(a);
@@ -668,6 +666,44 @@ export default function App() {
 
   const listingsRef = useRef<Listing[]>(listings);
   listingsRef.current = listings;
+
+  const ordersRef = useRef<EscrowOrder[]>(orders);
+  ordersRef.current = orders;
+
+  // Lắng nghe sự kiện kiểm định đạt chuẩn để cập nhật huy hiệu realtime cho các sản phẩm
+  useEffect(() => {
+    const handleInspectionCompleted = (e: any) => {
+      const detail = e.detail;
+      if (detail && detail.status === 'PASSED') {
+        const passedId = detail.id ? String(detail.id) : null;
+        const passedTitle = detail.title ? normalizeListingTitle(detail.title) : null;
+        setListings((prev) =>
+          prev.map((l) => {
+            const lId = String(l.id || '');
+            const lPostId = String((l as any).postId || '');
+            const lTitle = normalizeListingTitle(l.title);
+            const idMatches = Boolean(passedId && (lId === passedId || lPostId === passedId));
+            const titleMatches = Boolean(
+              passedTitle &&
+                (lTitle === passedTitle ||
+                  (lTitle.length >= 8 &&
+                    (lTitle.includes(passedTitle) || passedTitle.includes(lTitle))))
+            );
+            if (idMatches || titleMatches) {
+              return {
+                ...l,
+                isInspected: true,
+                inspectionPassed: true,
+              };
+            }
+            return l;
+          })
+        );
+      }
+    };
+    window.addEventListener('secondlife_inspection_completed', handleInspectionCompleted);
+    return () => window.removeEventListener('secondlife_inspection_completed', handleInspectionCompleted);
+  }, []);
 
   const lastListingsFetchRef = useRef<number>(0);
   const isFetchingListingsRef = useRef<boolean>(false);
@@ -732,7 +768,7 @@ export default function App() {
       setCurrentUser(null);
       setCurrentRole('buyer');
       hadSessionRef.current = false;
-      
+
       // Hiển thị modal và thông báo hết hạn phiên nếu trước đó người dùng có phiên đăng nhập
       if (hadUser) {
         setIsSessionExpiredOpen(true);
@@ -1169,8 +1205,8 @@ export default function App() {
       createdAt: post.publishedAt || post.createdAt || new Date().toISOString(),
       isInspectionGuaranteed: true,
       requiresInspection: price > 5000000,
-      isInspected: isListingInspectionPassed(post),
-      inspectionPassed: isListingInspectionPassed(post),
+      isInspected: isListingInspectionPassed(post, ordersRef.current),
+      inspectionPassed: isListingInspectionPassed(post, ordersRef.current),
       photos: {
         front: photoList[0] || defaultImg,
         back: photoList[1] || '',
@@ -1247,7 +1283,7 @@ export default function App() {
           if (myItems && myItems.length > 0) {
             try {
               localStorage.setItem('all_seller_posts_cache', JSON.stringify(myItems));
-            } catch {}
+            } catch { }
             const existingIds = new Set(postsData.map((p: any) => p.postId || p.id));
             for (const myItem of myItems) {
               const myId = myItem.postId || myItem.id;
@@ -1443,7 +1479,7 @@ export default function App() {
       try {
         const rawSellerPosts = localStorage.getItem('all_seller_posts_cache');
         if (rawSellerPosts) allSellerPostsCached = JSON.parse(rawSellerPosts);
-      } catch {}
+      } catch { }
 
       const rawBuyerItems = (buyerRes as any)?.content || (buyerRes as any)?.items || (Array.isArray(buyerRes) ? buyerRes : []);
       const rawSellerItems = (sellerRes as any)?.content || (sellerRes as any)?.items || (Array.isArray(sellerRes) ? sellerRes : []);
@@ -1478,6 +1514,15 @@ export default function App() {
         if (insp.id) inspById.set(insp.id, insp);
         if (insp.linkedOrderId) inspByLinkedId.set(insp.linkedOrderId, insp);
 
+        // Đánh dấu bài đăng đã đạt kiểm định Hub (kể cả khi người mua từ chối mua tiếp)
+        if (isOrderInspectionVerdictPassed(insp)) {
+          const targetPid = insp.postId || insp.listingId || insp.listing?.id;
+          const targetTitle = insp.postTitle || insp.listing?.title || insp.title;
+          if (targetPid) {
+            markListingInspectionPassed(String(targetPid), targetTitle);
+          }
+        }
+
         // Đồng bộ realtime appointment từ BE vào localStorage
         if (insp.counterScheduledAt || insp.appointmentScheduledAt) {
           const targetIds = [insp.id, insp.linkedOrderId].filter(Boolean);
@@ -1491,7 +1536,7 @@ export default function App() {
                   return true;
                 }
               }
-            } catch {}
+            } catch { }
             return false;
           });
 
@@ -1512,7 +1557,7 @@ export default function App() {
             targetIds.forEach((tid) => {
               try {
                 localStorage.setItem(`order_appointment_${tid}`, JSON.stringify(apptRecord));
-              } catch {}
+              } catch { }
             });
           }
         }
@@ -1533,7 +1578,7 @@ export default function App() {
               localStorage.setItem(`order_inspecting_${matchedInsp.id}`, 'true');
               localStorage.setItem(`inspection_status_${matchedInsp.id}`, 'INSPECTING');
             }
-          } catch {}
+          } catch { }
         }
         const merged = matchedInsp ? {
           ...item,
@@ -1572,7 +1617,7 @@ export default function App() {
               localStorage.setItem(`order_inspecting_${matchedInsp.id}`, 'true');
               localStorage.setItem(`inspection_status_${matchedInsp.id}`, 'INSPECTING');
             }
-          } catch {}
+          } catch { }
         }
         const merged = matchedInsp ? {
           ...item,
@@ -1620,7 +1665,7 @@ export default function App() {
             });
           }
         }
-      } catch {}
+      } catch { }
 
       try {
         const rawRecent = localStorage.getItem('recent_placed_orders');
@@ -1634,7 +1679,7 @@ export default function App() {
             });
           }
         }
-      } catch {}
+      } catch { }
 
       const items = Array.from(orderMap.values());
       if (items && items.length > 0) {
@@ -1718,7 +1763,7 @@ export default function App() {
                 try {
                   localStorage.removeItem(`order_cancellation_info_${locOrd.id}`);
                   localStorage.removeItem(`order_cancelled_${locOrd.id}`);
-                } catch {}
+                } catch { }
               }
             }
           } else if (isLocCancelled) {
@@ -1732,7 +1777,7 @@ export default function App() {
                 locOrd.cancellationReasonCode = cancelObj.reasonCode || locOrd.cancellationReasonCode;
                 locOrd.cancellationReason = cancelObj.reason || locOrd.cancellationReason;
               }
-            } catch {}
+            } catch { }
           }
           const isBuyer = Boolean(
             (currentUser?.id && String(locOrd.buyerId) === String(currentUser.id)) ||
@@ -1799,7 +1844,7 @@ export default function App() {
         // Cache all orders for instant synchronous reference by getBoughtListingIds
         try {
           localStorage.setItem('all_orders_cache', JSON.stringify(deduplicatedCombined));
-        } catch {}
+        } catch { }
 
         // Reconcile and free up any listings whose orders are refunded/cancelled
         reconcileBoughtListingIds(deduplicatedCombined);
@@ -1812,6 +1857,9 @@ export default function App() {
           if (isOrderCancelledOrRefunded(o)) {
             cancelledListingIds.add(lid);
           }
+          if (isOrderInspectionVerdictPassed(o)) {
+            markListingInspectionPassed(lid, o.listing?.title || (o as any).postTitle || (o as any).title);
+          }
         });
 
         const freeListings = Array.from(cancelledListingIds);
@@ -1819,7 +1867,7 @@ export default function App() {
           freeListings.forEach((lid) => {
             try {
               localStorage.setItem(`listing_available_${lid}`, 'true');
-            } catch {}
+            } catch { }
           });
         }
 
@@ -1835,7 +1883,7 @@ export default function App() {
         });
         try {
           localStorage.setItem('all_orders_cache', JSON.stringify(localRecentOrders));
-        } catch {}
+        } catch { }
         reconcileBoughtListingIds(localRecentOrders);
         setOrders(localRecentOrders);
       }
@@ -1846,7 +1894,7 @@ export default function App() {
       const localRecentOrders = getLocalStoredOrders(currentUser);
       try {
         localStorage.setItem('all_orders_cache', JSON.stringify(localRecentOrders));
-      } catch {}
+      } catch { }
       reconcileBoughtListingIds(localRecentOrders);
       setOrders(localRecentOrders);
     } finally {
@@ -2015,10 +2063,10 @@ export default function App() {
       try {
         const stored = localStorage.getItem('recent_placed_orders');
         if (stored) existingRecent = JSON.parse(stored);
-      } catch {}
+      } catch { }
       const updatedRecent = [newOrder, ...existingRecent.filter((o) => o.id !== newOrder.id)].slice(0, 30);
       localStorage.setItem('recent_placed_orders', JSON.stringify(updatedRecent));
-    } catch {}
+    } catch { }
 
     // Lập tức ẩn sản phẩm vừa mua khỏi sàn (status -> reserved)
     const boughtListingId = newOrder.listingId || newOrder.listing?.id;
@@ -2068,7 +2116,7 @@ export default function App() {
           window.history.replaceState(null, '', newUrl.toString());
         }
         window.dispatchEvent(new Event('secondlife_tab_changed'));
-      } catch {}
+      } catch { }
     } else {
       try {
         sessionStorage.setItem('secondlife_orders_filter_tab', 'all');
@@ -2080,7 +2128,7 @@ export default function App() {
           window.history.replaceState(null, '', newUrl.toString());
         }
         window.dispatchEvent(new Event('secondlife_tab_changed'));
-      } catch {}
+      } catch { }
     }
     loadUserWallet();
     showToast(`Đã phong tỏa Escrow ${formatVND(newOrder.totalPaidVnd)} cho đơn hàng #${newOrder.id}! Bưu tá đang chuẩn bị lấy hàng.`);
@@ -2147,7 +2195,7 @@ export default function App() {
           const parsed: EscrowOrder[] = JSON.parse(rawAll);
           targetOrder = parsed.find((o) => String(o.id) === String(orderId));
         }
-      } catch {}
+      } catch { }
     }
     if (!targetOrder) {
       try {
@@ -2156,7 +2204,7 @@ export default function App() {
           const parsed: EscrowOrder[] = JSON.parse(rawRecent);
           targetOrder = parsed.find((o) => String(o.id) === String(orderId));
         }
-      } catch {}
+      } catch { }
     }
     if (!targetOrder) {
       try {
@@ -2165,7 +2213,7 @@ export default function App() {
           const parsed: EscrowOrder[] = JSON.parse(rawSeller);
           targetOrder = parsed.find((o) => String(o.id) === String(orderId));
         }
-      } catch {}
+      } catch { }
     }
     if (!targetOrder) {
       try {
@@ -2174,7 +2222,7 @@ export default function App() {
           const parsed: EscrowOrder[] = JSON.parse(rawCenter);
           targetOrder = parsed.find((o) => String(o.id) === String(orderId));
         }
-      } catch {}
+      } catch { }
     }
 
     const isSellerCancel = targetOrder?.sellerId === currentUser?.id || currentRole === 'seller';
@@ -2200,7 +2248,7 @@ export default function App() {
       try {
         localStorage.setItem(`order_cancellation_info_${orderId}`, JSON.stringify(effectiveCancelData));
         localStorage.setItem(`order_cancelled_${orderId}`, 'true');
-      } catch {}
+      } catch { }
 
       // Nếu là đơn kiểm định, không gọi /api/v1/orders/{id}/cancel (vì backend chỉ hỗ trợ bảng orders, gọi sẽ gây lỗi 404)
       if (isInspectionOrder) {
@@ -2228,13 +2276,13 @@ export default function App() {
         prev.map((ord) =>
           String(ord.id) === String(orderId)
             ? {
-                ...ord,
-                escrowStatus: 'REFUNDED_TO_BUYER',
-                backendStatus: 'CANCELLED',
-                status: 'CANCELLED',
-                cancellationReasonCode: effectiveCancelData.reasonCode,
-                cancellationReason: effectiveCancelData.reason,
-              }
+              ...ord,
+              escrowStatus: 'REFUNDED_TO_BUYER',
+              backendStatus: 'CANCELLED',
+              status: 'CANCELLED',
+              cancellationReasonCode: effectiveCancelData.reasonCode,
+              cancellationReason: effectiveCancelData.reason,
+            }
             : ord
         )
       );
@@ -2249,18 +2297,18 @@ export default function App() {
               const updated = parsed.map((o) =>
                 String(o.id) === String(orderId)
                   ? {
-                      ...o,
-                      escrowStatus: 'REFUNDED_TO_BUYER' as const,
-                      backendStatus: 'CANCELLED' as const,
-                      status: 'CANCELLED',
-                      cancellationReasonCode: effectiveCancelData.reasonCode,
-                      cancellationReason: effectiveCancelData.reason,
-                    }
+                    ...o,
+                    escrowStatus: 'REFUNDED_TO_BUYER' as const,
+                    backendStatus: 'CANCELLED' as const,
+                    status: 'CANCELLED',
+                    cancellationReasonCode: effectiveCancelData.reasonCode,
+                    cancellationReason: effectiveCancelData.reason,
+                  }
                   : o
               );
               localStorage.setItem(key, JSON.stringify(updated));
             }
-          } catch {}
+          } catch { }
         };
 
         updateStorageOrder('recent_placed_orders');
@@ -2269,7 +2317,7 @@ export default function App() {
         updateStorageOrder('my_seller_inspection_orders');
         localStorage.setItem(`order_cancelled_${orderId}`, 'true');
         // TUYỆT ĐỐI GIỮ LẠI order_listing_${orderId} để đơn hàng đã hủy không bị mất thông tin sản phẩm và hiển thị đầy đủ
-      } catch {}
+      } catch { }
 
       // Lập tức khôi phục bài đăng thành ACTIVE trên sàn (vì đơn đã hủy)
       let cancelledListingId = targetOrder?.listingId || targetOrder?.listing?.id || (targetOrder as any)?.postId || (targetOrder as any)?.post?.id;
@@ -2280,7 +2328,7 @@ export default function App() {
             const parsed = JSON.parse(rawOrderListing);
             if (parsed?.id) cancelledListingId = parsed.id;
           }
-        } catch {}
+        } catch { }
       }
 
       if (cancelledListingId) {
@@ -2353,8 +2401,8 @@ export default function App() {
       typeof meta?.conditionScore === 'number'
         ? meta.conditionScore
         : isPass
-        ? 96
-        : 40;
+          ? 96
+          : 40;
     const conditionGrade = meta?.conditionGrade || targetOrder?.listing?.conditionGrade || 'Like New';
     const inspectorPhotos =
       meta?.inspectorPhotos && meta.inspectorPhotos.length > 0
@@ -2392,9 +2440,9 @@ export default function App() {
             ...(isPass
               ? {}
               : {
-                  cancellationReasonCode: 'INSPECTION_FAILED',
-                  cancellationReason: `Sản phẩm không đạt kiểm định Hub: ${meta?.inspectorNotes || summary || 'Không đạt quy chuẩn kỹ thuật'}`,
-                }),
+                cancellationReasonCode: 'INSPECTION_FAILED',
+                cancellationReason: `Sản phẩm không đạt kiểm định Hub: ${meta?.inspectorNotes || summary || 'Không đạt quy chuẩn kỹ thuật'}`,
+              }),
           };
         }
         return ord;
@@ -2418,9 +2466,9 @@ export default function App() {
               ...(isPass
                 ? {}
                 : {
-                    cancellationReasonCode: 'INSPECTION_FAILED',
-                    cancellationReason: `Sản phẩm không đạt kiểm định Hub: ${meta?.inspectorNotes || summary || 'Không đạt quy chuẩn kỹ thuật'}`,
-                  }),
+                  cancellationReasonCode: 'INSPECTION_FAILED',
+                  cancellationReason: `Sản phẩm không đạt kiểm định Hub: ${meta?.inspectorNotes || summary || 'Không đạt quy chuẩn kỹ thuật'}`,
+                }),
             };
           }
           return ord;
@@ -2555,7 +2603,7 @@ export default function App() {
       );
       window.dispatchEvent(new CustomEvent('orders_updated'));
       window.dispatchEvent(new Event('storage'));
-    } catch {}
+    } catch { }
 
     showToast(
       isPass
@@ -2604,25 +2652,46 @@ export default function App() {
     if (route.modal !== 'product') setSelectedListing(null);
     if (route.params.inspectionId && activeTab === 'buyer-inspection-decision') {
       setInspectionDecisionOrderId(route.params.inspectionId);
-      setInspectionDecisionOrder(orders.find((order) => order.id === route.params.inspectionId) || null);
+      const targetId = route.params.inspectionId;
+      const found = orders.find((order) => order.id === targetId || (order as any).inspectionOrderId === targetId) ||
+        (() => {
+          try {
+            const raw = localStorage.getItem('all_orders_cache');
+            if (raw) {
+              const list: EscrowOrder[] = JSON.parse(raw);
+              return list.find((o) => o.id === targetId || (o as any).inspectionOrderId === targetId) || null;
+            }
+          } catch { }
+          return null;
+        })();
+      if (found) {
+        setInspectionDecisionOrder(found);
+      }
     }
-  }, [browserLocation, routeAccess, isRestoringSession]);
+  }, [browserLocation, routeAccess, isRestoringSession, orders, activeTab, route.params.inspectionId]);
 
   const [routeProductError, setRouteProductError] = useState<string | null>(null);
+  const selectedListingRef = React.useRef(selectedListing);
+  selectedListingRef.current = selectedListing;
+  const editingDraftRef = React.useRef(editingDraft);
+  editingDraftRef.current = editingDraft;
+  const checkoutListingRef = React.useRef(checkoutListing);
+  checkoutListingRef.current = checkoutListing;
+
   React.useEffect(() => {
     let cancelled = false;
     const productId = route.params.productId;
     setRouteProductError(null);
     if (!productId || routeAccess !== 'allowed' || isRestoringSession) return;
     const isEdit = activeTab === 'create-listing';
-    if (isEdit && editingDraft?.id === productId) return;
-    if (!isEdit && (selectedListing?.id === productId || checkoutListing?.id === productId)) return;
+    if (isEdit && (editingDraft?.id === productId || editingDraftRef.current?.id === productId)) return;
+    if (!isEdit && (selectedListing?.id === productId || selectedListingRef.current?.id === productId || checkoutListing?.id === productId || checkoutListingRef.current?.id === productId)) return;
     const load = isEdit ? postService.getDraft(productId)
       : route.role === 'seller' ? postService.getMyPostDetail(productId)
-      : route.role === 'admin' ? adminPostService.getAdminPosts().then((response) => {
-        const posts = response?.content || response?.items || (Array.isArray(response) ? response : []);
-        return posts.find((post: any) => String(post.id || post.postId) === productId);
-      }) : postService.getListingDetail(productId);
+        : route.role === 'admin' ? adminPostService.getAdminPosts().then((response) => {
+          const posts = response?.content || response?.items || (Array.isArray(response) ? response : []);
+          return posts.find((post: any) => String(post.id || post.postId) === productId);
+        }) : postService.getListingDetail(productId);
     load.then((data) => {
       if (cancelled) return;
       if (!data) { setRouteProductError('Không tìm thấy sản phẩm hoặc sản phẩm không còn công khai.'); return; }
@@ -2630,7 +2699,7 @@ export default function App() {
       if (isEdit) setEditingDraft(listing); else setSelectedListing(listing);
     }).catch((error) => { if (!cancelled) setRouteProductError(error.message || 'Không thể tải sản phẩm.'); });
     return () => { cancelled = true; };
-  }, [browserLocation, routeAccess, isRestoringSession, mapBackendPostToListing]);
+  }, [browserLocation, routeAccess, isRestoringSession, mapBackendPostToListing, selectedListing?.id, checkoutListing?.id, editingDraft?.id]);
 
   if (routeAccess !== 'allowed') return <ViewLoadingFallback />;
   if (activeTab === 'unauthorized' || activeTab === 'not-found') {
@@ -2642,64 +2711,63 @@ export default function App() {
   }
 
   return (
-    <div className={`min-h-screen flex flex-col font-sans bg-[#faf8f5] text-[#24263e] selection:bg-[#c34c36] selection:text-white ${
-      activeTab === 'chat' && !checkoutListing ? 'h-screen max-h-screen overflow-hidden' : ''
-    }`}>
+    <div className={`min-h-screen flex flex-col font-sans bg-[#faf8f5] text-[#24263e] selection:bg-[#c34c36] selection:text-white ${activeTab === 'chat' && !checkoutListing ? 'h-screen max-h-screen overflow-hidden' : ''
+      }`}>
       {/* Navigation */}
       {activeTab !== 'admin-dashboard' &&
         activeTab !== 'inspection-center' &&
         activeTab !== 'inspection-hub' && (
-        <Navbar
-          currentRole={currentRole}
-          onRoleChange={handleRoleChange}
-          lang={lang}
-          onLangChange={setLang}
-          activeTab={activeTab}
-          onTabChange={(tab) => {
-            if (tab === 'create-listing') {
-              setEditingDraft(null);
-              setCreateListingReturnTab(activeTab === 'seller-dashboard' ? 'seller-dashboard' : 'marketplace');
-            }
-            handleTabChange(tab);
-          }}
-          activeOrdersCount={orders.filter((o) => o.escrowStatus !== 'COMPLETED_RELEASED').length}
-          unreadChatsCount={unreadChatsCount}
-          currentUser={currentUser}
-          onOpenAuth={openAuth}
-          onLogout={() => {
-            setIsLogoutModalOpen(true);
-          }}
-          onOpenProfile={() => {
-            if (!currentUser) {
-              requireAuth(undefined, lang === 'vi' ? 'Vui lòng đăng nhập để xem hồ sơ cá nhân.' : 'Please log in to view your profile.');
-            } else {
-              openProfile();
-            }
-          }}
-          onOpenTopUp={() => {
-            if (!currentUser) {
-              requireAuth(undefined, lang === 'vi' ? 'Vui lòng đăng nhập để nạp xu.' : 'Please log in to top up credit.');
-            } else {
-              setIsTopUpModalOpen(true);
-            }
-          }}
-          userCreditBalance={userCreditBalance}
-          userCredit={userCredit}
-          walletBalance={walletBalance}
-          token={getAccessToken()}
-          onNavigateNotification={handleNotificationNavigate}
-          onOpenNotifications={() => handleTabChange('notifications')}
-          onOpenSellerRegister={() => {
-            if (currentUser && ['admin', 'inspector'].includes(currentUser.role)) {
-              showToast(lang === 'vi'
-                ? 'Tài khoản Quản trị viên và Kỹ sư Hub không được đăng ký làm Người Bán.'
-                : 'Admin and Inspector roles cannot register as sellers.');
-              return;
-            }
-            setIsSellerRegistrationModalOpen(true);
-          }}
-        />
-      )}
+          <Navbar
+            currentRole={currentRole}
+            onRoleChange={handleRoleChange}
+            lang={lang}
+            onLangChange={setLang}
+            activeTab={activeTab}
+            onTabChange={(tab) => {
+              if (tab === 'create-listing') {
+                setEditingDraft(null);
+                setCreateListingReturnTab(activeTab === 'seller-dashboard' ? 'seller-dashboard' : 'marketplace');
+              }
+              handleTabChange(tab);
+            }}
+            activeOrdersCount={orders.filter((o) => o.escrowStatus !== 'COMPLETED_RELEASED').length}
+            unreadChatsCount={unreadChatsCount}
+            currentUser={currentUser}
+            onOpenAuth={openAuth}
+            onLogout={() => {
+              setIsLogoutModalOpen(true);
+            }}
+            onOpenProfile={() => {
+              if (!currentUser) {
+                requireAuth(undefined, lang === 'vi' ? 'Vui lòng đăng nhập để xem hồ sơ cá nhân.' : 'Please log in to view your profile.');
+              } else {
+                openProfile();
+              }
+            }}
+            onOpenTopUp={() => {
+              if (!currentUser) {
+                requireAuth(undefined, lang === 'vi' ? 'Vui lòng đăng nhập để nạp xu.' : 'Please log in to top up credit.');
+              } else {
+                setIsTopUpModalOpen(true);
+              }
+            }}
+            userCreditBalance={userCreditBalance}
+            userCredit={userCredit}
+            walletBalance={walletBalance}
+            token={getAccessToken()}
+            onNavigateNotification={handleNotificationNavigate}
+            onOpenNotifications={() => handleTabChange('notifications')}
+            onOpenSellerRegister={() => {
+              if (currentUser && ['admin', 'inspector'].includes(currentUser.role)) {
+                showToast(lang === 'vi'
+                  ? 'Tài khoản Quản trị viên và Kỹ sư Hub không được đăng ký làm Người Bán.'
+                  : 'Admin and Inspector roles cannot register as sellers.');
+                return;
+              }
+              setIsSellerRegistrationModalOpen(true);
+            }}
+          />
+        )}
 
       {/* Floating Welcome & System Toast Notification (Positioned at top-right below navbar) */}
       {toastMessage && (
@@ -2727,379 +2795,379 @@ export default function App() {
           checkoutListing
             ? 'flex-1 w-full p-0 m-0 bg-[#f8fafc]'
             : activeTab === 'chat'
-            ? 'flex-1 min-h-0 w-full p-2 sm:p-2.5 m-0 overflow-hidden flex flex-col'
-            : activeTab === 'admin-dashboard' ||
-              activeTab === 'inspection-center' ||
-              activeTab === 'inspection-hub' ||
-              activeTab === 'staff-workspace' ||
-              activeTab === 'buyer-inspection-decision'
-            ? 'flex-1 w-full p-0 m-0'
-            : 'flex-1 w-full px-3 sm:px-5 lg:px-6 pt-3 sm:pt-4 pb-8 m-0'
+              ? 'flex-1 min-h-0 w-full p-2 sm:p-2.5 m-0 overflow-hidden flex flex-col'
+              : activeTab === 'admin-dashboard' ||
+                activeTab === 'inspection-center' ||
+                activeTab === 'inspection-hub' ||
+                activeTab === 'staff-workspace' ||
+                activeTab === 'buyer-inspection-decision'
+                ? 'flex-1 w-full p-0 m-0'
+                : 'flex-1 w-full px-3 sm:px-5 lg:px-6 pt-3 sm:pt-4 pb-8 m-0'
         }
       >
         <Suspense fallback={<ViewLoadingFallback />}>
-        {checkoutListing ? (
-          <CheckoutModal
-            listing={checkoutListing}
-            currentUser={currentUser}
-            agreedPrice={checkoutAgreedPrice}
-            negotiationId={checkoutNegotiationId}
-            onOpenDeposit={() => setIsTopUpModalOpen(true)}
-            onNavigateToChat={(item, prefill) => {
-              const closedListingId = checkoutListing?.id;
-              if (closedListingId) {
-                markListingAsAvailable(String(closedListingId));
-              }
-              setCheckoutListing(null);
-              setCheckoutAgreedPrice(undefined);
-              setCheckoutNegotiationId(undefined);
-              openChat(item, 'inspection_proposal', prefill);
-            }}
-            onClose={() => {
-              const closedListingId = checkoutListing?.id;
-              if (closedListingId) {
-                markListingAsAvailable(String(closedListingId));
-                reconcileBoughtListingIds();
-                setListings((prev) =>
-                  prev.map((l) =>
-                    String(l.id) === String(closedListingId) ? { ...l, status: 'active', backendStatus: 'ACTIVE' } : l
-                  )
-                );
-              }
-              setCheckoutListing(null);
-              setCheckoutAgreedPrice(undefined);
-              setCheckoutNegotiationId(undefined);
-              if (!selectedListing && route.modal === 'product') closeRouteModal(paths.products);
-              loadListingsFromBackend(true);
-            }}
-            onCancelUnpaid={(msg) => {
-              const cancelledListingId = checkoutListing?.id;
-              if (cancelledListingId) {
-                markListingAsAvailable(String(cancelledListingId));
-                reconcileBoughtListingIds();
-                setListings((prev) =>
-                  prev.map((l) =>
-                    String(l.id) === String(cancelledListingId) ? { ...l, status: 'active', backendStatus: 'ACTIVE' } : l
-                  )
-                );
-              }
-              setCheckoutListing(null);
-              setCheckoutAgreedPrice(undefined);
-              setCheckoutNegotiationId(undefined);
-              if (!selectedListing && route.modal === 'product') closeRouteModal(paths.products);
-              loadListingsFromBackend(true);
-              showToast(msg || (lang === 'vi' ? 'Đơn hàng chưa được thanh toán! Đã quay lại trang mua hàng.' : 'Order not paid. Returned to shopping page.'));
-            }}
-            showToast={showToast}
-            onOrderPlaced={handleOrderPlaced}
-            lang={lang}
-          />
-        ) : (
-          <>
-        {activeTab === 'home' && (
-          <HomePageView
-            lang={lang}
-            currentUser={currentUser}
-            onExploreMarketplace={() => setActiveTab('marketplace')}
-            onCreateListing={() => {
-              if (!currentUser) {
-                setPendingTab('create-listing');
-                requireAuth(undefined, lang === 'vi'
-                  ? 'Vui lòng đăng nhập để thử nghiệm định giá AI và đăng bán sản phẩm.'
-                  : 'Please log in to experience AI valuation and create listings.');
-              } else if (['admin', 'inspector'].includes(currentUser.role)) {
-                showToast(lang === 'vi'
-                  ? 'Tài khoản Quản trị viên và Kỹ sư Hub không được đăng ký làm Người Bán.'
-                  : 'Admin and Inspector roles cannot register as sellers.');
-              } else if (currentUser.role !== 'seller' && currentUser.role !== 'staff') {
-                setIsSellerRegistrationModalOpen(true);
-              } else {
-                setActiveTab('create-listing');
-              }
-            }}
-            onOpenAuth={openAuth}
-          />
-        )}
-
-        {activeTab === 'marketplace' && (
-          <MarketplaceView
-            listings={listings.filter((l) => {
-              const boughtIds = getBoughtListingIds();
-              if (boughtIds.has(String(l.id))) return false;
-              if (l.status === 'reserved' || l.status === 'sold') return false;
-              if (l.backendStatus === 'RESERVED' || l.backendStatus === 'SOLD') return false;
-              return l.status === 'active' || l.backendStatus === 'ACTIVE';
-            })}
-            onSelectListing={(listing) => openProduct(listing)}
-            lang={lang}
-            onPostClick={() => {
-              setEditingDraft(null);
-              handleTabChange('create-listing');
-            }}
-          />
-        )}
-
-        {activeTab === 'seller-dashboard' && (
-          <SellerDashboardView
-            listings={listings}
-            onSelectListing={(listing) => openProduct(listing, true)}
-            onCreateListing={(draft?: any) => {
-              setEditingDraft(draft && draft.id ? draft : null);
-              setCreateListingReturnTab('seller-dashboard');
-              navigatePath(draft?.id ? paths.editProduct(draft.id) : pathForTab('create-listing', currentRole));
-            }}
-            onDeleteListing={(listingId) => {
-              setListings((prev) => prev.filter((l) => l.id !== listingId));
-            }}
-            onViewOrders={() => handleTabChange('orders')}
-            currentUser={currentUser}
-            lang={lang}
-          />
-        )}
-
-        {activeTab === 'create-listing' && (
-          currentUser && currentUser.role !== 'seller' && currentUser.role !== 'staff' ? (
-            <div className="py-12 px-4 text-center max-w-xl mx-auto space-y-4">
-              <div className="w-16 h-16 rounded-3xl bg-[#faf8f5] text-[#24263e] flex items-center justify-center mx-auto shadow-md">
-                <Store className="w-8 h-8" />
-              </div>
-              <h3 className="text-xl font-bold text-slate-900">
-                {lang === 'vi' ? 'Bạn Cần Đăng Ký Thành Người Bán' : 'Seller Registration Required'}
-              </h3>
-              <p className="text-sm text-slate-500">
-                {lang === 'vi'
-                  ? 'Để đảm bảo chất lượng kiểm định Hub và an toàn giao dịch qua quỹ Escrow, vui lòng hoàn tất đăng ký thông tin gian hàng và xác thực eKYC trước khi đăng bán sản phẩm.'
-                  : 'To ensure Hub inspection quality and Escrow transaction safety, please register your store profile and complete eKYC before posting listings.'}
-              </p>
-              <div className="flex items-center justify-center gap-3 pt-2">
-                <button
-                  onClick={() => setActiveTab('marketplace')}
-                  className="px-5 py-2.5 rounded-xl border border-gray-200 text-slate-700 text-sm font-semibold hover:bg-slate-50 transition cursor-pointer"
-                >
-                  {lang === 'vi' ? 'Quay lại Sàn' : 'Back to Market'}
-                </button>
-                <button
-                  onClick={() => {
-                    if (['admin', 'inspector'].includes(currentUser.role)) {
+          {checkoutListing ? (
+            <CheckoutModal
+              listing={checkoutListing}
+              currentUser={currentUser}
+              agreedPrice={checkoutAgreedPrice}
+              negotiationId={checkoutNegotiationId}
+              onOpenDeposit={() => setIsTopUpModalOpen(true)}
+              onNavigateToChat={(item, prefill) => {
+                const closedListingId = checkoutListing?.id;
+                if (closedListingId) {
+                  markListingAsAvailable(String(closedListingId));
+                }
+                setCheckoutListing(null);
+                setCheckoutAgreedPrice(undefined);
+                setCheckoutNegotiationId(undefined);
+                openChat(item, 'inspection_proposal', prefill);
+              }}
+              onClose={() => {
+                const closedListingId = checkoutListing?.id;
+                if (closedListingId) {
+                  markListingAsAvailable(String(closedListingId));
+                  reconcileBoughtListingIds();
+                  setListings((prev) =>
+                    prev.map((l) =>
+                      String(l.id) === String(closedListingId) ? { ...l, status: 'active', backendStatus: 'ACTIVE' } : l
+                    )
+                  );
+                }
+                setCheckoutListing(null);
+                setCheckoutAgreedPrice(undefined);
+                setCheckoutNegotiationId(undefined);
+                if (!selectedListing && route.modal === 'product') closeRouteModal(paths.products);
+                loadListingsFromBackend(true);
+              }}
+              onCancelUnpaid={(msg) => {
+                const cancelledListingId = checkoutListing?.id;
+                if (cancelledListingId) {
+                  markListingAsAvailable(String(cancelledListingId));
+                  reconcileBoughtListingIds();
+                  setListings((prev) =>
+                    prev.map((l) =>
+                      String(l.id) === String(cancelledListingId) ? { ...l, status: 'active', backendStatus: 'ACTIVE' } : l
+                    )
+                  );
+                }
+                setCheckoutListing(null);
+                setCheckoutAgreedPrice(undefined);
+                setCheckoutNegotiationId(undefined);
+                if (!selectedListing && route.modal === 'product') closeRouteModal(paths.products);
+                loadListingsFromBackend(true);
+                showToast(msg || (lang === 'vi' ? 'Đơn hàng chưa được thanh toán! Đã quay lại trang mua hàng.' : 'Order not paid. Returned to shopping page.'));
+              }}
+              showToast={showToast}
+              onOrderPlaced={handleOrderPlaced}
+              lang={lang}
+            />
+          ) : (
+            <>
+              {activeTab === 'home' && (
+                <HomePageView
+                  lang={lang}
+                  currentUser={currentUser}
+                  onExploreMarketplace={() => setActiveTab('marketplace')}
+                  onCreateListing={() => {
+                    if (!currentUser) {
+                      setPendingTab('create-listing');
+                      requireAuth(undefined, lang === 'vi'
+                        ? 'Vui lòng đăng nhập để thử nghiệm định giá AI và đăng bán sản phẩm.'
+                        : 'Please log in to experience AI valuation and create listings.');
+                    } else if (['admin', 'inspector'].includes(currentUser.role)) {
                       showToast(lang === 'vi'
                         ? 'Tài khoản Quản trị viên và Kỹ sư Hub không được đăng ký làm Người Bán.'
                         : 'Admin and Inspector roles cannot register as sellers.');
+                    } else if (currentUser.role !== 'seller' && currentUser.role !== 'staff') {
+                      setIsSellerRegistrationModalOpen(true);
+                    } else {
+                      setActiveTab('create-listing');
+                    }
+                  }}
+                  onOpenAuth={openAuth}
+                />
+              )}
+
+              {activeTab === 'marketplace' && (
+                <MarketplaceView
+                  listings={listings.filter((l) => {
+                    const boughtIds = getBoughtListingIds();
+                    if (boughtIds.has(String(l.id))) return false;
+                    if (l.status === 'reserved' || l.status === 'sold') return false;
+                    if (l.backendStatus === 'RESERVED' || l.backendStatus === 'SOLD') return false;
+                    return l.status === 'active' || l.backendStatus === 'ACTIVE';
+                  })}
+                  onSelectListing={(listing) => openProduct(listing)}
+                  lang={lang}
+                  onPostClick={() => {
+                    setEditingDraft(null);
+                    handleTabChange('create-listing');
+                  }}
+                />
+              )}
+
+              {activeTab === 'seller-dashboard' && (
+                <SellerDashboardView
+                  listings={listings}
+                  onSelectListing={(listing) => openProduct(listing, true)}
+                  onCreateListing={(draft?: any) => {
+                    setEditingDraft(draft && draft.id ? draft : null);
+                    setCreateListingReturnTab('seller-dashboard');
+                    navigatePath(draft?.id ? paths.editProduct(draft.id) : pathForTab('create-listing', currentRole));
+                  }}
+                  onDeleteListing={(listingId) => {
+                    setListings((prev) => prev.filter((l) => l.id !== listingId));
+                  }}
+                  onViewOrders={() => handleTabChange('orders')}
+                  currentUser={currentUser}
+                  lang={lang}
+                />
+              )}
+
+              {activeTab === 'create-listing' && (
+                currentUser && currentUser.role !== 'seller' && currentUser.role !== 'staff' ? (
+                  <div className="py-12 px-4 text-center max-w-xl mx-auto space-y-4">
+                    <div className="w-16 h-16 rounded-3xl bg-[#faf8f5] text-[#24263e] flex items-center justify-center mx-auto shadow-md">
+                      <Store className="w-8 h-8" />
+                    </div>
+                    <h3 className="text-xl font-bold text-slate-900">
+                      {lang === 'vi' ? 'Bạn Cần Đăng Ký Thành Người Bán' : 'Seller Registration Required'}
+                    </h3>
+                    <p className="text-sm text-slate-500">
+                      {lang === 'vi'
+                        ? 'Để đảm bảo chất lượng kiểm định Hub và an toàn giao dịch qua quỹ Escrow, vui lòng hoàn tất đăng ký thông tin gian hàng và xác thực eKYC trước khi đăng bán sản phẩm.'
+                        : 'To ensure Hub inspection quality and Escrow transaction safety, please register your store profile and complete eKYC before posting listings.'}
+                    </p>
+                    <div className="flex items-center justify-center gap-3 pt-2">
+                      <button
+                        onClick={() => setActiveTab('marketplace')}
+                        className="px-5 py-2.5 rounded-xl border border-gray-200 text-slate-700 text-sm font-semibold hover:bg-slate-50 transition cursor-pointer"
+                      >
+                        {lang === 'vi' ? 'Quay lại Sàn' : 'Back to Market'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (['admin', 'inspector'].includes(currentUser.role)) {
+                            showToast(lang === 'vi'
+                              ? 'Tài khoản Quản trị viên và Kỹ sư Hub không được đăng ký làm Người Bán.'
+                              : 'Admin and Inspector roles cannot register as sellers.');
+                            return;
+                          }
+                          setIsSellerRegistrationModalOpen(true);
+                        }}
+                        className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white text-sm font-bold shadow-md hover:opacity-95 transition cursor-pointer"
+                      >
+                        {lang === 'vi' ? 'ĐĂNG KÝ NGƯỜI BÁN NGAY' : 'Register as Seller Now'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <CreateListingView
+                    onListingCreated={handleListingCreated}
+                    lang={lang}
+                    onCancel={() => {
+                      const targetTab = createListingReturnTab || (editingDraft ? 'seller-dashboard' : 'marketplace');
+                      setEditingDraft(null);
+                      try {
+                        for (let i = localStorage.length - 1; i >= 0; i--) {
+                          const key = localStorage.key(i);
+                          if (key && (key.startsWith('create_listing_active_draft_') || key === 'create_listing_active_draft')) {
+                            localStorage.removeItem(key);
+                          }
+                        }
+                        sessionStorage.removeItem('create_listing_active_draft');
+                      } catch { }
+                      setActiveTab(targetTab as any);
+                    }}
+                    onDeleteDraft={(draftId) => {
+                      setListings((prev) => prev.filter((l) => l.id !== draftId));
+                    }}
+                    currentUser={currentUser}
+                    initialDraft={route.params.productId ? editingDraft || undefined : undefined}
+                    onOpenTopUp={(tab) => {
+                      setTopUpInitialTab(tab || 'packages');
+                      setIsTopUpModalOpen(true);
+                    }}
+                    userCredits={userCredit}
+                  />
+                )
+              )}
+
+              {activeTab === 'orders' && (
+                <EscrowOrdersView
+                  orders={orderFeedRows.orders}
+                  overviewOrders={orders}
+                  routeOrder={orderFeedRows.detail}
+                  filterQuery={orderFeedQuery}
+                  filterResult={orderFeed.data}
+                  filterCounts={orderFeed.counts}
+                  filterFailed={orderFeed.failed}
+                  currentUser={currentUser}
+                  onConfirmReceipt={handleConfirmReceipt}
+                  onOpenDispute={handleOpenDispute}
+                  onMarkShipped={handleMarkShipped}
+                  onCancelOrder={handleCancelOrder}
+                  onRefreshOrders={() => loadUserOrders(true)}
+                  onRefreshFilter={orderFeed.refresh}
+                  lang={lang}
+                  userRole={route.role === 'buyer' ? 'buyer' : currentRole}
+                  onOpenChat={openChat}
+                  onOpenInspectionDecision={(ord) => {
+                    setInspectionDecisionOrder(ord);
+                    setInspectionDecisionOrderId(ord.id);
+                    navigatePath(paths.decision(navigationRole, ord.id));
+                  }}
+                  onNavigateToDisputes={() => handleTabChange('disputes')}
+                  isLoading={orderFeed.loading}
+                />
+              )}
+
+              {activeTab === 'buyer-inspection-decision' && (
+                <BuyerInspectionDecisionView
+                  key={route.params.inspectionId || inspectionDecisionOrderId || inspectionDecisionOrder?.id}
+                  orderId={route.params.inspectionId || inspectionDecisionOrderId || inspectionDecisionOrder?.id}
+                  order={!route.params.inspectionId || route.params.inspectionId === inspectionDecisionOrder?.id ? inspectionDecisionOrder : null}
+                  currentUser={currentUser}
+                  userRole={route.role === 'buyer' ? 'buyer' : currentRole}
+                  lang={lang}
+                  onBack={() => handleTabChange('orders')}
+                  onSuccess={() => {
+                    loadUserOrders(true);
+                    handleTabChange('orders');
+                  }}
+                  onOpenChat={openChat}
+                  onOpenTopUp={() => setIsTopUpModalOpen(true)}
+                />
+              )}
+
+              {activeTab === 'inspection-center' && (
+                <InspectionCenterDashboardView
+                  key={currentUserId}
+                  initialOrders={orders}
+                  currentUser={currentUser}
+                  lang={lang}
+                  onNavigate={setActiveTab}
+                  onOpenProfile={openProfile}
+                  onLogout={() => setIsLogoutModalOpen(true)}
+                  onViewWebsite={() => setActiveTab('home')}
+                />
+              )}
+
+              {activeTab === 'inspection-hub' && (
+                (currentUser?.role === 'inspection_center' || currentRole === 'inspection_center') ? (
+                  <InspectionCenterDashboardView
+                    key={currentUserId}
+                    initialOrders={orders}
+                    currentUser={currentUser}
+                    lang={lang}
+                    onNavigate={setActiveTab}
+                    onOpenProfile={openProfile}
+                    onLogout={() => setIsLogoutModalOpen(true)}
+                    onViewWebsite={() => setActiveTab('home')}
+                  />
+                ) : (
+                  <InspectorPortalView
+                    orders={orders}
+                    currentUser={currentUser}
+                    onCompleteInspection={handleCompleteInspection}
+                    lang={lang}
+                    onNavigate={setActiveTab}
+                    onOpenProfile={openProfile}
+                    onLogout={() => setIsLogoutModalOpen(true)}
+                    onViewWebsite={() => setActiveTab('home')}
+                  />
+                )
+              )}
+
+              {activeTab === 'staff-workspace' && (
+                <StaffWorkspaceView
+                  listings={listings}
+                  orders={orders}
+                  lang={lang}
+                  currentUser={currentUser}
+                  onOpenProfile={openProfile}
+                  onLogout={() => setIsLogoutModalOpen(true)}
+                  onViewWebsite={() => setActiveTab('home')}
+                />
+              )}
+
+              {activeTab === 'admin-dashboard' && (
+                <AdminDashboardView
+                  orders={orders}
+                  disputes={disputes}
+                  listings={listings}
+                  onResolveDispute={handleResolveDispute}
+                  lang={lang}
+                  currentUser={currentUser}
+                  onOpenProfile={openProfile}
+                  onLogout={() => setIsLogoutModalOpen(true)}
+                  onOpenListingDetail={(listing) => openProduct(listing)}
+                />
+              )}
+
+              {activeTab === 'chat' && (
+                <InboxView
+                  listings={listings}
+                  currentRole={currentRole}
+                  currentUser={currentUser}
+                  lang={lang}
+                  initialListing={chatListing}
+                  initialInspectionDraft={inspectionChatDraft}
+                  initialRoomId={route.params.conversationId}
+                  initialPartnerName={chatPartnerName}
+                  initialPartnerAvatar={chatPartnerAvatar}
+                  initialRoom={chatRoom}
+                  onBuyClick={(item, agreedPrice, negotiationId) => {
+                    if (!currentUser) {
+                      setPendingCheckoutItem(item);
+                      requireAuth(undefined, lang === 'vi'
+                        ? 'Vui lòng đăng nhập để tiến hành mua hàng bảo đảm Escrow và kiểm định Hub.'
+                        : 'Please log in to purchase with Escrow protection.');
                       return;
                     }
-                    setIsSellerRegistrationModalOpen(true);
+                    const isRealNego = negotiationId && isValidUUID(negotiationId) && !isSellerOfferId(negotiationId);
+                    setCheckoutAgreedPrice(isRealNego ? agreedPrice : undefined);
+                    setCheckoutNegotiationId(isRealNego ? negotiationId : undefined);
+                    setCheckoutListing(item);
                   }}
-                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white text-sm font-bold shadow-md hover:opacity-95 transition cursor-pointer"
-                >
-                  {lang === 'vi' ? 'Đăng Ký Người Bán Ngay' : 'Register as Seller Now'}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <CreateListingView
-              onListingCreated={handleListingCreated}
-              lang={lang}
-              onCancel={() => {
-                const targetTab = createListingReturnTab || (editingDraft ? 'seller-dashboard' : 'marketplace');
-                setEditingDraft(null);
-                try {
-                  for (let i = localStorage.length - 1; i >= 0; i--) {
-                    const key = localStorage.key(i);
-                    if (key && (key.startsWith('create_listing_active_draft_') || key === 'create_listing_active_draft')) {
-                      localStorage.removeItem(key);
-                    }
-                  }
-                  sessionStorage.removeItem('create_listing_active_draft');
-                } catch {}
-                setActiveTab(targetTab as any);
-              }}
-              onDeleteDraft={(draftId) => {
-                setListings((prev) => prev.filter((l) => l.id !== draftId));
-              }}
-              currentUser={currentUser}
-              initialDraft={route.params.productId ? editingDraft || undefined : undefined}
-              onOpenTopUp={(tab) => {
-                setTopUpInitialTab(tab || 'packages');
-                setIsTopUpModalOpen(true);
-              }}
-              userCredits={userCredit}
-            />
-          )
-        )}
+                  onOpenSellerReviews={(sellerId, sellerName) => {
+                    setSellerReviewsModalData({ sellerId, sellerName });
+                  }}
+                />
+              )}
 
-        {activeTab === 'orders' && (
-          <EscrowOrdersView
-            orders={orderFeedRows.orders}
-            overviewOrders={orders}
-            routeOrder={orderFeedRows.detail}
-            filterQuery={orderFeedQuery}
-            filterResult={orderFeed.data}
-            filterCounts={orderFeed.counts}
-            filterFailed={orderFeed.failed}
-            currentUser={currentUser}
-            onConfirmReceipt={handleConfirmReceipt}
-            onOpenDispute={handleOpenDispute}
-            onMarkShipped={handleMarkShipped}
-            onCancelOrder={handleCancelOrder}
-            onRefreshOrders={() => loadUserOrders(true)}
-            onRefreshFilter={orderFeed.refresh}
-            lang={lang}
-            userRole={route.role === 'buyer' ? 'buyer' : currentRole}
-            onOpenChat={openChat}
-            onOpenInspectionDecision={(ord) => {
-              setInspectionDecisionOrder(ord);
-              setInspectionDecisionOrderId(ord.id);
-              navigatePath(paths.decision(navigationRole, ord.id));
-            }}
-            onNavigateToDisputes={() => handleTabChange('disputes')}
-            isLoading={orderFeed.loading}
-          />
-        )}
+              {/* Notifications Center Page (Requirement 3 & Phase 3) */}
+              {activeTab === 'notifications' && (
+                <NotificationCenterView
+                  lang={lang}
+                  currentUser={currentUser}
+                  currentRole={currentRole}
+                  onNavigateToUrl={handleNotificationNavigate}
+                  onBackToHome={() => handleTabChange('home')}
+                />
+              )}
 
-        {activeTab === 'buyer-inspection-decision' && (
-          <BuyerInspectionDecisionView
-            key={route.params.inspectionId || inspectionDecisionOrderId || inspectionDecisionOrder?.id}
-            orderId={route.params.inspectionId || inspectionDecisionOrderId || inspectionDecisionOrder?.id}
-            order={!route.params.inspectionId || route.params.inspectionId === inspectionDecisionOrder?.id ? inspectionDecisionOrder : null}
-            currentUser={currentUser}
-            userRole={route.role === 'buyer' ? 'buyer' : currentRole}
-            lang={lang}
-            onBack={() => handleTabChange('orders')}
-            onSuccess={() => {
-              loadUserOrders(true);
-              handleTabChange('orders');
-            }}
-            onOpenChat={openChat}
-            onOpenTopUp={() => setIsTopUpModalOpen(true)}
-          />
-        )}
-
-        {activeTab === 'inspection-center' && (
-          <InspectionCenterDashboardView
-            key={currentUserId}
-            initialOrders={orders}
-            currentUser={currentUser}
-            lang={lang}
-            onNavigate={setActiveTab}
-            onOpenProfile={openProfile}
-            onLogout={() => setIsLogoutModalOpen(true)}
-            onViewWebsite={() => setActiveTab('home')}
-          />
-        )}
-
-        {activeTab === 'inspection-hub' && (
-          (currentUser?.role === 'inspection_center' || currentRole === 'inspection_center') ? (
-            <InspectionCenterDashboardView
-              key={currentUserId}
-              initialOrders={orders}
-              currentUser={currentUser}
-              lang={lang}
-              onNavigate={setActiveTab}
-              onOpenProfile={openProfile}
-              onLogout={() => setIsLogoutModalOpen(true)}
-              onViewWebsite={() => setActiveTab('home')}
-            />
-          ) : (
-            <InspectorPortalView
-              orders={orders}
-              currentUser={currentUser}
-              onCompleteInspection={handleCompleteInspection}
-              lang={lang}
-              onNavigate={setActiveTab}
-              onOpenProfile={openProfile}
-              onLogout={() => setIsLogoutModalOpen(true)}
-              onViewWebsite={() => setActiveTab('home')}
-            />
-          )
-        )}
-
-        {activeTab === 'staff-workspace' && (
-          <StaffWorkspaceView
-            listings={listings}
-            orders={orders}
-            lang={lang}
-            currentUser={currentUser}
-            onOpenProfile={openProfile}
-            onLogout={() => setIsLogoutModalOpen(true)}
-            onViewWebsite={() => setActiveTab('home')}
-          />
-        )}
-
-        {activeTab === 'admin-dashboard' && (
-          <AdminDashboardView
-            orders={orders}
-            disputes={disputes}
-            listings={listings}
-            onResolveDispute={handleResolveDispute}
-            lang={lang}
-            currentUser={currentUser}
-            onOpenProfile={openProfile}
-            onLogout={() => setIsLogoutModalOpen(true)}
-            onOpenListingDetail={(listing) => openProduct(listing)}
-          />
-        )}
-
-        {activeTab === 'chat' && (
-          <InboxView
-            listings={listings}
-            currentRole={currentRole}
-            currentUser={currentUser}
-            lang={lang}
-            initialListing={chatListing}
-            initialInspectionDraft={inspectionChatDraft}
-            initialRoomId={route.params.conversationId}
-            initialPartnerName={chatPartnerName}
-            initialPartnerAvatar={chatPartnerAvatar}
-            initialRoom={chatRoom}
-            onBuyClick={(item, agreedPrice, negotiationId) => {
-              if (!currentUser) {
-                setPendingCheckoutItem(item);
-                requireAuth(undefined, lang === 'vi'
-                  ? 'Vui lòng đăng nhập để tiến hành mua hàng bảo đảm Escrow và kiểm định Hub.'
-                  : 'Please log in to purchase with Escrow protection.');
-                return;
-              }
-              const isRealNego = negotiationId && isValidUUID(negotiationId) && !isSellerOfferId(negotiationId);
-              setCheckoutAgreedPrice(isRealNego ? agreedPrice : undefined);
-              setCheckoutNegotiationId(isRealNego ? negotiationId : undefined);
-              setCheckoutListing(item);
-            }}
-            onOpenSellerReviews={(sellerId, sellerName) => {
-              setSellerReviewsModalData({ sellerId, sellerName });
-            }}
-          />
-        )}
-
-        {/* Notifications Center Page (Requirement 3 & Phase 3) */}
-        {activeTab === 'notifications' && (
-          <NotificationCenterView
-            lang={lang}
-            currentUser={currentUser}
-            currentRole={currentRole}
-            onNavigateToUrl={handleNotificationNavigate}
-            onBackToHome={() => handleTabChange('home')}
-          />
-        )}
-
-        {/* My Disputes & Escrow Arbitration Page */}
-        {activeTab === 'disputes' && (
-          <MyDisputesView
-            currentUser={currentUser}
-            currentRole={currentRole}
-            lang={lang}
-            orders={orders}
-            onNavigateToOrder={() => {
-              handleTabChange('orders');
-            }}
-            onNavigateToPost={(postId) => {
-              const item = listings.find((l) => l.id === postId);
-              if (item) openProduct(item);
-              else handleTabChange('marketplace');
-            }}
-            onBack={() => handleTabChange('orders')}
-          />
-        )}
-          </>
-        )}
+              {/* My Disputes & Escrow Arbitration Page */}
+              {activeTab === 'disputes' && (
+                <MyDisputesView
+                  currentUser={currentUser}
+                  currentRole={currentRole}
+                  lang={lang}
+                  orders={orders}
+                  onNavigateToOrder={() => {
+                    handleTabChange('orders');
+                  }}
+                  onNavigateToPost={(postId) => {
+                    const item = listings.find((l) => l.id === postId);
+                    if (item) openProduct(item);
+                    else handleTabChange('marketplace');
+                  }}
+                  onBack={() => handleTabChange('orders')}
+                />
+              )}
+            </>
+          )}
         </Suspense>
       </main>
 
@@ -3193,7 +3261,7 @@ export default function App() {
         {/* Checkout Modal rendered inside main */}
 
 
-{/* ChatModal popup has been replaced by the dedicated full-page Messenger chat view */}
+        {/* ChatModal popup has been replaced by the dedicated full-page Messenger chat view */}
 
         {/* Seller Reviews & Trust Modal Popup */}
         {sellerReviewsModalData && (

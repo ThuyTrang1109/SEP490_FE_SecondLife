@@ -49,3 +49,18 @@ export function getInspectionTaskStage(status?: string | null) {
       return 'pending';
   }
 }
+
+export function hasInspectionResult(order?: {
+  status?: string | null;
+  conditionScore?: number | null;
+  checklistResultJson?: string | null;
+} | null): boolean {
+  if (!order) return false;
+  if (typeof order.conditionScore === 'number' || Boolean(order.checklistResultJson)) return true;
+  if (getInspectionTaskStage(order.status) === 'completed') return true;
+  const completedResultStatuses = new Set([
+    'PASSED', 'FAILED', 'COMPLETED', 'DELIVERING_TO_BUYER', 'SHIPPED_TO_BUYER',
+    'RETURNING_TO_SELLER', 'RETURNED_TO_SELLER', 'BUYER_REJECTED'
+  ]);
+  return completedResultStatuses.has(order.status || '');
+}

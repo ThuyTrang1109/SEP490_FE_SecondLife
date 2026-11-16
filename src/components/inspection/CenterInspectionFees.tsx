@@ -108,7 +108,6 @@ export function CenterInspectionFees({ order, fees, collectionClosed }: {
   collectionClosed: boolean;
 }) {
   const isAtHome = order.orderType === 'AT_HOME';
-  const cashShipping = !isAtHome && order.cashShippingSimulation === true;
   const travelFee = order.travelFee ?? order.travelFeeRoundTrip;
   const notDue = fees.collection === 'not_due';
 
@@ -117,7 +116,6 @@ export function CenterInspectionFees({ order, fees, collectionClosed }: {
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <CreditCard aria-hidden="true" className="size-4 text-slate-600" />
         <h4 className="text-sm font-bold text-slate-900">Thu phí &amp; quyết toán</h4>
-        {cashShipping && <span className="rounded-md bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-900">Mô phỏng Sandbox</span>}
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         {/* Cột trái: Phí kiểm định cơ sở + phụ phí AT_HOME */}

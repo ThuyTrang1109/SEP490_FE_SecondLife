@@ -130,3 +130,48 @@ test('markListingInspectionPassed registers item and notifies listeners', () => 
   assert.equal(isListingInspectionPassed({ id: testId }), true);
   assert.equal(isListingInspectionPassed({ id: 'other-id', title: testTitle }), true);
 });
+
+test('buyer rejected purchase after pass maintains "Đã đạt kiểm định tại Hub"', () => {
+  invalidateInspectedRegistry();
+
+  const buyerDefaultOrder = {
+    id: 'ord-buyer-reject-101',
+    postId: 'post-wardrobe-999',
+    postTitle: 'Tủ quần áo Hàng nhập khẩu - Nguyên Bản Chạy Tốt',
+    status: 'CANCELLED',
+    tamperSealId: 'SL-SEAL-20261115-342d33',
+    note: 'Người mua từ chối mua tiếp sau kiểm định. Lý do: Tôi đổi ý',
+    settlementOutcome: 'PASSED_BUYER_DEFAULTED',
+    conditionScore: 90,
+    conditionGrade: 'A',
+  };
+
+  // 1. Order verdict check must recognize this as inspection passed
+  assert.equal(isOrderInspectionVerdictPassed(buyerDefaultOrder), true);
+
+  // 2. Listing matching by ID via orders list
+  assert.equal(
+    isListingInspectionPassed(
+      { id: 'post-wardrobe-999', title: 'Tủ quần áo Hàng nhập khẩu' },
+      [buyerDefaultOrder]
+    ),
+    true
+  );
+
+  // 3. Title matching with slight truncation
+  assert.equal(
+    isListingInspectionPassed(
+      { id: 'post-wardrobe-other-id', title: 'Tủ quần áo Hàng nhập khẩu - ...' },
+      [buyerDefaultOrder]
+    ),
+    true
+  );
+
+  // 4. Mark listing passed explicitly (as done when buyer clicks Reject Purchase)
+  markListingInspectionPassed('post-wardrobe-999', 'Tủ quần áo Hàng nhập khẩu - Nguyên Bản Chạy Tốt');
+  assert.equal(isListingInspectionPassed({ id: 'post-wardrobe-999' }), true);
+  assert.equal(
+    isListingInspectionPassed({ id: 'any-id', title: 'Tủ quần áo Hàng nhập khẩu - Nguyên Bản Chạy Tốt' }),
+    true
+  );
+});

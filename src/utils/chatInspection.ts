@@ -17,9 +17,27 @@ export function isActiveChatInspection(order?: InspectionOrderDto | null) {
 }
 
 export function matchesChatInspection(order: InspectionOrderDto, room: Pick<ChatRoomDto, 'postId' | 'buyerId' | 'sellerId'>) {
-  return order.postId?.toLowerCase() === room.postId.toLowerCase()
-    && order.buyerId?.toLowerCase() === room.buyerId.toLowerCase()
-    && order.sellerId?.toLowerCase() === room.sellerId.toLowerCase();
+  if (!order) return false;
+  const orderPostId = String(order.postId || (order as any).post?.id || '').toLowerCase();
+  const roomPostId = String(room?.postId || '').toLowerCase();
+  if (orderPostId && roomPostId && orderPostId !== roomPostId) {
+    return false;
+  }
+  const orderBuyerId = String(order.buyerId || (order as any).buyer?.id || '').toLowerCase();
+  const roomBuyerId = String(room?.buyerId || '').toLowerCase();
+  if (orderBuyerId && roomBuyerId && orderBuyerId !== roomBuyerId) {
+    return false;
+  }
+  const orderSellerId = String(order.sellerId || (order as any).seller?.id || '').toLowerCase();
+  const roomSellerId = String(room?.sellerId || '').toLowerCase();
+  if (orderSellerId && roomSellerId && orderSellerId !== roomSellerId) {
+    return false;
+  }
+
+  return Boolean(
+    (orderPostId && roomPostId && orderPostId === roomPostId) ||
+    (orderBuyerId && roomBuyerId && orderBuyerId === roomBuyerId && orderSellerId && roomSellerId && orderSellerId === roomSellerId)
+  );
 }
 
 export function getCurrentChatInspection(orders: Iterable<InspectionOrderDto | null>) {

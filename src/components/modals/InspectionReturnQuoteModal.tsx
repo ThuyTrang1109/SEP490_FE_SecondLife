@@ -86,7 +86,6 @@ export function InspectionReturnQuoteModal({ orderId, title, booking, cashShippi
       </header>
 
       <div className="space-y-4 p-5">
-        {cashShipping && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900"><strong>Mô phỏng Sandbox</strong> · Hệ thống hoàn ứng vào ví Hub sau khi Lalamove xác nhận giao hàng và cước thực tế.</p>}
         {loading && (
           <div role="status" className="flex items-center justify-center gap-2 py-8 text-sm text-slate-600">
             <Loader2 aria-hidden="true" className="size-5 animate-spin text-orange-700" /> Đang lấy cước từ Lalamove…

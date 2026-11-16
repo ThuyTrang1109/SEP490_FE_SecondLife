@@ -32,6 +32,8 @@ export interface InspectionTravelTierDto {
   distanceChargedInTier?: number;
   feeInTier?: number;
   status?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface InspectionQuotePackageAtHome {
@@ -86,6 +88,9 @@ export interface InspectionQuoteResponse {
 
   inspectionConfiguration?: InspectionConfigurationResponse;
   shippingQuote?: InspectionShippingQuote;
+  inspectionCenterId?: string;
+  inspectionCenterName?: string;
+  distanceKm?: number;
 }
 
 export interface InspectionShippingQuoteLeg {
@@ -370,6 +375,11 @@ export interface InspectionOrderDto {
 
   appointmentScheduledAt?: string;
   appointmentNote?: string;
+  appointmentStatus?: 'PENDING_CENTER_CONFIRMATION' | 'COUNTERED_BY_CENTER' | 'CONFIRMED' | 'REJECTED' | string;
+  counterScheduledAt?: string;
+  counterShift?: 'MORNING' | 'AFTERNOON';
+  counterNote?: string;
+  appointmentRejectionReason?: string;
   checklistResultJson?: string;
   videoProofUrl?: string;
   unboxingVideoUrl?: string;
@@ -478,7 +488,23 @@ export interface InspectionSealScanRequest {
 // INSPECTOR SERVICE
 // ============================================================================
 
+const inspectionOrderCache = new Map<string, { data: InspectionOrderDto; timestamp: number }>();
+const inspectionOrderInFlight = new Map<string, Promise<InspectionOrderDto>>();
+const INSPECTION_ORDER_TTL_MS = 15_000;
+
 export const inspectorService = {
+  /**
+   * Xóa cache đơn kiểm định khi có cập nhật
+   */
+  invalidateOrderCache(orderId?: string) {
+    if (orderId) {
+      inspectionOrderCache.delete(orderId.toLowerCase());
+      inspectionOrderInFlight.delete(orderId.toLowerCase());
+    } else {
+      inspectionOrderCache.clear();
+      inspectionOrderInFlight.clear();
+    }
+  },
   // --------------------------------------------------------------------------
   // 1. BUYER & SELLER INSPECTION FLOW (/api/v1/inspection)
   // --------------------------------------------------------------------------
@@ -649,6 +675,7 @@ export const inspectorService = {
       body: JSON.stringify(payload),
       requiresAuth: true,
     });
+    this.invalidateOrderCache(orderId);
     return (res as any)?.data || res;
   },
 
@@ -668,6 +695,7 @@ export const inspectorService = {
       body: JSON.stringify(payload),
       requiresAuth: true,
     });
+    this.invalidateOrderCache(orderId);
     return (res as any)?.data || res;
   },
 
@@ -680,18 +708,46 @@ export const inspectorService = {
       method: 'POST',
       requiresAuth: true,
     });
+    this.invalidateOrderCache(orderId);
     return (res as any)?.data || res;
   },
 
   /**
    * Lấy chi tiết đơn kiểm định
+   * Tích hợp deduplication & in-flight cache để tránh gọi lặp / cancel request
    */
-  async getOrder(orderId: string, options?: Pick<RequestOptions, 'isBackground' | 'signal'>): Promise<InspectionOrderDto> {
-    const res = await requestGet<InspectionOrderDto>(`/inspection/orders/${orderId}`, {
-      ...options,
-      requiresAuth: true,
-    });
-    return (res as any)?.data || res;
+  async getOrder(orderId: string, options?: Pick<RequestOptions, 'isBackground' | 'signal'> & { bypassCache?: boolean }): Promise<InspectionOrderDto> {
+    if (!orderId) throw new Error('Order ID is required');
+
+    const cleanId = orderId.toLowerCase();
+    if (!options?.bypassCache && !options?.isBackground) {
+      const cached = inspectionOrderCache.get(cleanId);
+      if (cached && Date.now() - cached.timestamp < INSPECTION_ORDER_TTL_MS) {
+        return cached.data;
+      }
+      if (!options?.signal && inspectionOrderInFlight.has(cleanId)) {
+        return inspectionOrderInFlight.get(cleanId)!;
+      }
+    }
+
+    const fetchPromise = (async () => {
+      try {
+        const res = await requestGet<InspectionOrderDto>(`/inspection/orders/${orderId}`, {
+          ...options,
+          requiresAuth: true,
+        });
+        const data = ((res as any)?.data || res) as InspectionOrderDto;
+        inspectionOrderCache.set(cleanId, { data, timestamp: Date.now() });
+        return data;
+      } finally {
+        inspectionOrderInFlight.delete(cleanId);
+      }
+    })();
+
+    if (!options?.bypassCache && !options?.signal) {
+      inspectionOrderInFlight.set(cleanId, fetchPromise);
+    }
+    return fetchPromise;
   },
 
   /**
@@ -825,10 +881,84 @@ export const inspectorService = {
   },
 
   /**
+   * KTV tìm kiếm đơn kiểm định từ Backend API theo mã vạch / mã đơn / từ khóa
+   */
+  async searchInspectionOrder(keyword: string): Promise<InspectionOrderDto | null> {
+    const raw = (keyword || '').trim();
+    if (!raw) return null;
+    const clean = raw.replace(/^(sl-insp-|inspection-|order-|sl-athome-|athome-|#)/i, '').trim();
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clean);
+
+    // 1. Nếu là UUID đầy đủ, gọi trực tiếp API chi tiết đơn
+    if (isUuid) {
+      try {
+        const res = await requestGet<InspectionOrderDto>(`/inspector/orders/${clean}`, { requiresAuth: true });
+        const data = (res as any)?.data || res;
+        if (data && (data.id || data.orderId)) return data;
+      } catch (err) {
+        // Fallback to list search
+      }
+    }
+
+    // 2. Gọi API lấy danh sách đơn của KTV (/inspector/orders)
+    try {
+      const res = await requestGet<any>(`/inspector/orders`, { requiresAuth: true });
+      const items = (res as any)?.data || (res as any)?.items || (Array.isArray(res) ? res : []);
+      const match = items.find((o: any) => {
+        const oId = String(o.id || o.orderId || '').toLowerCase();
+        const norm = clean.toLowerCase();
+        return oId === norm || oId.startsWith(norm) || (norm.length >= 6 && oId.includes(norm)) ||
+          (o.postTitle && o.postTitle.toLowerCase().includes(norm));
+      });
+      if (match) return match;
+    } catch (err) {
+      console.warn('GET /inspector/orders search error:', err);
+    }
+
+    // 3. Gọi API lấy toàn bộ danh sách đơn kiểm định (/inspector/orders/all)
+    try {
+      const resAll = await requestGet<any>(`/inspector/orders/all?page=0&size=50`, { requiresAuth: true });
+      const itemsAll = (resAll as any)?.data?.items || (resAll as any)?.data?.content || (resAll as any)?.items || (Array.isArray(resAll) ? resAll : []);
+      const matchAll = itemsAll.find((o: any) => {
+        const oId = String(o.id || o.orderId || '').toLowerCase();
+        const norm = clean.toLowerCase();
+        return oId === norm || oId.startsWith(norm) || (norm.length >= 6 && oId.includes(norm)) ||
+          (o.postTitle && o.postTitle.toLowerCase().includes(norm));
+      });
+      if (matchAll) return matchAll;
+    } catch (err) {
+      console.warn('GET /inspector/orders/all search error:', err);
+    }
+
+    return null;
+  },
+
+  /**
    * KTV bắt đầu tiến hành kiểm định đơn hàng (chuyển trạng thái sang INSPECTING)
    */
-  async startInspection(orderId: string): Promise<InspectionOrderDto> {
+  async startInspection(
+    orderId: string,
+    payload?: { checkInCode?: string; orderCode?: string; barcodeInput?: string }
+  ): Promise<InspectionOrderDto> {
+    const effectivePayload = payload || {
+      orderCode: orderId,
+      barcodeInput: orderId,
+      checkInCode: orderId,
+    };
     const res = await request<InspectionOrderDto>(`/inspector/orders/${orderId}/start`, {
+      method: 'POST',
+      body: JSON.stringify(effectivePayload),
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Người bán lấy mã check-in kiểm định tại nhà để KTV quét
+   * POST /api/v1/inspection/orders/{orderId}/check-in-code
+   */
+  async getHomeCheckInCode(orderId: string): Promise<{ code: string; appointmentScheduledAt?: string }> {
+    const res = await request<any>(`/inspection/orders/${orderId}/check-in-code`, {
       method: 'POST',
       requiresAuth: true,
     });
@@ -838,10 +968,50 @@ export const inspectorService = {
   /**
    * Lên lịch hẹn kiểm tra tại nhà (Gói AT_HOME)
    */
-  async scheduleAppointment(orderId: string, scheduledAt: string, note?: string): Promise<InspectionOrderDto> {
+  async scheduleAppointment(orderId: string, scheduledAt: string, note?: string, shift?: string): Promise<InspectionOrderDto> {
     const res = await request<InspectionOrderDto>(`/inspector/orders/${orderId}/schedule`, {
       method: 'POST',
-      body: JSON.stringify({ scheduledAt, note }),
+      body: JSON.stringify({ scheduledAt, note, shift }),
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Trung tâm kiểm định chấp nhận lịch hẹn người bán đề xuất
+   */
+  async confirmAppointment(orderId: string): Promise<InspectionOrderDto> {
+    const res = await request<InspectionOrderDto>(`/inspector/orders/${orderId}/appointment/confirm`, {
+      method: 'POST',
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Người bán chấp nhận lịch kiểm định mới do Trung tâm đề xuất
+   * POST /api/v1/inspector/orders/{orderId}/appointment/accept-counter
+   */
+  async acceptAppointmentCounter(orderId: string): Promise<InspectionOrderDto> {
+    const res = await request<InspectionOrderDto>(`/inspector/orders/${orderId}/appointment/accept-counter`, {
+      method: 'POST',
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Trung tâm kiểm định đề xuất lịch hẹn mới cho người bán
+   */
+  async counterAppointment(
+    orderId: string,
+    counterScheduledAt: string,
+    counterNote?: string,
+    counterShift?: string
+  ): Promise<InspectionOrderDto> {
+    const res = await request<InspectionOrderDto>(`/inspector/orders/${orderId}/appointment/counter`, {
+      method: 'POST',
+      body: JSON.stringify({ counterScheduledAt, counterNote, counterShift }),
       requiresAuth: true,
     });
     return (res as any)?.data || res;
@@ -1457,3 +1627,36 @@ export const inspectorService = {
     return getAdminInspectionOrderFunds(inspectionOrderId);
   },
 };
+
+type PricingSource = Pick<typeof inspectorService,
+  'getTravelTiers' | 'getCurrentLevelFees' | 'getTierProposals' | 'getCenterLevelFeeProposals'>;
+
+function pendingLevelFees(items: InspectionFeeProposalResponse[]) {
+  return items.filter((item) => item.complexityLevel && ['PENDING', 'PENDING_APPROVAL'].includes(item.status));
+}
+
+/** The two proposal URLs return the same history; reuse a complete first page. */
+export async function loadCenterPricing(
+  page: number, status: string, includeSummary: boolean, source: PricingSource = inspectorService,
+) {
+  const [tiers, fees, history] = await Promise.allSettled([
+    includeSummary ? source.getTravelTiers() : Promise.resolve(null),
+    includeSummary ? source.getCurrentLevelFees() : Promise.resolve(null),
+    source.getTierProposals(status, page, 10),
+  ]);
+
+  let pending: PromiseSettledResult<InspectionFeeProposalResponse[]> | null = null;
+  if (includeSummary) {
+    if (history.status === 'fulfilled' && page === 0 && status === 'ALL'
+      && history.value.totalElements <= history.value.items.length) {
+      pending = { status: 'fulfilled', value: pendingLevelFees(history.value.items) };
+    } else {
+      // Pending level cards are independent of the history's page/status filter.
+      const [result] = await Promise.allSettled([source.getCenterLevelFeeProposals(0, 50, 'PENDING_APPROVAL')]);
+      pending = result.status === 'fulfilled'
+        ? { status: 'fulfilled', value: pendingLevelFees(result.value.items) }
+        : result;
+    }
+  }
+  return { tiers, fees, history, pending };
+}

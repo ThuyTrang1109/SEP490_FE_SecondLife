@@ -12,11 +12,24 @@ function getWsUrl(): string {
   return `${origin}/ws`;
 }
 
+export interface WalletPushEvent {
+  balance?: number;
+  newBalance?: number;
+  amount?: number;
+  type?: string;
+  action?: string;
+  transactionId?: string;
+  userId?: string;
+  timestamp?: string | number;
+}
+
 type NotificationListener = (item: NotificationItem) => void;
+type WalletPushListener = (event: WalletPushEvent) => void;
 
 class NotificationWebSocketClient {
   private client: Client | null = null;
   private listeners: Set<NotificationListener> = new Set();
+  private walletListeners: Set<WalletPushListener> = new Set();
   private isConnecting: boolean = false;
   private currentToken: string | null = null;
 
@@ -25,6 +38,53 @@ class NotificationWebSocketClient {
     return () => {
       this.listeners.delete(listener);
     };
+  }
+
+  public subscribeWalletListener(listener: WalletPushListener): () => void {
+    this.walletListeners.add(listener);
+    return () => {
+      this.walletListeners.delete(listener);
+    };
+  }
+
+  private handleIncomingWalletMessage(bodyStr: string) {
+    try {
+      const data: WalletPushEvent = typeof bodyStr === 'string' ? JSON.parse(bodyStr) : bodyStr;
+      const balance = typeof data.balance === 'number' ? data.balance
+        : typeof data.newBalance === 'number' ? data.newBalance
+        : undefined;
+
+      this.walletListeners.forEach((l) => {
+        try {
+          l(data);
+        } catch (e) {
+          console.error('Error in wallet listener:', e);
+        }
+      });
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('secondlife_wallet_updated', {
+            detail: {
+              balance,
+              data,
+              source: 'websocket',
+            },
+          })
+        );
+        window.dispatchEvent(
+          new CustomEvent('wallet_balance_updated', {
+            detail: {
+              balance,
+              data,
+              source: 'websocket',
+            },
+          })
+        );
+      }
+    } catch (e) {
+      console.warn('Failed to parse incoming wallet message:', e);
+    }
   }
 
   public connect(token: string) {
@@ -64,11 +124,11 @@ class NotificationWebSocketClient {
         this.isConnecting = false;
         console.log('✅ Connected to SecondLife WebSocket STOMP notification server');
 
-        // Subscribe kênh cá nhân của user
+        // 1. Subscribe kênh thông báo cá nhân của user
         this.client?.subscribe('/user/queue/notifications', (message: IMessage) => {
           try {
             const notification: NotificationItem = JSON.parse(message.body);
-            // Notify all registered listeners
+            // Notify all registered notification listeners
             this.listeners.forEach((listener) => {
               try {
                 listener(notification);
@@ -76,9 +136,33 @@ class NotificationWebSocketClient {
                 console.error('Error in notification listener:', e);
               }
             });
+
+            // Nếu notification là loại biến động ví / nạp tiền, kích hoạt cập nhật số dư ví
+            const nType = String(notification.type || '').toUpperCase();
+            const nRef = String(notification.referenceType || '').toUpperCase();
+            if (
+              nType.includes('WALLET') ||
+              nType.includes('TOPUP') ||
+              nRef.includes('WALLET') ||
+              nRef.includes('TOPUP') ||
+              notification.title?.toLowerCase().includes('ví') ||
+              notification.message?.toLowerCase().includes('nạp tiền')
+            ) {
+              this.handleIncomingWalletMessage(message.body);
+            }
           } catch (err) {
             console.error('Failed to parse incoming notification:', err);
           }
+        });
+
+        // 2. Subscribe kênh cập nhật số dư ví cá nhân (Phương án 1 - Push Event)
+        this.client?.subscribe('/user/queue/wallet', (message: IMessage) => {
+          this.handleIncomingWalletMessage(message.body);
+        });
+
+        // 3. Subscribe kênh biến động ví: /user/queue/wallet-updates
+        this.client?.subscribe('/user/queue/wallet-updates', (message: IMessage) => {
+          this.handleIncomingWalletMessage(message.body);
         });
       };
 

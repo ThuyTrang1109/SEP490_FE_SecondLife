@@ -17,6 +17,9 @@ export function translateSystemNotification(rawMsg: string | null | undefined): 
   const lower = s.toLowerCase();
 
   // 2. Thông báo bài đăng & bản nháp (Listing & Drafts)
+  if (lower.includes('accept the latest product description before submitting')) {
+    return 'Vui lòng xác nhận lại nội dung mô tả sản phẩm trước khi gửi đăng bài.';
+  }
   if (lower.includes('draft deleted successfully')) return 'Đã xóa bản nháp thành công!';
   if (lower.includes('please enter draft id')) return 'Vui lòng nhập mã bài đăng nháp!';
   if (lower.includes('draft loaded successfully')) return 'Đã tải lại bản nháp thành công!';

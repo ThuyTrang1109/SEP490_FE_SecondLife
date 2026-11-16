@@ -417,7 +417,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
 
     const seenIds = new Set(result.map((o) => o.id));
 
-    // Also include orders assigned locally in center_inspection_orders or recent_placed_orders
+    // Also include orders assigned locally in center_inspection_orders, recent_placed_orders or my_seller_inspection_orders
     const localAssignedOrders: any[] = [];
     try {
       const rawCenter = localStorage.getItem('center_inspection_orders');
@@ -428,6 +428,11 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
       const rawRecent = localStorage.getItem('recent_placed_orders');
       if (rawRecent) {
         const parsed = JSON.parse(rawRecent);
+        if (Array.isArray(parsed)) localAssignedOrders.push(...parsed);
+      }
+      const rawSeller = localStorage.getItem('my_seller_inspection_orders');
+      if (rawSeller) {
+        const parsed = JSON.parse(rawSeller);
         if (Array.isArray(parsed)) localAssignedOrders.push(...parsed);
       }
     } catch {}
@@ -447,8 +452,17 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
       const candidateInspectorEmail = cand.inspectorEmail || assignedMeta?.inspectorEmail;
       const candidateInspectorName = cand.inspectorName || assignedMeta?.inspectorName;
 
-      // Check if this task belongs to the current inspector
+      // Check if this task belongs to the current inspector or is directly requested
+      const isDirectlySelected = Boolean(
+        selectedOrderId && (
+          cand.id === selectedOrderId ||
+          cand.id.toLowerCase().startsWith(selectedOrderId.toLowerCase()) ||
+          selectedOrderId.toLowerCase().startsWith(cand.id.toLowerCase())
+        )
+      );
+
       const matchesCurrentInspector =
+        isDirectlySelected ||
         !currentUser?.id ||
         currentUser.role === 'admin' ||
         currentUser.role === 'inspection_center' ||
@@ -456,7 +470,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
         (candidateInspectorEmail && currentUser.email && candidateInspectorEmail.toLowerCase() === currentUser.email.toLowerCase()) ||
         (candidateInspectorName && currentUser.name && candidateInspectorName.toLowerCase().includes(currentUser.name.toLowerCase()));
 
-      if (matchesCurrentInspector && (candidateInspectorId || assignedMeta)) {
+      if (matchesCurrentInspector && (candidateInspectorId || assignedMeta || isDirectlySelected)) {
         let apptMeta: any = null;
         try {
           const rawAppt = localStorage.getItem(`order_appointment_${cand.id}`);
@@ -469,9 +483,32 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
 
         const photoUrl = cand.listing?.photos?.front || cand.postImageUrl || (Array.isArray(cand.postImageUrls) ? cand.postImageUrls[0] : '') || 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=400';
 
+        const resolvedSellerAddress =
+          assignedMeta?.sellerAddress ||
+          cand.sellerAddress ||
+          cand.listing?.sellerAddress ||
+          cand.listing?.location ||
+          cand.shippingLegs?.[0]?.origin ||
+          'Ngã tư Công Lý – Einstein, Công Lý, Phường Thủ Đức, Thành phố Hồ Chí Minh';
+
+        const resolvedSellerPhone =
+          assignedMeta?.sellerPhone ||
+          cand.sellerPhone ||
+          cand.seller?.phone ||
+          '0918 234 567';
+
+        const resolvedSellerName =
+          assignedMeta?.sellerName ||
+          cand.sellerName ||
+          cand.seller?.name ||
+          'Thị Thùy Trang Nguyễn';
+
         const synthesizedOrder: EscrowOrder = {
           ...cand,
           id: cand.id,
+          sellerAddress: resolvedSellerAddress,
+          sellerPhone: resolvedSellerPhone,
+          sellerName: resolvedSellerName,
           inspectorId: candidateInspectorId,
           inspectorName: candidateInspectorName,
           status: finalStatus,
@@ -480,14 +517,17 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
           escrowStatus: resolvedEscrowStatus,
           inspectionMethod: isAtHome ? 'AT_HOME' : 'AT_CENTER',
           appointmentScheduledAt: apptMeta?.scheduledAt || cand.appointmentScheduledAt,
-          listing: cand.listing || {
-            id: cand.postId || cand.id,
-            title: cand.postTitle || 'Thiết bị kiểm định',
-            priceVnd: cand.postPrice || cand.itemPriceVnd || 0,
-            location: cand.sellerAddress || 'TP. Hồ Chí Minh',
-            sellerName: cand.sellerName || 'Người bán',
-            photos: { front: photoUrl },
-            photoGallery: [photoUrl],
+          appointmentNote: apptMeta?.note || cand.appointmentNote,
+          listing: {
+            ...(cand.listing || {}),
+            id: cand.listing?.id || cand.postId || cand.id,
+            title: cand.listing?.title || cand.postTitle || 'Thiết bị kiểm định',
+            priceVnd: cand.listing?.priceVnd || cand.postPrice || cand.itemPriceVnd || 0,
+            location: resolvedSellerAddress,
+            sellerAddress: resolvedSellerAddress,
+            sellerName: resolvedSellerName,
+            photos: cand.listing?.photos || { front: photoUrl },
+            photoGallery: cand.listing?.photoGallery || [photoUrl],
           },
         };
 
@@ -1414,11 +1454,17 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                             </div>
 
                             {isAtHome ? (
-                              <div className="space-y-0.5">
-                                <p className="text-slate-700 font-medium line-clamp-1 flex items-center gap-1">
-                                  <MapPin className="w-3 h-3 text-purple-600 shrink-0" />
-                                  <span>{ord.shippingLegs?.[0]?.origin || ord.listing?.location || (ord as any).sellerAddress || 'Địa chỉ kho người bán'}</span>
+                              <div className="space-y-1">
+                                <p className="text-slate-800 font-semibold line-clamp-2 flex items-start gap-1 text-xs">
+                                  <MapPin className="w-3.5 h-3.5 text-purple-600 shrink-0 mt-0.5" />
+                                  <span>{(ord as any).sellerAddress || ord.listing?.location || ord.shippingLegs?.[0]?.origin || 'Địa chỉ nhà người bán'}</span>
                                 </p>
+                                {((ord as any).sellerName || (ord as any).sellerPhone) && (
+                                  <p className="text-[11px] text-slate-500 font-medium flex items-center gap-2 pl-4">
+                                    <span>👤 {(ord as any).sellerName || 'Người bán'}</span>
+                                    {(ord as any).sellerPhone && <span>📞 {(ord as any).sellerPhone}</span>}
+                                  </p>
+                                )}
                                 {ord.appointmentScheduledAt ? (
                                   <p className="text-blue-600 font-bold flex items-center gap-1">
                                     <Clock className="w-3 h-3 text-blue-500 shrink-0" />
@@ -1535,8 +1581,8 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                   </h2>
                   <p className="text-xs text-slate-500 mt-1 font-medium">
                     {lang === 'vi'
-                      ? 'Lưu trữ toàn bộ chứng nhận chất lượng, tem niêm phong tamper-proof và kết quả thẩm định kỹ thuật.'
-                      : 'Full audit log of verified devices, tamper seals, and technical reports.'}
+                      ? 'Lưu trữ chứng nhận chất lượng và kết quả thẩm định kỹ thuật.'
+                      : 'Archive of quality certificates and technical inspection reports.'}
                   </p>
                 </div>
 
@@ -1562,7 +1608,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                   </div>
                 ) : (
                   completedOrders.map((ord) => {
-                    const { tamperSealId, conditionScore, detectedGrade, verdict, inspectorName } = ord.inspectionReport!;
+                    const { conditionScore, detectedGrade, verdict, inspectorName } = ord.inspectionReport!;
                     const isPass = verdict === 'PASS';
 
                     return (
@@ -1576,9 +1622,6 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                           </div>
                           <div className="space-y-1">
                             <div className="flex flex-wrap items-center gap-2">
-                              <span className="font-mono text-xs font-extrabold text-[#c34c36] bg-red-50 border border-red-100 px-2 py-0.5 rounded">
-                                {tamperSealId || 'Chưa có mã niêm phong'}
-                              </span>
                               <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isPass ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
                                 {isPass ? 'ĐẠT CHUẨN PASS' : 'TỪ CHỐI FAILED'}
                               </span>

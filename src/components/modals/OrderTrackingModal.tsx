@@ -1253,44 +1253,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                     </div>
                   )}
 
-                {/* Searching / Assigning Driver Card */}
-                {!trackingData?.driver && (effectiveProviderStatus === 'ASSIGNING_DRIVER' || activeShipment.status === 'READY_TO_PICK' || !activeShipment.providerStatus) && (
-                  <div className="p-4 bg-gradient-to-r from-amber-50 via-orange-50/50 to-amber-50 border border-amber-200/90 rounded-2xl space-y-3 animate-fadeIn">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="relative flex h-2.5 w-2.5">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
-                        </span>
-                        <span className="text-[10px] font-black uppercase bg-amber-200 text-amber-900 px-2 py-0.5 rounded">
-                          Điều Phối Tài Xế Lalamove
-                        </span>
-                        <span className="font-bold text-amber-950 text-xs">Đang tìm tài xế gần điểm lấy hàng</span>
-                      </div>
-                      <span className="text-[11px] text-amber-700 font-semibold italic">Ước tính: 1 - 3 phút</span>
-                    </div>
 
-                    <p className="text-[11px] text-amber-900 leading-relaxed">
-                      Hệ thống đang tự động chỉ định tài xế xe máy Lalamove trong bán kính gần kho Người Bán nhất.
-                      Ngay khi tài xế nhận chuyến, <strong>Họ tên, SĐT, Biển số xe và Vị trí GPS</strong> sẽ tự động cập nhật lên màn hình.
-                    </p>
-
-                    <div className="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-amber-200/70">
-                      <span className="text-[11px] text-amber-800">
-                        ⚡ Thử nghiệm Sandbox: Nếu vừa bấm cử tài xế trên cổng Lalamove Partner Portal, bạn có thể bấm cập nhật ngay:
-                      </span>
-                      <button
-                        type="button"
-                        onClick={handleSyncLalamove}
-                        disabled={isSyncing}
-                        className="px-3 py-1.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 transition cursor-pointer shadow-xs disabled:opacity-50"
-                      >
-                        <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                        <span>Đồng bộ từ Lalamove ngay</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
 
                 {/* Driver Assigned - Loading details fallback */}
                 {!trackingData?.driver && effectiveProviderStatus === 'ON_GOING' && (

@@ -85,3 +85,18 @@ test('center certificates preserve the published result after inspection', () =>
   assert.equal(failed.conditionScore, 0);
 });
 
+test('buildInspectionReportFromDto extracts packaging condition and accessories note from structured note tags', () => {
+  const dto: any = {
+    id: 'order-pack-123',
+    status: 'PASSED',
+    conditionScore: 95,
+    note: '[Bao bì: Nguyên vẹn 100%] [Phụ kiện: Đầy đủ dây nguồn và chân đế] Máy hoạt động êm ái.',
+  };
+
+  const report = buildInspectionReportFromDto(dto);
+  assert.equal(report.packagingCondition, 'Nguyên vẹn 100%');
+  assert.equal(report.accessoriesList, 'Đầy đủ dây nguồn và chân đế');
+  assert.equal(report.summaryNotes, 'Máy hoạt động êm ái.');
+});
+
+

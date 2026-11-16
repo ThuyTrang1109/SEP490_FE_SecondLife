@@ -1,3 +1,5 @@
+import type React from 'react';
+
 export function numberToVietnameseWords(num: number): string {
     if (num === null || num === undefined || isNaN(num) || num < 0) return '';
     if (num === 0) return 'Không đồng';
@@ -105,34 +107,14 @@ export function numberToVietnameseWords(num: number): string {
 }
 
 /**
- * Làm sạch và chuyển đổi input tiền VNĐ:
- * - Khắc phục lỗi khi máy đang ở chế độ bàn phím tiếng Việt (Windows Vietnamese Keyboard)
- *   khiến hàng phím số 1-0 bị gõ ra ký tự ă, â, ê, ô, đ hoặc dấu thanh
- * - Tự động ánh xạ về các chữ số tương ứng 0-9
- * - Loại bỏ toàn bộ ký tự không phải chữ số
- * - Giới hạn số lượng chữ số tối đa (mặc định 12 chữ số tương đương gần 1.000 tỷ VNĐ) để tránh tràn số
+ * Chuẩn hóa chuỗi số tiền VNĐ:
+ * - Giữ lại duy nhất các chữ số 0-9
+ * - Không ánh xạ các ký tự chữ hoặc dấu thanh (tránh lỗi nhảy số khi gõ bằng bộ gõ tiếng Việt)
+ * - Giới hạn số lượng chữ số tối đa (mặc định 12 chữ số)
  */
 export function cleanVndInput(value: string | number | null | undefined, maxDigits = 12): string {
     if (value === null || value === undefined) return '';
-    let str = value.toString();
-
-    // Map các ký tự do bàn phím tiếng Việt gõ ra trên hàng phím số
-    str = str
-        .replace(/[ăĂ]/g, '1')
-        .replace(/[âÂ]/g, '2')
-        .replace(/[êÊ]/g, '3')
-        .replace(/[ôÔ]/g, '4')
-        .replace(/[đĐ]/g, '0');
-
-    // Map các dấu thanh có thể xuất hiện khi gõ phím 5, 6, 7, 8, 9
-    str = str
-        .replace(/[\u0300`]/g, '5')
-        .replace(/[\u0309]/g, '6')
-        .replace(/[\u0303~]/g, '7')
-        .replace(/[\u0301']/g, '8')
-        .replace(/[\u0323]/g, '9');
-
-    // Chỉ giữ lại chữ số
+    const str = value.toString();
     const digits = str.replace(/\D/g, '');
     return maxDigits > 0 ? digits.slice(0, maxDigits) : digits;
 }
@@ -144,4 +126,106 @@ export function formatVndInput(value: string | number | null | undefined): strin
     const num = Number(raw);
     if (isNaN(num)) return '';
     return num.toLocaleString('vi-VN');
+}
+
+/**
+ * Xử lý sự kiện onChange trên ô input tiền tệ:
+ * - Tự động định dạng dấu phân cách nghìn (.)
+ * - Giữ đúng vị trí con trỏ chuột (cursor) không bị nhảy lung tung hoặc nhảy về cuối input
+ */
+export function handleVndInputChange(
+    e: React.ChangeEvent<HTMLInputElement>,
+    onValueChange: (numVal: number, rawDigits: string) => void,
+    maxDigits = 12
+) {
+    const input = e.target;
+    const value = input.value;
+    const selectionStart = input.selectionStart ?? value.length;
+
+    // Đếm số lượng chữ số đứng trước vị trí con trỏ hiện tại
+    const digitsBeforeCursor = value.slice(0, selectionStart).replace(/\D/g, '').length;
+
+    // Lọc chỉ lấy chữ số
+    const raw = value.replace(/\D/g, '');
+    const cleanDigits = maxDigits > 0 ? raw.slice(0, maxDigits) : raw;
+    const numVal = cleanDigits ? Number(cleanDigits) : 0;
+
+    onValueChange(numVal, cleanDigits);
+
+    const formatted = numVal > 0 ? numVal.toLocaleString('vi-VN') : '';
+
+    const restoreCursor = () => {
+        if (!input) return;
+        if (digitsBeforeCursor === 0) {
+            input.setSelectionRange(0, 0);
+            return;
+        }
+        let count = 0;
+        let newCursor = formatted.length;
+        for (let i = 0; i < formatted.length; i++) {
+            if (/\d/.test(formatted[i])) {
+                count++;
+            }
+            if (count === digitsBeforeCursor) {
+                newCursor = i + 1;
+                break;
+            }
+        }
+        input.setSelectionRange(newCursor, newCursor);
+    };
+
+    requestAnimationFrame(restoreCursor);
+    setTimeout(restoreCursor, 0);
+}
+
+/**
+ * Xử lý sự kiện onKeyDown khi nhấn phím Backspace ngay trước dấu chấm (.) phân cách hàng nghìn.
+ * Xóa số trước dấu chấm thay vì chỉ nuốt dấu chấm rồi bị định dạng lại gây đơ/nhảy con trỏ.
+ */
+export function handleVndInputKeyDown(
+    e: React.KeyboardEvent<HTMLInputElement>,
+    onValueChange: (numVal: number, rawDigits: string) => void
+) {
+    if (e.key === 'Backspace') {
+        const input = e.currentTarget;
+        const start = input.selectionStart;
+        const end = input.selectionEnd;
+        if (start !== null && start === end && start > 0) {
+            // Nếu ký tự ngay trước con trỏ là dấu chấm phân cách '.'
+            if (input.value[start - 1] === '.') {
+                e.preventDefault();
+                const val = input.value;
+                const before = val.slice(0, start - 2);
+                const after = val.slice(start);
+                const raw = (before + after).replace(/\D/g, '');
+                const numVal = raw ? Number(raw) : 0;
+
+                onValueChange(numVal, raw);
+
+                const digitsBefore = before.replace(/\D/g, '').length;
+                const formatted = numVal > 0 ? numVal.toLocaleString('vi-VN') : '';
+
+                const restoreCursor = () => {
+                    if (!input) return;
+                    if (digitsBefore === 0) {
+                        input.setSelectionRange(0, 0);
+                        return;
+                    }
+                    let count = 0;
+                    let newCursor = 0;
+                    for (let i = 0; i < formatted.length; i++) {
+                        if (/\d/.test(formatted[i])) count++;
+                        if (count === digitsBefore) {
+                            newCursor = i + 1;
+                            break;
+                        }
+                    }
+                    input.setSelectionRange(newCursor, newCursor);
+                };
+
+                requestAnimationFrame(restoreCursor);
+                setTimeout(restoreCursor, 0);
+            }
+        }
+    }
 }

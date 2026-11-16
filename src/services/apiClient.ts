@@ -476,6 +476,7 @@ export function translateApiError(msg: string | null | undefined): string {
   if (/cannot remove the last active admin role/i.test(s)) return 'Không thể xóa vai trò của Quản trị viên (ADMIN) cuối cùng.';
 
   // 2. eKYC & Xác thực người bán (Seller Verification)
+  if (/accept the latest product description before submitting/i.test(s)) return 'Vui lòng xác nhận lại nội dung mô tả sản phẩm trước khi gửi đăng bài.';
   if (/shop information cannot be changed after seller verification has started/i.test(s)) return 'Thông tin cửa hàng không thể sửa đổi sau khi đã bắt đầu xác thực hồ sơ.';
   if (/shop email has already been verified/i.test(s)) return 'Email cửa hàng đã được xác minh trước đó.';
   if (/please wait before requesting another email verification code/i.test(s)) return 'Vui lòng đợi giây lát trước khi yêu cầu gửi lại mã xác minh mới.';

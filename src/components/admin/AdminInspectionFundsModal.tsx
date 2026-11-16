@@ -22,6 +22,7 @@ import {
   getShipmentStatusBadgeStyle,
   resolveShipmentLegLabel,
   formatAuditDateTime,
+  resolveReturnReserveDetails,
 } from '../../utils/adminInspectionFunds';
 import { formatVND } from '../../utils/translations';
 
@@ -299,71 +300,131 @@ export const AdminInspectionFundsView: React.FC<AdminInspectionFundsViewProps> =
                       </span>
                     </div>
                   </div>
-
-                  {/* Cash Simulation Notes */}
-                  {fees?.cashShippingSimulation && (
-                    <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-[11px] flex items-center gap-2">
-                      <Info className="w-3.5 h-3.5 shrink-0 text-amber-600" />
-                      <span>
-                        <strong>Mô phỏng Sandbox:</strong> Cước chặng đi có phần ứng tiền mặt.
-                        {fees.outboundCashPendingAmount != null && fees.outboundCashPendingAmount > 0 && (
-                          <span>
-                            {' '}Cước đi đã thu đang chờ hoàn ứng hoặc hoàn tiền:{' '}
-                            <strong className="font-mono text-amber-950">
-                              {formatVND(fees.outboundCashPendingAmount)}
-                            </strong>.
-                          </span>
-                        )}
-                      </span>
-                    </div>
-                  )}
                 </section>
               );
             })()}
 
             {/* 4. DỰ PHÒNG CƯỚC HOÀN (RETURN RESERVE) - HIDE IF NOT_REQUIRED */}
-            {funds.returnReserve && funds.returnReserve.status !== 'NOT_REQUIRED' && (
-              <section className="p-3.5 rounded-xl border border-amber-200 bg-amber-50/30 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Truck className="w-4 h-4 text-amber-700" />
-                    <h4 className="font-bold uppercase tracking-wider text-[11px] text-amber-900">
-                      Dự Phòng Cước Trả Hàng (Return Reserve)
-                    </h4>
+            {funds.returnReserve && funds.returnReserve.status !== 'NOT_REQUIRED' && (() => {
+              const reserveDetails = resolveReturnReserveDetails(funds);
+              const {
+                plannedAmount,
+                heldAmount,
+                actualReturnFee,
+                hasActualReturnFee,
+                returnShipmentCode,
+                returnShipmentStatus,
+                splitPlan,
+                surplusAmount,
+                buyerSurplusShare,
+                sellerSurplusShare,
+                refundStatusLabel,
+                refundStatusBadge,
+                refundDescription,
+              } = reserveDetails;
+
+              const badge = getReturnReserveBadgeStyle(funds.returnReserve.status);
+
+              return (
+                <section className="p-4 rounded-xl border border-amber-200 bg-amber-50/30 space-y-3">
+                  <div className="flex items-center justify-between pb-2 border-b border-amber-200/60">
+                    <div className="flex items-center gap-2">
+                      <Truck className="w-4 h-4 text-amber-700" />
+                      <h4 className="font-bold uppercase tracking-wider text-[11px] text-amber-900">
+                        Dự Phòng Cước Trả Hàng (Return Reserve)
+                      </h4>
+                    </div>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${badge.bg} ${badge.text} ${badge.border}`}
+                    >
+                      {resolveReturnReserveStatusLabel(funds.returnReserve.status)}
+                    </span>
                   </div>
-                  {(() => {
-                    const badge = getReturnReserveBadgeStyle(funds.returnReserve.status);
-                    return (
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${badge.bg} ${badge.text} ${badge.border}`}
-                      >
-                        {resolveReturnReserveStatusLabel(funds.returnReserve.status)}
+
+                  {/* 4 KPI Cards: Kế hoạch, Cước hoàn thực tế, Phương án chia, Tiền dư sau cước */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                    <div className="p-2.5 rounded-lg bg-white border border-amber-100 shadow-2xs">
+                      <span className="text-[10px] text-slate-500 block font-medium">Dự phòng kế hoạch</span>
+                      <span className="font-bold font-mono text-slate-800 text-sm">
+                        {formatVND(plannedAmount)}
                       </span>
-                    );
-                  })()}
-                </div>
+                      <span className="text-[10px] text-amber-700 block mt-0.5">
+                        Dự phòng đang giữ: <strong className="font-mono">{formatVND(heldAmount)}</strong>
+                      </span>
+                    </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="p-2.5 rounded-lg bg-white border border-amber-100">
-                    <span className="text-[10px] text-slate-400 block">Dự phòng kế hoạch</span>
-                    <span className="font-bold font-mono text-slate-800">
-                      {formatVND(funds.returnReserve.plannedAmount ?? 0)}
-                    </span>
+                    <div className="p-2.5 rounded-lg bg-white border border-amber-100 shadow-2xs">
+                      <span className="text-[10px] text-slate-500 block font-medium">Cước hoàn thực tế (Hub → Seller)</span>
+                      <span className="font-bold font-mono text-slate-900 text-sm">
+                        {hasActualReturnFee ? formatVND(actualReturnFee) : 'Chưa phát sinh (0 đ)'}
+                      </span>
+                      <div className="text-[10px] text-slate-500 mt-0.5 truncate">
+                        {returnShipmentCode ? (
+                          <span title={returnShipmentCode}>Mã: {returnShipmentCode}</span>
+                        ) : (
+                          <span>{returnShipmentStatus ? resolveShipmentStatusLabel(returnShipmentStatus) : 'Chưa tạo chuyến hoàn'}</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="p-2.5 rounded-lg bg-white border border-amber-100 shadow-2xs">
+                      <span className="text-[10px] text-slate-500 block font-medium">Phương án chia tỉ lệ đơn</span>
+                      <span className="font-bold text-slate-900 text-xs block truncate mt-0.5" title={splitPlan.label}>
+                        {splitPlan.label}
+                      </span>
+                      <span className="text-[10px] text-slate-500 block mt-0.5">
+                        Mua: {splitPlan.buyerPercent}% · Bán: {splitPlan.sellerPercent}%
+                      </span>
+                    </div>
+
+                    <div className="p-2.5 rounded-lg bg-emerald-50/70 border border-emerald-200 shadow-2xs">
+                      <span className="text-[10px] text-emerald-800 block font-medium">Tiền dư sau trừ cước thực tế</span>
+                      <span className="font-black font-mono text-emerald-800 text-sm">
+                        {formatVND(surplusAmount)}
+                      </span>
+                      <span className="text-[10px] text-emerald-700 block mt-0.5">
+                        {hasActualReturnFee ? 'Đã trừ cước hoàn' : 'Dự kiến hoàn trả'}
+                      </span>
+                    </div>
                   </div>
 
-                  <div className="p-2.5 rounded-lg bg-white border border-amber-100">
-                    <span className="text-[10px] text-slate-400 block">Dự phòng đang giữ</span>
-                    <span className="font-black font-mono text-amber-800">
-                      {formatVND(funds.returnReserve.heldAmount ?? 0)}
-                    </span>
+                  {/* Phân bổ tiền dư theo tỷ lệ */}
+                  <div className="p-2.5 rounded-lg bg-white/90 border border-amber-200/80 space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="font-bold text-slate-700">Phân bổ tiền dư hoàn trả theo tỉ lệ chia của đơn:</span>
+                      <span className="text-[10px] text-slate-500 font-mono">Tổng tiền dư: {formatVND(surplusAmount)}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="p-2 rounded-md bg-slate-50 border border-slate-100 flex items-center justify-between">
+                        <span className="text-slate-600 text-[11px]">Hoàn Người mua ({splitPlan.buyerPercent}%):</span>
+                        <strong className="font-mono text-emerald-700">{formatVND(buyerSurplusShare)}</strong>
+                      </div>
+                      <div className="p-2 rounded-md bg-slate-50 border border-slate-100 flex items-center justify-between">
+                        <span className="text-slate-600 text-[11px]">Hoàn Người bán ({splitPlan.sellerPercent}%):</span>
+                        <strong className="font-mono text-emerald-700">{formatVND(sellerSurplusShare)}</strong>
+                      </div>
+                    </div>
                   </div>
-                </div>
 
-                <p className="text-[10px] text-amber-800 italic">
-                  * Lưu ý: Khoản dự phòng đang giữ đã được cộng gộp trong số tiền Còn chờ xử lý ở phần Tổng quan.
-                </p>
-              </section>
-            )}
+                  {/* Trạng thái đã hoàn */}
+                  <div className="p-2.5 rounded-lg bg-amber-100/50 border border-amber-200/70 space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-bold text-amber-900">Trạng thái hoàn trả tiền dư:</span>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${refundStatusBadge.bg} ${refundStatusBadge.text} ${refundStatusBadge.border}`}>
+                        {refundStatusLabel}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-700 leading-relaxed">
+                      {refundDescription}
+                    </p>
+                  </div>
+
+                  <p className="text-[10px] text-amber-800 italic">
+                    * Lưu ý: Khoản dự phòng đang giữ đã được cộng gộp trong số tiền Còn chờ xử lý ở phần Tổng quan.
+                  </p>
+                </section>
+              );
+            })()}
 
             {/* 5. QUYẾT TOÁN (SETTLEMENT) */}
             <section className="p-3.5 rounded-xl border border-slate-200 bg-white space-y-2.5">

@@ -67,11 +67,10 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
                 soundFx.playChime();
                 setHeroAppliance('fridge');
               }}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                heroAppliance === 'fridge'
-                  ? 'bg-[#24263e] text-white shadow-md font-black'
-                  : 'text-[#24263e]/80 hover:text-[#24263e] hover:bg-white/60'
-              }`}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${heroAppliance === 'fridge'
+                ? 'bg-[#24263e] text-white shadow-md font-black'
+                : 'text-[#24263e]/80 hover:text-[#24263e] hover:bg-white/60'
+                }`}
             >
               {lang === 'vi' ? 'Tủ Lạnh Hitachi' : 'Hitachi Fridge'}
             </button>
@@ -80,11 +79,10 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
                 soundFx.playChime();
                 setHeroAppliance('washer');
               }}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                heroAppliance === 'washer'
-                  ? 'bg-[#24263e] text-white shadow-md font-black'
-                  : 'text-[#24263e]/80 hover:text-[#24263e] hover:bg-white/60'
-              }`}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${heroAppliance === 'washer'
+                ? 'bg-[#24263e] text-white shadow-md font-black'
+                : 'text-[#24263e]/80 hover:text-[#24263e] hover:bg-white/60'
+                }`}
             >
               {lang === 'vi' ? 'Máy Giặt Electrolux' : 'Electrolux Washer'}
             </button>
@@ -93,9 +91,8 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
                 soundFx.playChime();
                 setAutoRotate((prev) => !prev);
               }}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                autoRotate ? 'text-[#24263e] bg-white/80 shadow-xs' : 'text-[#24263e]/70 hover:text-[#24263e]'
-              }`}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${autoRotate ? 'text-[#24263e] bg-white/80 shadow-xs' : 'text-[#24263e]/70 hover:text-[#24263e]'
+                }`}
               title={lang === 'vi' ? 'Bật / tắt tự động xoay' : 'Toggle auto-rotate'}
             >
               <RefreshCw className={`w-3 h-3 ${autoRotate ? 'animate-spin' : ''}`} style={{ animationDuration: '6s' }} />
@@ -155,7 +152,7 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
                 {currentUser && currentUser.role !== 'seller' && currentUser.role !== 'staff' ? (
                   <>
                     <Store className="w-4 h-4 text-[#c34c36]" />
-                    <span>{lang === 'vi' ? 'Đăng Ký Người Bán' : 'Register as Seller'}</span>
+                    <span>{lang === 'vi' ? 'ĐĂNG KÝ NGƯỜI BÁN' : 'Register as Seller'}</span>
                   </>
                 ) : (
                   <>

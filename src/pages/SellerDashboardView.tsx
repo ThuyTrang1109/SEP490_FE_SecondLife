@@ -46,6 +46,7 @@ import { returnShippingFeeService, SellerReturnShippingDebtResponse } from '../s
 import { SellerReturnShippingFeesSection } from '../components/seller/SellerReturnShippingFeesSection';
 import { isListingInspectionPassed } from '../utils/listingInspection';
 import { SellerDisputeResponseModal } from '../components/seller/SellerDisputeResponseModal';
+import { UserAvatar } from '../components/common/UserAvatar';
 
 interface SellerDashboardViewProps {
   listings: Listing[];
@@ -934,10 +935,11 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="flex items-center gap-4">
             <div className="relative">
-              <img
-                src={currentUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200'}
-                alt="Seller Avatar"
-                className="w-16 h-16 rounded-2xl object-cover border-2 border-[#24263e]/20 shadow-md"
+              <UserAvatar
+                src={currentUser?.avatar}
+                name={currentUser?.name}
+                className="w-16 h-16 rounded-2xl border-2 border-[#24263e]/20 shadow-md"
+                role="seller"
               />
               <div
                 className="absolute -bottom-1 -right-1 bg-[#24263e] text-white p-1 rounded-full text-xs shadow-xs"
@@ -1339,7 +1341,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                   {isListingInspectionPassed(item) && (
                     <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-600 text-white shadow-2xs ml-1.5">
                       <ShieldCheck className="w-2.5 h-2.5 text-emerald-100" />
-                      <span>{lang === 'vi' ? 'Đã Kiểm Định' : 'Inspected'}</span>
+                      <span>{lang === 'vi' ? 'Đã đạt kiểm định tại Hub' : 'Hub Inspected'}</span>
                     </span>
                   )}
                   {item.backendStatus === 'REJECTED' && item.rejectionReason && (

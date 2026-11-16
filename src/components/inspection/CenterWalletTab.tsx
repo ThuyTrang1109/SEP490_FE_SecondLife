@@ -25,6 +25,7 @@ import {
   Receipt,
 } from 'lucide-react';
 import { walletService } from '../../services/walletService';
+import { notificationWsClient } from '../../services/notificationWsClient';
 import { isUserIdle } from '../../services/apiClient';
 import { inspectionCashConfirmedEvent } from '../../utils/inspectionCashShipping';
 import { formatVND } from '../../utils/translations';
@@ -97,7 +98,7 @@ const TX_TYPES: Array<WalletTransactionType | ''> = [
   'REFUND',
   'RETURN_SHIPPING_FEE',
 ];
-const WALLET_REFRESH_MS = 45_000;
+const WALLET_REFRESH_MS = 60_000;
 
 interface CenterWalletTabProps {
   lang?: 'vi' | 'en';
@@ -235,12 +236,24 @@ export function CenterWalletTab({ lang: _lang = 'vi', onNavigateToOrder }: Cente
     window.addEventListener('focus', refreshVisibleWallet);
     window.addEventListener(inspectionCashConfirmedEvent, refreshVisibleWallet);
     window.addEventListener('storage', handleStorage);
+
+    // Real-time Push from WebSocket and internal window events
+    const unsubWs = notificationWsClient.subscribeWalletListener(() => {
+      refreshVisibleWallet();
+    });
+    const handleWalletUpdated = () => refreshVisibleWallet();
+    window.addEventListener('secondlife_wallet_updated', handleWalletUpdated);
+    window.addEventListener('wallet_balance_updated', handleWalletUpdated);
+
     return () => {
       window.clearInterval(timer);
       document.removeEventListener('visibilitychange', refreshVisibleWallet);
       window.removeEventListener('focus', refreshVisibleWallet);
       window.removeEventListener(inspectionCashConfirmedEvent, refreshVisibleWallet);
       window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('secondlife_wallet_updated', handleWalletUpdated);
+      window.removeEventListener('wallet_balance_updated', handleWalletUpdated);
+      unsubWs();
       walletRequest.current?.abort();
       transactionRequest.current?.abort();
       walletRequest.current = null;

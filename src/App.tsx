@@ -6,10 +6,14 @@ import React, { useState, lazy, Suspense, useRef, useCallback, useEffect } from 
 import { UserRole, Language, Listing, EscrowOrder, DisputeCase, UserProfile, UserCredit, ItemCategory, ConditionGrade, EscrowStatus, InspectionReport, InspectionProposalPrefillData } from './types';
 import { formatVND } from './utils/translations';
 import { extractWardAndCity, getSavedSellerAddress, saveSellerAddress, cleanFullAddress, formatCombinedAddress } from './utils/addressUtils';
-import { getSortableOrderTimestamp, getBoughtListingIds, markListingAsBought, markListingAsAvailable, reconcileBoughtListingIds, isOrderCancelledOrRefunded, getResolvedPostParcel, extractListingIdFromOrder, resolveInspectionCenter } from './utils/orderUtils';
-import { getBuyerInspectionStage, getCustomerInspectionStatus } from './utils/inspectionPurchase';
+import { getSortableOrderTimestamp, getBoughtListingIds, markListingAsBought, markListingAsAvailable, reconcileBoughtListingIds, isOrderCancelledOrRefunded, getResolvedPostParcel, extractListingIdFromOrder } from './utils/orderUtils';
+import { getBuyerInspectionStage } from './utils/inspectionPurchase';
 import { resolveCategoryAndItem, initCatalogCache, resolveOrderListing, resolveListingCategory, extractSellerOriginalPrice } from './utils/catalogCache';
 import { translateSystemNotification } from './utils/systemNotificationTranslator';
+import { useEscrowOrderFeed } from './hooks/orders/useEscrowOrderFeed';
+import { readOrderFeedQuery } from './utils/escrowOrderFilters';
+import { orderFeedItemToRaw } from './services/orderFeedService';
+import { mapEscrowOrder } from './utils/mapEscrowOrder';
 import { lazyWithRetry } from './utils/lazyWithRetry';
 import { Navbar } from './components/layout/Navbar';
 import { Footer } from './components/layout/Footer';
@@ -29,7 +33,7 @@ import { notificationWsClient } from './services/notificationWsClient';
 import { ShieldCheck, Sparkles, CheckCircle2, Store, AlertTriangle } from 'lucide-react';
 import { authService, userService, topupService, walletService, orderService, inspectorService, negotiationService, postService, adminPostService, shippingService, sellerCreditService, chatService, getAccessToken, getRefreshToken, clearAuthTokens, getStoredUser, setStoredUser, isTokenExpired, isTokenExpiringSoon, recordUserActivity, resetActivityTimer, isUserIdle, refreshAccessToken, checkAndRenewSessionOnReturn, ChatRoomDto } from './services';
 import { inspectionCashConfirmedEvent } from './utils/inspectionCashShipping';
-import { isListingInspectionPassed, markListingInspectionPassed } from './utils/listingInspection';
+import { isListingInspectionPassed, markListingInspectionPassed, normalizeListingTitle, isOrderInspectionVerdictPassed } from './utils/listingInspection';
 
 // Code-split heavy views via lazyWithRetry to prevent dynamic import fetch errors
 const CreateListingView = lazyWithRetry(() => import('./pages/CreateListingView').then(m => ({ default: m.CreateListingView })), 'CreateListingView');
@@ -186,7 +190,7 @@ export default function App() {
               } else if (paRes && paRes.status === 'fulfilled' && paRes.value) {
                 pickupAddr = paRes.value;
               }
-            } catch (_) {}
+            } catch (_) { }
           }
 
           if (cancelled) return;
@@ -311,7 +315,7 @@ export default function App() {
     return () => { cancelled = true; };
   }, []);
 
-    // The unauthorized_session listener was moved below state declarations to utilize toast and modal.
+  // The unauthorized_session listener was moved below state declarations to utilize toast and modal.
 
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'register' | 'forgot'>('login');
@@ -370,11 +374,9 @@ export default function App() {
         console.warn('Failed to save inspection prefill to sessionStorage:', e);
       }
     }
-    const query = `?postId=${encodeURIComponent(listing.id)}${action ? `&action=${encodeURIComponent(action)}` : ''}${
-      prefill?.centerId ? `&centerId=${encodeURIComponent(prefill.centerId)}` : ''
-    }${prefill?.inspectionMethod ? `&method=${encodeURIComponent(prefill.inspectionMethod)}` : ''}${
-      prefill?.feeSplit ? `&feeSplit=${encodeURIComponent(prefill.feeSplit)}` : ''
-    }`;
+    const query = `?postId=${encodeURIComponent(listing.id)}${action ? `&action=${encodeURIComponent(action)}` : ''}${prefill?.centerId ? `&centerId=${encodeURIComponent(prefill.centerId)}` : ''
+      }${prefill?.inspectionMethod ? `&method=${encodeURIComponent(prefill.inspectionMethod)}` : ''}${prefill?.feeSplit ? `&feeSplit=${encodeURIComponent(prefill.feeSplit)}` : ''
+      }`;
     navigatePath(paths.chat(navigationRole) + query);
   };
   const openProduct = (listing: Listing, own = false) => {
@@ -411,14 +413,43 @@ export default function App() {
   }, [currentUserId]);
 
   React.useEffect(() => {
-    const refreshWallet = () => { void loadUserWallet(); };
-    const handleStorage = (event: StorageEvent) => {
-      if (event.key === inspectionCashConfirmedEvent) refreshWallet();
+    const refreshWallet = (e?: any) => {
+      const detail = e?.detail;
+      if (typeof detail?.balance === 'number') {
+        setWalletBalance(detail.balance);
+        setCurrentUser((prev) => {
+          if (!prev) return prev;
+          if (prev.walletBalance === detail.balance && prev.walletBalanceVnd === detail.balance) return prev;
+          return { ...prev, walletBalance: detail.balance, walletBalanceVnd: detail.balance };
+        });
+        return;
+      } else if (typeof detail?.deductAmount === 'number' && detail.deductAmount > 0) {
+        setWalletBalance((prev) => Math.max(0, prev - detail.deductAmount));
+        setCurrentUser((prev) => {
+          if (!prev) return prev;
+          const currentBal = prev.walletBalanceVnd ?? prev.walletBalance ?? 0;
+          const newBal = Math.max(0, currentBal - detail.deductAmount);
+          return { ...prev, walletBalance: newBal, walletBalanceVnd: newBal };
+        });
+        return;
+      }
+      void loadUserWallet();
     };
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === inspectionCashConfirmedEvent || event.key === 'sl_wallet_last_updated') {
+        refreshWallet();
+      }
+    };
+
     window.addEventListener(inspectionCashConfirmedEvent, refreshWallet);
+    window.addEventListener('secondlife_wallet_updated', refreshWallet);
+    window.addEventListener('wallet_balance_updated', refreshWallet);
     window.addEventListener('storage', handleStorage);
     return () => {
       window.removeEventListener(inspectionCashConfirmedEvent, refreshWallet);
+      window.removeEventListener('secondlife_wallet_updated', refreshWallet);
+      window.removeEventListener('wallet_balance_updated', refreshWallet);
       window.removeEventListener('storage', handleStorage);
     };
   }, [loadUserWallet]);
@@ -462,7 +493,7 @@ export default function App() {
     authService.logout().finally(() => {
       try {
         notificationWsClient.disconnect();
-      } catch {}
+      } catch { }
       clearNotificationsOnLogout();
       clearAuthTokens();
       resetActivityTimer();
@@ -485,7 +516,6 @@ export default function App() {
               key === 'create_listing_active_draft' ||
               key.startsWith('order_listing_') ||
               key.startsWith('order_buyer_info_') ||
-              key.startsWith('order_appointment_') ||
               key.startsWith('buyer_info_'))
           ) {
             localStorage.removeItem(key);
@@ -498,7 +528,7 @@ export default function App() {
         sessionStorage.removeItem('secondlife_center_active_tab');
         sessionStorage.removeItem('secondlife_orders_filter_tab');
         sessionStorage.removeItem('secondlife_inspection_decision_order_id');
-      } catch {}
+      } catch { }
 
       // Force a hard reload to ensure all memory states and third-party scripts are cleared
       try {
@@ -506,7 +536,7 @@ export default function App() {
         cleanUrl.search = '';
         cleanUrl.hash = '';
         window.history.replaceState(null, '', paths.products);
-      } catch (e) {}
+      } catch (e) { }
       window.location.reload();
     });
   };
@@ -599,7 +629,7 @@ export default function App() {
           }
         });
       }
-    } catch {}
+    } catch { }
 
     result.sort((a, b) => {
       const timeA = getSortableOrderTimestamp(a);
@@ -632,11 +662,48 @@ export default function App() {
     }
     return getLocalStoredOrders(getStoredUser());
   });
-  const [isOrdersLoading, setIsOrdersLoading] = useState<boolean>(() => Boolean(getAccessToken()));
   const [disputes, setDisputes] = useState<DisputeCase[]>([]);
 
   const listingsRef = useRef<Listing[]>(listings);
   listingsRef.current = listings;
+
+  const ordersRef = useRef<EscrowOrder[]>(orders);
+  ordersRef.current = orders;
+
+  // Lắng nghe sự kiện kiểm định đạt chuẩn để cập nhật huy hiệu realtime cho các sản phẩm
+  useEffect(() => {
+    const handleInspectionCompleted = (e: any) => {
+      const detail = e.detail;
+      if (detail && detail.status === 'PASSED') {
+        const passedId = detail.id ? String(detail.id) : null;
+        const passedTitle = detail.title ? normalizeListingTitle(detail.title) : null;
+        setListings((prev) =>
+          prev.map((l) => {
+            const lId = String(l.id || '');
+            const lPostId = String((l as any).postId || '');
+            const lTitle = normalizeListingTitle(l.title);
+            const idMatches = Boolean(passedId && (lId === passedId || lPostId === passedId));
+            const titleMatches = Boolean(
+              passedTitle &&
+                (lTitle === passedTitle ||
+                  (lTitle.length >= 8 &&
+                    (lTitle.includes(passedTitle) || passedTitle.includes(lTitle))))
+            );
+            if (idMatches || titleMatches) {
+              return {
+                ...l,
+                isInspected: true,
+                inspectionPassed: true,
+              };
+            }
+            return l;
+          })
+        );
+      }
+    };
+    window.addEventListener('secondlife_inspection_completed', handleInspectionCompleted);
+    return () => window.removeEventListener('secondlife_inspection_completed', handleInspectionCompleted);
+  }, []);
 
   const lastListingsFetchRef = useRef<number>(0);
   const isFetchingListingsRef = useRef<boolean>(false);
@@ -653,9 +720,7 @@ export default function App() {
       prevUserIdRef.current = currentId;
       if (!currentId) {
         setOrders([]);
-        setIsOrdersLoading(false);
       } else if (getAccessToken()) {
-        setIsOrdersLoading(true);
         void refreshOrdersRef.current?.(true);
       } else {
         setOrders(getLocalStoredOrders(currentUser));
@@ -703,7 +768,7 @@ export default function App() {
       setCurrentUser(null);
       setCurrentRole('buyer');
       hadSessionRef.current = false;
-      
+
       // Hiển thị modal và thông báo hết hạn phiên nếu trước đó người dùng có phiên đăng nhập
       if (hadUser) {
         setIsSessionExpiredOpen(true);
@@ -1140,8 +1205,8 @@ export default function App() {
       createdAt: post.publishedAt || post.createdAt || new Date().toISOString(),
       isInspectionGuaranteed: true,
       requiresInspection: price > 5000000,
-      isInspected: isListingInspectionPassed(post),
-      inspectionPassed: isListingInspectionPassed(post),
+      isInspected: isListingInspectionPassed(post, ordersRef.current),
+      inspectionPassed: isListingInspectionPassed(post, ordersRef.current),
       photos: {
         front: photoList[0] || defaultImg,
         back: photoList[1] || '',
@@ -1218,7 +1283,7 @@ export default function App() {
           if (myItems && myItems.length > 0) {
             try {
               localStorage.setItem('all_seller_posts_cache', JSON.stringify(myItems));
-            } catch {}
+            } catch { }
             const existingIds = new Set(postsData.map((p: any) => p.postId || p.id));
             for (const myItem of myItems) {
               const myId = myItem.postId || myItem.id;
@@ -1285,6 +1350,7 @@ export default function App() {
           prev.map((item) => {
             const isOwner =
               item.sellerId === updated.id ||
+              item.sellerId === 'me' ||
               (updated.name && item.sellerName?.trim().toLowerCase() === updated.name?.trim().toLowerCase());
             if (isOwner) {
               return {
@@ -1323,17 +1389,35 @@ export default function App() {
     [loadListingsFromBackend]
   );
 
+  const orderFeedQuery = readOrderFeedQuery(browserLocation);
+  const orderFeed = useEscrowOrderFeed(
+    activeTab === 'orders' && routeAccess === 'allowed' && !isRestoringSession && Boolean(currentUser?.id),
+    ordersScope,
+    orderFeedQuery,
+    isValidUUID(route.params.orderId || '') ? route.params.orderId : undefined,
+  );
+  const orderFeedRows = React.useMemo(() => {
+    const data = orderFeed.data;
+    if (!data) return { orders: [], detail: null };
+    const mapRow = (row: typeof data.items[number]) => mapEscrowOrder(orderFeedItemToRaw(row), {
+      currentListings: listingsRef.current, currentUser: currentUserRef.current, currentRole,
+      postCacheMap, postTitleCacheMap, authoritative: true,
+    });
+    return { orders: data.items.map(mapRow), detail: data.detail ? mapRow(data.detail) : null };
+  }, [orderFeed.data, currentRole]);
+  const refreshOrderFeedRef = useRef(orderFeed.refresh);
+  refreshOrderFeedRef.current = orderFeed.refresh;
+
   // Synchronize orders directly with Backend
   const loadUserOrders = React.useCallback(async (force = false) => {
+    if (force) refreshOrderFeedRef.current();
     const currentUser = currentUserRef.current;
     if (!currentUser || !getAccessToken()) {
       setOrders([]);
-      setIsOrdersLoading(false);
       return;
     }
     // The center page owns its orders. Avoid loading the same data (and chats) in App.
     if (isRestoringSession || isCenterAccount) {
-      if (isCenterAccount) setIsOrdersLoading(false);
       return;
     }
     const scope = `${currentUser.id}:${currentRole}`;
@@ -1395,7 +1479,7 @@ export default function App() {
       try {
         const rawSellerPosts = localStorage.getItem('all_seller_posts_cache');
         if (rawSellerPosts) allSellerPostsCached = JSON.parse(rawSellerPosts);
-      } catch {}
+      } catch { }
 
       const rawBuyerItems = (buyerRes as any)?.content || (buyerRes as any)?.items || (Array.isArray(buyerRes) ? buyerRes : []);
       const rawSellerItems = (sellerRes as any)?.content || (sellerRes as any)?.items || (Array.isArray(sellerRes) ? sellerRes : []);
@@ -1420,13 +1504,153 @@ export default function App() {
         }
       });
 
-      // Deduplicate by order id
+      // Index all inspection orders by id and linkedOrderId to merge with escrow orders
+      const allInspDtos = [...rawInspBuyerItems, ...rawInspSellerItems, ...rawInspMyItems];
+      const inspByLinkedId = new Map<string, any>();
+      const inspById = new Map<string, any>();
+
+      allInspDtos.forEach((insp: any) => {
+        if (!insp) return;
+        if (insp.id) inspById.set(insp.id, insp);
+        if (insp.linkedOrderId) inspByLinkedId.set(insp.linkedOrderId, insp);
+
+        // Đánh dấu bài đăng đã đạt kiểm định Hub (kể cả khi người mua từ chối mua tiếp)
+        if (isOrderInspectionVerdictPassed(insp)) {
+          const targetPid = insp.postId || insp.listingId || insp.listing?.id;
+          const targetTitle = insp.postTitle || insp.listing?.title || insp.title;
+          if (targetPid) {
+            markListingInspectionPassed(String(targetPid), targetTitle);
+          }
+        }
+
+        // Đồng bộ realtime appointment từ BE vào localStorage
+        if (insp.counterScheduledAt || insp.appointmentScheduledAt) {
+          const targetIds = [insp.id, insp.linkedOrderId].filter(Boolean);
+          // Không ghi đè nếu ở local Seller đã đề xuất lịch mới đang chờ trung tâm duyệt
+          const isLocallyRescheduled = targetIds.some((tid) => {
+            try {
+              const raw = localStorage.getItem(`order_appointment_${tid}`);
+              if (raw) {
+                const parsed = JSON.parse(raw);
+                if (parsed.status === 'PENDING_CENTER_CONFIRMATION' && !parsed.counterScheduledAt) {
+                  return true;
+                }
+              }
+            } catch { }
+            return false;
+          });
+
+          if (!isLocallyRescheduled) {
+            const isCounter = Boolean(insp.counterScheduledAt || insp.appointmentStatus === 'COUNTERED_BY_CENTER' || insp.status === 'WAITING_SELLER_APPROVAL');
+            const apptStatus = isCounter
+              ? 'COUNTERED_BY_CENTER'
+              : (insp.appointmentStatus || (insp.inspectorId ? 'CONFIRMED' : 'PENDING_CENTER_CONFIRMATION'));
+            const apptRecord = {
+              scheduledAt: insp.appointmentScheduledAt,
+              note: insp.appointmentNote || '',
+              shift: insp.counterShift || 'MORNING',
+              status: apptStatus,
+              counterScheduledAt: insp.counterScheduledAt,
+              counterShift: insp.counterShift,
+              counterNote: insp.counterNote,
+            };
+            targetIds.forEach((tid) => {
+              try {
+                localStorage.setItem(`order_appointment_${tid}`, JSON.stringify(apptRecord));
+              } catch { }
+            });
+          }
+        }
+      });
+
+      // Deduplicate and merge by order id
       const orderMap = new Map<string, any>();
-      rawBuyerItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, { ...item, __isInspection: false }); });
-      rawSellerItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, { ...item, __isInspection: false }); });
-      rawInspBuyerItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, { ...item, __isInspection: true }); });
-      rawInspSellerItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, { ...item, __isInspection: true }); });
-      rawInspMyItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, { ...item, __isInspection: true }); });
+      rawBuyerItems.forEach((item: any) => {
+        if (!item?.id) return;
+        const matchedInsp = inspByLinkedId.get(item.id) || inspById.get(item.id);
+        if (matchedInsp?.status === 'INSPECTING' || matchedInsp?.homeCheckedInAt) {
+          try {
+            localStorage.setItem(`at_home_inspector_arrived_${item.id}`, 'true');
+            localStorage.setItem(`order_inspecting_${item.id}`, 'true');
+            localStorage.setItem(`inspection_status_${item.id}`, 'INSPECTING');
+            if (matchedInsp.id) {
+              localStorage.setItem(`at_home_inspector_arrived_${matchedInsp.id}`, 'true');
+              localStorage.setItem(`order_inspecting_${matchedInsp.id}`, 'true');
+              localStorage.setItem(`inspection_status_${matchedInsp.id}`, 'INSPECTING');
+            }
+          } catch { }
+        }
+        const merged = matchedInsp ? {
+          ...item,
+          ...matchedInsp,
+          id: item.id,
+          inspectionOrderId: matchedInsp.id,
+          orderType: matchedInsp.orderType || item.orderType,
+          inspectionMethod: matchedInsp.orderType || item.inspectionMethod || 'AT_HOME',
+          inspectionStatus: matchedInsp.status || item.inspectionStatus,
+          homeCheckedInAt: matchedInsp.homeCheckedInAt || item.homeCheckedInAt,
+          appointmentScheduledAt: matchedInsp.appointmentScheduledAt || item.appointmentScheduledAt,
+          appointmentNote: matchedInsp.appointmentNote || item.appointmentNote,
+          appointmentStatus: matchedInsp.appointmentStatus || item.appointmentStatus,
+          counterScheduledAt: matchedInsp.counterScheduledAt || item.counterScheduledAt,
+          counterShift: matchedInsp.counterShift || item.counterShift,
+          counterNote: matchedInsp.counterNote || item.counterNote,
+          appointmentRejectionReason: matchedInsp.appointmentRejectionReason || item.appointmentRejectionReason,
+          inspectorId: matchedInsp.inspectorId || item.inspectorId,
+          inspectorName: matchedInsp.inspectorName || item.inspectorName,
+          status: matchedInsp.status === 'WAITING_SELLER_APPROVAL' ? 'WAITING_SELLER_APPROVAL' : item.status,
+          __isInspection: true,
+        } : { ...item, __isInspection: Boolean(item.hasInspectionService || item.inspectionFeeVnd) };
+        orderMap.set(item.id, merged);
+      });
+
+      rawSellerItems.forEach((item: any) => {
+        if (!item?.id) return;
+        const matchedInsp = inspByLinkedId.get(item.id) || inspById.get(item.id);
+        if (matchedInsp?.status === 'INSPECTING' || matchedInsp?.homeCheckedInAt) {
+          try {
+            localStorage.setItem(`at_home_inspector_arrived_${item.id}`, 'true');
+            localStorage.setItem(`order_inspecting_${item.id}`, 'true');
+            localStorage.setItem(`inspection_status_${item.id}`, 'INSPECTING');
+            if (matchedInsp.id) {
+              localStorage.setItem(`at_home_inspector_arrived_${matchedInsp.id}`, 'true');
+              localStorage.setItem(`order_inspecting_${matchedInsp.id}`, 'true');
+              localStorage.setItem(`inspection_status_${matchedInsp.id}`, 'INSPECTING');
+            }
+          } catch { }
+        }
+        const merged = matchedInsp ? {
+          ...item,
+          ...matchedInsp,
+          id: item.id,
+          inspectionOrderId: matchedInsp.id,
+          orderType: matchedInsp.orderType || item.orderType,
+          inspectionMethod: matchedInsp.orderType || item.inspectionMethod || 'AT_HOME',
+          inspectionStatus: matchedInsp.status || item.inspectionStatus,
+          homeCheckedInAt: matchedInsp.homeCheckedInAt || item.homeCheckedInAt,
+          appointmentScheduledAt: matchedInsp.appointmentScheduledAt || item.appointmentScheduledAt,
+          appointmentNote: matchedInsp.appointmentNote || item.appointmentNote,
+          appointmentStatus: matchedInsp.appointmentStatus || item.appointmentStatus,
+          counterScheduledAt: matchedInsp.counterScheduledAt || item.counterScheduledAt,
+          counterShift: matchedInsp.counterShift || item.counterShift,
+          counterNote: matchedInsp.counterNote || item.counterNote,
+          appointmentRejectionReason: matchedInsp.appointmentRejectionReason || item.appointmentRejectionReason,
+          inspectorId: matchedInsp.inspectorId || item.inspectorId,
+          inspectorName: matchedInsp.inspectorName || item.inspectorName,
+          status: matchedInsp.status === 'WAITING_SELLER_APPROVAL' ? 'WAITING_SELLER_APPROVAL' : item.status,
+          __isInspection: true,
+        } : { ...item, __isInspection: Boolean(item.hasInspectionService || item.inspectionFeeVnd) };
+        orderMap.set(item.id, merged);
+      });
+
+      // Thêm các đơn kiểm định độc lập chưa có trong orderMap
+      allInspDtos.forEach((insp: any) => {
+        if (!insp?.id) return;
+        if (insp.linkedOrderId && orderMap.has(insp.linkedOrderId)) return;
+        if (!orderMap.has(insp.id)) {
+          orderMap.set(insp.id, { ...insp, __isInspection: true });
+        }
+      });
 
       // Nạp thêm các đơn kiểm định cục bộ từ my_seller_inspection_orders và recent_placed_orders
       try {
@@ -1441,7 +1665,7 @@ export default function App() {
             });
           }
         }
-      } catch {}
+      } catch { }
 
       try {
         const rawRecent = localStorage.getItem('recent_placed_orders');
@@ -1455,549 +1679,15 @@ export default function App() {
             });
           }
         }
-      } catch {}
+      } catch { }
 
       const items = Array.from(orderMap.values());
       if (items && items.length > 0) {
         const currentListings = listingsRef.current;
-        const mappedOrders: EscrowOrder[] = items.map((bOrd: any) => {
-          let cachedListing: any = (bOrd.postId ? postCacheMap.get(String(bOrd.postId)) : null)
-            || (bOrd.postTitle ? postTitleCacheMap.get(bOrd.postTitle.toLowerCase().trim()) : null);
-
-          if (!cachedListing) {
-            try {
-              const rawOrderListing = localStorage.getItem(`order_listing_${bOrd.id}`);
-              if (rawOrderListing) cachedListing = JSON.parse(rawOrderListing);
-              if (!cachedListing && bOrd.postId) {
-                const rawPost = localStorage.getItem(`cached_post_${bOrd.postId}`);
-                if (rawPost) cachedListing = JSON.parse(rawPost);
-              }
-              if (!cachedListing && bOrd.postTitle) {
-                const rawPostByTitle = localStorage.getItem(`cached_post_title_${bOrd.postTitle.toLowerCase().trim()}`);
-                if (rawPostByTitle) cachedListing = JSON.parse(rawPostByTitle);
-              }
-              if (!cachedListing && allSellerPostsCached.length > 0) {
-                const matchedFromSellerCache = allSellerPostsCached.find((p: any) =>
-                  (p.postId && p.postId === bOrd.postId) ||
-                  (p.id && p.id === bOrd.postId) ||
-                  (bOrd.postTitle && p.title && p.title.toLowerCase().trim() === bOrd.postTitle.toLowerCase().trim())
-                );
-                if (matchedFromSellerCache) {
-                  cachedListing = mapBackendPostToListing(matchedFromSellerCache);
-                }
-              }
-            } catch {}
-          }
-
-          const directMatched = currentListings.find(l => l.id === bOrd.postId || (bOrd.postTitle && l.title === bOrd.postTitle));
-          const baseListing = directMatched || cachedListing;
-
-          const backendPostImg = (bOrd as any).postImageUrl || (bOrd as any).postImageUrls?.[0];
-          const resolvedPostTitle = bOrd.postTitle || baseListing?.title || postTitleMap.get(bOrd.postId) || 'Thiết bị gia dụng SecondLife';
-          const resolvedImage = backendPostImg
-            || postImageMap.get(bOrd.postId)
-            || (baseListing?.photos?.front && !baseListing.photos.front.includes('photo-1555041469') && !baseListing.photos.front.includes('photo-1584269600464') ? baseListing.photos.front : '')
-            || (baseListing?.photoGallery?.[0] && !baseListing.photoGallery[0].includes('photo-1555041469') && !baseListing.photoGallery[0].includes('photo-1584269600464') ? baseListing.photoGallery[0] : '')
-            || baseListing?.photos?.front
-            || 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?auto=format&fit=crop&q=80&w=800';
-
-          const rawMatchedListing = baseListing ? {
-            ...baseListing,
-            title: resolvedPostTitle,
-            photos: {
-              ...baseListing.photos,
-              front: resolvedImage,
-              back: (bOrd as any).postImageUrls?.[1] || baseListing.photos?.back || resolvedImage,
-              screenOrDetails: (bOrd as any).postImageUrls?.[2] || baseListing.photos?.screenOrDetails || resolvedImage,
-              accessoriesOrBox: baseListing.photos?.accessoriesOrBox || resolvedImage,
-              serialOrReceipt: baseListing.photos?.serialOrReceipt || resolvedImage,
-            },
-            photoGallery: ((bOrd as any).postImageUrls && (bOrd as any).postImageUrls.length > 0)
-              ? (bOrd as any).postImageUrls
-              : ((baseListing.photoGallery && baseListing.photoGallery.length > 0) ? baseListing.photoGallery : [resolvedImage]),
-          } : {
-            id: bOrd.postId,
-            title: resolvedPostTitle,
-            category: 'Nội thất & Gia dụng',
-            brand: 'SecondLife',
-            model: 'Verified Model',
-            purchaseYear: 2024,
-            priceVnd: Number(bOrd.itemPriceVnd || bOrd.finalItemPrice || bOrd.postPrice || bOrd.finalPrice || bOrd.price || 0),
-            conditionGrade: 'Good',
-            declaredConditionText: 'Sản phẩm đã qua kiểm định cơ bản',
-            description: 'Giao dịch bảo lãnh qua Quỹ Escrow SecondLife.',
-            location: 'Đà Nẵng, Việt Nam',
-            sellerId: bOrd.sellerId,
-            sellerName: 'Người Bán SecondLife',
-            sellerRating: 4.9,
-            sellerCompletedOrders: 10,
-            sellerVerified: true,
-            status: 'sold',
-            createdAt: bOrd.createdAt,
-            isInspectionGuaranteed: true,
-            requiresInspection: true,
-            photos: {
-              front: resolvedImage,
-              back: resolvedImage,
-              screenOrDetails: resolvedImage,
-              accessoriesOrBox: resolvedImage,
-              serialOrReceipt: resolvedImage
-            },
-            photoGallery: [resolvedImage],
-          };
-
-          const matchedListing = resolveOrderListing(rawMatchedListing);
-
-          const inspFee = Number(bOrd.inspectionFeeVnd || bOrd.buyerInspectionFeeVnd || bOrd.buyerFeeShare || bOrd.inspectionFee || 0);
-          const isInspectionOrder = Boolean(bOrd.__isInspection || bOrd.hasInspectionService || inspFee > 0 || bOrd.orderType);
-          const rawStatusUpper = String(bOrd.status || (bOrd as any).backendStatus || '').toUpperCase();
-          const customerInspectionStatus = getCustomerInspectionStatus(rawStatusUpper, bOrd.customerStatus, bOrd.inspectorId);
-          const inspectionStage = bOrd.__isInspection && getBuyerInspectionStage({
-            inspectionStatus: customerInspectionStatus,
-            inspectionNote: bOrd.note,
-            finalPaymentPaidAt: bOrd.finalPaymentPaidAt,
-            linkedOrderId: bOrd.linkedOrderId,
-          });
-
-          const isReceiptConfirmedLocal =
-            !inspectionStage &&
-            typeof window !== 'undefined' &&
-            localStorage.getItem(`order_receipt_confirmed_${bOrd.id}`) === 'true';
-
-          const isCompletedOrReleased = Boolean(
-            bOrd.escrowStatus === 'RELEASED' ||
-            bOrd.escrowStatus === 'COMPLETED_RELEASED' ||
-            bOrd.status === 'COMPLETED' ||
-            bOrd.status === 'RELEASED' ||
-            (bOrd as any).backendStatus === 'COMPLETED' ||
-            bOrd.releasedAt ||
-            bOrd.released_at ||
-            isReceiptConfirmedLocal
-          );
-
-          const activeInspectionStatuses = [
-            'WAITING_SELLER_APPROVAL',
-            'WAITING_BUYER_APPROVAL',
-            'WAITING_FEE_PAYMENT',
-            'CONFIRMED_PENDING_DISPATCH',
-            'DISPATCHED',
-            'SCHEDULED',
-            'SHIPPING_TO_CENTER',
-            'INSPECTING',
-            'PASSED',
-            'DELIVERING_TO_BUYER',
-          ];
-          const isActivelyProcessingInspection = isInspectionOrder && activeInspectionStatuses.includes(rawStatusUpper);
-
-          if (isActivelyProcessingInspection && typeof window !== 'undefined') {
-            try {
-              localStorage.removeItem(`order_cancellation_info_${bOrd.id}`);
-              localStorage.removeItem(`order_cancelled_${bOrd.id}`);
-            } catch {}
-          }
-
-          const isLocalCancelled = !isActivelyProcessingInspection && typeof window !== 'undefined' && (
-            localStorage.getItem(`order_cancellation_info_${bOrd.id}`) !== null ||
-            localStorage.getItem(`order_cancelled_${bOrd.id}`) === 'true'
-          );
-
-          const isCancelledOrRefund = !isCompletedOrReleased && !isActivelyProcessingInspection && Boolean(
-            isLocalCancelled ||
-            bOrd.escrowStatus === 'CANCELLED' ||
-            bOrd.escrowStatus === 'REFUNDED' ||
-            bOrd.escrowStatus === 'REFUNDED_TO_BUYER' ||
-            bOrd.status === 'CANCELLED' ||
-            bOrd.status === 'FAILED' ||
-            bOrd.status === 'PAYMENT_EXPIRED' ||
-            bOrd.status === 'REJECTED'
-          );
-
-          let mappedEscrowStatus: EscrowOrder['escrowStatus'] = 'AWAITING_PAYMENT';
-          if (isCompletedOrReleased) {
-            mappedEscrowStatus = 'COMPLETED_RELEASED';
-          } else if (isCancelledOrRefund) {
-            mappedEscrowStatus = 'REFUNDED_TO_BUYER';
-          } else if (isInspectionOrder) {
-            const localSavedStatus = typeof window !== 'undefined' ? localStorage.getItem(`inspection_status_${bOrd.id}`) : null;
-            const s = bOrd.__isInspection && (bOrd.customerStatus || customerInspectionStatus === 'INSPECTING')
-              ? customerInspectionStatus : String(localSavedStatus || bOrd.status || bOrd.backendStatus || '');
-            if (s === 'PASSED') {
-              mappedEscrowStatus = 'INSPECTION_PASSED';
-            } else if (s === 'FAILED' || s === 'REJECTED') {
-              mappedEscrowStatus = 'INSPECTION_FAILED';
-            } else if (s === 'INSPECTING') {
-              mappedEscrowStatus = 'INSPECTION_IN_PROGRESS';
-            } else if (s === 'DELIVERING_TO_BUYER') {
-              mappedEscrowStatus = 'SHIPPED_TO_BUYER';
-            } else if (s === 'COMPLETED') {
-              mappedEscrowStatus = 'COMPLETED_RELEASED';
-            } else if (s === 'DISPUTED') {
-              mappedEscrowStatus = 'DISPUTED';
-            } else if (s === 'CANCELLED' || s === 'PAYMENT_EXPIRED') {
-              mappedEscrowStatus = 'REFUNDED_TO_BUYER';
-            } else {
-              // WAITING_SELLER_APPROVAL, WAITING_BUYER_APPROVAL, CONFIRMED_PENDING_DISPATCH, DISPATCHED, SCHEDULED, SHIPPING_TO_CENTER
-              // Trạng thái ban đầu luôn là Chờ kiểm định
-              mappedEscrowStatus = 'AWAITING_INSPECTION';
-            }
-          } else {
-            if (bOrd.escrowStatus === 'RELEASED' || bOrd.status === 'COMPLETED') {
-              mappedEscrowStatus = 'COMPLETED_RELEASED';
-            } else if (bOrd.status === 'DELIVERED') {
-              mappedEscrowStatus = 'DELIVERED_INSPECTION_WINDOW';
-            } else if (bOrd.status === 'SHIPPED') {
-              mappedEscrowStatus = 'SHIPPED_TO_BUYER';
-            } else if (
-              bOrd.status === 'PROCESSING' ||
-              bOrd.status === 'CONFIRMED' ||
-              bOrd.escrowStatus === 'HELD' ||
-              bOrd.escrowStatus === 'FROZEN' ||
-              Boolean(bOrd.paidAt)
-            ) {
-              mappedEscrowStatus = 'HELD_IN_ESCROW';
-            } else if (
-              bOrd.status === 'PENDING_PAYMENT' ||
-              bOrd.status === 'PENDING' ||
-              bOrd.escrowStatus === 'PENDING' ||
-              bOrd.escrowStatus === 'PENDING_PAYMENT'
-            ) {
-              mappedEscrowStatus = 'AWAITING_PAYMENT';
-            } else {
-              mappedEscrowStatus = 'AWAITING_PAYMENT';
-            }
-          }
-
-          let parsedAddressObj: any = null;
-          let parsedBuyerName = '';
-          let parsedBuyerPhone = '';
-          if (bOrd.deliveryAddress) {
-            if (typeof bOrd.deliveryAddress === 'string') {
-              try {
-                parsedAddressObj = JSON.parse(bOrd.deliveryAddress);
-                if (parsedAddressObj && typeof parsedAddressObj === 'object') {
-                  parsedBuyerName = parsedAddressObj.name || '';
-                  parsedBuyerPhone = parsedAddressObj.phone || '';
-                }
-              } catch {
-                // normal text string
-              }
-            } else if (typeof bOrd.deliveryAddress === 'object') {
-              parsedAddressObj = bOrd.deliveryAddress;
-              parsedBuyerName = bOrd.deliveryAddress.name || '';
-              parsedBuyerPhone = bOrd.deliveryAddress.phone || '';
-            }
-          }
-
-          let cachedBuyer: any = null;
-          try {
-            const rawOrderBuyer = localStorage.getItem(`order_buyer_info_${bOrd.id}`);
-            if (rawOrderBuyer) {
-              cachedBuyer = JSON.parse(rawOrderBuyer);
-            } else if (bOrd.buyerId) {
-              const rawUser = localStorage.getItem(`buyer_info_${bOrd.buyerId}`);
-              if (rawUser) cachedBuyer = JSON.parse(rawUser);
-            }
-          } catch {}
-
-          const resolvedBuyerName = (
-            cachedBuyer?.buyerName ||
-            cachedBuyer?.name ||
-            buyerNameMap.get(bOrd.buyerId) ||
-            buyerNameMap.get(`post_${bOrd.postId}`) ||
-            parsedBuyerName ||
-            bOrd.buyerName ||
-            (currentRole === 'buyer' ? (currentUser?.name || currentUser?.email || 'Khách Hàng') : '') ||
-            `Khách Mua #${bOrd.buyerId ? bOrd.buyerId.slice(0, 8).toUpperCase() : 'VIP'}`
-          ).trim();
-
-          const resolvedBuyerPhone = (
-            cachedBuyer?.buyerPhone ||
-            cachedBuyer?.phone ||
-            parsedBuyerPhone ||
-            buyerPhoneMap.get(bOrd.buyerId) ||
-            bOrd.buyerPhone ||
-            (currentRole === 'buyer' ? (currentUser?.phone || '') : '') ||
-            ''
-          ).trim();
-
-          const resolvedSellerName = (
-            bOrd.sellerName ||
-            sellerNameMap.get(bOrd.sellerId) ||
-            matchedListing.sellerName ||
-            (currentRole === 'seller' ? (currentUser?.name || 'Người Bán') : 'Người Bán')
-          ).trim();
-
-          const buyerAddr = (currentUser && currentUser.id === bOrd.buyerId && (currentUser.address || currentUser.pickupAddress))
-            ? (currentUser.address || currentUser.pickupAddress || '')
-            : typeof bOrd.deliveryAddress === 'string'
-              ? (parsedAddressObj?.address || bOrd.deliveryAddress)
-              : bOrd.deliveryAddress?.detailAddress
-                ? `${bOrd.deliveryAddress.detailAddress}, ${bOrd.deliveryAddress.wardName || ''}, ${bOrd.deliveryAddress.provinceName || ''}`
-                : (cachedBuyer?.buyerAddress || currentUser?.address || (isInspectionOrder && bOrd.orderType !== 'AT_HOME' ? 'Trạm Kiểm Định SecondLife Hub' : 'Địa chỉ nhận hàng của người mua'));
-
-          const itemPrice = Number(bOrd.itemPriceVnd || bOrd.finalItemPrice || bOrd.postPrice || bOrd.finalPrice || bOrd.price || bOrd.listing?.priceVnd || matchedListing?.priceVnd || 0);
-          const shipFee = Number(bOrd.shippingFeeVnd || bOrd.shippingFee || bOrd.finalShippingFee || 0);
-          const totalPaid = Number(bOrd.totalPaidVnd || bOrd.totalPaid || (itemPrice + inspFee + shipFee));
-
-          let resolvedInspectorId = bOrd.inspectorId;
-          let resolvedInspectorName = bOrd.inspectorName;
-          let resolvedInspectorEmail = (bOrd as any).inspectorEmail;
-          let resolvedInspectorPhone = (bOrd as any).inspectorPhone;
-          try {
-            const rawAssign = localStorage.getItem(`order_assigned_inspector_${bOrd.id}`);
-            if (rawAssign) {
-              const assignData = JSON.parse(rawAssign);
-              resolvedInspectorId = assignData.inspectorId || resolvedInspectorId;
-              resolvedInspectorName = assignData.inspectorName || resolvedInspectorName;
-              resolvedInspectorEmail = assignData.inspectorEmail || resolvedInspectorEmail;
-              resolvedInspectorPhone = assignData.inspectorPhone || resolvedInspectorPhone;
-            }
-          } catch {}
-
-          const rawInspOrder = (bOrd as any).inspectionOrder || {};
-          const resolvedFeePayer = bOrd.feePayer || (bOrd as any).counterFeePayer || rawInspOrder.feePayer || undefined;
-          const resolvedFeeSplit: 'BUYER_100' | 'SPLIT_50_50' | 'SELLER_100' =
-            bOrd.inspectionFeeSplit ||
-            rawInspOrder.inspectionFeeSplit ||
-            (resolvedFeePayer === 'SELLER_PAYS' ? 'SELLER_100' :
-             resolvedFeePayer === 'SPLIT_50_50' ? 'SPLIT_50_50' :
-             resolvedFeePayer === 'BUYER_PAYS' ? 'BUYER_100' :
-             (bOrd.sellerFeeShare && Number(bOrd.sellerFeeShare) > 0 && bOrd.buyerFeeShare && Number(bOrd.buyerFeeShare) > 0) ? 'SPLIT_50_50' :
-             (bOrd.sellerFeeShare && Number(bOrd.sellerFeeShare) > 0) ? 'SELLER_100' : 'BUYER_100');
-
-          const resolvedSellerFeeShare = bOrd.sellerFeeShare !== undefined && bOrd.sellerFeeShare !== null
-            ? Number(bOrd.sellerFeeShare)
-            : ((bOrd as any).sellerInspectionFeeVnd !== undefined && (bOrd as any).sellerInspectionFeeVnd !== null
-              ? Number((bOrd as any).sellerInspectionFeeVnd)
-              : (rawInspOrder.sellerFeeShare !== undefined ? Number(rawInspOrder.sellerFeeShare) :
-                (resolvedFeeSplit === 'SPLIT_50_50' ? Math.round(inspFee / 2) : (resolvedFeeSplit === 'SELLER_100' ? inspFee : 0))));
-
-          const resolvedBuyerFeeShare = bOrd.buyerFeeShare !== undefined && bOrd.buyerFeeShare !== null
-            ? Number(bOrd.buyerFeeShare)
-            : ((bOrd as any).buyerInspectionFeeVnd !== undefined && (bOrd as any).buyerInspectionFeeVnd !== null
-              ? Number((bOrd as any).buyerInspectionFeeVnd)
-              : (rawInspOrder.buyerFeeShare !== undefined ? Number(rawInspOrder.buyerFeeShare) :
-                (resolvedFeeSplit === 'SPLIT_50_50' ? Math.round(inspFee / 2) : (resolvedFeeSplit === 'BUYER_100' ? inspFee : 0))));
-
-          const resolvedPaymentDeadline = bOrd.paymentDeadline || rawInspOrder.paymentDeadline || null;
-          const resolvedBuyerPaidAt = bOrd.buyerPaidAt || (bOrd as any).buyer_paid_at || rawInspOrder.buyerPaidAt || null;
-          const resolvedSellerPaidAt = bOrd.sellerPaidAt || (bOrd as any).seller_paid_at || rawInspOrder.sellerPaidAt || null;
-
-          const mappedOrder: EscrowOrder = {
-            id: bOrd.id,
-            listingId: bOrd.postId,
-            listing: matchedListing,
-            buyerId: bOrd.buyerId,
-            buyerName: resolvedBuyerName,
-            buyerPhone: resolvedBuyerPhone,
-            buyerAddress: buyerAddr,
-            sellerId: bOrd.sellerId,
-            sellerName: resolvedSellerName,
-            itemPriceVnd: itemPrice,
-            inspectionFeeVnd: inspFee,
-            shippingFeeVnd: shipFee,
-            platformFeeVnd: 0,
-            totalPaidVnd: totalPaid,
-            escrowStatus: isCompletedOrReleased ? 'COMPLETED_RELEASED' : (isCancelledOrRefund ? 'REFUNDED_TO_BUYER' : mappedEscrowStatus),
-            backendStatus: isCompletedOrReleased ? 'COMPLETED' : (isCancelledOrRefund ? 'CANCELLED' : ((mappedEscrowStatus === 'INSPECTION_PASSED' ? 'PASSED' : mappedEscrowStatus === 'INSPECTION_FAILED' ? 'FAILED' : bOrd.backendStatus || bOrd.status || (isInspectionOrder ? 'WAITING_SELLER_APPROVAL' : 'PROCESSING')) as any)),
-            status: isCompletedOrReleased ? 'COMPLETED' : (isCancelledOrRefund ? 'CANCELLED' : (mappedEscrowStatus === 'INSPECTION_PASSED' ? 'PASSED' : mappedEscrowStatus === 'INSPECTION_FAILED' ? 'FAILED' : (bOrd.status || bOrd.backendStatus || 'INSPECTING'))),
-            inspectorId: resolvedInspectorId || undefined,
-            inspectorName: resolvedInspectorName || undefined,
-            inspectorEmail: resolvedInspectorEmail || undefined,
-            inspectorPhone: resolvedInspectorPhone || undefined,
-            shippingQuoteId: bOrd.shippingQuoteId,
-            shippingDeliveredAt: bOrd.shippingDeliveredAt,
-            deliveryAddress: bOrd.deliveryAddress,
-            sellerConfirmedAt: (() => {
-              const inspStatusUpper = String(bOrd.status || (bOrd as any).backendStatus || '').toUpperCase();
-              const isInspConfirmedBySeller = isInspectionOrder && (
-                bOrd.sellerConsentZin === true ||
-                (Boolean(inspStatusUpper) && !['WAITING_SELLER_APPROVAL', 'PENDING'].includes(inspStatusUpper))
-              );
-              return isInspConfirmedBySeller
-                ? (bOrd.sellerPaidAt || bOrd.updatedAt || bOrd.createdAt || new Date().toISOString())
-                : (bOrd.sellerConfirmedAt || null);
-            })(),
-            confirmationDeadline: bOrd.confirmationDeadline || null,
-            confirmationCancelAt: bOrd.confirmationCancelAt || null,
-            confirmationStatus: (() => {
-              const inspStatusUpper = String(bOrd.status || (bOrd as any).backendStatus || '').toUpperCase();
-              const isInspConfirmedBySeller = isInspectionOrder && (
-                bOrd.sellerConsentZin === true ||
-                (Boolean(inspStatusUpper) && !['WAITING_SELLER_APPROVAL', 'PENDING'].includes(inspStatusUpper))
-              );
-              return isInspConfirmedBySeller
-                ? 'CONFIRMED'
-                : (bOrd.confirmationStatus || (bOrd.sellerConfirmedAt ? 'CONFIRMED' : 'PENDING'));
-            })(),
-            sellerReadyAt: (bOrd as any).sellerReadyAt || null,
-            carrierPickedUpAt: (bOrd as any).carrierPickedUpAt || null,
-            handoverDeadline: (bOrd as any).handoverDeadline || null,
-            appointmentScheduledAt: bOrd.appointmentScheduledAt || bOrd.scheduledAt || null,
-            appointmentNote: bOrd.appointmentNote || bOrd.note || null,
-            cancellationReasonCode: isCompletedOrReleased ? null : (bOrd.cancellationReasonCode || (bOrd as any).cancelReasonCode || (() => {
-              try {
-                const rawCancel = localStorage.getItem(`order_cancellation_info_${bOrd.id}`);
-                if (rawCancel) return JSON.parse(rawCancel).reasonCode;
-              } catch {}
-              return null;
-            })()),
-            cancellationReason: isCompletedOrReleased ? null : ((bOrd as any).cancellationReason || (bOrd as any).cancelReason || (() => {
-              try {
-                const rawCancel = localStorage.getItem(`order_cancellation_info_${bOrd.id}`);
-                if (rawCancel) return JSON.parse(rawCancel).reason;
-              } catch {}
-              return null;
-            })()),
-            cancelledBy: isCompletedOrReleased ? null : (bOrd.cancelledBy || null),
-            hasInspectionService: isInspectionOrder,
-            feePayer: resolvedFeePayer,
-            inspectionFeeSplit: resolvedFeeSplit,
-            sellerFeeShare: resolvedSellerFeeShare,
-            buyerFeeShare: resolvedBuyerFeeShare,
-            cashShippingSimulation: bOrd.cashShippingSimulation ?? rawInspOrder.cashShippingSimulation,
-            sellerInspectionFeeVnd: resolvedSellerFeeShare,
-            buyerInspectionFeeVnd: resolvedBuyerFeeShare,
-            sellerPaidAt: resolvedSellerPaidAt,
-            buyerPaidAt: resolvedBuyerPaidAt,
-            paymentDeadline: resolvedPaymentDeadline,
-            finalPaymentDeadline: (bOrd as any).finalPaymentDeadline || rawInspOrder.finalPaymentDeadline || null,
-            buyerCommitmentDeposit: bOrd.buyerCommitmentDeposit !== undefined ? Number(bOrd.buyerCommitmentDeposit) : (rawInspOrder.buyerCommitmentDeposit !== undefined ? Number(rawInspOrder.buyerCommitmentDeposit) : 0),
-            returnShippingReserveFee: bOrd.returnShippingReserveFee !== undefined ? Number(bOrd.returnShippingReserveFee) : (rawInspOrder.returnShippingReserveFee !== undefined ? Number(rawInspOrder.returnShippingReserveFee) : 0),
-            feeSettledAt: bOrd.feeSettledAt || rawInspOrder.feeSettledAt || null,
-            returnReserveStatus: (bOrd as any).returnReserveStatus || (rawInspOrder as any).returnReserveStatus || (bOrd as any).returnReserve?.status || (rawInspOrder as any).returnReserve?.status || null,
-            inspectionCenterId: bOrd.inspectionCenterId || (bOrd as any).inspectionCenter?.id || rawInspOrder.inspectionCenterId || undefined,
-            inspectionCenterName: bOrd.inspectionCenterName || (bOrd as any).inspectionCenter?.name || rawInspOrder.inspectionCenterName || undefined,
-            inspectionCenterAddress: bOrd.inspectionCenterAddress || (bOrd as any).inspectionCenter?.address || rawInspOrder.inspectionCenterAddress || undefined,
-            inspectionCenterPhone: bOrd.inspectionCenterPhone || (bOrd as any).inspectionCenter?.phone || rawInspOrder.inspectionCenterPhone || undefined,
-            inspectionStatus: bOrd.__isInspection ? customerInspectionStatus : undefined,
-            inspectionNote: bOrd.__isInspection ? bOrd.note : undefined,
-            linkedOrderId: bOrd.__isInspection ? bOrd.linkedOrderId : undefined,
-            finalPaymentPaidAt: bOrd.__isInspection ? bOrd.finalPaymentPaidAt : undefined,
-            inspectionMethod: isInspectionOrder
-              ? ((bOrd.orderType === 'AT_HOME' || bOrd.inspectionMethod === 'AT_HOME') ? 'AT_HOME' : 'AT_CENTER')
-              : undefined,
-            shippingLegs: (isInspectionOrder && bOrd.orderType !== 'AT_HOME')
-              ? [
-                  {
-                    id: 'LEG-1',
-                    legType: 'SELLER_TO_CENTER',
-                    carrier: 'Lalamove',
-                    trackingNumber: (bOrd as any).shipmentOrderCode || (bOrd as any).trackingNumber || '',
-                    status: bOrd.status === 'DELIVERED' ? 'DELIVERED' : (bOrd.status === 'SHIPPED' ? 'IN_TRANSIT' : 'PENDING'),
-                    origin: (bOrd as any).sellerAddress || matchedListing.sellerAddress || (matchedListing.location && matchedListing.location !== 'Đà Nẵng, Việt Nam' ? matchedListing.location : null) || 'Địa chỉ kho người bán',
-                    destination: (bOrd as any).inspectionCenterAddress || resolveInspectionCenter(bOrd).address || 'Giảng đường Phượng Vỹ, Đường số 8, Phường Linh Xuân, Thành phố Hồ Chí Minh',
-                    estimatedDelivery: 'Trong ngày',
-                    timeline: [
-                      {
-                        timestamp: bOrd.createdAt ? new Date(bOrd.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '--:--',
-                        description: 'Khởi tạo đơn hàng kiểm định Hub. Chờ bưu tá Lalamove chuyển kiện hàng về Hub.',
-                        location: 'Hệ thống SecondLife Hub'
-                      }
-                    ]
-                  },
-                  {
-                    id: 'LEG-2',
-                    legType: 'CENTER_TO_BUYER',
-                    carrier: 'Lalamove',
-                    trackingNumber: '',
-                    status: 'PENDING',
-                    origin: (bOrd as any).inspectionCenterAddress || resolveInspectionCenter(bOrd).address || 'Giảng đường Phượng Vỹ, Đường số 8, Phường Linh Xuân, Thành phố Hồ Chí Minh',
-                    destination: buyerAddr,
-                    estimatedDelivery: 'Giao nhanh trong ngày sau kiểm định',
-                    timeline: [
-                      {
-                        timestamp: '--:--',
-                        description: 'Chờ hoàn tất kiểm định tại Hub và niêm phong giao đến người mua.',
-                        location: buyerAddr
-                      }
-                    ]
-                  }
-                ]
-              : (isInspectionOrder && bOrd.orderType === 'AT_HOME')
-              ? [
-                  {
-                    id: 'LEG-1',
-                    legType: 'SELLER_TO_BUYER',
-                    carrier: 'SecondLife On-site Team',
-                    trackingNumber: '',
-                    status: 'PENDING',
-                    origin: matchedListing.sellerAddress || matchedListing.location || 'Địa chỉ kho người bán',
-                    destination: 'Kiểm định tại nhà người bán',
-                    estimatedDelivery: 'Kỹ sư đến tận nơi theo lịch hẹn',
-                    timeline: [
-                      {
-                        timestamp: bOrd.createdAt ? new Date(bOrd.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '--:--',
-                        description: 'Cử chuyên viên kỹ thuật đến kiểm định on-site tại nhà người bán.',
-                        location: 'Địa chỉ kho người bán'
-                      }
-                    ]
-                  },
-                  {
-                    id: 'LEG-2',
-                    legType: 'SELLER_TO_BUYER',
-                    carrier: 'Lalamove',
-                    trackingNumber: (bOrd as any).shipmentOrderCode || (bOrd as any).trackingNumber || '',
-                    status: bOrd.status === 'DELIVERED' ? 'DELIVERED' : (bOrd.status === 'SHIPPED' ? 'IN_TRANSIT' : 'PENDING'),
-                    origin: matchedListing.sellerAddress || matchedListing.location || 'Địa chỉ kho người bán',
-                    destination: buyerAddr,
-                    estimatedDelivery: 'Giao ngay sau khi kiểm định đạt chuẩn',
-                    timeline: [
-                      {
-                        timestamp: '--:--',
-                        description: 'Tài xế Lalamove nhận hàng tại nhà người bán và phát thẳng đến người mua sau khi niêm phong.',
-                        location: buyerAddr
-                      }
-                    ]
-                  }
-                ]
-              : [
-                  {
-                    id: 'LEG-1',
-                    legType: 'SELLER_TO_BUYER',
-                    carrier: 'Lalamove',
-                    trackingNumber: (bOrd as any).shipmentOrderCode || (bOrd as any).trackingNumber || '',
-                    status: bOrd.status === 'DELIVERED' ? 'DELIVERED' : (bOrd.status === 'SHIPPED' ? 'IN_TRANSIT' : 'PENDING'),
-                    origin: matchedListing.sellerAddress || matchedListing.location || 'Địa chỉ kho người bán',
-                    destination: buyerAddr,
-                    estimatedDelivery: '1 - 2 ngày',
-                    timeline: [
-                      {
-                        timestamp: bOrd.createdAt ? new Date(bOrd.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '--:--',
-                        description: `Khởi tạo đơn hàng giao trực tiếp. Trạng thái: ${bOrd.status || 'PROCESSING'}.`,
-                        location: 'Hệ thống Vận chuyển Lalamove'
-                      }
-                    ]
-                  }
-                ],
-            createdAt: bOrd.createdAt || bOrd.createdDate || bOrd.created_at || bOrd.paidAt || bOrd.sellerConfirmedAt || bOrd.updatedAt || new Date().toISOString(),
-            multiStagePhotos: {
-              listingPhotos: Array.from(new Set([
-                ...((bOrd as any).postImageUrls || []),
-                (bOrd as any).postImageUrl,
-                ...(matchedListing.photoGallery || []),
-                matchedListing.photos?.front,
-                matchedListing.photos?.back,
-                matchedListing.photos?.screenOrDetails,
-                matchedListing.photos?.accessoriesOrBox,
-                matchedListing.photos?.serialOrReceipt,
-              ].filter((u): u is string => typeof u === 'string' && u.trim().length > 0))),
-              inspectorPhotos: Array.isArray((bOrd as any).inspectorPhotos) && (bOrd as any).inspectorPhotos.length > 0
-                ? (bOrd as any).inspectorPhotos
-                : (Array.isArray((bOrd as any).proofPhotos) && (bOrd as any).proofPhotos.length > 0
-                  ? (bOrd as any).proofPhotos
-                  : []),
-              handoverPhotos: (bOrd as any).tamperSealPhoto ? [(bOrd as any).tamperSealPhoto] : [],
-            }
-          };
-          if (isCompletedOrReleased && typeof window !== 'undefined') {
-            try {
-              localStorage.setItem(`order_receipt_confirmed_${bOrd.id}`, 'true');
-              localStorage.removeItem(`order_cancellation_info_${bOrd.id}`);
-            } catch {}
-          }
-          return mappedOrder;
-        });
+        const mappedOrders = items.map((order) => mapEscrowOrder(order, {
+          currentListings, currentUser, currentRole, allSellerPostsCached, mapBackendPostToListing,
+          postCacheMap, postTitleCacheMap, buyerNameMap, buyerPhoneMap, sellerNameMap, postImageMap, postTitleMap,
+        }));
 
         // Merge with recent locally placed orders so newly placed orders are never lost
         const localRecentOrders = getLocalStoredOrders(currentUser);
@@ -2073,7 +1763,7 @@ export default function App() {
                 try {
                   localStorage.removeItem(`order_cancellation_info_${locOrd.id}`);
                   localStorage.removeItem(`order_cancelled_${locOrd.id}`);
-                } catch {}
+                } catch { }
               }
             }
           } else if (isLocCancelled) {
@@ -2087,7 +1777,7 @@ export default function App() {
                 locOrd.cancellationReasonCode = cancelObj.reasonCode || locOrd.cancellationReasonCode;
                 locOrd.cancellationReason = cancelObj.reason || locOrd.cancellationReason;
               }
-            } catch {}
+            } catch { }
           }
           const isBuyer = Boolean(
             (currentUser?.id && String(locOrd.buyerId) === String(currentUser.id)) ||
@@ -2154,7 +1844,7 @@ export default function App() {
         // Cache all orders for instant synchronous reference by getBoughtListingIds
         try {
           localStorage.setItem('all_orders_cache', JSON.stringify(deduplicatedCombined));
-        } catch {}
+        } catch { }
 
         // Reconcile and free up any listings whose orders are refunded/cancelled
         reconcileBoughtListingIds(deduplicatedCombined);
@@ -2167,6 +1857,9 @@ export default function App() {
           if (isOrderCancelledOrRefunded(o)) {
             cancelledListingIds.add(lid);
           }
+          if (isOrderInspectionVerdictPassed(o)) {
+            markListingInspectionPassed(lid, o.listing?.title || (o as any).postTitle || (o as any).title);
+          }
         });
 
         const freeListings = Array.from(cancelledListingIds);
@@ -2174,7 +1867,7 @@ export default function App() {
           freeListings.forEach((lid) => {
             try {
               localStorage.setItem(`listing_available_${lid}`, 'true');
-            } catch {}
+            } catch { }
           });
         }
 
@@ -2190,7 +1883,7 @@ export default function App() {
         });
         try {
           localStorage.setItem('all_orders_cache', JSON.stringify(localRecentOrders));
-        } catch {}
+        } catch { }
         reconcileBoughtListingIds(localRecentOrders);
         setOrders(localRecentOrders);
       }
@@ -2201,11 +1894,10 @@ export default function App() {
       const localRecentOrders = getLocalStoredOrders(currentUser);
       try {
         localStorage.setItem('all_orders_cache', JSON.stringify(localRecentOrders));
-      } catch {}
+      } catch { }
       reconcileBoughtListingIds(localRecentOrders);
       setOrders(localRecentOrders);
     } finally {
-      setIsOrdersLoading(false);
       if (pendingOrdersRef.current === pending) {
         pendingOrdersRef.current = null;
         if (pending.refresh && ordersScopeRef.current === scope) void refreshOrdersRef.current?.(true);
@@ -2253,6 +1945,7 @@ export default function App() {
           return;
         }
 
+        if (activeTab === 'orders') refreshOrderFeedRef.current();
         loadUserOrders().finally(() => {
           scheduleNext();
         });
@@ -2370,10 +2063,10 @@ export default function App() {
       try {
         const stored = localStorage.getItem('recent_placed_orders');
         if (stored) existingRecent = JSON.parse(stored);
-      } catch {}
+      } catch { }
       const updatedRecent = [newOrder, ...existingRecent.filter((o) => o.id !== newOrder.id)].slice(0, 30);
       localStorage.setItem('recent_placed_orders', JSON.stringify(updatedRecent));
-    } catch {}
+    } catch { }
 
     // Lập tức ẩn sản phẩm vừa mua khỏi sàn (status -> reserved)
     const boughtListingId = newOrder.listingId || newOrder.listing?.id;
@@ -2423,7 +2116,7 @@ export default function App() {
           window.history.replaceState(null, '', newUrl.toString());
         }
         window.dispatchEvent(new Event('secondlife_tab_changed'));
-      } catch {}
+      } catch { }
     } else {
       try {
         sessionStorage.setItem('secondlife_orders_filter_tab', 'all');
@@ -2435,14 +2128,15 @@ export default function App() {
           window.history.replaceState(null, '', newUrl.toString());
         }
         window.dispatchEvent(new Event('secondlife_tab_changed'));
-      } catch {}
+      } catch { }
     }
     loadUserWallet();
     showToast(`Đã phong tỏa Escrow ${formatVND(newOrder.totalPaidVnd)} cho đơn hàng #${newOrder.id}! Bưu tá đang chuẩn bị lấy hàng.`);
   };
 
   const handleConfirmReceipt = async (orderId: string) => {
-    const order = orders.find((item) => item.id === orderId);
+    const order = orderFeedRows.orders.find((item) => item.id === orderId) ||
+      (orderFeedRows.detail?.id === orderId ? orderFeedRows.detail : undefined) || orders.find((item) => item.id === orderId);
     if (order && getBuyerInspectionStage(order)) return;
     try {
       if (typeof window !== 'undefined') {
@@ -2484,6 +2178,7 @@ export default function App() {
         ord.id === orderId ? { ...ord, escrowStatus: 'SHIPPED_TO_BUYER' } : ord
       )
     );
+    refreshOrderFeedRef.current();
     showToast(lang === 'vi' ? 'Đã xác nhận gửi hàng! Bưu tá đang vận chuyển đến người mua.' : 'Marked as shipped!');
   };
 
@@ -2491,7 +2186,8 @@ export default function App() {
     orderId: string,
     cancelData?: { reasonCode: 'BUYER_REQUESTED' | 'SELLER_OUT_OF_STOCK' | 'SELLER_CANNOT_FULFILL'; reason: string }
   ) => {
-    let targetOrder = orders.find((o) => String(o.id) === String(orderId));
+    let targetOrder = orderFeedRows.orders.find((order) => order.id === orderId) ||
+      (orderFeedRows.detail?.id === orderId ? orderFeedRows.detail : undefined) || orders.find((o) => o.id === orderId);
     if (!targetOrder) {
       try {
         const rawAll = localStorage.getItem('all_orders_cache');
@@ -2499,7 +2195,7 @@ export default function App() {
           const parsed: EscrowOrder[] = JSON.parse(rawAll);
           targetOrder = parsed.find((o) => String(o.id) === String(orderId));
         }
-      } catch {}
+      } catch { }
     }
     if (!targetOrder) {
       try {
@@ -2508,7 +2204,7 @@ export default function App() {
           const parsed: EscrowOrder[] = JSON.parse(rawRecent);
           targetOrder = parsed.find((o) => String(o.id) === String(orderId));
         }
-      } catch {}
+      } catch { }
     }
     if (!targetOrder) {
       try {
@@ -2517,7 +2213,7 @@ export default function App() {
           const parsed: EscrowOrder[] = JSON.parse(rawSeller);
           targetOrder = parsed.find((o) => String(o.id) === String(orderId));
         }
-      } catch {}
+      } catch { }
     }
     if (!targetOrder) {
       try {
@@ -2526,7 +2222,7 @@ export default function App() {
           const parsed: EscrowOrder[] = JSON.parse(rawCenter);
           targetOrder = parsed.find((o) => String(o.id) === String(orderId));
         }
-      } catch {}
+      } catch { }
     }
 
     const isSellerCancel = targetOrder?.sellerId === currentUser?.id || currentRole === 'seller';
@@ -2552,7 +2248,7 @@ export default function App() {
       try {
         localStorage.setItem(`order_cancellation_info_${orderId}`, JSON.stringify(effectiveCancelData));
         localStorage.setItem(`order_cancelled_${orderId}`, 'true');
-      } catch {}
+      } catch { }
 
       // Nếu là đơn kiểm định, không gọi /api/v1/orders/{id}/cancel (vì backend chỉ hỗ trợ bảng orders, gọi sẽ gây lỗi 404)
       if (isInspectionOrder) {
@@ -2580,13 +2276,13 @@ export default function App() {
         prev.map((ord) =>
           String(ord.id) === String(orderId)
             ? {
-                ...ord,
-                escrowStatus: 'REFUNDED_TO_BUYER',
-                backendStatus: 'CANCELLED',
-                status: 'CANCELLED',
-                cancellationReasonCode: effectiveCancelData.reasonCode,
-                cancellationReason: effectiveCancelData.reason,
-              }
+              ...ord,
+              escrowStatus: 'REFUNDED_TO_BUYER',
+              backendStatus: 'CANCELLED',
+              status: 'CANCELLED',
+              cancellationReasonCode: effectiveCancelData.reasonCode,
+              cancellationReason: effectiveCancelData.reason,
+            }
             : ord
         )
       );
@@ -2601,18 +2297,18 @@ export default function App() {
               const updated = parsed.map((o) =>
                 String(o.id) === String(orderId)
                   ? {
-                      ...o,
-                      escrowStatus: 'REFUNDED_TO_BUYER' as const,
-                      backendStatus: 'CANCELLED' as const,
-                      status: 'CANCELLED',
-                      cancellationReasonCode: effectiveCancelData.reasonCode,
-                      cancellationReason: effectiveCancelData.reason,
-                    }
+                    ...o,
+                    escrowStatus: 'REFUNDED_TO_BUYER' as const,
+                    backendStatus: 'CANCELLED' as const,
+                    status: 'CANCELLED',
+                    cancellationReasonCode: effectiveCancelData.reasonCode,
+                    cancellationReason: effectiveCancelData.reason,
+                  }
                   : o
               );
               localStorage.setItem(key, JSON.stringify(updated));
             }
-          } catch {}
+          } catch { }
         };
 
         updateStorageOrder('recent_placed_orders');
@@ -2621,7 +2317,7 @@ export default function App() {
         updateStorageOrder('my_seller_inspection_orders');
         localStorage.setItem(`order_cancelled_${orderId}`, 'true');
         // TUYỆT ĐỐI GIỮ LẠI order_listing_${orderId} để đơn hàng đã hủy không bị mất thông tin sản phẩm và hiển thị đầy đủ
-      } catch {}
+      } catch { }
 
       // Lập tức khôi phục bài đăng thành ACTIVE trên sàn (vì đơn đã hủy)
       let cancelledListingId = targetOrder?.listingId || targetOrder?.listing?.id || (targetOrder as any)?.postId || (targetOrder as any)?.post?.id;
@@ -2632,7 +2328,7 @@ export default function App() {
             const parsed = JSON.parse(rawOrderListing);
             if (parsed?.id) cancelledListingId = parsed.id;
           }
-        } catch {}
+        } catch { }
       }
 
       if (cancelledListingId) {
@@ -2705,8 +2401,8 @@ export default function App() {
       typeof meta?.conditionScore === 'number'
         ? meta.conditionScore
         : isPass
-        ? 96
-        : 40;
+          ? 96
+          : 40;
     const conditionGrade = meta?.conditionGrade || targetOrder?.listing?.conditionGrade || 'Like New';
     const inspectorPhotos =
       meta?.inspectorPhotos && meta.inspectorPhotos.length > 0
@@ -2744,9 +2440,9 @@ export default function App() {
             ...(isPass
               ? {}
               : {
-                  cancellationReasonCode: 'INSPECTION_FAILED',
-                  cancellationReason: `Sản phẩm không đạt kiểm định Hub: ${meta?.inspectorNotes || summary || 'Không đạt quy chuẩn kỹ thuật'}`,
-                }),
+                cancellationReasonCode: 'INSPECTION_FAILED',
+                cancellationReason: `Sản phẩm không đạt kiểm định Hub: ${meta?.inspectorNotes || summary || 'Không đạt quy chuẩn kỹ thuật'}`,
+              }),
           };
         }
         return ord;
@@ -2770,9 +2466,9 @@ export default function App() {
               ...(isPass
                 ? {}
                 : {
-                    cancellationReasonCode: 'INSPECTION_FAILED',
-                    cancellationReason: `Sản phẩm không đạt kiểm định Hub: ${meta?.inspectorNotes || summary || 'Không đạt quy chuẩn kỹ thuật'}`,
-                  }),
+                  cancellationReasonCode: 'INSPECTION_FAILED',
+                  cancellationReason: `Sản phẩm không đạt kiểm định Hub: ${meta?.inspectorNotes || summary || 'Không đạt quy chuẩn kỹ thuật'}`,
+                }),
             };
           }
           return ord;
@@ -2907,7 +2603,7 @@ export default function App() {
       );
       window.dispatchEvent(new CustomEvent('orders_updated'));
       window.dispatchEvent(new Event('storage'));
-    } catch {}
+    } catch { }
 
     showToast(
       isPass
@@ -2956,25 +2652,46 @@ export default function App() {
     if (route.modal !== 'product') setSelectedListing(null);
     if (route.params.inspectionId && activeTab === 'buyer-inspection-decision') {
       setInspectionDecisionOrderId(route.params.inspectionId);
-      setInspectionDecisionOrder(orders.find((order) => order.id === route.params.inspectionId) || null);
+      const targetId = route.params.inspectionId;
+      const found = orders.find((order) => order.id === targetId || (order as any).inspectionOrderId === targetId) ||
+        (() => {
+          try {
+            const raw = localStorage.getItem('all_orders_cache');
+            if (raw) {
+              const list: EscrowOrder[] = JSON.parse(raw);
+              return list.find((o) => o.id === targetId || (o as any).inspectionOrderId === targetId) || null;
+            }
+          } catch { }
+          return null;
+        })();
+      if (found) {
+        setInspectionDecisionOrder(found);
+      }
     }
-  }, [browserLocation, routeAccess, isRestoringSession]);
+  }, [browserLocation, routeAccess, isRestoringSession, orders, activeTab, route.params.inspectionId]);
 
   const [routeProductError, setRouteProductError] = useState<string | null>(null);
+  const selectedListingRef = React.useRef(selectedListing);
+  selectedListingRef.current = selectedListing;
+  const editingDraftRef = React.useRef(editingDraft);
+  editingDraftRef.current = editingDraft;
+  const checkoutListingRef = React.useRef(checkoutListing);
+  checkoutListingRef.current = checkoutListing;
+
   React.useEffect(() => {
     let cancelled = false;
     const productId = route.params.productId;
     setRouteProductError(null);
     if (!productId || routeAccess !== 'allowed' || isRestoringSession) return;
     const isEdit = activeTab === 'create-listing';
-    if (isEdit && editingDraft?.id === productId) return;
-    if (!isEdit && (selectedListing?.id === productId || checkoutListing?.id === productId)) return;
+    if (isEdit && (editingDraft?.id === productId || editingDraftRef.current?.id === productId)) return;
+    if (!isEdit && (selectedListing?.id === productId || selectedListingRef.current?.id === productId || checkoutListing?.id === productId || checkoutListingRef.current?.id === productId)) return;
     const load = isEdit ? postService.getDraft(productId)
       : route.role === 'seller' ? postService.getMyPostDetail(productId)
-      : route.role === 'admin' ? adminPostService.getAdminPosts().then((response) => {
-        const posts = response?.content || response?.items || (Array.isArray(response) ? response : []);
-        return posts.find((post: any) => String(post.id || post.postId) === productId);
-      }) : postService.getListingDetail(productId);
+        : route.role === 'admin' ? adminPostService.getAdminPosts().then((response) => {
+          const posts = response?.content || response?.items || (Array.isArray(response) ? response : []);
+          return posts.find((post: any) => String(post.id || post.postId) === productId);
+        }) : postService.getListingDetail(productId);
     load.then((data) => {
       if (cancelled) return;
       if (!data) { setRouteProductError('Không tìm thấy sản phẩm hoặc sản phẩm không còn công khai.'); return; }
@@ -2982,7 +2699,7 @@ export default function App() {
       if (isEdit) setEditingDraft(listing); else setSelectedListing(listing);
     }).catch((error) => { if (!cancelled) setRouteProductError(error.message || 'Không thể tải sản phẩm.'); });
     return () => { cancelled = true; };
-  }, [browserLocation, routeAccess, isRestoringSession, mapBackendPostToListing]);
+  }, [browserLocation, routeAccess, isRestoringSession, mapBackendPostToListing, selectedListing?.id, checkoutListing?.id, editingDraft?.id]);
 
   if (routeAccess !== 'allowed') return <ViewLoadingFallback />;
   if (activeTab === 'unauthorized' || activeTab === 'not-found') {
@@ -2994,64 +2711,63 @@ export default function App() {
   }
 
   return (
-    <div className={`min-h-screen flex flex-col font-sans bg-[#faf8f5] text-[#24263e] selection:bg-[#c34c36] selection:text-white ${
-      activeTab === 'chat' && !checkoutListing ? 'h-screen max-h-screen overflow-hidden' : ''
-    }`}>
+    <div className={`min-h-screen flex flex-col font-sans bg-[#faf8f5] text-[#24263e] selection:bg-[#c34c36] selection:text-white ${activeTab === 'chat' && !checkoutListing ? 'h-screen max-h-screen overflow-hidden' : ''
+      }`}>
       {/* Navigation */}
       {activeTab !== 'admin-dashboard' &&
         activeTab !== 'inspection-center' &&
         activeTab !== 'inspection-hub' && (
-        <Navbar
-          currentRole={currentRole}
-          onRoleChange={handleRoleChange}
-          lang={lang}
-          onLangChange={setLang}
-          activeTab={activeTab}
-          onTabChange={(tab) => {
-            if (tab === 'create-listing') {
-              setEditingDraft(null);
-              setCreateListingReturnTab(activeTab === 'seller-dashboard' ? 'seller-dashboard' : 'marketplace');
-            }
-            handleTabChange(tab);
-          }}
-          activeOrdersCount={orders.filter((o) => o.escrowStatus !== 'COMPLETED_RELEASED').length}
-          unreadChatsCount={unreadChatsCount}
-          currentUser={currentUser}
-          onOpenAuth={openAuth}
-          onLogout={() => {
-            setIsLogoutModalOpen(true);
-          }}
-          onOpenProfile={() => {
-            if (!currentUser) {
-              requireAuth(undefined, lang === 'vi' ? 'Vui lòng đăng nhập để xem hồ sơ cá nhân.' : 'Please log in to view your profile.');
-            } else {
-              openProfile();
-            }
-          }}
-          onOpenTopUp={() => {
-            if (!currentUser) {
-              requireAuth(undefined, lang === 'vi' ? 'Vui lòng đăng nhập để nạp xu.' : 'Please log in to top up credit.');
-            } else {
-              setIsTopUpModalOpen(true);
-            }
-          }}
-          userCreditBalance={userCreditBalance}
-          userCredit={userCredit}
-          walletBalance={walletBalance}
-          token={getAccessToken()}
-          onNavigateNotification={handleNotificationNavigate}
-          onOpenNotifications={() => handleTabChange('notifications')}
-          onOpenSellerRegister={() => {
-            if (currentUser && ['admin', 'inspector'].includes(currentUser.role)) {
-              showToast(lang === 'vi'
-                ? 'Tài khoản Quản trị viên và Kỹ sư Hub không được đăng ký làm Người Bán.'
-                : 'Admin and Inspector roles cannot register as sellers.');
-              return;
-            }
-            setIsSellerRegistrationModalOpen(true);
-          }}
-        />
-      )}
+          <Navbar
+            currentRole={currentRole}
+            onRoleChange={handleRoleChange}
+            lang={lang}
+            onLangChange={setLang}
+            activeTab={activeTab}
+            onTabChange={(tab) => {
+              if (tab === 'create-listing') {
+                setEditingDraft(null);
+                setCreateListingReturnTab(activeTab === 'seller-dashboard' ? 'seller-dashboard' : 'marketplace');
+              }
+              handleTabChange(tab);
+            }}
+            activeOrdersCount={orders.filter((o) => o.escrowStatus !== 'COMPLETED_RELEASED').length}
+            unreadChatsCount={unreadChatsCount}
+            currentUser={currentUser}
+            onOpenAuth={openAuth}
+            onLogout={() => {
+              setIsLogoutModalOpen(true);
+            }}
+            onOpenProfile={() => {
+              if (!currentUser) {
+                requireAuth(undefined, lang === 'vi' ? 'Vui lòng đăng nhập để xem hồ sơ cá nhân.' : 'Please log in to view your profile.');
+              } else {
+                openProfile();
+              }
+            }}
+            onOpenTopUp={() => {
+              if (!currentUser) {
+                requireAuth(undefined, lang === 'vi' ? 'Vui lòng đăng nhập để nạp xu.' : 'Please log in to top up credit.');
+              } else {
+                setIsTopUpModalOpen(true);
+              }
+            }}
+            userCreditBalance={userCreditBalance}
+            userCredit={userCredit}
+            walletBalance={walletBalance}
+            token={getAccessToken()}
+            onNavigateNotification={handleNotificationNavigate}
+            onOpenNotifications={() => handleTabChange('notifications')}
+            onOpenSellerRegister={() => {
+              if (currentUser && ['admin', 'inspector'].includes(currentUser.role)) {
+                showToast(lang === 'vi'
+                  ? 'Tài khoản Quản trị viên và Kỹ sư Hub không được đăng ký làm Người Bán.'
+                  : 'Admin and Inspector roles cannot register as sellers.');
+                return;
+              }
+              setIsSellerRegistrationModalOpen(true);
+            }}
+          />
+        )}
 
       {/* Floating Welcome & System Toast Notification (Positioned at top-right below navbar) */}
       {toastMessage && (
@@ -3079,372 +2795,379 @@ export default function App() {
           checkoutListing
             ? 'flex-1 w-full p-0 m-0 bg-[#f8fafc]'
             : activeTab === 'chat'
-            ? 'flex-1 min-h-0 w-full p-2 sm:p-2.5 m-0 overflow-hidden flex flex-col'
-            : activeTab === 'admin-dashboard' ||
-              activeTab === 'inspection-center' ||
-              activeTab === 'inspection-hub' ||
-              activeTab === 'staff-workspace' ||
-              activeTab === 'buyer-inspection-decision'
-            ? 'flex-1 w-full p-0 m-0'
-            : 'flex-1 w-full px-3 sm:px-5 lg:px-6 pt-3 sm:pt-4 pb-8 m-0'
+              ? 'flex-1 min-h-0 w-full p-2 sm:p-2.5 m-0 overflow-hidden flex flex-col'
+              : activeTab === 'admin-dashboard' ||
+                activeTab === 'inspection-center' ||
+                activeTab === 'inspection-hub' ||
+                activeTab === 'staff-workspace' ||
+                activeTab === 'buyer-inspection-decision'
+                ? 'flex-1 w-full p-0 m-0'
+                : 'flex-1 w-full px-3 sm:px-5 lg:px-6 pt-3 sm:pt-4 pb-8 m-0'
         }
       >
         <Suspense fallback={<ViewLoadingFallback />}>
-        {checkoutListing ? (
-          <CheckoutModal
-            listing={checkoutListing}
-            currentUser={currentUser}
-            agreedPrice={checkoutAgreedPrice}
-            negotiationId={checkoutNegotiationId}
-            onOpenDeposit={() => setIsTopUpModalOpen(true)}
-            onNavigateToChat={(item, prefill) => {
-              const closedListingId = checkoutListing?.id;
-              if (closedListingId) {
-                markListingAsAvailable(String(closedListingId));
-              }
-              setCheckoutListing(null);
-              setCheckoutAgreedPrice(undefined);
-              setCheckoutNegotiationId(undefined);
-              openChat(item, 'inspection_proposal', prefill);
-            }}
-            onClose={() => {
-              const closedListingId = checkoutListing?.id;
-              if (closedListingId) {
-                markListingAsAvailable(String(closedListingId));
-                reconcileBoughtListingIds();
-                setListings((prev) =>
-                  prev.map((l) =>
-                    String(l.id) === String(closedListingId) ? { ...l, status: 'active', backendStatus: 'ACTIVE' } : l
-                  )
-                );
-              }
-              setCheckoutListing(null);
-              setCheckoutAgreedPrice(undefined);
-              setCheckoutNegotiationId(undefined);
-              if (!selectedListing && route.modal === 'product') closeRouteModal(paths.products);
-              loadListingsFromBackend(true);
-            }}
-            onCancelUnpaid={(msg) => {
-              const cancelledListingId = checkoutListing?.id;
-              if (cancelledListingId) {
-                markListingAsAvailable(String(cancelledListingId));
-                reconcileBoughtListingIds();
-                setListings((prev) =>
-                  prev.map((l) =>
-                    String(l.id) === String(cancelledListingId) ? { ...l, status: 'active', backendStatus: 'ACTIVE' } : l
-                  )
-                );
-              }
-              setCheckoutListing(null);
-              setCheckoutAgreedPrice(undefined);
-              setCheckoutNegotiationId(undefined);
-              if (!selectedListing && route.modal === 'product') closeRouteModal(paths.products);
-              loadListingsFromBackend(true);
-              showToast(msg || (lang === 'vi' ? 'Đơn hàng chưa được thanh toán! Đã quay lại trang mua hàng.' : 'Order not paid. Returned to shopping page.'));
-            }}
-            showToast={showToast}
-            onOrderPlaced={handleOrderPlaced}
-            lang={lang}
-          />
-        ) : (
-          <>
-        {activeTab === 'home' && (
-          <HomePageView
-            lang={lang}
-            currentUser={currentUser}
-            onExploreMarketplace={() => setActiveTab('marketplace')}
-            onCreateListing={() => {
-              if (!currentUser) {
-                setPendingTab('create-listing');
-                requireAuth(undefined, lang === 'vi'
-                  ? 'Vui lòng đăng nhập để thử nghiệm định giá AI và đăng bán sản phẩm.'
-                  : 'Please log in to experience AI valuation and create listings.');
-              } else if (['admin', 'inspector'].includes(currentUser.role)) {
-                showToast(lang === 'vi'
-                  ? 'Tài khoản Quản trị viên và Kỹ sư Hub không được đăng ký làm Người Bán.'
-                  : 'Admin and Inspector roles cannot register as sellers.');
-              } else if (currentUser.role !== 'seller' && currentUser.role !== 'staff') {
-                setIsSellerRegistrationModalOpen(true);
-              } else {
-                setActiveTab('create-listing');
-              }
-            }}
-            onOpenAuth={openAuth}
-          />
-        )}
-
-        {activeTab === 'marketplace' && (
-          <MarketplaceView
-            listings={listings.filter((l) => {
-              const boughtIds = getBoughtListingIds();
-              if (boughtIds.has(String(l.id))) return false;
-              if (l.status === 'reserved' || l.status === 'sold') return false;
-              if (l.backendStatus === 'RESERVED' || l.backendStatus === 'SOLD') return false;
-              return l.status === 'active' || l.backendStatus === 'ACTIVE';
-            })}
-            onSelectListing={(listing) => openProduct(listing)}
-            lang={lang}
-            onPostClick={() => {
-              setEditingDraft(null);
-              handleTabChange('create-listing');
-            }}
-          />
-        )}
-
-        {activeTab === 'seller-dashboard' && (
-          <SellerDashboardView
-            listings={listings}
-            onSelectListing={(listing) => openProduct(listing, true)}
-            onCreateListing={(draft?: any) => {
-              setEditingDraft(draft && draft.id ? draft : null);
-              setCreateListingReturnTab('seller-dashboard');
-              navigatePath(draft?.id ? paths.editProduct(draft.id) : pathForTab('create-listing', currentRole));
-            }}
-            onDeleteListing={(listingId) => {
-              setListings((prev) => prev.filter((l) => l.id !== listingId));
-            }}
-            onViewOrders={() => handleTabChange('orders')}
-            currentUser={currentUser}
-            lang={lang}
-          />
-        )}
-
-        {activeTab === 'create-listing' && (
-          currentUser && currentUser.role !== 'seller' && currentUser.role !== 'staff' ? (
-            <div className="py-12 px-4 text-center max-w-xl mx-auto space-y-4">
-              <div className="w-16 h-16 rounded-3xl bg-[#faf8f5] text-[#24263e] flex items-center justify-center mx-auto shadow-md">
-                <Store className="w-8 h-8" />
-              </div>
-              <h3 className="text-xl font-bold text-slate-900">
-                {lang === 'vi' ? 'Bạn Cần Đăng Ký Thành Người Bán' : 'Seller Registration Required'}
-              </h3>
-              <p className="text-sm text-slate-500">
-                {lang === 'vi'
-                  ? 'Để đảm bảo chất lượng kiểm định Hub và an toàn giao dịch qua quỹ Escrow, vui lòng hoàn tất đăng ký thông tin gian hàng và xác thực eKYC trước khi đăng bán sản phẩm.'
-                  : 'To ensure Hub inspection quality and Escrow transaction safety, please register your store profile and complete eKYC before posting listings.'}
-              </p>
-              <div className="flex items-center justify-center gap-3 pt-2">
-                <button
-                  onClick={() => setActiveTab('marketplace')}
-                  className="px-5 py-2.5 rounded-xl border border-gray-200 text-slate-700 text-sm font-semibold hover:bg-slate-50 transition cursor-pointer"
-                >
-                  {lang === 'vi' ? 'Quay lại Sàn' : 'Back to Market'}
-                </button>
-                <button
-                  onClick={() => {
-                    if (['admin', 'inspector'].includes(currentUser.role)) {
+          {checkoutListing ? (
+            <CheckoutModal
+              listing={checkoutListing}
+              currentUser={currentUser}
+              agreedPrice={checkoutAgreedPrice}
+              negotiationId={checkoutNegotiationId}
+              onOpenDeposit={() => setIsTopUpModalOpen(true)}
+              onNavigateToChat={(item, prefill) => {
+                const closedListingId = checkoutListing?.id;
+                if (closedListingId) {
+                  markListingAsAvailable(String(closedListingId));
+                }
+                setCheckoutListing(null);
+                setCheckoutAgreedPrice(undefined);
+                setCheckoutNegotiationId(undefined);
+                openChat(item, 'inspection_proposal', prefill);
+              }}
+              onClose={() => {
+                const closedListingId = checkoutListing?.id;
+                if (closedListingId) {
+                  markListingAsAvailable(String(closedListingId));
+                  reconcileBoughtListingIds();
+                  setListings((prev) =>
+                    prev.map((l) =>
+                      String(l.id) === String(closedListingId) ? { ...l, status: 'active', backendStatus: 'ACTIVE' } : l
+                    )
+                  );
+                }
+                setCheckoutListing(null);
+                setCheckoutAgreedPrice(undefined);
+                setCheckoutNegotiationId(undefined);
+                if (!selectedListing && route.modal === 'product') closeRouteModal(paths.products);
+                loadListingsFromBackend(true);
+              }}
+              onCancelUnpaid={(msg) => {
+                const cancelledListingId = checkoutListing?.id;
+                if (cancelledListingId) {
+                  markListingAsAvailable(String(cancelledListingId));
+                  reconcileBoughtListingIds();
+                  setListings((prev) =>
+                    prev.map((l) =>
+                      String(l.id) === String(cancelledListingId) ? { ...l, status: 'active', backendStatus: 'ACTIVE' } : l
+                    )
+                  );
+                }
+                setCheckoutListing(null);
+                setCheckoutAgreedPrice(undefined);
+                setCheckoutNegotiationId(undefined);
+                if (!selectedListing && route.modal === 'product') closeRouteModal(paths.products);
+                loadListingsFromBackend(true);
+                showToast(msg || (lang === 'vi' ? 'Đơn hàng chưa được thanh toán! Đã quay lại trang mua hàng.' : 'Order not paid. Returned to shopping page.'));
+              }}
+              showToast={showToast}
+              onOrderPlaced={handleOrderPlaced}
+              lang={lang}
+            />
+          ) : (
+            <>
+              {activeTab === 'home' && (
+                <HomePageView
+                  lang={lang}
+                  currentUser={currentUser}
+                  onExploreMarketplace={() => setActiveTab('marketplace')}
+                  onCreateListing={() => {
+                    if (!currentUser) {
+                      setPendingTab('create-listing');
+                      requireAuth(undefined, lang === 'vi'
+                        ? 'Vui lòng đăng nhập để thử nghiệm định giá AI và đăng bán sản phẩm.'
+                        : 'Please log in to experience AI valuation and create listings.');
+                    } else if (['admin', 'inspector'].includes(currentUser.role)) {
                       showToast(lang === 'vi'
                         ? 'Tài khoản Quản trị viên và Kỹ sư Hub không được đăng ký làm Người Bán.'
                         : 'Admin and Inspector roles cannot register as sellers.');
+                    } else if (currentUser.role !== 'seller' && currentUser.role !== 'staff') {
+                      setIsSellerRegistrationModalOpen(true);
+                    } else {
+                      setActiveTab('create-listing');
+                    }
+                  }}
+                  onOpenAuth={openAuth}
+                />
+              )}
+
+              {activeTab === 'marketplace' && (
+                <MarketplaceView
+                  listings={listings.filter((l) => {
+                    const boughtIds = getBoughtListingIds();
+                    if (boughtIds.has(String(l.id))) return false;
+                    if (l.status === 'reserved' || l.status === 'sold') return false;
+                    if (l.backendStatus === 'RESERVED' || l.backendStatus === 'SOLD') return false;
+                    return l.status === 'active' || l.backendStatus === 'ACTIVE';
+                  })}
+                  onSelectListing={(listing) => openProduct(listing)}
+                  lang={lang}
+                  onPostClick={() => {
+                    setEditingDraft(null);
+                    handleTabChange('create-listing');
+                  }}
+                />
+              )}
+
+              {activeTab === 'seller-dashboard' && (
+                <SellerDashboardView
+                  listings={listings}
+                  onSelectListing={(listing) => openProduct(listing, true)}
+                  onCreateListing={(draft?: any) => {
+                    setEditingDraft(draft && draft.id ? draft : null);
+                    setCreateListingReturnTab('seller-dashboard');
+                    navigatePath(draft?.id ? paths.editProduct(draft.id) : pathForTab('create-listing', currentRole));
+                  }}
+                  onDeleteListing={(listingId) => {
+                    setListings((prev) => prev.filter((l) => l.id !== listingId));
+                  }}
+                  onViewOrders={() => handleTabChange('orders')}
+                  currentUser={currentUser}
+                  lang={lang}
+                />
+              )}
+
+              {activeTab === 'create-listing' && (
+                currentUser && currentUser.role !== 'seller' && currentUser.role !== 'staff' ? (
+                  <div className="py-12 px-4 text-center max-w-xl mx-auto space-y-4">
+                    <div className="w-16 h-16 rounded-3xl bg-[#faf8f5] text-[#24263e] flex items-center justify-center mx-auto shadow-md">
+                      <Store className="w-8 h-8" />
+                    </div>
+                    <h3 className="text-xl font-bold text-slate-900">
+                      {lang === 'vi' ? 'Bạn Cần Đăng Ký Thành Người Bán' : 'Seller Registration Required'}
+                    </h3>
+                    <p className="text-sm text-slate-500">
+                      {lang === 'vi'
+                        ? 'Để đảm bảo chất lượng kiểm định Hub và an toàn giao dịch qua quỹ Escrow, vui lòng hoàn tất đăng ký thông tin gian hàng và xác thực eKYC trước khi đăng bán sản phẩm.'
+                        : 'To ensure Hub inspection quality and Escrow transaction safety, please register your store profile and complete eKYC before posting listings.'}
+                    </p>
+                    <div className="flex items-center justify-center gap-3 pt-2">
+                      <button
+                        onClick={() => setActiveTab('marketplace')}
+                        className="px-5 py-2.5 rounded-xl border border-gray-200 text-slate-700 text-sm font-semibold hover:bg-slate-50 transition cursor-pointer"
+                      >
+                        {lang === 'vi' ? 'Quay lại Sàn' : 'Back to Market'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (['admin', 'inspector'].includes(currentUser.role)) {
+                            showToast(lang === 'vi'
+                              ? 'Tài khoản Quản trị viên và Kỹ sư Hub không được đăng ký làm Người Bán.'
+                              : 'Admin and Inspector roles cannot register as sellers.');
+                            return;
+                          }
+                          setIsSellerRegistrationModalOpen(true);
+                        }}
+                        className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white text-sm font-bold shadow-md hover:opacity-95 transition cursor-pointer"
+                      >
+                        {lang === 'vi' ? 'ĐĂNG KÝ NGƯỜI BÁN NGAY' : 'Register as Seller Now'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <CreateListingView
+                    onListingCreated={handleListingCreated}
+                    lang={lang}
+                    onCancel={() => {
+                      const targetTab = createListingReturnTab || (editingDraft ? 'seller-dashboard' : 'marketplace');
+                      setEditingDraft(null);
+                      try {
+                        for (let i = localStorage.length - 1; i >= 0; i--) {
+                          const key = localStorage.key(i);
+                          if (key && (key.startsWith('create_listing_active_draft_') || key === 'create_listing_active_draft')) {
+                            localStorage.removeItem(key);
+                          }
+                        }
+                        sessionStorage.removeItem('create_listing_active_draft');
+                      } catch { }
+                      setActiveTab(targetTab as any);
+                    }}
+                    onDeleteDraft={(draftId) => {
+                      setListings((prev) => prev.filter((l) => l.id !== draftId));
+                    }}
+                    currentUser={currentUser}
+                    initialDraft={route.params.productId ? editingDraft || undefined : undefined}
+                    onOpenTopUp={(tab) => {
+                      setTopUpInitialTab(tab || 'packages');
+                      setIsTopUpModalOpen(true);
+                    }}
+                    userCredits={userCredit}
+                  />
+                )
+              )}
+
+              {activeTab === 'orders' && (
+                <EscrowOrdersView
+                  orders={orderFeedRows.orders}
+                  overviewOrders={orders}
+                  routeOrder={orderFeedRows.detail}
+                  filterQuery={orderFeedQuery}
+                  filterResult={orderFeed.data}
+                  filterCounts={orderFeed.counts}
+                  filterFailed={orderFeed.failed}
+                  currentUser={currentUser}
+                  onConfirmReceipt={handleConfirmReceipt}
+                  onOpenDispute={handleOpenDispute}
+                  onMarkShipped={handleMarkShipped}
+                  onCancelOrder={handleCancelOrder}
+                  onRefreshOrders={() => loadUserOrders(true)}
+                  onRefreshFilter={orderFeed.refresh}
+                  lang={lang}
+                  userRole={route.role === 'buyer' ? 'buyer' : currentRole}
+                  onOpenChat={openChat}
+                  onOpenInspectionDecision={(ord) => {
+                    setInspectionDecisionOrder(ord);
+                    setInspectionDecisionOrderId(ord.id);
+                    navigatePath(paths.decision(navigationRole, ord.id));
+                  }}
+                  onNavigateToDisputes={() => handleTabChange('disputes')}
+                  isLoading={orderFeed.loading}
+                />
+              )}
+
+              {activeTab === 'buyer-inspection-decision' && (
+                <BuyerInspectionDecisionView
+                  key={route.params.inspectionId || inspectionDecisionOrderId || inspectionDecisionOrder?.id}
+                  orderId={route.params.inspectionId || inspectionDecisionOrderId || inspectionDecisionOrder?.id}
+                  order={!route.params.inspectionId || route.params.inspectionId === inspectionDecisionOrder?.id ? inspectionDecisionOrder : null}
+                  currentUser={currentUser}
+                  userRole={route.role === 'buyer' ? 'buyer' : currentRole}
+                  lang={lang}
+                  onBack={() => handleTabChange('orders')}
+                  onSuccess={() => {
+                    loadUserOrders(true);
+                    handleTabChange('orders');
+                  }}
+                  onOpenChat={openChat}
+                  onOpenTopUp={() => setIsTopUpModalOpen(true)}
+                />
+              )}
+
+              {activeTab === 'inspection-center' && (
+                <InspectionCenterDashboardView
+                  key={currentUserId}
+                  initialOrders={orders}
+                  currentUser={currentUser}
+                  lang={lang}
+                  onNavigate={setActiveTab}
+                  onOpenProfile={openProfile}
+                  onLogout={() => setIsLogoutModalOpen(true)}
+                  onViewWebsite={() => setActiveTab('home')}
+                />
+              )}
+
+              {activeTab === 'inspection-hub' && (
+                (currentUser?.role === 'inspection_center' || currentRole === 'inspection_center') ? (
+                  <InspectionCenterDashboardView
+                    key={currentUserId}
+                    initialOrders={orders}
+                    currentUser={currentUser}
+                    lang={lang}
+                    onNavigate={setActiveTab}
+                    onOpenProfile={openProfile}
+                    onLogout={() => setIsLogoutModalOpen(true)}
+                    onViewWebsite={() => setActiveTab('home')}
+                  />
+                ) : (
+                  <InspectorPortalView
+                    orders={orders}
+                    currentUser={currentUser}
+                    onCompleteInspection={handleCompleteInspection}
+                    lang={lang}
+                    onNavigate={setActiveTab}
+                    onOpenProfile={openProfile}
+                    onLogout={() => setIsLogoutModalOpen(true)}
+                    onViewWebsite={() => setActiveTab('home')}
+                  />
+                )
+              )}
+
+              {activeTab === 'staff-workspace' && (
+                <StaffWorkspaceView
+                  listings={listings}
+                  orders={orders}
+                  lang={lang}
+                  currentUser={currentUser}
+                  onOpenProfile={openProfile}
+                  onLogout={() => setIsLogoutModalOpen(true)}
+                  onViewWebsite={() => setActiveTab('home')}
+                />
+              )}
+
+              {activeTab === 'admin-dashboard' && (
+                <AdminDashboardView
+                  orders={orders}
+                  disputes={disputes}
+                  listings={listings}
+                  onResolveDispute={handleResolveDispute}
+                  lang={lang}
+                  currentUser={currentUser}
+                  onOpenProfile={openProfile}
+                  onLogout={() => setIsLogoutModalOpen(true)}
+                  onOpenListingDetail={(listing) => openProduct(listing)}
+                />
+              )}
+
+              {activeTab === 'chat' && (
+                <InboxView
+                  listings={listings}
+                  currentRole={currentRole}
+                  currentUser={currentUser}
+                  lang={lang}
+                  initialListing={chatListing}
+                  initialInspectionDraft={inspectionChatDraft}
+                  initialRoomId={route.params.conversationId}
+                  initialPartnerName={chatPartnerName}
+                  initialPartnerAvatar={chatPartnerAvatar}
+                  initialRoom={chatRoom}
+                  onBuyClick={(item, agreedPrice, negotiationId) => {
+                    if (!currentUser) {
+                      setPendingCheckoutItem(item);
+                      requireAuth(undefined, lang === 'vi'
+                        ? 'Vui lòng đăng nhập để tiến hành mua hàng bảo đảm Escrow và kiểm định Hub.'
+                        : 'Please log in to purchase with Escrow protection.');
                       return;
                     }
-                    setIsSellerRegistrationModalOpen(true);
+                    const isRealNego = negotiationId && isValidUUID(negotiationId) && !isSellerOfferId(negotiationId);
+                    setCheckoutAgreedPrice(isRealNego ? agreedPrice : undefined);
+                    setCheckoutNegotiationId(isRealNego ? negotiationId : undefined);
+                    setCheckoutListing(item);
                   }}
-                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white text-sm font-bold shadow-md hover:opacity-95 transition cursor-pointer"
-                >
-                  {lang === 'vi' ? 'Đăng Ký Người Bán Ngay' : 'Register as Seller Now'}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <CreateListingView
-              onListingCreated={handleListingCreated}
-              lang={lang}
-              onCancel={() => {
-                const targetTab = createListingReturnTab || (editingDraft ? 'seller-dashboard' : 'marketplace');
-                setEditingDraft(null);
-                try {
-                  for (let i = localStorage.length - 1; i >= 0; i--) {
-                    const key = localStorage.key(i);
-                    if (key && (key.startsWith('create_listing_active_draft_') || key === 'create_listing_active_draft')) {
-                      localStorage.removeItem(key);
-                    }
-                  }
-                  sessionStorage.removeItem('create_listing_active_draft');
-                } catch {}
-                setActiveTab(targetTab as any);
-              }}
-              onDeleteDraft={(draftId) => {
-                setListings((prev) => prev.filter((l) => l.id !== draftId));
-              }}
-              currentUser={currentUser}
-              initialDraft={route.params.productId ? editingDraft || undefined : undefined}
-              onOpenTopUp={(tab) => {
-                setTopUpInitialTab(tab || 'packages');
-                setIsTopUpModalOpen(true);
-              }}
-              userCredits={userCredit}
-            />
-          )
-        )}
+                  onOpenSellerReviews={(sellerId, sellerName) => {
+                    setSellerReviewsModalData({ sellerId, sellerName });
+                  }}
+                />
+              )}
 
-        {activeTab === 'orders' && (
-          <EscrowOrdersView
-            orders={orders}
-            currentUser={currentUser}
-            onConfirmReceipt={handleConfirmReceipt}
-            onOpenDispute={handleOpenDispute}
-            onMarkShipped={handleMarkShipped}
-            onCancelOrder={handleCancelOrder}
-            onRefreshOrders={() => loadUserOrders(true)}
-            lang={lang}
-            userRole={route.role === 'buyer' ? 'buyer' : currentRole}
-            onOpenChat={openChat}
-            onOpenInspectionDecision={(ord) => {
-              setInspectionDecisionOrder(ord);
-              setInspectionDecisionOrderId(ord.id);
-              navigatePath(paths.decision(navigationRole, ord.id));
-            }}
-            onNavigateToDisputes={() => handleTabChange('disputes')}
-            isLoading={isOrdersLoading}
-          />
-        )}
+              {/* Notifications Center Page (Requirement 3 & Phase 3) */}
+              {activeTab === 'notifications' && (
+                <NotificationCenterView
+                  lang={lang}
+                  currentUser={currentUser}
+                  currentRole={currentRole}
+                  onNavigateToUrl={handleNotificationNavigate}
+                  onBackToHome={() => handleTabChange('home')}
+                />
+              )}
 
-        {activeTab === 'buyer-inspection-decision' && (
-          <BuyerInspectionDecisionView
-            key={route.params.inspectionId || inspectionDecisionOrderId || inspectionDecisionOrder?.id}
-            orderId={route.params.inspectionId || inspectionDecisionOrderId || inspectionDecisionOrder?.id}
-            order={!route.params.inspectionId || route.params.inspectionId === inspectionDecisionOrder?.id ? inspectionDecisionOrder : null}
-            currentUser={currentUser}
-            userRole={route.role === 'buyer' ? 'buyer' : currentRole}
-            lang={lang}
-            onBack={() => handleTabChange('orders')}
-            onSuccess={() => {
-              loadUserOrders(true);
-              handleTabChange('orders');
-            }}
-            onOpenChat={openChat}
-            onOpenTopUp={() => setIsTopUpModalOpen(true)}
-          />
-        )}
-
-        {activeTab === 'inspection-center' && (
-          <InspectionCenterDashboardView
-            key={currentUserId}
-            initialOrders={orders}
-            currentUser={currentUser}
-            lang={lang}
-            onNavigate={setActiveTab}
-            onOpenProfile={openProfile}
-            onLogout={() => setIsLogoutModalOpen(true)}
-            onViewWebsite={() => setActiveTab('home')}
-          />
-        )}
-
-        {activeTab === 'inspection-hub' && (
-          (currentUser?.role === 'inspection_center' || currentRole === 'inspection_center') ? (
-            <InspectionCenterDashboardView
-              key={currentUserId}
-              initialOrders={orders}
-              currentUser={currentUser}
-              lang={lang}
-              onNavigate={setActiveTab}
-              onOpenProfile={openProfile}
-              onLogout={() => setIsLogoutModalOpen(true)}
-              onViewWebsite={() => setActiveTab('home')}
-            />
-          ) : (
-            <InspectorPortalView
-              orders={orders}
-              currentUser={currentUser}
-              onCompleteInspection={handleCompleteInspection}
-              lang={lang}
-              onNavigate={setActiveTab}
-              onOpenProfile={openProfile}
-              onLogout={() => setIsLogoutModalOpen(true)}
-              onViewWebsite={() => setActiveTab('home')}
-            />
-          )
-        )}
-
-        {activeTab === 'staff-workspace' && (
-          <StaffWorkspaceView
-            listings={listings}
-            orders={orders}
-            lang={lang}
-            currentUser={currentUser}
-            onOpenProfile={openProfile}
-            onLogout={() => setIsLogoutModalOpen(true)}
-            onViewWebsite={() => setActiveTab('home')}
-          />
-        )}
-
-        {activeTab === 'admin-dashboard' && (
-          <AdminDashboardView
-            orders={orders}
-            disputes={disputes}
-            listings={listings}
-            onResolveDispute={handleResolveDispute}
-            lang={lang}
-            currentUser={currentUser}
-            onOpenProfile={openProfile}
-            onLogout={() => setIsLogoutModalOpen(true)}
-            onOpenListingDetail={(listing) => openProduct(listing)}
-          />
-        )}
-
-        {activeTab === 'chat' && (
-          <InboxView
-            listings={listings}
-            currentRole={currentRole}
-            currentUser={currentUser}
-            lang={lang}
-            initialListing={chatListing}
-            initialInspectionDraft={inspectionChatDraft}
-            initialRoomId={route.params.conversationId}
-            initialPartnerName={chatPartnerName}
-            initialPartnerAvatar={chatPartnerAvatar}
-            initialRoom={chatRoom}
-            onBuyClick={(item, agreedPrice, negotiationId) => {
-              if (!currentUser) {
-                setPendingCheckoutItem(item);
-                requireAuth(undefined, lang === 'vi'
-                  ? 'Vui lòng đăng nhập để tiến hành mua hàng bảo đảm Escrow và kiểm định Hub.'
-                  : 'Please log in to purchase with Escrow protection.');
-                return;
-              }
-              const isRealNego = negotiationId && isValidUUID(negotiationId) && !isSellerOfferId(negotiationId);
-              setCheckoutAgreedPrice(isRealNego ? agreedPrice : undefined);
-              setCheckoutNegotiationId(isRealNego ? negotiationId : undefined);
-              setCheckoutListing(item);
-            }}
-            onOpenSellerReviews={(sellerId, sellerName) => {
-              setSellerReviewsModalData({ sellerId, sellerName });
-            }}
-          />
-        )}
-
-        {/* Notifications Center Page (Requirement 3 & Phase 3) */}
-        {activeTab === 'notifications' && (
-          <NotificationCenterView
-            lang={lang}
-            currentUser={currentUser}
-            currentRole={currentRole}
-            onNavigateToUrl={handleNotificationNavigate}
-            onBackToHome={() => handleTabChange('home')}
-          />
-        )}
-
-        {/* My Disputes & Escrow Arbitration Page */}
-        {activeTab === 'disputes' && (
-          <MyDisputesView
-            currentUser={currentUser}
-            currentRole={currentRole}
-            lang={lang}
-            orders={orders}
-            onNavigateToOrder={() => {
-              handleTabChange('orders');
-            }}
-            onNavigateToPost={(postId) => {
-              const item = listings.find((l) => l.id === postId);
-              if (item) openProduct(item);
-              else handleTabChange('marketplace');
-            }}
-            onBack={() => handleTabChange('orders')}
-          />
-        )}
-          </>
-        )}
+              {/* My Disputes & Escrow Arbitration Page */}
+              {activeTab === 'disputes' && (
+                <MyDisputesView
+                  currentUser={currentUser}
+                  currentRole={currentRole}
+                  lang={lang}
+                  orders={orders}
+                  onNavigateToOrder={() => {
+                    handleTabChange('orders');
+                  }}
+                  onNavigateToPost={(postId) => {
+                    const item = listings.find((l) => l.id === postId);
+                    if (item) openProduct(item);
+                    else handleTabChange('marketplace');
+                  }}
+                  onBack={() => handleTabChange('orders')}
+                />
+              )}
+            </>
+          )}
         </Suspense>
       </main>
 
@@ -3538,7 +3261,7 @@ export default function App() {
         {/* Checkout Modal rendered inside main */}
 
 
-{/* ChatModal popup has been replaced by the dedicated full-page Messenger chat view */}
+        {/* ChatModal popup has been replaced by the dedicated full-page Messenger chat view */}
 
         {/* Seller Reviews & Trust Modal Popup */}
         {sellerReviewsModalData && (

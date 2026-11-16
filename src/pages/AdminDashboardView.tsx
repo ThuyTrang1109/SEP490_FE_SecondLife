@@ -1488,36 +1488,44 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         )}
 
         {/* MAIN WORKSPACE CONTENT */}
-        <div className="flex-1 p-4 sm:p-6 space-y-5 min-w-0">
+        <div
+          className={`flex-1 min-w-0 ${
+            activeTab === 'system-wallet'
+              ? 'h-[calc(100vh-3.25rem)] sm:h-[calc(100vh-3.5rem)] flex flex-col overflow-hidden p-2 sm:p-3'
+              : 'p-4 sm:p-6 space-y-5'
+          }`}
+        >
           {/* Page Title & Breadcrumb Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-200">
-            <div className="flex items-baseline gap-2">
-              <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
-                {activeTab === 'overview'
-                  ? 'Dashboard'
-                  : navItems.find((n) => n.id === activeTab)?.label}
-              </h1>
-            </div>
+          {activeTab !== 'system-wallet' && (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-200">
+              <div className="flex items-baseline gap-2">
+                <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
+                  {activeTab === 'overview'
+                    ? 'Dashboard'
+                    : navItems.find((n) => n.id === activeTab)?.label}
+                </h1>
+              </div>
 
-            {/* Breadcrumbs */}
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                <Home className="w-3.5 h-3.5 text-slate-400" />
-                <button
-                  onClick={() => setActiveTab('overview')}
-                  className="hover:text-[#24263e] transition cursor-pointer"
-                >
-                  {activeTab === 'orders' && lang === 'vi' ? 'Trang chủ' : 'Home'}
-                </button>
-                <ChevronRight className="w-3 h-3 text-slate-400" />
-                <span className="font-semibold text-slate-800 capitalize">
-                  {activeTab === 'overview' ? 'Dashboard' : activeTab === 'orders'
-                    ? (lang === 'vi' ? 'Quản lý đơn hàng' : 'Orders')
-                    : activeTab}
-                </span>
+              {/* Breadcrumbs */}
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                  <Home className="w-3.5 h-3.5 text-slate-400" />
+                  <button
+                    onClick={() => setActiveTab('overview')}
+                    className="hover:text-[#24263e] transition cursor-pointer"
+                  >
+                    {activeTab === 'orders' && lang === 'vi' ? 'Trang chủ' : 'Home'}
+                  </button>
+                  <ChevronRight className="w-3 h-3 text-slate-400" />
+                  <span className="font-semibold text-slate-800 capitalize">
+                    {activeTab === 'overview' ? 'Dashboard' : activeTab === 'orders'
+                      ? (lang === 'vi' ? 'Quản lý đơn hàng' : 'Orders')
+                      : activeTab}
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           {/* Notification Alert Banner */}
           {actionNotice && (
@@ -1976,7 +1984,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       <th className="pb-3 font-bold">Ảnh & Sản Phẩm</th>
                       <th className="pb-3 font-bold">Danh Mục</th>
                       <th className="pb-3 font-bold">Người Bán</th>
-                      <th className="pb-3 font-bold text-right">Giá Niêm Yết</th>
+                      <th className="pb-3 font-bold text-right">Giá sản phẩm</th>
 
                       <th className="pb-3 font-bold text-center">Trạng Thái</th>
                       <th className="pb-3 font-bold text-center">Thao Tác</th>
@@ -3367,71 +3375,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           {/* TAB: SYSTEM WALLET & RECONCILIATION                      */}
           {/* ======================================================== */}
           {activeTab === 'system-wallet' && (
-            <div className="space-y-4">
-              <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-5 shadow-xs space-y-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-2 rounded-xl bg-amber-600 text-white shadow-xs">
-                    <ShieldCheck className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="font-extrabold text-sm text-slate-900 uppercase">
-                      Đối Soát Tiền Kiểm Định (Admin Inspection Funds Audit)
-                    </h3>
-                    <p className="text-xs text-slate-600">
-                      Tra cứu đối soát dòng tiền kiểm định: tổng thu, dự phòng cước hoàn, khoản giữ và quyết toán Trung tâm theo mã đơn
-                    </p>
-                  </div>
-                </div>
-                <form
-                  className="flex flex-wrap items-center gap-2"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    if (directAuditInput.trim()) setAuditFundsOrderId(directAuditInput.trim());
-                  }}
-                >
-                  <div className="relative min-w-[240px] flex-1">
-                    <input
-                      type="text"
-                      value={directAuditInput}
-                      onChange={(event) => setDirectAuditInput(event.target.value)}
-                      placeholder="Nhập mã đơn kiểm định (ví dụ: 17e67687-13fd-411c-8c70-be3e02b69ea9)..."
-                      className="w-full rounded-xl border border-amber-300 bg-white py-2.5 pl-3.5 pr-10 text-xs outline-none focus:ring-2 focus:ring-amber-500"
-                    />
-                    {directAuditInput && (
-                      <button
-                        type="button"
-                        onClick={() => setDirectAuditInput('')}
-                        className="absolute right-3 top-2.5 text-xs text-slate-400 hover:text-slate-600"
-                        aria-label="Xóa mã đơn kiểm định"
-                      >✕</button>
-                    )}
-                  </div>
-                  <button
-                    type="submit"
-                    disabled={!directAuditInput.trim()}
-                    className="flex items-center gap-2 rounded-xl bg-amber-700 px-4 py-2.5 text-xs font-bold text-white hover:bg-amber-800 disabled:opacity-50"
-                  >
-                    <ShieldCheck className="w-4 h-4" />
-                    Mở Bảng Đối Soát
-                  </button>
-                </form>
-                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
-                  <span>Đơn kiểm định mẫu gần đây:</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDirectAuditInput('17e67687-13fd-411c-8c70-be3e02b69ea9');
-                      setAuditFundsOrderId('17e67687-13fd-411c-8c70-be3e02b69ea9');
-                    }}
-                    className="px-2.5 py-1 rounded-lg bg-white border border-amber-200 hover:bg-amber-100 text-amber-900 font-mono text-[10px] font-bold transition cursor-pointer shadow-2xs"
-                  >
-                    #17e67687-13fd-411c-8c70-be3e02b69ea9
-                  </button>
-                </div>
-              </div>
-              <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#24263e] p-5">
-                <SystemWalletTab />
-              </div>
+            <div className="flex-1 min-h-0 flex flex-col min-w-0 bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#24263e] p-2.5 sm:p-3 overflow-hidden">
+              <SystemWalletTab onOpenInspectionAudit={(id) => setAuditFundsOrderId(id)} />
             </div>
           )}
 

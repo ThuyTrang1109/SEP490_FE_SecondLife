@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Sparkles,
   Camera,
@@ -480,6 +480,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     d.setDate(d.getDate() - 1);
     return d.getFullYear();
   });
+
+  const dateInputRef = useRef<HTMLInputElement>(null);
 
   const handleDatePick = (isoVal: string) => {
     setPurchaseDate(isoVal);
@@ -3607,9 +3609,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                         <div
                           key={p.id}
                           onClick={() => handleSelectProductFromSearch(p)}
-                          className={`p-3 hover:bg-orange-50/70 transition cursor-pointer flex items-center justify-between gap-3 ${
-                            isSelected ? 'bg-orange-50 border-l-4 border-l-[#c34c36]' : ''
-                          }`}
+                          className={`p-3 hover:bg-orange-50/70 transition cursor-pointer flex items-center justify-between gap-3 ${isSelected ? 'bg-orange-50 border-l-4 border-l-[#c34c36]' : ''
+                            }`}
                         >
                           <div className="flex-1 min-w-0">
                             <div className="font-bold text-xs text-[#24263e] flex items-center gap-2">
@@ -3777,99 +3778,82 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             </div>
 
             {/* THỜI GIAN MUA SẢN PHẨM (CHỈ CHỌN NGÀY TRONG QUÁ KHỨ) */}
-            <div className="space-y-2 p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200">
+            <div className="space-y-1.5">
               <div className="flex items-center justify-between flex-wrap gap-1">
                 <label className="text-xs font-bold text-[#24263e] flex items-center gap-1.5">
-                  <Calendar className="w-4 h-4 text-[#c34c36]" />
+                  <Calendar className="w-3.5 h-3.5 text-[#c34c36]" />
                   <span>Thời gian mua sản phẩm *</span>
                 </label>
-                <span className="text-[10px] text-amber-800 bg-amber-100/80 border border-amber-200 px-2 py-0.5 rounded-full font-semibold">
+                <span className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200/80 px-2 py-0.5 rounded-full font-semibold">
                   Chỉ chọn ngày quá khứ (&lt; hôm nay)
                 </span>
               </div>
 
-              {/* Bộ chọn ngày: 1. Cuộn lịch hoặc 2. Tự nhập */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {/* 1. Bộ cuộn lịch (Calendar Picker) */}
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between text-[11px] text-slate-500 font-medium">
-                    <span>1. Cuộn lịch chọn ngày:</span>
-                    <span className="text-[10px] text-slate-400">Tối đa: {formatDateDisplayVN(maxAllowedPurchaseDate)}</span>
-                  </div>
-                  <div className="relative">
-                    <input
-                      id="purchase-date-input"
-                      type="date"
-                      value={purchaseDate}
-                      min="1990-01-01"
-                      max={maxAllowedPurchaseDate}
-                      onChange={(e) => handleDatePick(e.target.value)}
-                      className={`w-full px-3.5 py-2.5 bg-white border rounded-xl text-xs text-[#24263e] font-semibold focus:outline-none transition cursor-pointer shadow-2xs ${purchaseDateError && hasSubmittedStep1
-                        ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
-                        : 'border-gray-200 focus:border-[#c34c36]'
-                        }`}
-                    />
-                  </div>
-                </div>
-
-                {/* 2. Tự nhập bằng bàn phím */}
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between text-[11px] text-slate-500 font-medium">
-                    <span>2. Hoặc tự nhập ngày (dd/mm/yyyy):</span>
-                  </div>
-                  <input
-                    id="purchase-date-text-input"
-                    type="text"
-                    value={purchaseDateInputText}
-                    onChange={(e) => handleDateTextChange(e.target.value)}
-                    placeholder="VD: 15/10/2023 hoặc 2023-10-15"
-                    className={`w-full px-3.5 py-2.5 bg-white border rounded-xl text-xs text-[#24263e] font-semibold focus:outline-none transition shadow-2xs ${purchaseDateError && hasSubmittedStep1
+              {/* Ô nhập ngày hợp nhất: Vừa gõ tay vừa có nút cuộn lịch */}
+              <div className="relative">
+                <input
+                  id="purchase-date-text-input"
+                  type="text"
+                  value={purchaseDateInputText}
+                  onChange={(e) => handleDateTextChange(e.target.value)}
+                  placeholder="dd/mm/yyyy (VD: 15/10/2023 hoặc bấm icon lịch)"
+                  className={`w-full pl-3.5 pr-11 py-2.5 bg-slate-50 border rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none transition shadow-2xs ${
+                    hasSubmittedStep1 && purchaseDateError
                       ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
                       : 'border-gray-200 focus:border-[#c34c36]'
-                      }`}
+                  }`}
+                />
+
+                {/* Nút bấm & Input Date ẩn để mở bộ cuộn lịch */}
+                <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center">
+                  <input
+                    ref={dateInputRef}
+                    id="purchase-date-input"
+                    type="date"
+                    min="1990-01-01"
+                    max={maxAllowedPurchaseDate}
+                    value={purchaseDate}
+                    onChange={(e) => handleDatePick(e.target.value)}
+                    className="w-8 h-8 opacity-0 absolute right-0 top-0 cursor-pointer z-10"
+                    title="Bấm để cuộn chọn lịch"
                   />
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 group-hover:text-[#c34c36] hover:bg-slate-200/50 transition pointer-events-none">
+                    <Calendar className="w-4 h-4 text-slate-500" />
+                  </div>
                 </div>
               </div>
 
-              {/* Thông tin ngày đã chọn & thông báo */}
-              {purchaseDate && !purchaseDateError && (
-                <div className="p-2 px-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5 font-medium">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                    <span>
-                      Đã chọn: <strong className="font-bold">{formatDateDisplayVN(purchaseDate)}</strong> (Năm {purchaseYear})
-                    </span>
-                  </div>
-                  <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-100/70 px-2 py-0.5 rounded-md">
-                    Hợp lệ (Quá khứ)
-                  </span>
-                </div>
-              )}
-
-              {purchaseDateError && (
+              {/* Thông báo hợp lệ / lỗi gọn gàng */}
+              {hasSubmittedStep1 && purchaseDateError ? (
                 <p className="text-[11px] text-rose-600 font-bold flex items-center gap-1 mt-1 animate-fadeIn">
                   <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
                   <span>{purchaseDateError}</span>
                 </p>
-              )}
+              ) : purchaseDate && !purchaseDateError ? (
+                <div className="flex items-center justify-between text-[11px] text-slate-500 pt-0.5">
+                  <span className="flex items-center gap-1 text-emerald-600 font-medium">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span>Đã chọn: <strong className="text-slate-800 font-bold">{formatDateDisplayVN(purchaseDate)}</strong> (Năm {purchaseYear})</span>
+                  </span>
+                  <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-1.5 py-0.2 rounded font-semibold">
+                    Hợp lệ (Quá khứ)
+                  </span>
+                </div>
+              ) : null}
 
               {/* Chọn nhanh ngày trong quá khứ */}
-              <div className="pt-1 border-t border-slate-200/70">
-                <span className="text-[11px] text-slate-500 block mb-1.5 font-medium">
-                  Chọn nhanh khoảng thời gian mua trong quá khứ:
-                </span>
-                <div className="flex flex-wrap gap-1.5">
-                  {quickDateShortcuts.map((item) => (
-                    <button
-                      key={item.label}
-                      type="button"
-                      onClick={() => applyQuickDate(item)}
-                      className="px-2.5 py-1 text-[11px] font-medium rounded-lg transition-colors cursor-pointer bg-white border border-gray-200 hover:border-[#c34c36] hover:text-[#c34c36] text-slate-700 shadow-2xs"
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                <span className="text-[10px] text-slate-400 font-medium shrink-0 mr-0.5">Gợi ý nhanh:</span>
+                {quickDateShortcuts.map((item) => (
+                  <button
+                    key={item.label}
+                    type="button"
+                    onClick={() => applyQuickDate(item)}
+                    className="px-2 py-0.5 text-[11px] font-medium rounded-lg transition-colors cursor-pointer bg-white border border-gray-200 hover:border-[#c34c36] hover:text-[#c34c36] text-slate-600 shadow-2xs"
+                  >
+                    {item.label}
+                  </button>
+                ))}
               </div>
             </div>
 

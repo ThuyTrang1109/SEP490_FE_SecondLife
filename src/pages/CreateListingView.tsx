@@ -3744,7 +3744,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               )}
             </div>
 
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 md:col-span-2">
               <label className="text-xs font-bold text-[#24263e]">Thương hiệu (Brand) *</label>
               <input
                 id="brand-input"
@@ -3797,11 +3797,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   value={purchaseDateInputText}
                   onChange={(e) => handleDateTextChange(e.target.value)}
                   placeholder="dd/mm/yyyy (VD: 15/10/2023 hoặc bấm icon lịch)"
-                  className={`w-full pl-3.5 pr-11 py-2.5 bg-slate-50 border rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none transition shadow-2xs ${
-                    hasSubmittedStep1 && purchaseDateError
-                      ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
-                      : 'border-gray-200 focus:border-[#c34c36]'
-                  }`}
+                  className={`w-full pl-3.5 pr-11 py-2.5 bg-slate-50 border rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none transition shadow-2xs ${hasSubmittedStep1 && purchaseDateError
+                    ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
+                    : 'border-gray-200 focus:border-[#c34c36]'
+                    }`}
                 />
 
                 {/* Nút bấm & Input Date ẩn để mở bộ cuộn lịch */}
@@ -3855,30 +3854,6 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   </button>
                 ))}
               </div>
-            </div>
-
-            {/* Ghi chú khoảng thời gian mua */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-[#24263e]">
-                  {lang === 'vi' ? 'Ghi chú thêm về thời gian mua' : 'Additional Purchase Note'}
-                </label>
-                <span className="text-[10px] text-slate-400 font-medium">
-                  {lang === 'vi' ? '(Không bắt buộc)' : '(Optional)'}
-                </span>
-              </div>
-              <input
-                id="purchase-time-note-input"
-                type="text"
-                value={purchaseTimeNote}
-                onChange={(e) => setPurchaseTimeNote(e.target.value)}
-                placeholder={
-                  lang === 'vi'
-                    ? 'VD: Mua khoảng giữa năm, đã dùng khoảng 6 tháng, mua đợt Tết...'
-                    : 'E.g. Bought around mid-year, used for ~6 months...'
-                }
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-gray-200 rounded-xl text-xs text-[#24263e] focus:outline-none focus:border-[#c34c36] transition"
-              />
             </div>
 
             <div className="space-y-1.5">

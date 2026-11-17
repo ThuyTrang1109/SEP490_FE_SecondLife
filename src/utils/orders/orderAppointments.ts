@@ -19,8 +19,34 @@ export interface AppointmentRejection {
   rejectedAt?: string | null;
 }
 
+export function isOrderPendingApprovalOrFee(ord: EscrowOrder | null | undefined): boolean {
+  if (!ord) return false;
+  const rawStatus = String(
+    (ord as any).backendStatus ||
+    (ord as any).inspectionStatus ||
+    (ord as any).inspectionOrder?.status ||
+    ((ord as any).status !== 'AWAITING_INSPECTION' && (ord as any).status !== 'AWAITING_PAYMENT' && (ord as any).status !== 'HELD_IN_ESCROW' ? (ord as any).status : '') ||
+    ''
+  ).toUpperCase();
+
+  return (
+    rawStatus === 'WAITING_SELLER_APPROVAL' ||
+    rawStatus === 'WAITING_BUYER_APPROVAL' ||
+    rawStatus === 'WAITING_FEE_PAYMENT' ||
+    rawStatus === 'PENDING' ||
+    ord.status === 'WAITING_SELLER_APPROVAL' ||
+    ord.status === 'WAITING_BUYER_APPROVAL' ||
+    ord.status === 'WAITING_FEE_PAYMENT' ||
+    (ord as any).customerStatus === 'WAITING_SELLER_APPROVAL' ||
+    (ord as any).customerStatus === 'WAITING_BUYER_APPROVAL' ||
+    (ord as any).customerStatus === 'WAITING_FEE_PAYMENT'
+  );
+}
+
 export function readOrderAppointment(ord: EscrowOrder, detailInspectionDto: InspectionOrderDto | null): OrderAppointment | null {
   if (!ord) return null;
+  if (isOrderPendingApprovalOrFee(ord)) return null;
+
   const possibleIds = [
     ord.id,
     (ord as any).inspectionOrderId,
@@ -29,11 +55,73 @@ export function readOrderAppointment(ord: EscrowOrder, detailInspectionDto: Insp
     (ord as any).inspectionOrder?.id,
   ].filter(Boolean) as string[];
 
-  const isOrderWaitingSeller =
-    ord.status === 'WAITING_SELLER_APPROVAL' ||
-    (ord as any).customerStatus === 'WAITING_SELLER_APPROVAL' ||
-    String((ord as any).backendStatus || '').toUpperCase() === 'WAITING_SELLER_APPROVAL' ||
-    (ord as any).appointmentStatus === 'COUNTERED_BY_CENTER';
+  const isOrderWaitingSeller = Boolean(
+    (
+      ord.status === 'WAITING_SELLER_APPROVAL' ||
+      (ord as any).customerStatus === 'WAITING_SELLER_APPROVAL' ||
+      String((ord as any).backendStatus || '').toUpperCase() === 'WAITING_SELLER_APPROVAL'
+    ) && (
+      (ord as any).appointmentStatus === 'COUNTERED_BY_CENTER' ||
+      (detailInspectionDto as any)?.appointmentStatus === 'COUNTERED_BY_CENTER' ||
+      Boolean((ord as any).counterScheduledAt) ||
+      Boolean((detailInspectionDto as any)?.counterScheduledAt)
+    )
+  );
+
+  const isCountered = isOrderWaitingSeller || Boolean(
+    (ord as any).appointmentStatus === 'COUNTERED_BY_CENTER' ||
+    (detailInspectionDto as any)?.appointmentStatus === 'COUNTERED_BY_CENTER' ||
+    Boolean((ord as any).counterScheduledAt) ||
+    Boolean((detailInspectionDto as any)?.counterScheduledAt)
+  ) || (() => {
+    for (const id of possibleIds) {
+      try {
+        const raw = localStorage.getItem(`order_appointment_${id}`);
+        if (raw && raw !== 'undefined' && raw !== 'null') {
+          const parsed = JSON.parse(raw);
+          if (parsed && (
+            (parsed.status === 'COUNTERED_BY_CENTER' && Boolean(parsed.counterScheduledAt)) ||
+            Boolean(parsed.counterScheduledAt)
+          )) {
+            return true;
+          }
+        }
+      } catch { }
+    }
+    return false;
+  })();
+
+  const rejection = !isCountered ? getOrderAppointmentRejection(ord) : null;
+  const isRejected = !isCountered && (
+    (ord as any).appointmentStatus === 'REJECTED' ||
+    (detailInspectionDto as any)?.appointmentStatus === 'REJECTED' ||
+    Boolean(rejection)
+  );
+
+  if (isRejected) {
+    // Check if seller has scheduled a brand new appointment after rejection
+    let newAppt: any = null;
+    for (const id of possibleIds) {
+      try {
+        const raw = localStorage.getItem(`order_appointment_${id}`);
+        if (raw && raw !== 'undefined' && raw !== 'null') {
+          const parsed = JSON.parse(raw);
+          if (parsed && (parsed.scheduledAt || parsed.counterScheduledAt) && parsed.status !== 'REJECTED') {
+            newAppt = parsed;
+            break;
+          }
+        }
+      } catch { }
+    }
+    if (newAppt) {
+      return newAppt;
+    }
+    return {
+      scheduledAt: null,
+      note: '',
+      status: 'REJECTED',
+    };
+  }
 
   let apptData: any = null;
 
@@ -42,9 +130,17 @@ export function readOrderAppointment(ord: EscrowOrder, detailInspectionDto: Insp
       const raw = localStorage.getItem(`order_appointment_${id}`);
       if (raw && raw !== 'undefined' && raw !== 'null') {
         const parsed = JSON.parse(raw);
-        if (parsed && (parsed.scheduledAt || parsed.counterScheduledAt)) {
-          apptData = parsed;
-          break;
+        if (parsed) {
+          if (parsed.status === 'COUNTERED_BY_CENTER' && !parsed.counterScheduledAt) {
+            try {
+              localStorage.removeItem(`order_appointment_${id}`);
+            } catch { }
+            continue;
+          }
+          if (parsed.scheduledAt || parsed.counterScheduledAt) {
+            apptData = parsed;
+            break;
+          }
         }
       }
     } catch { }
@@ -99,36 +195,65 @@ export function readOrderAppointment(ord: EscrowOrder, detailInspectionDto: Insp
   if (!apptData && (ord.appointmentScheduledAt || (ord as any).counterScheduledAt || isOrderWaitingSeller)) {
     const schAt = ord.appointmentScheduledAt || (ord as any).inspectionOrder?.appointmentScheduledAt;
     const cntAt = (ord as any).counterScheduledAt || (ord as any).inspectionOrder?.counterScheduledAt;
-    apptData = {
-      scheduledAt: schAt,
-      note: ord.appointmentNote || '',
-      status: (ord as any).appointmentStatus || (cntAt || isOrderWaitingSeller ? 'COUNTERED_BY_CENTER' : (ord.inspectorId ? 'CONFIRMED' : 'PENDING_CENTER_CONFIRMATION')),
-      counterScheduledAt: cntAt,
-      counterShift: (ord as any).counterShift || (ord as any).inspectionOrder?.counterShift,
-      counterNote: (ord as any).counterNote || (ord as any).inspectionOrder?.counterNote,
-    };
+    if (schAt || cntAt) {
+      apptData = {
+        scheduledAt: schAt,
+        note: ord.appointmentNote || '',
+        status: (ord as any).appointmentStatus || (cntAt ? 'COUNTERED_BY_CENTER' : (ord.inspectorId ? 'CONFIRMED' : 'PENDING_CENTER_CONFIRMATION')),
+        counterScheduledAt: cntAt,
+        counterShift: (ord as any).counterShift || (ord as any).inspectionOrder?.counterShift,
+        counterNote: (ord as any).counterNote || (ord as any).inspectionOrder?.counterNote,
+      };
+    }
   }
 
-  if (apptData?.status === 'PENDING_CENTER_CONFIRMATION' && !apptData?.counterScheduledAt) {
-    return apptData;
-  }
-
-  if (detailInspectionDto && (detailInspectionDto.id === ord.id || detailInspectionDto.linkedOrderId === ord.id)) {
+  // 1. Ưu tiên cao nhất: Dữ liệu realtime từ API Backend (detailInspectionDto)
+  if (detailInspectionDto && (
+    detailInspectionDto.id === ord.id ||
+    detailInspectionDto.linkedOrderId === ord.id ||
+    detailInspectionDto.id === (ord as any).inspectionOrderId ||
+    (ord as any).inspectionOrderId === detailInspectionDto.id ||
+    (detailInspectionDto as any).orderId === ord.id ||
+    (detailInspectionDto.postId && (detailInspectionDto.postId === ord.listingId || detailInspectionDto.postId === ord.listing?.id))
+  )) {
     if (detailInspectionDto.counterScheduledAt || detailInspectionDto.appointmentScheduledAt) {
       const isCounter = Boolean(
         detailInspectionDto.counterScheduledAt ||
-        detailInspectionDto.appointmentStatus === 'COUNTERED_BY_CENTER' ||
-        detailInspectionDto.status === 'WAITING_SELLER_APPROVAL'
+        detailInspectionDto.appointmentStatus === 'COUNTERED_BY_CENTER'
       );
       return {
         scheduledAt: detailInspectionDto.appointmentScheduledAt || apptData?.scheduledAt,
         note: detailInspectionDto.appointmentNote || apptData?.note || '',
+        shift: detailInspectionDto.appointmentShift || detailInspectionDto.counterShift || apptData?.shift || 'MORNING',
         status: isCounter ? 'COUNTERED_BY_CENTER' : (detailInspectionDto.appointmentStatus || (detailInspectionDto.inspectorId ? 'CONFIRMED' : 'PENDING_CENTER_CONFIRMATION')),
-        counterScheduledAt: detailInspectionDto.counterScheduledAt || apptData?.counterScheduledAt,
-        counterShift: detailInspectionDto.counterShift || apptData?.counterShift,
-        counterNote: detailInspectionDto.counterNote || apptData?.counterNote,
+        counterScheduledAt: detailInspectionDto.counterScheduledAt || null,
+        counterShift: detailInspectionDto.counterShift || null,
+        counterNote: detailInspectionDto.counterNote || null,
       };
     }
+  }
+
+  // 2. Nếu đơn hàng có trường appointmentScheduledAt từ Backend (qua getMyBuyerOrders)
+  if (ord.appointmentScheduledAt) {
+    if (!apptData) {
+      apptData = {
+        scheduledAt: ord.appointmentScheduledAt,
+        note: ord.appointmentNote || '',
+        status: (ord as any).appointmentStatus || (ord.inspectorId ? 'CONFIRMED' : 'PENDING_CENTER_CONFIRMATION'),
+        counterScheduledAt: (ord as any).counterScheduledAt,
+        counterShift: (ord as any).counterShift,
+        counterNote: (ord as any).counterNote,
+      };
+    } else {
+      apptData.scheduledAt = ord.appointmentScheduledAt;
+      if (ord.appointmentNote) apptData.note = ord.appointmentNote;
+      if ((ord as any).appointmentStatus) apptData.status = (ord as any).appointmentStatus;
+      if ((ord as any).counterScheduledAt !== undefined) apptData.counterScheduledAt = (ord as any).counterScheduledAt;
+    }
+  }
+
+  if (apptData?.status === 'PENDING_CENTER_CONFIRMATION' && !apptData?.counterScheduledAt) {
+    return apptData;
   }
 
   if (apptData) {
@@ -155,12 +280,8 @@ export function readOrderAppointment(ord: EscrowOrder, detailInspectionDto: Insp
 
 export function getOrderAppointmentRejection(ord: EscrowOrder): AppointmentRejection | null {
   if (!ord?.id) return null;
-  if ((ord as any).appointmentRejectionReason) {
-    return {
-      reason: (ord as any).appointmentRejectionReason,
-      rejectedAt: (ord as any).appointmentRejectedAt || '',
-    };
-  }
+  if (isOrderPendingApprovalOrFee(ord)) return null;
+
   const possibleIds = [
     ord.id,
     (ord as any).inspectionOrderId,
@@ -169,14 +290,58 @@ export function getOrderAppointmentRejection(ord: EscrowOrder): AppointmentRejec
     (ord as any).inspectionOrder?.id,
   ].filter(Boolean) as string[];
 
+  // 1. Nếu đơn đang ở trạng thái COUNTERED_BY_CENTER hoặc có đề xuất lịch mới thì KHÔNG PHẢI BỊ TỪ CHỐI
+  let hasCounter = Boolean(
+    (ord as any).appointmentStatus === 'COUNTERED_BY_CENTER' ||
+    Boolean((ord as any).counterScheduledAt) ||
+    Boolean((ord as any).inspectionOrder?.counterScheduledAt)
+  );
+
+  if (!hasCounter) {
+    for (const id of possibleIds) {
+      try {
+        const raw = localStorage.getItem(`order_appointment_${id}`);
+        if (raw && raw !== 'undefined' && raw !== 'null') {
+          const parsed = JSON.parse(raw);
+          if (parsed && ((parsed.status === 'COUNTERED_BY_CENTER' && Boolean(parsed.counterScheduledAt)) || Boolean(parsed.counterScheduledAt))) {
+            hasCounter = true;
+            break;
+          }
+        }
+      } catch { }
+    }
+  }
+
+  if (hasCounter) {
+    return null;
+  }
+
+  // 2. Kiểm tra nếu đơn hàng thực sự bị từ chối (REJECTED)
+  if ((ord as any).appointmentStatus === 'REJECTED') {
+    return {
+      reason: (ord as any).appointmentRejectionReason || 'Trung tâm đã từ chối lịch hẹn này.',
+      rejectedAt: (ord as any).appointmentRejectedAt || '',
+    };
+  }
+
   for (const id of possibleIds) {
     try {
       const raw = localStorage.getItem(`order_appointment_rejection_${id}`);
       if (raw && raw !== 'undefined' && raw !== 'null') {
         const parsed = JSON.parse(raw);
-        if (parsed && parsed.reason) return parsed;
+        if (parsed && parsed.reason && !parsed.replacedByCounter) {
+          return parsed;
+        }
       }
     } catch { }
   }
+
+  if ((ord as any).appointmentRejectionReason && (ord as any).appointmentStatus !== 'CONFIRMED') {
+    return {
+      reason: (ord as any).appointmentRejectionReason,
+      rejectedAt: (ord as any).appointmentRejectedAt || '',
+    };
+  }
+
   return null;
 }

@@ -2,10 +2,12 @@ import { Award, Calendar, Check, CheckCircle2, Clock, Eye, MessageSquare, Packag
 import type { BuyerInspectionStage, CancelOrder, ConfirmDialogState, OrderCheck } from '../../../types/orders/orderTypes';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import type { EscrowOrder, Language, Listing } from '../../../types';
-import type { OrderAppointment } from '../../../utils/orders/orderAppointments';
+import { getOrderAppointmentRejection, type OrderAppointment } from '../../../utils/orders/orderAppointments';
 import { dialogService } from '../../../utils/dialogService';
 import { formatInspectionDeadline, isInspectionPaymentExpired } from '../../../utils/inspectionPaymentDeadline';
 import { formatVND } from '../../../utils/translations';
+import { isOrderDeliveredToBuyer, isOrderInTransitToBuyer } from '../../../utils/orders/orderReceipt';
+import { getInspectionPurchaseDecision } from '../../../utils/inspectionPurchase';
 
 export interface OrderCardActionsProps {
   order: EscrowOrder;
@@ -63,6 +65,53 @@ export function OrderCardActions({
   state: { isOrderReceiptConfirmed, isOrderCancelledOrRefunded, isOrderSellerConfirmed, isInspectorArrivedForOrder, isPartyInspectionFeePending, getPartyInspectionFee, isPartyInspectionFeePaid, isOrderPacked, isOrderUnpaid, getOrderAppointment },
   actions: { setDetailModalOrder, onOpenChat, renderInspectionDecision, setTrackingOrder, setSchedulingOrder, setSchedulingReadOnly, handleSellerConfirmOrder, handlePromptRejectInspection, onCancelOrder, handlePromptCancelOrder, onRefreshOrders, handlePayInspectionFee, setCreateShipmentOrder, handlePromptCancelInspectionRequest, setCertificateModalOrder, handleSellerAcceptCounterAppointment, handleOpenBankPaymentModal, setConfirmDialog, setConfirmingReceiptIds, onConfirmReceipt, setReviewModalOrder }
 }: OrderCardActionsProps) {
+  const isPendingApprovalOrFeeInAction = Boolean(
+    !isOrderSellerConfirmed(ord) ||
+    ['WAITING_SELLER_APPROVAL', 'WAITING_BUYER_APPROVAL', 'WAITING_FEE_PAYMENT', 'PENDING'].includes(
+      String((ord as any)?.backendStatus || (ord as any)?.inspectionStatus || (ord as any)?.inspectionOrder?.status || ((ord as any).status !== 'AWAITING_INSPECTION' && (ord as any).status !== 'AWAITING_PAYMENT' && (ord as any).status !== 'HELD_IN_ESCROW' ? (ord as any).status : '') || '').toUpperCase()
+    )
+  );
+  const hasScheduledAppointment = !isPendingApprovalOrFeeInAction && Boolean(
+    savedAppointment?.scheduledAt ||
+    ord.appointmentScheduledAt ||
+    (ord as any).scheduledAt ||
+    (ord as any).inspectionOrder?.appointmentScheduledAt
+  );
+  const isCounteredAppointment = !isPendingApprovalOrFeeInAction && Boolean(
+    (
+      (savedAppointment?.status === 'COUNTERED_BY_CENTER' && Boolean(savedAppointment?.counterScheduledAt)) ||
+      Boolean(savedAppointment?.counterScheduledAt) ||
+      ((ord as any).appointmentStatus === 'COUNTERED_BY_CENTER' && Boolean((ord as any).counterScheduledAt)) ||
+      Boolean((ord as any).counterScheduledAt) ||
+      Boolean((ord as any).inspectionOrder?.counterScheduledAt)
+    ) &&
+    savedAppointment?.status !== 'PENDING_CENTER_CONFIRMATION' &&
+    ord.appointmentStatus !== 'PENDING_CENTER_CONFIRMATION' &&
+    ord.status !== 'CONFIRMED_PENDING_DISPATCH'
+  );
+  const appointmentRejection = !isCounteredAppointment && !isPendingApprovalOrFeeInAction ? getOrderAppointmentRejection(ord) : null;
+  const isAtHome = Boolean(
+    hasInspection && (
+      ord.inspectionMethod === 'AT_HOME' ||
+      (ord as any).orderType === 'AT_HOME' ||
+      (ord as any).inspectionOrder?.orderType === 'AT_HOME' ||
+      (ord as any).inspectionOrder?.inspectionMethod === 'AT_HOME'
+    )
+  );
+  const isPurchaseAccepted = Boolean(
+    getInspectionPurchaseDecision(ord) === 'accepted' ||
+    ord.finalPaymentPaidAt ||
+    (ord as any).inspectionDecision === 'accepted' ||
+    (ord as any).buyerDecision === 'accepted' ||
+    ord.linkedOrderId ||
+    (ord as any).inspectionOrder?.finalPaymentPaidAt ||
+    (ord as any).inspectionOrder?.orderId ||
+    String((ord as any).backendStatus || '').toUpperCase() === 'DELIVERING_TO_BUYER' ||
+    String((ord as any).status || '').toUpperCase() === 'DELIVERING_TO_BUYER' ||
+    String((ord as any).inspectionStatus || '').toUpperCase() === 'DELIVERING_TO_BUYER' ||
+    String((ord as any).inspectionOrder?.status || '').toUpperCase() === 'DELIVERING_TO_BUYER'
+  );
+
   return (
     <div className="px-4 sm:px-6 py-2.5 bg-white flex flex-wrap items-center justify-between gap-2.5">
       {/* Left: View Details & Chat */}
@@ -98,23 +147,12 @@ export function OrderCardActions({
         {/* Seller Actions */}
         {orderIsSeller ? (
           isOrderReceiptConfirmed(ord) ? (
-            <>
+            hasInspection ? null : (
               <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200 whitespace-nowrap shrink-0">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                 <span>{lang === 'vi' ? 'Đã Nhận Tiền Vào Ví' : 'Funds Credited to Wallet'}</span>
               </span>
-
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setTrackingOrder(ord);
-                }}
-                className="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
-              >
-                <Truck className="w-3.5 h-3.5 text-blue-600" />
-                <span>{lang === 'vi' ? 'Theo Dõi Lalamove' : 'Lalamove Tracking'}</span>
-              </button>
-            </>
+            )
           ) : isOrderCancelledOrRefunded(ord) ? (
             null
           ) : (
@@ -145,31 +183,22 @@ export function OrderCardActions({
                       ) : (
                         <>
                           {ord.inspectionMethod === 'AT_HOME' ? (
-                            !isInspectorArrivedForOrder(ord.id, ord) ? (
-                              /* Nút Hẹn Lịch Tiếp Đón KTV (Kiểm định tại nhà) */
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSchedulingOrder(ord);
-                                  setSchedulingReadOnly(false);
-                                }}
-                                disabled={orderActionLoading === ord.id}
-                                className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 hover:from-amber-700 hover:to-orange-800 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:shadow-lg active:scale-95 disabled:opacity-50 whitespace-nowrap shrink-0"
-                                title="Chọn ngày giờ kỹ thuật viên SecondLife đến nhà kiểm tra thiết bị"
-                              >
-                                <Calendar className="w-3.5 h-3.5" />
-                                <span>
-                                  {savedAppointment?.scheduledAt
-                                    ? (lang === 'vi' ? 'Đổi Lịch Hẹn KTV' : 'Reschedule Visit')
-                                    : (lang === 'vi' ? 'Hẹn Lịch Đón KTV' : 'Schedule Visit')}
-                                </span>
-                              </button>
-                            ) : (
-                              <span className="px-3.5 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold flex items-center gap-1.5 shadow-2xs whitespace-nowrap shrink-0">
-                                <Wrench className="w-3.5 h-3.5 text-emerald-600 animate-spin" />
-                                <span>{lang === 'vi' ? 'KTV Đang Kiểm Tra Máy' : 'Inspecting Device'}</span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSellerConfirmOrder(ord.id);
+                              }}
+                              disabled={orderActionLoading === ord.id}
+                              className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:shadow-lg active:scale-95 disabled:opacity-50 whitespace-nowrap shrink-0"
+                              title={lang === 'vi' ? 'Xác nhận đồng ý kiểm định tận nhà' : 'Accept at-home inspection'}
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5 stroke-[2.5]" />
+                              <span>
+                                {orderActionLoading === ord.id
+                                  ? (lang === 'vi' ? 'Đang xác nhận...' : 'Confirming...')
+                                  : (lang === 'vi' ? 'Đồng Ý Kiểm Định' : 'Accept Inspection')}
                               </span>
-                            )
+                            </button>
                           ) : (
                             /* Nút Xác Nhận Đồng Ý Kiểm Định & Gửi Hub (Chặng 1) */
                             <button
@@ -312,7 +341,11 @@ export function OrderCardActions({
 
               {/* GIAI ĐOẠN 2: ĐÃ XÁC NHẬN • ĐANG ĐÓNG GÓI */}
               {isOrderSellerConfirmed(ord) &&
-                !['WAITING_SELLER_APPROVAL', 'WAITING_BUYER_APPROVAL', 'WAITING_FEE_PAYMENT', 'PENDING'].includes(String((ord as any)?.backendStatus || (ord as any)?.inspectionStatus || (ord as any)?.inspectionOrder?.status || '').toUpperCase()) &&
+                !['WAITING_SELLER_APPROVAL', 'WAITING_BUYER_APPROVAL', 'WAITING_FEE_PAYMENT', 'PENDING'].includes(String((ord as any)?.backendStatus || (ord as any)?.inspectionStatus || (ord as any)?.inspectionOrder?.status || ord.status || '').toUpperCase()) &&
+                (ord.status as string) !== 'WAITING_SELLER_APPROVAL' &&
+                (ord as any).backendStatus !== 'WAITING_SELLER_APPROVAL' &&
+                (ord as any).inspectionStatus !== 'WAITING_SELLER_APPROVAL' &&
+                (ord as any).customerStatus !== 'WAITING_SELLER_APPROVAL' &&
                 !inboundLabel &&
                 !isOrderReceiptConfirmed(ord) &&
                 ord.backendStatus !== 'COMPLETED' &&
@@ -323,11 +356,13 @@ export function OrderCardActions({
                 ord.escrowStatus !== 'SHIPPED_TO_BUYER' &&
                 ord.escrowStatus !== 'DELIVERED_INSPECTION_WINDOW' &&
                 ord.escrowStatus !== 'COMPLETED_RELEASED' &&
-                ord.escrowStatus !== 'INSPECTION_PASSED' &&
-                (ord as any).backendStatus !== 'PASSED' && (
+                (
+                  (!['INSPECTION_PASSED', 'PASSED'].includes(ord.escrowStatus || '') && (ord as any).backendStatus !== 'PASSED') ||
+                  (isAtHome && isPurchaseAccepted)
+                ) && (
                   <>
-                    {/* Nút Đã Đóng Gói • Tạo Đơn Lalamove cho Chặng 1 hoặc đơn thông thường */}
-                    {(!hasInspection || (ord.inspectionMethod !== 'AT_HOME' && (ord as any).orderType !== 'AT_HOME')) && (
+                    {/* Nút Đã Đóng Gói • Tạo Đơn Lalamove cho Chặng 1 hoặc đơn thông thường hoặc đơn AT_HOME sau khi người mua chốt mua */}
+                    {(!hasInspection || !isAtHome || (isAtHome && isPurchaseAccepted && !isOrderPacked(ord))) && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -343,27 +378,27 @@ export function OrderCardActions({
                       </button>
                     )}
 
-
-
-                    {/* Nút Hẹn Giờ Kiểm Định (CHỈ HIỆN KHI ĐƠN HÀNG LÀ KIỂM ĐỊNH TẬN NHÀ - AT_HOME) */}
-                    {hasInspection && (ord.inspectionMethod === 'AT_HOME' || (ord as any).orderType === 'AT_HOME') && (
+                    {/* Nút Hẹn Giờ Kiểm Định (CHỈ HIỆN KHI ĐƠN HÀNG LÀ KIỂM ĐỊNH TẬN NHÀ - AT_HOME VÀ CHƯA XÁC NHẬN MUA) */}
+                    {isAtHome && !isPurchaseAccepted && (
                       !isInspectorArrivedForOrder(ord.id, ord) ? (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSchedulingOrder(ord);
-                            setSchedulingReadOnly(false);
-                          }}
-                          className="px-3 py-1.5 rounded-xl bg-orange-50 hover:bg-orange-100 text-orange-900 border border-orange-200 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
-                          title={lang === 'vi' ? 'Người bán lên lịch hẹn ngày giờ kỹ thuật viên đến kiểm định tại nhà' : 'Schedule inspection appointment with Hub technician at home'}
-                        >
-                          <Calendar className="w-3.5 h-3.5 text-orange-600" />
-                          <span>
-                            {savedAppointment?.scheduledAt
-                              ? (lang === 'vi' ? 'Đổi Lịch Hẹn KTV' : 'Reschedule Visit')
-                              : (lang === 'vi' ? 'Hẹn Lịch Đón KTV' : 'Schedule Visit')}
-                          </span>
-                        </button>
+                        (!hasScheduledAppointment || appointmentRejection) && !isCounteredAppointment ? (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSchedulingOrder(ord);
+                              setSchedulingReadOnly(false);
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-orange-50 hover:bg-orange-100 text-orange-900 border border-orange-200 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
+                            title={lang === 'vi' ? 'Người bán lên lịch hẹn ngày giờ kỹ thuật viên đến kiểm định tại nhà' : 'Schedule inspection appointment with Hub technician at home'}
+                          >
+                            <Calendar className="w-3.5 h-3.5 text-orange-600" />
+                            <span>
+                              {appointmentRejection
+                                ? (lang === 'vi' ? 'Đặt Lại Lịch Hẹn KTV' : 'Reschedule Visit')
+                                : (lang === 'vi' ? 'Hẹn Lịch Đón KTV' : 'Schedule Visit')}
+                            </span>
+                          </button>
+                        ) : null
                       ) : (
                         <span className="px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold flex items-center gap-1.5 shadow-2xs whitespace-nowrap shrink-0">
                           <Wrench className="w-3.5 h-3.5 text-emerald-600 animate-spin" />
@@ -371,62 +406,62 @@ export function OrderCardActions({
                         </span>
                       )
                     )}
-
-                    {/* Nút Hủy Yêu Cầu Kiểm Định Cho Seller (Khi KTV chưa đến nơi) */}
-                    {hasInspection && onCancelOrder && !ord.inspectionReport && !isInspectorArrivedForOrder(ord.id, ord) && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handlePromptCancelInspectionRequest(ord);
-                        }}
-                        className="px-2.5 py-1.5 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 text-xs font-bold transition cursor-pointer flex items-center gap-1 whitespace-nowrap shrink-0 shadow-2xs"
-                        title={lang === 'vi' ? 'Hủy yêu cầu kiểm định cho đơn hàng này' : 'Cancel inspection request'}
-                      >
-                        <XCircle className="w-3.5 h-3.5 text-rose-600" />
-                        <span>{lang === 'vi' ? 'Hủy Kiểm Định' : 'Cancel'}</span>
-                      </button>
-                    )}
                   </>
                 )}
 
-              {/* GIAI ĐOẠN 3: ĐÃ ĐÓNG GÓI • CHỜ SHIPPER ĐẾN LẤY (Chỉ hiển thị khi đơn chưa có Lalamove Tracking box) */}
-              {!hasActiveShipment && (!hasInspection || (ord.inspectionMethod !== 'AT_HOME' && (ord as any).orderType !== 'AT_HOME')) && (hasInboundTracking || (isOrderPacked(ord) &&
+              {/* GIAI ĐOẠN 3: ĐÃ ĐÓNG GÓI • CHỜ SHIPPER ĐẾN LẤY */}
+              {(!hasInspection || !isAtHome) &&
+                (hasInboundTracking || isOrderPacked(ord)) &&
                 !isOrderReceiptConfirmed(ord) &&
                 ord.backendStatus !== 'COMPLETED' &&
                 !ord.shippingDeliveredAt &&
                 !ord.carrierPickedUpAt &&
                 ord.backendStatus !== 'SHIPPED' &&
                 ord.backendStatus !== 'DELIVERED' &&
-                ord.escrowStatus !== 'SHIPPED_TO_BUYER' &&
-                ord.escrowStatus !== 'DELIVERED_INSPECTION_WINDOW' &&
-                ord.escrowStatus !== 'COMPLETED_RELEASED')) && (
-                  <span
-                    onClick={(e) => e.stopPropagation()}
-                    className="inline-flex items-center gap-1.5 text-xs font-bold text-teal-800 bg-teal-50 px-3 py-1.5 rounded-xl border border-teal-200 whitespace-nowrap shrink-0 shadow-xs cursor-default select-none pointer-events-none"
-                  >
-                    <PackageCheck className="w-4 h-4 text-teal-600" />
-                    <span>{lang === 'vi' ? 'Đã Đóng Gói • Chờ Tài Xế Lấy' : 'Packed • Waiting for Carrier'}</span>
-                  </span>
+                (ord.escrowStatus as string) !== 'SHIPPED_TO_BUYER' &&
+                (ord.escrowStatus as string) !== 'DELIVERED_INSPECTION_WINDOW' &&
+                (ord.escrowStatus as string) !== 'COMPLETED_RELEASED' && (
+                  <>
+                    <span
+                      onClick={(e) => e.stopPropagation()}
+                      className="inline-flex items-center gap-1.5 text-xs font-bold text-teal-800 bg-teal-50 px-3 py-1.5 rounded-xl border border-teal-200 whitespace-nowrap shrink-0 shadow-xs cursor-default select-none pointer-events-none"
+                    >
+                      <PackageCheck className="w-4 h-4 text-teal-600" />
+                      <span>{lang === 'vi' ? 'Đã Đóng Gói • Chờ Tài Xế Lấy' : 'Packed • Waiting for Carrier'}</span>
+                    </span>
+                    {(hasActiveShipment || isOrderPacked(ord)) && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setTrackingOrder(ord);
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
+                      >
+                        <Truck className="w-3.5 h-3.5 text-white" />
+                        <span>{lang === 'vi' ? 'Theo Dõi Lalamove' : 'Lalamove Tracking'}</span>
+                      </button>
+                    )}
+                  </>
                 )}
 
               {/* GIAI ĐOẠN 4: ĐANG GIAO HÀNG (Hoặc đã hoàn thành) */}
-              {!hasInboundTracking && (ord.carrierPickedUpAt ||
+              {!isAtHome && !hasInboundTracking && (ord.carrierPickedUpAt ||
                 ord.backendStatus === 'SHIPPED' ||
                 ord.backendStatus === 'DELIVERED' ||
-                ord.escrowStatus === 'SHIPPED_TO_BUYER' ||
-                ord.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' ||
-                ord.escrowStatus === 'COMPLETED_RELEASED') && (
+                (ord.escrowStatus as string) === 'SHIPPED_TO_BUYER' ||
+                (ord.escrowStatus as string) === 'DELIVERED_INSPECTION_WINDOW' ||
+                (ord.escrowStatus as string) === 'COMPLETED_RELEASED') && (
                   <>
                     <span className="inline-flex items-center gap-1 text-xs font-bold text-blue-700 bg-blue-50 px-2.5 py-1.5 rounded-xl border border-blue-200 whitespace-nowrap shrink-0">
                       <Truck className="w-3.5 h-3.5 text-blue-600" />
                       <span>
-                        {ord.backendStatus === 'DELIVERED' || ord.escrowStatus === 'COMPLETED_RELEASED'
+                        {ord.backendStatus === 'DELIVERED' || (ord.escrowStatus as string) === 'COMPLETED_RELEASED'
                           ? (lang === 'vi' ? 'Đã Giao Thành Công' : 'Delivered')
                           : (lang === 'vi' ? 'Đang Giao Hàng' : 'In Transit')}
                       </span>
                     </span>
 
-                    {!hasActiveShipment && (
+                    {(hasActiveShipment || isOrderPacked(ord)) && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -444,7 +479,7 @@ export function OrderCardActions({
 
 
               {/* Completed: Escrow released notice */}
-              {ord.escrowStatus === 'COMPLETED_RELEASED' && (
+              {!hasInspection && ord.escrowStatus === 'COMPLETED_RELEASED' && (
                 <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-xl border border-emerald-200 whitespace-nowrap shrink-0">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                   <span>{lang === 'vi' ? 'Đã Giải Ngân Vào Ví' : 'Funds Credited to Wallet'}</span>
@@ -472,7 +507,20 @@ export function OrderCardActions({
                   // Đơn có kiểm định: Chỉ xuất hiện lần đầu tiên khi người mua gửi yêu cầu
                   // Từ lần thương lượng thứ 2 hoặc khi đã xác nhận/nộp phí thì KHÔNG cho hủy
                   if (hasInspection) {
-                    if (isCounterOrder || ord.sellerConfirmedAt || ord.confirmationStatus === 'CONFIRMED' || (ord as any).backendStatus === 'WAITING_FEE_PAYMENT' || (ord as any).inspectionStatus === 'WAITING_FEE_PAYMENT') {
+                    if (
+                      isCounterOrder ||
+                      ord.sellerConfirmedAt ||
+                      ord.confirmationStatus === 'CONFIRMED' ||
+                      isOrderSellerConfirmed(ord) ||
+                      (ord as any).backendStatus === 'WAITING_FEE_PAYMENT' ||
+                      (ord as any).inspectionStatus === 'WAITING_FEE_PAYMENT' ||
+                      ord.status === 'CONFIRMED_PENDING_DISPATCH' ||
+                      (ord as any).backendStatus === 'CONFIRMED_PENDING_DISPATCH' ||
+                      (ord as any).inspectionStatus === 'CONFIRMED_PENDING_DISPATCH' ||
+                      (ord.escrowStatus as string) === 'CONFIRMED_PENDING_DISPATCH' ||
+                      Boolean((ord as any).buyerPaidAt) ||
+                      Boolean((ord as any).sellerPaidAt)
+                    ) {
                       return null;
                     }
                     return (
@@ -511,8 +559,9 @@ export function OrderCardActions({
                 })()
               )}
 
-              {/* Buyer tracking is available outside the inspection and purchase-decision stages. */}
-              {!hasActiveShipment && !buyerInspectionStage && !isOrderUnpaid(ord) && ord.escrowStatus !== 'CANCELLED' && ord.escrowStatus !== 'REFUNDED_TO_BUYER' && ord.backendStatus !== 'CANCELLED' && (
+              {/* Buyer tracking is available outside the inspection and purchase-decision stages, or when inspection order is passed and shipment is created */}
+              {!isAtHome && (!hasInspection || ord.carrierPickedUpAt || (ord.escrowStatus as string) === 'DELIVERING_TO_BUYER' || (ord as any).backendStatus === 'SHIPPED') &&
+                isOrderPacked(ord) && !buyerInspectionStage && !isOrderUnpaid(ord) && ord.escrowStatus !== 'CANCELLED' && ord.escrowStatus !== 'REFUNDED_TO_BUYER' && ord.backendStatus !== 'CANCELLED' && (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -540,51 +589,6 @@ export function OrderCardActions({
                 </button>
               )}
 
-              {/* Inspection Status Badge for Buyer (Chỉ hiện khi ở giai đoạn điều phối/lịch hẹn sau khi đã nộp phí và Người Mua cùng chịu phí) */}
-              {hasInspection &&
-                ord.escrowStatus === 'AWAITING_INSPECTION' &&
-                isOrderSellerConfirmed(ord) &&
-                ord.inspectionFeeSplit !== 'SELLER_100' &&
-                ord.feePayer !== 'SELLER_PAYS' &&
-                (ord as any).feeSplit !== 'SELLER_100' &&
-                getPartyInspectionFee(ord, false) > 0 &&
-                !['WAITING_SELLER_APPROVAL', 'WAITING_BUYER_APPROVAL', 'PENDING', 'WAITING_FEE_PAYMENT', 'CONFIRMED_PENDING_DISPATCH'].includes(String((ord as any)?.backendStatus || (ord as any)?.inspectionStatus || (ord as any)?.inspectionOrder?.status || '').toUpperCase()) && (
-                <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-xl border whitespace-nowrap shrink-0 text-blue-800 bg-blue-50 border-blue-200">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />
-                  <span>
-                    {(() => {
-                      if (ord.inspectionMethod === 'AT_HOME') {
-                        const atHomeAppt = getOrderAppointment(ord);
-                        const isAtHomeCountered =
-                          atHomeAppt?.status === 'COUNTERED_BY_CENTER' ||
-                          Boolean(atHomeAppt?.counterScheduledAt) ||
-                          ord.status === 'WAITING_SELLER_APPROVAL' ||
-                          (ord as any).customerStatus === 'WAITING_SELLER_APPROVAL' ||
-                          String((ord as any).backendStatus || '').toUpperCase() === 'WAITING_SELLER_APPROVAL' ||
-                          (ord as any).appointmentStatus === 'COUNTERED_BY_CENTER';
-                        const isAtHomePendingAppr = atHomeAppt?.status === 'PENDING_CENTER_CONFIRMATION' || atHomeAppt?.status === 'PENDING_CONFIRMATION';
-                        const hasAtHomeInsp = Boolean(ord.inspectorId || (ord as any).inspectorName);
-
-                        if (isAtHomeCountered) {
-                          return lang === 'vi' ? 'Trung tâm đề xuất lịch mới • Đang thương lượng' : 'Center Proposed New Time • Negotiating';
-                        }
-                        if (isAtHomePendingAppr) {
-                          return lang === 'vi' ? 'Đã đề xuất lịch hẹn • Chờ Trung tâm duyệt' : 'Appointment Proposed • Awaiting Approval';
-                        }
-                        if (hasAtHomeInsp) {
-                          return lang === 'vi' ? 'Đã phân công KTV • Chờ đến kiểm tra' : 'Inspector Assigned • Awaiting Inspection';
-                        }
-                        if (atHomeAppt?.status === 'CONFIRMED') {
-                          return lang === 'vi' ? 'Đã chốt lịch hẹn • Đang xếp KTV' : 'Schedule Confirmed • Dispatching Inspector';
-                        }
-                        return lang === 'vi' ? 'Người bán đã đồng ý • Chờ chốt lịch hẹn KTV' : 'Seller Confirmed • Awaiting Schedule';
-                      }
-                      return lang === 'vi' ? 'Người Bán Đã Đồng Ý • Đang Điều Phối Hub' : 'Seller Confirmed • Hub Dispatching';
-                    })()}
-                  </span>
-                </span>
-              )}
-
               {/* Buyer: Người bán đề xuất lại phương án kiểm định */}
               {hasInspection && String((ord as any)?.backendStatus || (ord as any)?.inspectionStatus || (ord as any)?.inspectionOrder?.status || ((ord as any)?.status !== 'AWAITING_INSPECTION' ? (ord as any)?.status : '') || '').toUpperCase() === 'WAITING_BUYER_APPROVAL' && onOpenChat && (
                 <button
@@ -600,61 +604,31 @@ export function OrderCardActions({
                 </button>
               )}
 
-              {/* Inspection Appointment Action for Seller and Buyer */}
-              {hasInspection && (ord.inspectionMethod === 'AT_HOME' || (ord as any).orderType === 'AT_HOME') && (savedAppointment?.scheduledAt || savedAppointment?.counterScheduledAt) && (
-                orderIsSeller ? (
-                  (savedAppointment?.status === 'COUNTERED_BY_CENTER' || Boolean(savedAppointment?.counterScheduledAt)) ? (
-                    <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        type="button"
-                        onClick={() => handleSellerAcceptCounterAppointment(ord.id, savedAppointment)}
-                        className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer whitespace-nowrap"
-                        title={lang === 'vi' ? 'Đồng ý với lịch hẹn đề xuất mới từ Trung tâm kiểm định' : 'Accept proposed appointment time'}
-                      >
-                        <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                        <span>{lang === 'vi' ? 'Đồng Ý Lịch Mới' : 'Accept New Time'}</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSchedulingOrder(ord);
-                          setSchedulingReadOnly(false);
-                        }}
-                        className="px-3 py-1.5 rounded-xl bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer whitespace-nowrap"
-                        title={lang === 'vi' ? 'Chọn lại khung giờ hoặc ngày khác gửi lại cho Hub' : 'Reschedule to another time'}
-                      >
-                        <Calendar className="w-3.5 h-3.5 text-amber-600" />
-                        <span>{lang === 'vi' ? 'Hẹn Lại Lịch Khác' : 'Reschedule'}</span>
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSchedulingOrder(ord);
-                        setSchedulingReadOnly(false);
-                      }}
-                      className="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
-                      title={lang === 'vi' ? 'Xem hoặc đổi lịch hẹn đón KTV' : 'View or change appointment'}
-                    >
-                      <Calendar className="w-3.5 h-3.5 text-amber-600" />
-                      <span>{lang === 'vi' ? 'Xem / Đổi Lịch Hẹn KTV' : 'View / Change Appointment'}</span>
-                    </button>
-                  )
-                ) : (
+              {/* Inspection Appointment Action for Seller */}
+              {hasInspection && orderIsSeller && (ord.inspectionMethod === 'AT_HOME' || (ord as any).orderType === 'AT_HOME') && isCounteredAppointment && (
+                <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSchedulingOrder(ord);
-                      setSchedulingReadOnly(true);
-                    }}
-                    className="px-3 py-1.5 rounded-xl bg-orange-50 hover:bg-orange-100 text-orange-900 border border-orange-200 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
-                    title={lang === 'vi' ? 'Xem lịch hẹn kiểm định do người bán đã đặt' : 'View inspection appointment scheduled by seller'}
+                    type="button"
+                    onClick={() => handleSellerAcceptCounterAppointment(ord.id, savedAppointment)}
+                    className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer whitespace-nowrap"
+                    title={lang === 'vi' ? 'Đồng ý với lịch hẹn đề xuất mới từ Trung tâm kiểm định' : 'Accept proposed appointment time'}
                   >
-                    <Calendar className="w-3.5 h-3.5 text-orange-600" />
-                    <span>{lang === 'vi' ? 'Xem Lịch Hẹn KTV' : 'View Appointment'}</span>
+                    <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                    <span>{lang === 'vi' ? 'Đồng Ý Lịch Mới' : 'Accept New Time'}</span>
                   </button>
-                )
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSchedulingOrder(ord);
+                      setSchedulingReadOnly(false);
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer whitespace-nowrap"
+                    title={lang === 'vi' ? 'Chọn lại khung giờ hoặc ngày khác gửi lại cho Hub' : 'Reschedule to another time'}
+                  >
+                    <Calendar className="w-3.5 h-3.5 text-amber-600" />
+                    <span>{lang === 'vi' ? 'Hẹn Lại Lịch Khác' : 'Reschedule'}</span>
+                  </button>
+                </div>
               )}
 
               {/* Buyer Bank Transfer Escrow Deposit (CHỈ HIỆN KHI ĐƠN HÀNG CHƯA THANH TOÁN TIỀN HÀNG ESCROW BAN ĐẦU) */}
@@ -726,15 +700,8 @@ export function OrderCardActions({
                 })()
               )}
 
-              {/* Nút Đã Nhận Hàng (Giải Ngân): Khi người mua đã xác nhận/giải ngân thì ẩn hoàn toàn nút, không cho bấm lại */}
-              {!buyerInspectionStage && !isOrderReceiptConfirmed(ord) && (
-                ord.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' ||
-                ord.backendStatus === 'DELIVERED' ||
-                ord.shippingDeliveredAt ||
-                ord.escrowStatus === 'SHIPPED_TO_BUYER' ||
-                (ord as any).inspectionStatus === 'DELIVERING_TO_BUYER' ||
-                (ord as any).inspectionStatus === 'PASSED'
-              ) ? (
+              {/* Nút Đã Nhận Hàng (Giải Ngân): Chỉ hiện khi đơn đã thực sự giao thành công đến Người mua và chưa xác nhận */}
+              {!buyerInspectionStage && !isOrderReceiptConfirmed(ord) && isOrderDeliveredToBuyer(ord) ? (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -748,7 +715,7 @@ export function OrderCardActions({
                       subMessage: lang === 'vi'
                         ? 'Tiền ký quỹ trong Escrow sẽ được giải ngân an toàn cho người bán. Hành động này không thể hoàn tác.'
                         : 'Escrow funds will be released to the seller immediately.',
-                      confirmText: lang === 'vi' ? 'Đã Nhận Hàng (Giải Ngân)' : 'Confirm Receipt',
+                      confirmText: lang === 'vi' ? 'Đã Nhận Hàng' : 'Confirm Receipt',
                       cancelText: lang === 'vi' ? 'Đóng' : 'Cancel',
                       variant: 'success',
                       iconType: 'check',
@@ -766,12 +733,12 @@ export function OrderCardActions({
                   }}
                   disabled={confirmingReceiptIds.has(ord.id)}
                   className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-90 disabled:opacity-50 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-sm animate-pulse whitespace-nowrap shrink-0"
-                  title="Xác nhận đã nhận máy an toàn và giải ngân Escrow cho người bán"
+                  title="Xác nhận đã nhận máy an toàn"
                 >
                   <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>{confirmingReceiptIds.has(ord.id) ? (lang === 'vi' ? 'Đang giải ngân...' : 'Processing...') : (lang === 'vi' ? 'Đã Nhận Hàng (Giải Ngân)' : 'Confirm Delivery')}</span>
+                  <span>{confirmingReceiptIds.has(ord.id) ? (lang === 'vi' ? 'Đang xử lý...' : 'Processing...') : (lang === 'vi' ? 'Đã Nhận Hàng' : 'Confirm Delivery')}</span>
                 </button>
-              ) : !buyerInspectionStage && ord.escrowStatus === 'SHIPPED_TO_BUYER' ? (
+              ) : !buyerInspectionStage && !isOrderReceiptConfirmed(ord) && !isAtHome && isOrderInTransitToBuyer(ord) ? (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();

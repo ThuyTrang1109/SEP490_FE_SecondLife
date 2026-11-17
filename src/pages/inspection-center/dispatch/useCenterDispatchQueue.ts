@@ -9,11 +9,12 @@ interface Options {
   inboundShipments: ReturnType<typeof useCenterShipments>['inboundShipments'];
   isOrderReceivedAtHub: ReturnType<typeof useCenterShipments>['isOrderReceivedAtHub'];
   orders: ReturnType<typeof useCenterOrders>['orders'];
+  apiOrderHistory: ReturnType<typeof useCenterOrders>['visibleOrderHistory'];
   setActiveTab: (tab: CenterTab) => void;
   staffList: ReturnType<typeof useCenterStaff>['staffList'];
 }
 
-export function useCenterDispatchQueue({ inboundShipments, isOrderReceivedAtHub, orders, setActiveTab, staffList }: Options) {
+export function useCenterDispatchQueue({ inboundShipments, isOrderReceivedAtHub, orders, apiOrderHistory, setActiveTab, staffList }: Options) {
   const [dispatchFilter, setDispatchFilter] = useState<DispatchFilter>('ALL');
   const [orderMethodFilter, setOrderMethodFilter] = useState<'ALL' | 'AT_CENTER' | 'AT_HOME'>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
@@ -28,8 +29,12 @@ export function useCenterDispatchQueue({ inboundShipments, isOrderReceivedAtHub,
 
   // Staff Workload Map - Chỉ đếm số đơn thực tế đang giao / đang xử lý (không tính đơn hủy hay đã hoàn tất)
   const staffWorkloadMap = useMemo(() => {
+    if (!apiOrderHistory || apiOrderHistory.refreshFailed || apiOrderHistory.items.length < apiOrderHistory.total) {
+      return null;
+    }
+
     const map: Record<string, number> = {};
-    orders.forEach((o) => {
+    apiOrderHistory.items.forEach((o) => {
       const isCancelled = o.status === 'CANCELLED' || o.status === 'CANCELED';
       const isClosed = o.status === 'PASSED' || o.status === 'FAILED' || o.status === 'COMPLETED';
       if (o.inspectorId && !isCancelled && !isClosed) {
@@ -37,7 +42,7 @@ export function useCenterDispatchQueue({ inboundShipments, isOrderReceivedAtHub,
       }
     });
     return map;
-  }, [orders]);
+  }, [apiOrderHistory]);
 
   // Overall Statistics - Phản ánh chính xác 100% dữ liệu đơn hàng
   const stats = useMemo(() => {

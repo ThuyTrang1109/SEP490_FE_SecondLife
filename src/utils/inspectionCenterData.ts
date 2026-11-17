@@ -236,6 +236,41 @@ export function getHubBuyerShipmentLabel(shipment: ShipmentBackend) {
   return progress.label;
 }
 
+export function getBuyerDeliveryProgress(
+  shipment: Pick<ShipmentBackend, 'status' | 'providerStatus'>,
+  lang: Language = 'vi',
+) {
+  const progress = (step: 0 | 1 | 2 | 3 | null, vi: string, en: string) => ({
+    step,
+    label: lang === 'vi' ? vi : en,
+  });
+  switch (shipment.status.toUpperCase()) {
+    case 'DELIVERED':
+    case 'COMPLETED': return progress(3, 'Lalamove đã giao tới người mua', 'Delivered to Buyer');
+    case 'CANCELLED': return progress(null, 'Vận đơn đã hủy', 'Shipment cancelled');
+    case 'FAILED': return progress(null, 'Vận đơn thất bại', 'Shipment failed');
+    case 'RETURNED': return progress(null, 'Vận đơn đã hoàn trả', 'Shipment returned');
+    case 'CREATING': return progress(null, 'Đang tạo vận đơn', 'Creating shipment');
+    case 'CREATION_UNCERTAIN': return progress(null, 'Đang xác minh vận đơn', 'Verifying shipment');
+  }
+  switch ((shipment.providerStatus || shipment.status).toUpperCase()) {
+    case 'ASSIGNING_DRIVER':
+    case 'READY_TO_PICK': return progress(0, 'Đã tạo vận đơn · Đang tìm tài xế', 'Shipment created · Finding a driver');
+    case 'ON_GOING':
+    case 'ASSIGNED': return progress(1, 'Tài xế đang đến lấy hàng', 'Driver on the way to pickup');
+    case 'PICKED_UP':
+    case 'PICKED':
+    case 'SHIPPED':
+    case 'DELIVERING': return progress(2, 'Đang giao hàng đến người mua', 'On the way to Buyer');
+    case 'COMPLETED': return progress(3, 'Lalamove đã giao tới người mua', 'Delivered to Buyer');
+    case 'CANCELED': return progress(null, 'Vận đơn đã hủy', 'Shipment cancelled');
+    case 'REJECTED':
+    case 'EXPIRED': return progress(null, 'Vận đơn thất bại', 'Shipment failed');
+    case 'CREATING': return progress(null, 'Đang tạo vận đơn', 'Creating shipment');
+    default: return progress(null, 'Đang chờ cập nhật vận đơn', 'Awaiting shipment update');
+  }
+}
+
 export function getInboundShipmentProgress(
   shipment: Pick<ShipmentBackend, 'status' | 'providerStatus'>,
   lang: Language = 'vi',
@@ -261,7 +296,7 @@ export function getInboundShipmentProgress(
     case 'PICKED_UP':
     case 'PICKED':
     case 'SHIPPED':
-    case 'DELIVERING': return progress(2, 'Đang giao hàng về Hub', 'On the way to Hub');
+    case 'DELIVERING': return progress(2, 'Đang giao hàng đến Hub', 'On the way to Hub');
     case 'COMPLETED': return progress(3, 'Lalamove đã giao tới Hub', 'Delivered to Hub');
     case 'CANCELED': return progress(null, 'Vận đơn đã hủy', 'Shipment cancelled');
     case 'REJECTED':

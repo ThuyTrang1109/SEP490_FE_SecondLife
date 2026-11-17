@@ -125,6 +125,11 @@ export function useCenterOrders({ currentUser, initialOrders, lang, loadingShipm
             : ['https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=400'],
           buyerName: o.buyerName || 'Khách hàng',
           buyerEmail: o.buyerId ? `buyer_${String(o.buyerId).slice(0, 6)}@gmail.com` : 'buyer@secondlife.vn',
+          buyerAddress: o.buyerAddress || (o as any).deliveryAddress || o.shippingLegs?.[1]?.destination || o.address,
+          buyerPhone: (o as any).buyerPhone || (o as any).phone,
+          address: o.address || o.buyerAddress || (o as any).deliveryAddress || o.shippingLegs?.[1]?.destination,
+          inspectionCenterAddress: (o as any).inspectionCenterAddress,
+          inspectionCenterName: (o as any).inspectionCenterName,
           sellerName: o.sellerName || o.seller?.fullName || 'Người bán',
           sellerEmail: o.sellerId ? `seller_${String(o.sellerId).slice(0, 6)}@gmail.com` : 'seller@secondlife.vn',
           sellerPhone: o.sellerPhone || o.seller?.phone,
@@ -196,31 +201,36 @@ export function useCenterOrders({ currentUser, initialOrders, lang, loadingShipm
     loadingOrdersRef.current = true;
     if (!background) setIsLoadingOrders(true);
     try {
-      if (showOrderShipments && centerId) {
-        const result = await inspectorService.getCenterOrderHistory(background ? { isBackground: true } : undefined);
-        if (requestId !== ordersRequestRef.current) return;
-        if (!Array.isArray(result?.items)) throw new Error('Invalid center orders response');
-        setCenterOrderHistory({ centerId, items: result.items, total: result.totalElements });
-        setOrders(result.items);
-        setTrackedOrders(result.items.filter((order) => shouldTrackCenterInspectionShipments(order, centerId, currentUser?.role)));
-        return;
-      }
-
       let backendItems: InspectionOrderDto[] = [];
       try {
-        const res = await inspectorService.getAllOrders(
-          undefined,
-          0,
-          100,
-          background ? { isBackground: true } : undefined,
-        );
-        const extracted = res?.items || (res as any)?.content || (Array.isArray(res) ? res : []);
-        if (extracted && extracted.length > 0) {
-          backendItems = extracted;
+        const options = background ? { isBackground: true } : undefined;
+        if (centerId) {
+          const result = await inspectorService.getCenterOrderHistory(options);
+          if (requestId !== ordersRequestRef.current) return;
+          if (!Array.isArray(result?.items)) throw new Error('Invalid center orders response');
+
+          backendItems = result.items;
+          setCenterOrderHistory({ centerId, items: backendItems, total: result.totalElements });
+          if (showOrderShipments) {
+            setOrders(backendItems);
+            setTrackedOrders(backendItems.filter((order) =>
+              shouldTrackCenterInspectionShipments(order, centerId, currentUser?.role)));
+            return;
+          }
+        } else {
+          const result = await inspectorService.getAllOrders(undefined, 0, 100, options);
+          backendItems = result.items;
         }
-      } catch (e) {
+      } catch (error) {
+        if (requestId !== ordersRequestRef.current) return;
+        if (showOrderShipments) throw error;
         if (background) return;
-        console.warn('getAllOrders from backend error (falling back to storage/cache):', e);
+        if (centerId) {
+          setCenterOrderHistory((previous) => previous?.centerId === centerId
+            ? { ...previous, refreshFailed: true }
+            : { centerId, items: [], total: 0, refreshFailed: true });
+        }
+        console.warn('Lỗi tải danh sách đơn kiểm định từ backend:', error);
       }
 
       if (requestId !== ordersRequestRef.current) return;
@@ -406,6 +416,11 @@ export function useCenterOrders({ currentUser, initialOrders, lang, loadingShipm
               postImageUrls: resolvedImageUrls,
               buyerName: o.buyerName || 'Khách hàng',
               buyerEmail: o.buyerId ? `buyer_${String(o.buyerId).slice(0, 6)}@gmail.com` : 'buyer@secondlife.vn',
+              buyerAddress: o.buyerAddress || (o as any).deliveryAddress || o.shippingLegs?.[1]?.destination || o.address,
+              buyerPhone: (o as any).buyerPhone || (o as any).phone,
+              address: o.address || o.buyerAddress || (o as any).deliveryAddress || o.shippingLegs?.[1]?.destination,
+              inspectionCenterAddress: (o as any).inspectionCenterAddress,
+              inspectionCenterName: (o as any).inspectionCenterName,
               sellerName: o.sellerName || o.seller?.fullName || 'Người bán',
               sellerEmail: o.sellerId ? `seller_${String(o.sellerId).slice(0, 6)}@gmail.com` : 'seller@secondlife.vn',
               sellerPhone: o.sellerPhone || o.seller?.phone,

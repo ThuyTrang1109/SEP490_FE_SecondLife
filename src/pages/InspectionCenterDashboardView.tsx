@@ -85,10 +85,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
     showNotice,
     showOrderShipments,
   });
-  const staff = useCenterStaff({
-    orders,
-    showNotice,
-  });
+  const staff = useCenterStaff({ centerId: currentUser?.id, showNotice });
   const { isCreateStaffModalOpen, loadStaff, staffList } = staff;
   useCenterOrderRefresh({
     centerId: currentUser?.id,
@@ -121,6 +118,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
     inboundShipments,
     isOrderReceivedAtHub,
     orders,
+    apiOrderHistory: visibleOrderHistory,
     setActiveTab,
     staffList,
   });
@@ -370,6 +368,8 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
           isOrderReceivedAtHub={isOrderReceivedAtHub}
           setActiveTab={setActiveTab}
           staffList={staffList}
+          isLoadingStaff={staff.isLoadingStaff}
+          staffLoadError={staff.staffLoadError}
           staffWorkloadMap={staffWorkloadMap}
           assignment={assignment}
         />

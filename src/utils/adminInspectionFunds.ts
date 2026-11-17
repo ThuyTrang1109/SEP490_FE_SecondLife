@@ -235,7 +235,16 @@ export function resolveFeeSplitPlan(funds?: AdminInspectionOrderFundsDTO | null)
     return { code: 'SPLIT_50_50', label: 'Chia đôi 50% - 50%', buyerPercent: 50, sellerPercent: 50 };
   }
 
-  const rawSplit = (funds.inspectionFeeSplit || funds.feeSplit || (funds as any).feePayer || '').toUpperCase();
+  const rawSplit = (
+    funds.inspectionFeeSplit ||
+    funds.feeSplit ||
+    (funds as any).feePayer ||
+    (funds as any).order?.inspectionFeeSplit ||
+    (funds as any).order?.feePayer ||
+    (funds as any).inspectionOrder?.feePayer ||
+    (funds as any).inspectionOrder?.inspectionFeeSplit ||
+    ''
+  ).toUpperCase();
 
   if (rawSplit === 'BUYER_100' || rawSplit === 'BUYER_PAYS') {
     return { code: 'BUYER_100', label: 'Người mua chịu 100%', buyerPercent: 100, sellerPercent: 0 };
@@ -247,14 +256,16 @@ export function resolveFeeSplitPlan(funds?: AdminInspectionOrderFundsDTO | null)
     return { code: 'SPLIT_50_50', label: 'Chia đôi 50% - 50%', buyerPercent: 50, sellerPercent: 50 };
   }
 
-  // Infer from amountDue of buyer & seller if not specified explicitly
-  const buyerDue = Number(funds.buyerPayment?.amountDue ?? funds.buyer?.amountDue ?? 0);
-  const sellerDue = Number(funds.sellerPayment?.amountDue ?? funds.seller?.amountDue ?? 0);
+  // Infer from amountDue & collected of buyer & seller if not specified explicitly
+  const buyerDue = Number(funds.buyerPayment?.amountDue ?? funds.buyer?.amountDue ?? (funds as any).buyerFeeShare ?? 0);
+  const sellerDue = Number(funds.sellerPayment?.amountDue ?? funds.seller?.amountDue ?? (funds as any).sellerFeeShare ?? 0);
+  const buyerCollected = Number(funds.buyerPayment?.amountCollected ?? funds.buyer?.amountCollected ?? 0);
+  const sellerCollected = Number(funds.sellerPayment?.amountCollected ?? funds.seller?.amountCollected ?? 0);
 
-  if (buyerDue > 0 && sellerDue === 0) {
+  if ((buyerDue > 0 || buyerCollected > 0) && sellerDue === 0 && sellerCollected === 0) {
     return { code: 'BUYER_100', label: 'Người mua chịu 100%', buyerPercent: 100, sellerPercent: 0 };
   }
-  if (sellerDue > 0 && buyerDue === 0) {
+  if ((sellerDue > 0 || sellerCollected > 0) && buyerDue === 0 && buyerCollected === 0) {
     return { code: 'SELLER_100', label: 'Người bán chịu 100%', buyerPercent: 0, sellerPercent: 100 };
   }
   if (buyerDue > 0 && sellerDue > 0) {

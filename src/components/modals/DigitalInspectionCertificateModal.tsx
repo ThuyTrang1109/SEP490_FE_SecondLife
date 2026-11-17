@@ -632,9 +632,8 @@ export const DigitalInspectionCertificateModal: React.FC<DigitalInspectionCertif
               <span className="text-xs print:text-[10px] font-black uppercase text-slate-900 tracking-wide">
                 III. KẾT QUẢ KIỂM ĐỊNH TIÊU CHUẨN KỸ THUẬT {checklistItems.length > 0 ? `(${checklistItems.length} HẠNG MỤC)` : ''}
               </span>
-              <span className={`text-[10px] print:text-[8.5px] font-bold px-2 py-0.5 rounded-full ${
-                isPassed ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
-              }`}>
+              <span className={`text-[10px] print:text-[8.5px] font-bold px-2 py-0.5 rounded-full ${isPassed ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                }`}>
                 {checklistItems.length > 0
                   ? `${passedCount}/${checklistItems.length} Tiêu chuẩn Đạt`
                   : (isPassed ? 'KẾT QUẢ: ĐẠT TIÊU CHUẨN' : 'KẾT QUẢ: KHÔNG ĐẠT CHUẨN (FAILED)')}
@@ -646,9 +645,8 @@ export const DigitalInspectionCertificateModal: React.FC<DigitalInspectionCertif
                 {checklistItems.map((item, index) => (
                   <div key={item.id} className="p-2 sm:px-3 print:py-1.5 print:px-2 flex items-center justify-between gap-2 hover:bg-slate-50/50 print-avoid-break">
                     <div className="flex items-start gap-2 min-w-0">
-                      <span className={`w-4 h-4 print:w-3.5 print:h-3.5 rounded-full flex items-center justify-center text-[9px] print:text-[8px] font-black shrink-0 mt-0.5 ${
-                        item.status === 'PASSED' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
-                      }`}>
+                      <span className={`w-4 h-4 print:w-3.5 print:h-3.5 rounded-full flex items-center justify-center text-[9px] print:text-[8px] font-black shrink-0 mt-0.5 ${item.status === 'PASSED' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                        }`}>
                         {index + 1}
                       </span>
                       <div className="min-w-0">
@@ -697,14 +695,12 @@ export const DigitalInspectionCertificateModal: React.FC<DigitalInspectionCertif
               <span>IV. KẾT LUẬN & ĐÁNH GIÁ CHUNG</span>
             </div>
 
-            <div className={`p-2.5 sm:p-3 print:p-2 rounded-xl print:rounded-lg border flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 ${
-              isPassed ? 'bg-emerald-50/70 border-emerald-300' : 'bg-rose-50/70 border-rose-300'
-            }`}>
+            <div className={`p-2.5 sm:p-3 print:p-2 rounded-xl print:rounded-lg border flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 ${isPassed ? 'bg-emerald-50/70 border-emerald-300' : 'bg-rose-50/70 border-rose-300'
+              }`}>
               <div className="space-y-0.5">
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className={`px-2 py-0.5 rounded-lg text-xs print:text-[9.5px] font-black uppercase tracking-wider text-white ${
-                    isPassed ? 'bg-emerald-600' : 'bg-rose-600'
-                  }`}>
+                  <span className={`px-2 py-0.5 rounded-lg text-xs print:text-[9.5px] font-black uppercase tracking-wider text-white ${isPassed ? 'bg-emerald-600' : 'bg-rose-600'
+                    }`}>
                     {isPassed ? 'KẾT LUẬN: ĐẠT CHUẨN KIỂM ĐỊNH (PASS)' : 'KẾT LUẬN: KHÔNG ĐẠT CHUẨN (FAILED)'}
                   </span>
                   {grade && (

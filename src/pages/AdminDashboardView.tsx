@@ -1,14 +1,15 @@
 import { ResizableSidebarControls } from '../components/common/ResizableSidebarControls';
 import { usePanelTab, useBrowserLocation, navigatePath } from '../app/router/browser';
 import { resolveAppRoute, panelPaths } from '../app/router/paths';
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   EscrowOrder,
   DisputeCase,
   Listing,
   Language,
   UserProfile,
-  TopupPackage
+  TopupPackage,
+  InspectionCenter
 } from '../types';
 import { translations, formatVND } from '../utils/translations';
 import { dialogService } from '../utils/dialogService';
@@ -31,7 +32,8 @@ import {
   CreditPricingRuleResponseDto,
   CreatePermissionRequestDto,
   reputationService,
-  staffService
+  staffService,
+  inspectorService
 } from '../services';
 import logoImg from '../assets/logo.png';
 import {
@@ -1058,6 +1060,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         city: 'TP. Hồ Chí Minh',
         address: '',
       });
+      void loadHubCenters();
     } catch (err: any) {
       dialogService.error(err.message || 'Tạo tài khoản Trạm Hub thất bại', 'Lỗi Tạo Trạm Hub');
     }
@@ -1137,42 +1140,34 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     });
   }, [localListings, searchQuery, listingCategoryFilter]);
 
-  // Hub Center Performance
-  const hubCenters = [
-    {
-      id: 'HUB-HAN-01',
-      name: 'SecondLife Hub Cầu Giấy (Hà Nội)',
-      location: '180 Cầu Giấy, Quận Cầu Giấy, Hà Nội',
-      technicians: 14,
-      dailyCapacity: 45,
-      currentInTesting: 18,
-      passRate: 93.4,
-      nfcIssued: 1420,
-      leadTechnician: 'Nguyễn Văn Hải (Level 4 Master Tech)'
-    },
-    {
-      id: 'HUB-DAD-01',
-      name: 'SecondLife Hub Hải Châu (Đà Nẵng)',
-      location: '92 Phan Châu Trinh, Quận Hải Châu, Đà Nẵng',
-      technicians: 8,
-      dailyCapacity: 28,
-      currentInTesting: 9,
-      passRate: 95.1,
-      nfcIssued: 840,
-      leadTechnician: 'Lê Hoàng Khang (Level 3 Senior Tech)'
-    },
-    {
-      id: 'HUB-SGN-01',
-      name: 'SecondLife Hub Quận 10 (TP. Hồ Chí Minh)',
-      location: '268 Lý Thường Kiệt, Quận 10, TP.HCM',
-      technicians: 18,
-      dailyCapacity: 65,
-      currentInTesting: 24,
-      passRate: 91.8,
-      nfcIssued: 2190,
-      leadTechnician: 'Trần Minh Tuấn (Level 4 Master Tech)'
+  // Hub Center Performance from Backend API
+  const [hubCenters, setHubCenters] = useState<InspectionCenter[]>([]);
+  const [isLoadingHubs, setIsLoadingHubs] = useState<boolean>(false);
+  const [hubsLoadError, setHubsLoadError] = useState<string | null>(null);
+
+  const loadHubCenters = useCallback(async () => {
+    setIsLoadingHubs(true);
+    setHubsLoadError(null);
+    try {
+      const data = await inspectorService.getInspectionCenters(true);
+      if (Array.isArray(data)) {
+        setHubCenters(data);
+      } else {
+        setHubCenters([]);
+      }
+    } catch (err: any) {
+      console.warn('Failed to load inspection centers for admin tab:', err);
+      setHubsLoadError(err?.message || 'Không thể tải danh sách trạm kiểm định từ hệ thống.');
+    } finally {
+      setIsLoadingHubs(false);
     }
-  ];
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'hubs') {
+      void loadHubCenters();
+    }
+  }, [activeTab, loadHubCenters]);
 
   // Navigation Items matching the screenshot
   const navItems = [
@@ -1489,11 +1484,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
         {/* MAIN WORKSPACE CONTENT */}
         <div
-          className={`flex-1 min-w-0 ${
-            activeTab === 'system-wallet'
+          className={`flex-1 min-w-0 ${activeTab === 'system-wallet'
               ? 'h-[calc(100vh-3.25rem)] sm:h-[calc(100vh-3.5rem)] flex flex-col overflow-hidden p-2 sm:p-3'
               : 'p-4 sm:p-6 space-y-5'
-          }`}
+            }`}
         >
           {/* Page Title & Breadcrumb Header */}
           {activeTab !== 'system-wallet' && (
@@ -2733,10 +2727,19 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     <span>Danh Sách Trạm Kiểm Định Hub & Quản Lý Kỹ Thuật Viên</span>
                   </h3>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Tạo tài khoản Trạm Kiểm Định Hub mới và quản trị đối tác kiểm định trên hệ thống
+                    Quản trị đối tác trạm kiểm định và điều phối kỹ thuật viên trên hệ thống
                   </p>
                 </div>
-                <div className="flex items-center gap-2 self-start sm:self-auto">
+                <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+                  <button
+                    onClick={loadHubCenters}
+                    disabled={isLoadingHubs}
+                    className="px-3.5 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    title="Làm mới danh sách từ hệ thống"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isLoadingHubs ? 'animate-spin text-blue-600' : 'text-slate-600'}`} />
+                    <span>Làm mới</span>
+                  </button>
                   <button
                     onClick={() => setActiveTab('inspection-governance')}
                     className="px-3.5 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
@@ -2744,63 +2747,125 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     <ShieldCheck className="w-4 h-4 text-amber-600" />
                     <span>Biểu Phí Kiểm Định</span>
                   </button>
-                  <button
-                    onClick={() => setShowAddHubModal(true)}
-                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white text-xs font-bold shadow-sm hover:opacity-95 transition cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>Tạo Tài Khoản Hub Mới</span>
-                  </button>
                 </div>
               </div>
 
-              {/* Hub Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {hubCenters.map((hub) => (
-                  <div
-                    key={hub.id}
-                    className="bg-white rounded-xl p-5 border border-slate-200 border-t-4 border-t-[#c34c36] shadow-xs space-y-3"
-                  >
-                    <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                      <div className="p-2 rounded-lg bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white">
-                        <Building2 className="w-4 h-4" />
-                      </div>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                        Đang Hoạt Động
-                      </span>
-                    </div>
-
-                    <div>
-                      <h4 className="font-bold text-xs sm:text-sm text-slate-900">{hub.name}</h4>
-                      <p className="text-[11px] text-slate-500 mt-0.5">{hub.location}</p>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div className="p-2 rounded bg-slate-50">
-                        <span className="text-[10px] text-slate-400 block">Kỹ sư kiểm định</span>
-                        <span className="font-bold text-slate-900">{hub.technicians} nhân sự</span>
-                      </div>
-                      <div className="p-2 rounded bg-slate-50">
-                        <span className="text-[10px] text-slate-400 block">Công suất tối đa</span>
-                        <span className="font-bold text-slate-900">{hub.dailyCapacity} máy/ngày</span>
-                      </div>
-                      <div className="p-2 rounded bg-slate-50">
-                        <span className="text-[10px] text-slate-400 block">Đang test</span>
-                        <span className="font-bold text-[#24263e]">{hub.currentInTesting} máy</span>
-                      </div>
-                      <div className="p-2 rounded bg-slate-50">
-                        <span className="text-[10px] text-slate-400 block">Tỷ lệ Đạt (Pass)</span>
-                        <span className="font-bold text-emerald-600">{hub.passRate}%</span>
-                      </div>
-                    </div>
-
-                    <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-500 flex justify-between">
-                      <span>Tem NFC đã dán:</span>
-                      <strong className="text-slate-900 font-mono">{hub.nfcIssued} tem</strong>
-                    </div>
+              {/* Error Alert */}
+              {hubsLoadError && (
+                <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl text-rose-800 text-xs flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span className="font-medium">{hubsLoadError}</span>
                   </div>
-                ))}
-              </div>
+                  <button
+                    onClick={loadHubCenters}
+                    className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition cursor-pointer shrink-0"
+                  >
+                    Thử lại
+                  </button>
+                </div>
+              )}
+
+              {/* Loading Skeletons */}
+              {isLoadingHubs && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="bg-white rounded-xl p-5 border border-slate-200 shadow-xs animate-pulse space-y-3">
+                      <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                        <div className="h-8 w-8 bg-slate-200 rounded-lg"></div>
+                        <div className="h-4 w-20 bg-slate-200 rounded-full"></div>
+                      </div>
+                      <div className="h-4 bg-slate-200 rounded w-3/4"></div>
+                      <div className="h-3 bg-slate-100 rounded w-full"></div>
+                      <div className="grid grid-cols-2 gap-2 pt-2">
+                        <div className="h-12 bg-slate-100 rounded"></div>
+                        <div className="h-12 bg-slate-100 rounded"></div>
+                        <div className="h-12 bg-slate-100 rounded"></div>
+                        <div className="h-12 bg-slate-100 rounded"></div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Empty State */}
+              {!isLoadingHubs && !hubsLoadError && hubCenters.length === 0 && (
+                <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center space-y-3">
+                  <Building2 className="w-12 h-12 text-slate-300 mx-auto" />
+                  <h4 className="font-bold text-sm text-slate-700">Chưa có trạm kiểm định nào trên hệ thống</h4>
+                  <p className="text-xs text-slate-500 max-w-md mx-auto">
+                    Hiện tại chưa có tài khoản trạm kiểm định nào được kích hoạt trong cơ sở dữ liệu.
+                  </p>
+                </div>
+              )}
+
+              {/* Hub Cards from API */}
+              {!isLoadingHubs && hubCenters.length > 0 && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {hubCenters.map((hub) => (
+                    <div
+                      key={hub.id}
+                      className="bg-white rounded-xl p-5 border border-slate-200 border-t-4 border-t-[#c34c36] shadow-xs space-y-3 hover:shadow-sm transition"
+                    >
+                      <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                        <div className="p-2 rounded-lg bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white flex items-center gap-1.5">
+                          <Building2 className="w-4 h-4" />
+                          <span className="text-[10px] font-bold font-mono opacity-90">
+                            {hub.city || 'Trạm Hub'}
+                          </span>
+                        </div>
+                        {hub.shippingAddressConfigured !== false ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                            Đang Hoạt Động
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                            Chờ Cấu Hình GPS
+                          </span>
+                        )}
+                      </div>
+
+                      <div>
+                        <h4 className="font-bold text-xs sm:text-sm text-slate-900 leading-snug">{hub.name}</h4>
+                        <p className="text-[11px] text-slate-500 mt-1 flex items-start gap-1">
+                          <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                          <span className="line-clamp-2">{hub.address || 'Chưa cấu hình địa chỉ kho'}</span>
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="p-2 rounded bg-slate-50">
+                          <span className="text-[10px] text-slate-400 block">Hotline liên hệ</span>
+                          <span className="font-bold text-slate-900 truncate block">
+                            {hub.phone ? `📞 ${hub.phone}` : 'Chưa có SĐT'}
+                          </span>
+                        </div>
+                        <div className="p-2 rounded bg-slate-50">
+                          <span className="text-[10px] text-slate-400 block">Tọa độ GPS</span>
+                          <span className="font-bold text-slate-900 text-[11px] truncate block" title={hub.latitude && hub.longitude ? `${hub.latitude}, ${hub.longitude}` : ''}>
+                            {hub.latitude && hub.longitude ? `${Number(hub.latitude).toFixed(4)}, ${Number(hub.longitude).toFixed(4)}` : 'Chưa định vị'}
+                          </span>
+                        </div>
+                        <div className="p-2 rounded bg-slate-50 col-span-2">
+                          <span className="text-[10px] text-slate-400 block">Vận chuyển Lalamove</span>
+                          <span className={`text-[11px] block font-bold ${hub.shippingAddressConfigured !== false ? 'text-blue-700' : 'text-amber-700'}`}>
+                            {hub.shippingAddressConfigured !== false ? '✅ Sẵn sàng kết nối' : '⚠️ Cần cập nhật kho'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-100 text-[10.5px] text-slate-400 flex items-center justify-between font-mono">
+                        <span>Mã trạm:</span>
+                        <span className="text-slate-600 truncate max-w-[170px]" title={hub.id}>
+                          {hub.id}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

@@ -208,14 +208,19 @@ export default function App() {
             profile.province
           );
 
-          // Ưu tiên địa chỉ người dùng đã cập nhật trong session/localStorage nếu có
+          // Ưu tiên địa chỉ kho lấy hàng chính thức từ BE (fullPickup)
+          const resolvedPickup = cleanFullAddress(
+            fullPickup ||
+            (isSeller ? (stored?.pickupAddress && stored.pickupAddress !== profileFullAddress ? stored.pickupAddress : '') : (stored?.pickupAddress || profileFullAddress || '')) ||
+            savedAddr?.address ||
+            ''
+          );
           const resolvedAddress = cleanFullAddress(stored?.address || profileFullAddress || savedAddr?.address || '');
-          const resolvedPickup = cleanFullAddress(stored?.pickupAddress || fullPickup || profileFullAddress || savedAddr?.address || '');
-          const resolvedWard = stored?.wardName || profile.ward || pickupAddr?.wardName || savedAddr?.wardName || '';
-          const resolvedProv = stored?.provinceName || profile.province || pickupAddr?.provinceName || savedAddr?.provinceName || '';
+          const resolvedWard = stored?.wardName || pickupAddr?.wardName || profile.ward || savedAddr?.wardName || '';
+          const resolvedProv = stored?.provinceName || pickupAddr?.provinceName || profile.province || savedAddr?.provinceName || '';
 
-          if (isSeller && (resolvedPickup || resolvedAddress)) {
-            saveSellerAddress(resolvedPickup || resolvedAddress, resolvedWard, resolvedProv);
+          if (isSeller && (fullPickup || resolvedPickup)) {
+            saveSellerAddress(fullPickup || resolvedPickup, resolvedWard, resolvedProv);
           }
 
           const syncedUser: UserProfile = {
@@ -1525,40 +1530,24 @@ export default function App() {
         // Đồng bộ realtime appointment từ BE vào localStorage
         if (insp.counterScheduledAt || insp.appointmentScheduledAt) {
           const targetIds = [insp.id, insp.linkedOrderId].filter(Boolean);
-          // Không ghi đè nếu ở local Seller đã đề xuất lịch mới đang chờ trung tâm duyệt
-          const isLocallyRescheduled = targetIds.some((tid) => {
+          const isCounter = Boolean(insp.counterScheduledAt || insp.appointmentStatus === 'COUNTERED_BY_CENTER');
+          const apptStatus = isCounter
+            ? 'COUNTERED_BY_CENTER'
+            : (insp.appointmentStatus || (insp.inspectorId ? 'CONFIRMED' : 'PENDING_CENTER_CONFIRMATION'));
+          const apptRecord = {
+            scheduledAt: insp.appointmentScheduledAt,
+            note: insp.appointmentNote || '',
+            shift: insp.counterShift || 'MORNING',
+            status: apptStatus,
+            counterScheduledAt: insp.counterScheduledAt,
+            counterShift: insp.counterShift,
+            counterNote: insp.counterNote,
+          };
+          targetIds.forEach((tid) => {
             try {
-              const raw = localStorage.getItem(`order_appointment_${tid}`);
-              if (raw) {
-                const parsed = JSON.parse(raw);
-                if (parsed.status === 'PENDING_CENTER_CONFIRMATION' && !parsed.counterScheduledAt) {
-                  return true;
-                }
-              }
+              localStorage.setItem(`order_appointment_${tid}`, JSON.stringify(apptRecord));
             } catch { }
-            return false;
           });
-
-          if (!isLocallyRescheduled) {
-            const isCounter = Boolean(insp.counterScheduledAt || insp.appointmentStatus === 'COUNTERED_BY_CENTER' || insp.status === 'WAITING_SELLER_APPROVAL');
-            const apptStatus = isCounter
-              ? 'COUNTERED_BY_CENTER'
-              : (insp.appointmentStatus || (insp.inspectorId ? 'CONFIRMED' : 'PENDING_CENTER_CONFIRMATION'));
-            const apptRecord = {
-              scheduledAt: insp.appointmentScheduledAt,
-              note: insp.appointmentNote || '',
-              shift: insp.counterShift || 'MORNING',
-              status: apptStatus,
-              counterScheduledAt: insp.counterScheduledAt,
-              counterShift: insp.counterShift,
-              counterNote: insp.counterNote,
-            };
-            targetIds.forEach((tid) => {
-              try {
-                localStorage.setItem(`order_appointment_${tid}`, JSON.stringify(apptRecord));
-              } catch { }
-            });
-          }
         }
       });
 

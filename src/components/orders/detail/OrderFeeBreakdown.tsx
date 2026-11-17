@@ -562,7 +562,7 @@ export function OrderFeeBreakdown({
                 return (
                   <div className="p-3 bg-rose-50/70 border border-rose-200 rounded-xl space-y-1.5 text-xs text-rose-950 mt-2">
                     <div className="font-bold flex items-center justify-between text-rose-900">
-                      <span>{lang === 'vi' ? 'Kết Thúc Luồng Kiểm Định' : 'Inspection Process Ended'}</span>
+                      <span>{lang === 'vi' ? 'Kết thúc' : 'Inspection Process Ended'}</span>
                       <span className="text-[10px] font-extrabold bg-rose-100 text-rose-800 px-2 py-0.5 rounded">
                         {isInspectionFailed
                           ? (lang === 'vi' ? 'Không Đạt Chuẩn' : 'Inspection Failed')

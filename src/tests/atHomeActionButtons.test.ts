@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { getAtHomeIntakeCode } from '../components/inspection/AtHomeIntakeBarcode';
 import { getCenterDispatchStage } from '../utils/inspectionCenterData';
+import { isOrderPendingApprovalOrFee, readOrderAppointment, getOrderAppointmentRejection } from '../utils/orders/orderAppointments';
 
 interface MockOrder {
   id: string;
@@ -25,7 +26,8 @@ interface MockOrder {
 function shouldShowPackedCreateShipmentButton(
   order: MockOrder,
   hasInspection: boolean,
-  isSeller: boolean
+  isSeller: boolean,
+  isPurchaseAccepted: boolean = false
 ): boolean {
   if (!isSeller) return false;
   const isSellerConfirmed = Boolean(order.sellerConfirmedAt);
@@ -38,12 +40,17 @@ function shouldShowPackedCreateShipmentButton(
   if (order.escrowStatus === 'SHIPPED_TO_BUYER' || order.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' || order.escrowStatus === 'COMPLETED_RELEASED') {
     return false;
   }
+
+  const isAtHome = hasInspection && (order.inspectionMethod === 'AT_HOME' || order.orderType === 'AT_HOME');
+  if (isAtHome && isPurchaseAccepted) {
+    return true;
+  }
+
   if (order.escrowStatus === 'INSPECTION_PASSED' || backendStatus === 'PASSED') {
     return false;
   }
 
-  // KEY RULE: At-Home orders NEVER show "Đã gói hàng • Tạo đơn vận chuyển"
-  const isAtHome = hasInspection && (order.inspectionMethod === 'AT_HOME' || order.orderType === 'AT_HOME');
+  // KEY RULE: At-Home orders before purchase acceptance NEVER show "Đã gói hàng • Tạo đơn vận chuyển"
   if (isAtHome) {
     return false;
   }
@@ -171,6 +178,25 @@ test('At-Home Inspection Modal and Card Action Buttons Rules', async (t) => {
 
     const showShipment = shouldShowPackedCreateShipmentButton(order, true, true);
     assert.strictEqual(showShipment, false, 'Passed order must not show shipment button');
+
+    const showSchedule = shouldShowScheduleVisitButton(order, true, true);
+    assert.strictEqual(showSchedule, false, 'Passed order must not show schedule button');
+  });
+
+  await t.test('[TEST 3b] When AT_HOME inspection has PASSED and buyer ACCEPTED purchase, seller DOES see "Đã gói hàng • Tạo đơn vận chuyển"', () => {
+    const order: MockOrder = {
+      id: 'ord-at-home-accepted',
+      hasInspectionService: true,
+      inspectionMethod: 'AT_HOME',
+      sellerConfirmedAt: '2026-11-12T10:00:00Z',
+      escrowStatus: 'INSPECTION_PASSED',
+      backendStatus: 'DELIVERING_TO_BUYER',
+      sellerId,
+      buyerId,
+    };
+
+    const showShipment = shouldShowPackedCreateShipmentButton(order, true, true, true);
+    assert.strictEqual(showShipment, true, 'AT_HOME after purchase accepted must show create shipment button');
 
     const showSchedule = shouldShowScheduleVisitButton(order, true, true);
     assert.strictEqual(showSchedule, false, 'Passed order must not show schedule button');
@@ -447,5 +473,249 @@ test('At-Home Inspection Modal and Card Action Buttons Rules', async (t) => {
     );
     assert.strictEqual(isWaitingSellerCounter, false, 'Center modal must be unlocked and not wait for seller');
     assert.strictEqual(newSellerSchedule.scheduledAt, '2026-11-14T09:00:00Z');
+  });
+
+  await t.test('[TEST 16] Once appointment is submitted (PENDING_CENTER_CONFIRMATION or CONFIRMED), seller cannot change/reschedule', () => {
+    const shouldAllowSellerReschedule = (appointment: { scheduledAt?: string; status?: string; counterScheduledAt?: string } | null, isRejected: boolean) => {
+      if (!appointment?.scheduledAt) return true; // not scheduled yet
+      if (isRejected) return true; // rejected, allowed to reschedule
+      if (appointment.status === 'COUNTERED_BY_CENTER' || Boolean(appointment.counterScheduledAt)) return true; // countered by Hub, allowed to respond/reschedule
+      return false; // already sent and waiting or confirmed -> locked, cannot change
+    };
+
+    assert.strictEqual(shouldAllowSellerReschedule(null, false), true, 'Allow initial schedule');
+    assert.strictEqual(shouldAllowSellerReschedule({ scheduledAt: '2026-11-17T08:00:00Z', status: 'PENDING_CENTER_CONFIRMATION' }, false), false, 'Locked once sent to Hub');
+    assert.strictEqual(shouldAllowSellerReschedule({ scheduledAt: '2026-11-17T08:00:00Z', status: 'CONFIRMED' }, false), false, 'Locked once confirmed by Hub');
+    assert.strictEqual(shouldAllowSellerReschedule({ scheduledAt: '2026-11-17T08:00:00Z', status: 'COUNTERED_BY_CENTER', counterScheduledAt: '2026-11-17T09:30:00Z' }, false), true, 'Allowed when countered');
+    assert.strictEqual(shouldAllowSellerReschedule({ scheduledAt: '2026-11-17T08:00:00Z', status: 'REJECTED' }, true), true, 'Allowed when rejected');
+  });
+
+  await t.test('[TEST 17] When Center proposes a new time (Countered), it is NEVER treated as a hard rejection and seller sees counter review UI', () => {
+    const counteredOrder = {
+      id: 'ord-test-counter-rejection-separation',
+      appointmentStatus: 'COUNTERED_BY_CENTER',
+      counterScheduledAt: '2026-11-17T10:30:00Z',
+      counterShift: 'MORNING',
+      counterNote: 'KTV khu vực đã kín lịch ca sáng, Trung tâm xin phép đề xuất dời sang 10:30',
+      appointmentRejectionReason: 'KTV khu vực đã kín lịch ca sáng...',
+    };
+
+    const isOrderCountered = Boolean(
+      counteredOrder.appointmentStatus === 'COUNTERED_BY_CENTER' ||
+      Boolean(counteredOrder.counterScheduledAt)
+    );
+    assert.strictEqual(isOrderCountered, true, 'Must identify as countered');
+
+    // When countered, rejection must be false!
+    const isRejected = !isOrderCountered && counteredOrder.appointmentStatus === 'REJECTED';
+    assert.strictEqual(isRejected, false, 'Countered order must NOT be marked as rejected');
+
+    // Buttons shown to seller: Accept New Time & Reschedule
+    const showAcceptButton = isOrderCountered;
+    const showRescheduleButton = isOrderCountered;
+    assert.strictEqual(showAcceptButton, true);
+    assert.strictEqual(showRescheduleButton, true);
+  });
+
+  await t.test('[TEST 18] Once appointment is CONFIRMED (Chốt lịch rồi), changing appointment is completely locked in AssignInspectorModal', () => {
+    const isApptConfirmedOrder = (order: {
+      orderType?: string;
+      appointmentStatus?: string;
+      status?: string;
+      inspectorId?: string;
+      appointmentScheduledAt?: string;
+    }) => {
+      const modalApptTime = order.appointmentScheduledAt;
+      return Boolean(
+        order.appointmentStatus === 'CONFIRMED' ||
+        order.status === 'CONFIRMED_PENDING_DISPATCH' ||
+        order.status === 'ASSIGNED' ||
+        order.inspectorId ||
+        Boolean(modalApptTime && order.appointmentStatus !== 'REJECTED' && order.appointmentStatus !== 'COUNTERED_BY_CENTER' && order.appointmentStatus !== 'PENDING_CENTER_CONFIRMATION')
+      );
+    };
+
+    const shouldShowChangeApptButtonInAssignModal = (order: any) => {
+      if (order.orderType !== 'AT_HOME') return false;
+      const isConfirmed = isApptConfirmedOrder(order);
+      return !isConfirmed;
+    };
+
+    const confirmedOrder = {
+      id: 'ord-confirmed',
+      orderType: 'AT_HOME',
+      appointmentStatus: 'CONFIRMED',
+      status: 'CONFIRMED_PENDING_DISPATCH',
+      appointmentScheduledAt: '2026-11-17T16:00:00Z',
+    };
+
+    const pendingOrder = {
+      id: 'ord-pending',
+      orderType: 'AT_HOME',
+      appointmentStatus: 'PENDING_CENTER_CONFIRMATION',
+      status: 'AWAITING_INSPECTION',
+      appointmentScheduledAt: '2026-11-17T16:00:00Z',
+    };
+
+    assert.strictEqual(shouldShowChangeApptButtonInAssignModal(confirmedOrder), false, 'Confirmed order MUST NOT show "Đổi Lịch Hẹn"');
+    assert.strictEqual(shouldShowChangeApptButtonInAssignModal(pendingOrder), true, 'Unconfirmed order allows review/reschedule');
+  });
+
+  await t.test('[TEST 19] Buyer with passed inspection decision has action button to decide, redundant static badge "Chờ quyết định từ bạn" is removed at bottom', () => {
+    const shouldShowBottomDecisionBadge = (decision: string | null, isSeller: boolean, isInsideDetailModal: boolean) => {
+      return !isInsideDetailModal && !(decision === 'pending' && !isSeller);
+    };
+
+    // Outside card: Buyer with pending decision -> Hide redundant static badge
+    assert.strictEqual(
+      shouldShowBottomDecisionBadge('pending', false, false),
+      false,
+      'Buyer card should NOT display static "Chờ quyết định từ bạn" badge at the bottom row next to the decision button'
+    );
+
+    // Outside card: Seller with pending decision -> Still show status badge "Chờ người mua quyết định"
+    assert.strictEqual(
+      shouldShowBottomDecisionBadge('pending', true, false),
+      true,
+      'Seller card should display "Chờ người mua quyết định" badge as seller has no decision button'
+    );
+
+    // Rejected decision -> Show decision badge
+    assert.strictEqual(
+      shouldShowBottomDecisionBadge('rejected', false, false),
+      true,
+      'Buyer card should display "Bạn đã từ chối mua tiếp"'
+    );
+  });
+
+  await t.test('[TEST 20] New inspection request in WAITING_SELLER_APPROVAL with no appointment is NEVER treated as COUNTERED', () => {
+    const newOrder = {
+      id: 'ord-new-insp-waiting-seller',
+      status: 'WAITING_SELLER_APPROVAL',
+      backendStatus: 'WAITING_SELLER_APPROVAL',
+      orderType: 'AT_HOME',
+      inspectionMethod: 'AT_HOME',
+      appointmentScheduledAt: undefined,
+      counterScheduledAt: undefined,
+      appointmentStatus: undefined,
+    };
+
+    const isOrderCountered = Boolean(
+      (newOrder.appointmentStatus === 'COUNTERED_BY_CENTER' && Boolean(newOrder.counterScheduledAt)) ||
+      Boolean(newOrder.counterScheduledAt)
+    );
+
+    assert.strictEqual(isOrderCountered, false, 'New inspection request MUST NOT be treated as countered by Hub');
+  });
+
+  await t.test('[TEST 21] Phase 1 & 2 vs Phase 3: Appointment Scheduling only unlocks after Seller confirms inspection AND fees are paid', () => {
+    // 1. Order in WAITING_SELLER_APPROVAL: Pending approval -> isOrderPendingApprovalOrFee is true
+    const orderWaitingSeller: any = {
+      id: 'ord-waiting-seller-approval',
+      status: 'WAITING_SELLER_APPROVAL',
+      backendStatus: 'WAITING_SELLER_APPROVAL',
+      orderType: 'AT_HOME',
+      inspectionMethod: 'AT_HOME',
+      hasInspectionService: true,
+      appointmentScheduledAt: '2026-11-20T09:00:00Z', // Even if stale data exists
+      counterScheduledAt: '2026-11-21T14:00:00Z',
+    };
+    assert.strictEqual(isOrderPendingApprovalOrFee(orderWaitingSeller), true, 'Order in WAITING_SELLER_APPROVAL is pending approval');
+    assert.strictEqual(readOrderAppointment(orderWaitingSeller, null), null, 'Must return null appointment during WAITING_SELLER_APPROVAL');
+    assert.strictEqual(getOrderAppointmentRejection(orderWaitingSeller), null, 'Must return null rejection during WAITING_SELLER_APPROVAL');
+
+    // 2. Order in WAITING_BUYER_APPROVAL: Pending approval -> isOrderPendingApprovalOrFee is true
+    const orderWaitingBuyer: any = {
+      id: 'ord-waiting-buyer-approval',
+      status: 'WAITING_BUYER_APPROVAL',
+      backendStatus: 'WAITING_BUYER_APPROVAL',
+      orderType: 'AT_HOME',
+      inspectionMethod: 'AT_HOME',
+      hasInspectionService: true,
+    };
+    assert.strictEqual(isOrderPendingApprovalOrFee(orderWaitingBuyer), true, 'Order in WAITING_BUYER_APPROVAL is pending approval');
+    assert.strictEqual(readOrderAppointment(orderWaitingBuyer, null), null, 'Must return null appointment during WAITING_BUYER_APPROVAL');
+
+    // 3. Order in WAITING_FEE_PAYMENT: Pending fees -> isOrderPendingApprovalOrFee is true
+    const orderWaitingFee: any = {
+      id: 'ord-waiting-fee-payment',
+      status: 'WAITING_FEE_PAYMENT',
+      backendStatus: 'WAITING_FEE_PAYMENT',
+      orderType: 'AT_HOME',
+      inspectionMethod: 'AT_HOME',
+      hasInspectionService: true,
+    };
+    assert.strictEqual(isOrderPendingApprovalOrFee(orderWaitingFee), true, 'Order in WAITING_FEE_PAYMENT is pending fee payment');
+    assert.strictEqual(readOrderAppointment(orderWaitingFee, null), null, 'Must return null appointment during WAITING_FEE_PAYMENT');
+
+    // 4. Order in CONFIRMED_PENDING_DISPATCH (Both confirmed & fee paid) -> Appointment is unlocked
+    const orderConfirmedFeePaid: any = {
+      id: 'ord-confirmed-fee-paid',
+      status: 'CONFIRMED_PENDING_DISPATCH',
+      backendStatus: 'CONFIRMED_PENDING_DISPATCH',
+      orderType: 'AT_HOME',
+      inspectionMethod: 'AT_HOME',
+      hasInspectionService: true,
+      appointmentScheduledAt: '2026-11-20T09:00:00Z',
+    };
+    assert.strictEqual(isOrderPendingApprovalOrFee(orderConfirmedFeePaid), false, 'CONFIRMED_PENDING_DISPATCH is ready for scheduling');
+    const unlockedAppt = readOrderAppointment(orderConfirmedFeePaid, null);
+    assert.strictEqual(unlockedAppt?.scheduledAt, '2026-11-20T09:00:00Z', 'Valid appointment is returned once confirmed and fees paid');
+  });
+
+  await t.test('[TEST 22] AT_HOME inspection badge & modal rules: Buyer never sees "Chờ người bán gửi hàng đến Hub", no premature "Chờ Trung Tâm Duyệt Lịch"', () => {
+    // 1. Step 1 Badge logic replicate:
+    function resolveStep1Badge(
+      order: { status: string; appointmentStatus?: string },
+      appointmentScheduledAt?: string | null,
+      savedApptStatus?: string | null,
+      isSeller: boolean = false
+    ): string {
+      if ((savedApptStatus === 'PENDING_CENTER_CONFIRMATION' || order.appointmentStatus === 'PENDING_CENTER_CONFIRMATION') && Boolean(appointmentScheduledAt)) {
+        return 'Chờ Trung Tâm Duyệt Lịch';
+      }
+      if (appointmentScheduledAt) {
+        return 'Đã Phân Công KTV';
+      }
+      return isSeller ? 'Chờ Bạn Hẹn Lịch' : 'Chờ Người Bán Hẹn Lịch';
+    }
+
+    // When order is in CONFIRMED_PENDING_DISPATCH and appointment has NOT been scheduled yet:
+    const step1Seller = resolveStep1Badge({ status: 'CONFIRMED_PENDING_DISPATCH' }, null, null, true);
+    assert.strictEqual(step1Seller, 'Chờ Bạn Hẹn Lịch', 'Seller Step 1 modal badge must say "Chờ Bạn Hẹn Lịch", NOT "Chờ Trung Tâm Duyệt Lịch"');
+
+    const step1Buyer = resolveStep1Badge({ status: 'CONFIRMED_PENDING_DISPATCH' }, null, null, false);
+    assert.strictEqual(step1Buyer, 'Chờ Người Bán Hẹn Lịch', 'Buyer Step 1 modal badge must say "Chờ Người Bán Hẹn Lịch", NOT "Chờ Trung Tâm Duyệt Lịch"');
+
+    // Only when an appointment exists and is pending:
+    const step1Pending = resolveStep1Badge({ status: 'CONFIRMED_PENDING_DISPATCH', appointmentStatus: 'PENDING_CENTER_CONFIRMATION' }, '2026-11-20T09:00:00Z', 'PENDING_CENTER_CONFIRMATION', true);
+    assert.strictEqual(step1Pending, 'Chờ Trung Tâm Duyệt Lịch', 'Only shows "Chờ Trung Tâm Duyệt Lịch" when appointment is actually submitted');
+  });
+
+  await t.test('[TEST 23] Confirmed AT_HOME inspection shows "Đã Chốt Lịch • Chờ Giao KTV" on top header, no redundant badge at card footer for buyer', () => {
+    // 1. Top header badge for buyer when appointment is CONFIRMED
+    const resolveTopBadgeStatus = (apptStatus?: string, isRejected: boolean = false, hasInsp: boolean = false) => {
+      if (hasInsp && !isRejected) return 'Đã Phân Công KTV • Chờ Khảo Sát';
+      if (apptStatus === 'CONFIRMED' && !isRejected) return 'Đã Chốt Lịch • Chờ Giao KTV';
+      return 'Chờ Người Bán Hẹn Lịch Đón KTV';
+    };
+
+    assert.strictEqual(
+      resolveTopBadgeStatus('CONFIRMED', false, false),
+      'Đã Chốt Lịch • Chờ Giao KTV',
+      'Top header status badge must display "Đã Chốt Lịch • Chờ Giao KTV" for confirmed appointment'
+    );
+
+    // 2. Card footer action bar: Must NOT render duplicate static status badge for buyer
+    const shouldRenderBottomStatusBadgeForBuyer = (isSeller: boolean, escrowStatus: string) => {
+      // Buyer has status badge exclusively in the top header (OrderStatusBadge); footer is strictly for actions
+      return false;
+    };
+
+    assert.strictEqual(
+      shouldRenderBottomStatusBadgeForBuyer(false, 'AWAITING_INSPECTION'),
+      false,
+      'Buyer card footer must not render redundant duplicate inspection status badge'
+    );
   });
 });

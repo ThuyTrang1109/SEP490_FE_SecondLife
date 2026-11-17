@@ -14,6 +14,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { formatVND } from '../../../utils/translations';
+import { INSPECTION_SHIFT_HOURS, isInspectionTimeInShift, type InspectionShift } from '../../../utils/inspectionAppointmentTime';
 import type { useCenterAppointments } from './useCenterAppointments';
 
 interface Props {
@@ -28,6 +29,7 @@ interface Props {
     | 'handleConfirmSendCounter'
     | 'isSubmittingAccept'
     | 'isSubmittingCounter'
+    | 'minCounterDate'
     | 'reviewMode'
     | 'setCounterDate'
     | 'setCounterError'
@@ -53,6 +55,7 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
     handleConfirmSendCounter,
     isSubmittingAccept,
     isSubmittingCounter,
+    minCounterDate,
     reviewMode,
     setCounterDate,
     setCounterError,
@@ -65,6 +68,17 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
     setReviewApptOrder,
     setReviewMode,
   } = appointments;
+
+  const shiftHours = INSPECTION_SHIFT_HOURS[counterShift];
+  const isCounterTimeValid = isInspectionTimeInShift(counterTime, counterShift);
+
+  const handleCounterShiftChange = (shift: InspectionShift) => {
+    setCounterShift(shift);
+    if (!isInspectionTimeInShift(counterTime, shift)) {
+      setCounterTime(shift === 'MORNING' ? '09:00' : '14:00');
+    }
+    setCounterError(null);
+  };
 
   return (
     <div className="fixed inset-0 z-[75] overflow-y-auto bg-black/70 backdrop-blur-sm p-3 sm:p-4 flex min-h-full items-center justify-center animate-fadeIn">
@@ -180,7 +194,7 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
                   }
                 }
               }
-            } catch {}
+            } catch { }
           }
 
           if (apptStatus !== 'PENDING_CENTER_CONFIRMATION') {
@@ -199,7 +213,7 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
                   }
                 }
               }
-            } catch {}
+            } catch { }
           }
 
           const isWaitingSellerCounter = Boolean(
@@ -282,11 +296,10 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
                       setReviewMode('VIEW');
                       setCounterError(null);
                     }}
-                    className={`flex-1 py-2 px-3 rounded-lg text-xs font-extrabold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                      reviewMode === 'VIEW'
-                        ? 'bg-white text-emerald-700 shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
+                    className={`flex-1 py-2 px-3 rounded-lg text-xs font-extrabold transition flex items-center justify-center gap-1.5 cursor-pointer ${reviewMode === 'VIEW'
+                      ? 'bg-white text-emerald-700 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                      }`}
                   >
                     <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                     <span>1. Chấp Nhận Lịch Hẹn</span>
@@ -300,11 +313,10 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
                         setCounterNote('KTV khu vực đã kín lịch ca sáng, Trung tâm xin phép đề xuất dời sang ca chiều cùng ngày.');
                       }
                     }}
-                    className={`flex-1 py-2 px-3 rounded-lg text-xs font-extrabold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                      reviewMode === 'COUNTER'
-                        ? 'bg-white text-amber-800 shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
+                    className={`flex-1 py-2 px-3 rounded-lg text-xs font-extrabold transition flex items-center justify-center gap-1.5 cursor-pointer ${reviewMode === 'COUNTER'
+                      ? 'bg-white text-amber-800 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                      }`}
                   >
                     <CalendarSync className="w-4 h-4 text-amber-600" />
                     <span>{isWaitingSellerCounter ? '2. Đề Xuất Lịch (Đã Gửi)' : '2. Đề Xuất Lịch Mới'}</span>
@@ -330,8 +342,8 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
                           <Check className="w-4 h-4 text-emerald-600" />
                           <span>Đồng ý với lịch người bán đã chọn</span>
                         </div>
-                        <p className="text-[11px] text-emerald-800">
-                          Khi bấm xác nhận, hệ thống sẽ chốt lịch hẹn này, gửi thông báo cho Người bán và chuyển sang bước <strong>Giao task cho Kỹ thuật viên</strong>.
+                        <p className="text-[11px] text-emerald-800 leading-relaxed">
+                          Khi bấm xác nhận, hệ thống sẽ chốt lịch hẹn này, gửi thông báo cho Người bán và chuyển sang bước <strong>Giao task cho Kỹ thuật viên</strong>. Kỹ thuật viên chỉ được phép ấn xác nhận đơn / check-in trước giờ hẹn tối đa 30 phút.
                         </p>
                       </div>
 
@@ -365,7 +377,7 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
                         <strong className="text-orange-700 bg-orange-100 px-1.5 py-0.5 rounded">
                           {new Date(existingCounterTime!).toLocaleString('vi-VN')}
                         </strong>
-                        . Hệ thống đang chờ Người bán phản hồi (Đồng ý hoặc Hẹn lại). <strong>Phần gửi đề xuất đã được khóa tạm thời</strong> để tránh gửi trùng lặp cho đến khi Người bán phản hồi.
+                        . Hệ thống đang chờ Người bán phản hồi (Đồng ý hoặc Hẹn lại).
                       </p>
                       {counterReason && (
                         <div className="p-2.5 bg-white/90 rounded-xl border border-amber-200 text-[11px] text-amber-900 italic">
@@ -379,15 +391,7 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
                     </div>
                   ) : (
                     <div className="p-3.5 bg-amber-50/70 rounded-2xl border border-amber-200 text-xs space-y-3">
-                      <div className="p-2.5 rounded-xl bg-amber-100/70 border border-amber-300 text-[11px] text-amber-950 space-y-1">
-                        <div className="font-bold flex items-center gap-1 text-amber-900">
-                          <AlertTriangle className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-                          <span>Quy trình đề xuất lịch hẹn mới:</span>
-                        </div>
-                        <p className="text-amber-900 leading-relaxed">
-                          Khi gửi đề xuất mới, yêu cầu lịch hẹn cũ của người bán sẽ được hệ thống <strong>tự động chuyển thành từ chối</strong> kèm lý do tại mục <strong>4. Lý do đề xuất lại cho Người bán: *</strong> bên dưới. Người bán sẽ nhận được thông báo đề xuất lịch mới để bấm Xác nhận hoặc Hẹn lại.
-                        </p>
-                      </div>
+
                       <div className="font-bold text-amber-950 flex items-center gap-1.5">
                         <CalendarSync className="w-4 h-4 text-amber-700" />
                         <span>Đề xuất ngày giờ mới gửi lại cho Người bán:</span>
@@ -416,18 +420,16 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
                           <input
                             id="reviewCounterDateInput"
                             type="date"
-                            min={(() => {
-                              const tom = new Date();
-                              tom.setDate(tom.getDate() + 1);
-                              const pad = (n: number) => String(n).padStart(2, '0');
-                              return `${tom.getFullYear()}-${pad(tom.getMonth() + 1)}-${pad(tom.getDate())}`;
-                            })()}
+                            min={minCounterDate}
                             value={counterDate}
-                            onChange={(e) => setCounterDate(e.target.value)}
+                            onChange={(e) => {
+                              setCounterDate(e.target.value);
+                              setCounterError(null);
+                            }}
                             onClick={(e) => {
                               try {
                                 (e.target as HTMLInputElement).showPicker?.();
-                              } catch {}
+                              } catch { }
                             }}
                             className="absolute inset-0 opacity-0 cursor-pointer z-10 w-full h-full"
                           />
@@ -440,37 +442,21 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
                         <div className="grid grid-cols-2 gap-2">
                           <button
                             type="button"
-                            onClick={() => {
-                              setCounterShift('MORNING');
-                              const h = parseInt(counterTime?.slice(0, 2) || '', 10);
-                              if (isNaN(h) || h < 8 || h >= 12) {
-                                setCounterTime('09:00');
-                              }
-                              setCounterError(null);
-                            }}
-                            className={`p-2 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                              counterShift === 'MORNING'
-                                ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
-                                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                            }`}
+                            onClick={() => handleCounterShiftChange('MORNING')}
+                            className={`p-2 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${counterShift === 'MORNING'
+                              ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
+                              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                              }`}
                           >
                             <span>Ca Sáng (08:00 - 12:00)</span>
                           </button>
                           <button
                             type="button"
-                            onClick={() => {
-                              setCounterShift('AFTERNOON');
-                              const h = parseInt(counterTime?.slice(0, 2) || '', 10);
-                              if (isNaN(h) || h < 13 || h > 17) {
-                                setCounterTime('14:00');
-                              }
-                              setCounterError(null);
-                            }}
-                            className={`p-2 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                              counterShift === 'AFTERNOON'
-                                ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
-                                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                            }`}
+                            onClick={() => handleCounterShiftChange('AFTERNOON')}
+                            className={`p-2 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${counterShift === 'AFTERNOON'
+                              ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
+                              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                              }`}
                           >
                             <span>Ca Chiều (13:00 - 17:00)</span>
                           </button>
@@ -481,16 +467,18 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
                       <div className="space-y-1.5">
                         <div className="flex items-center justify-between text-[11px]">
                           <label className="font-bold text-slate-700">3. Khung giờ KTV có mặt: *</label>
-                          <span className="font-mono font-bold text-amber-800 bg-amber-100/90 px-2 py-0.5 rounded text-[11px]">
-                            Đã chọn: {counterTime?.slice(0, 5) || (counterShift === 'MORNING' ? '09:00' : '14:00')}
-                          </span>
+                          {isCounterTimeValid && (
+                            <span className="font-mono font-bold text-amber-800 bg-amber-100/90 px-2 py-0.5 rounded text-[11px]">
+                              Đã chọn: {counterTime}
+                            </span>
+                          )}
                         </div>
                         <div className="grid grid-cols-4 gap-1.5">
                           {(counterShift === 'MORNING'
                             ? ['08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30']
                             : ['13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30']
                           ).map((slot) => {
-                            const isSelected = (counterTime?.slice(0, 5) || '') === slot;
+                            const isSelected = counterTime === slot;
                             return (
                               <button
                                 key={slot}
@@ -499,11 +487,10 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
                                   setCounterTime(slot);
                                   setCounterError(null);
                                 }}
-                                className={`py-1.5 px-2 rounded-lg text-xs font-bold transition border cursor-pointer text-center ${
-                                  isSelected
-                                    ? 'bg-amber-600 text-white border-amber-700 shadow-2xs'
-                                    : 'bg-white text-slate-700 border-slate-200 hover:bg-amber-50'
-                                }`}
+                                className={`py-1.5 px-2 rounded-lg text-xs font-bold transition border cursor-pointer text-center ${isSelected
+                                  ? 'bg-amber-600 text-white border-amber-700 shadow-2xs'
+                                  : 'bg-white text-slate-700 border-slate-200 hover:bg-amber-50'
+                                  }`}
                               >
                                 {slot}
                               </button>
@@ -513,23 +500,31 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
                         {/* Fine-tune custom time picker */}
                         <div className="pt-0.5 flex items-center justify-between text-[11px]">
                           <div className="flex items-center gap-1.5">
-                            <span className="text-slate-500 font-medium">Hoặc chỉnh giờ chi tiết:</span>
+                            <label htmlFor="reviewCounterTimeInput" className="text-slate-500 font-medium">Hoặc chỉnh giờ chi tiết:</label>
                             <input
+                              id="reviewCounterTimeInput"
                               type="time"
-                              min={counterShift === 'MORNING' ? '08:00' : '13:00'}
-                              max={counterShift === 'MORNING' ? '12:00' : '17:00'}
-                              value={counterTime?.slice(0, 5) || (counterShift === 'MORNING' ? '09:00' : '14:00')}
+                              min={shiftHours.min}
+                              max={shiftHours.max}
+                              value={counterTime}
+                              aria-invalid={!isCounterTimeValid}
+                              aria-describedby={isCounterTimeValid ? undefined : 'reviewCounterTimeError'}
                               onChange={(e) => {
                                 setCounterTime(e.target.value);
                                 setCounterError(null);
                               }}
-                              className="px-2 py-0.5 rounded-lg border border-amber-300 text-xs font-mono font-bold text-slate-800 focus:ring-1 focus:ring-amber-500 outline-hidden bg-white cursor-pointer"
+                              className="px-2 py-0.5 rounded-lg border border-amber-300 aria-invalid:border-rose-600 text-xs font-mono font-bold text-slate-800 focus:ring-1 focus:ring-amber-500 outline-hidden bg-white cursor-pointer"
                             />
                           </div>
                           <span className="text-[10px] text-slate-400">
-                            ({counterShift === 'MORNING' ? '08:00 - 12:00' : '13:00 - 17:00'})
+                            ({shiftHours.min}–{shiftHours.max})
                           </span>
                         </div>
+                        {!isCounterTimeValid && (
+                          <p id="reviewCounterTimeError" role="alert" className="text-[11px] font-medium text-rose-700">
+                            Vui lòng chọn giờ trong ca đã chọn ({shiftHours.min}–{shiftHours.max}).
+                          </p>
+                        )}
                       </div>
 
                       {/* 4. Lý do / Ghi chú gửi người bán */}
@@ -582,8 +577,8 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
                       <button
                         type="button"
                         onClick={handleConfirmSendCounter}
-                        disabled={isSubmittingCounter}
-                        className="w-full py-2.5 px-4 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-xs shadow-md transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                        disabled={isSubmittingCounter || !isCounterTimeValid}
+                        className="w-full py-2.5 px-4 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-xs shadow-md transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {isSubmittingCounter ? (
                           <Loader2 className="w-4 h-4 animate-spin" />
@@ -608,7 +603,7 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
               const ord = reviewApptOrder;
               setReviewApptOrder(null);
               setRejectApptModalOrder(ord);
-              setRejectApptReason('');
+              setRejectApptReason('KTV đã kín lịch trong khung giờ này, vui lòng chọn ca khác.');
               setRejectApptError(null);
             }}
             className="px-3.5 py-2 rounded-xl text-xs font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition cursor-pointer flex items-center gap-1.5"

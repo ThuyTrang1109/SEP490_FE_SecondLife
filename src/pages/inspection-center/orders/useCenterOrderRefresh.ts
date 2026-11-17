@@ -22,8 +22,8 @@ export function useCenterOrderRefresh({
   loadStaff,
 }: Options) {
   useEffect(() => {
-    if (needsStaff) loadStaff();
-  }, [needsStaff]);
+    if (needsStaff && centerId) void loadStaff();
+  }, [needsStaff, centerId, loadStaff]);
 
   useEffect(() => {
     if (needsOrders) loadOrders();
@@ -47,7 +47,6 @@ export function useCenterOrderRefresh({
       if (
         e.key === 'recent_placed_orders' ||
         e.key === 'center_inspection_orders' ||
-        e.key === 'center_registered_staff' ||
         e.key?.startsWith('order_assigned_inspector_') ||
         e.key?.startsWith('order_appointment_') ||
         e.key?.startsWith('inspection_status_') ||

@@ -2,11 +2,21 @@ import { translateSystemNotification } from './systemNotificationTranslator';
 
 export type DialogType = 'info' | 'success' | 'warning' | 'error' | 'confirm';
 
+export interface RouteDetails {
+  originTitle?: string;
+  originName?: string;
+  originAddress: string;
+  destinationTitle?: string;
+  destinationName?: string;
+  destinationAddress: string;
+}
+
 export interface DialogOptions {
   title?: string;
   type?: DialogType;
   confirmText?: string;
   cancelText?: string;
+  routeDetails?: RouteDetails;
 }
 
 export interface DialogState {
@@ -16,6 +26,7 @@ export interface DialogState {
   message: string;
   confirmText: string;
   cancelText?: string;
+  routeDetails?: RouteDetails;
   resolve?: (value: boolean) => void;
 }
 
@@ -94,6 +105,7 @@ class DialogService {
         message: finalMsg,
         confirmText: options?.confirmText || 'Xác Nhận',
         cancelText: options?.cancelText || 'Hủy Bỏ',
+        routeDetails: options?.routeDetails,
         resolve: (val: boolean) => resolve(val),
       });
     });

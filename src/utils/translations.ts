@@ -91,7 +91,7 @@ export const translations = {
     inspectionVerdict: 'Kết luận giám định',
     inspectionPass: 'ĐẠT CHUẨN XÁC THỰC',
     inspectionFail: 'KHÔNG ĐẠT - TỰ ĐỘNG HOÀN TIỀN',
-    confirmReceipt: 'Xác nhận nhận hàng & Giải ngân cho Người bán',
+    confirmReceipt: 'Xác nhận nhận hàng',
     openDispute: 'Khiếu nại / Trả hàng nếu có sai khác',
     inspectionWindowNotice: 'Bạn có 48 giờ để dùng thử trước khi tiền tự động giải ngân cho người bán.',
 
@@ -211,7 +211,7 @@ export const translations = {
     inspectionVerdict: 'Inspection Verdict',
     inspectionPass: 'AUTHENTIC & VERIFIED PASS',
     inspectionFail: 'FAILED INSPECTION - AUTO REFUND',
-    confirmReceipt: 'Confirm Receipt & Release Funds to Seller',
+    confirmReceipt: 'Confirm Receipt',
     openDispute: 'Open Dispute / Request Return',
     inspectionWindowNotice: 'You have a 48-hour inspection window before funds automatically release to seller.',
 

@@ -734,11 +734,15 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       }
       setShopName(currentUser.shopName || (currentUser.name ? `Gian Hàng ${currentUser.name}` : 'SecondLife Shop'));
       setSellerPhone(currentUser.phone || '');
-      setPickupAddress(currentUser.pickupAddress || currentUser.address || '');
+      const validInitPickup = (currentUser.pickupAddress && !currentUser.pickupAddress.includes('Hội đồng nhân dân'))
+        ? currentUser.pickupAddress
+        : (currentUser.streetAddress || currentUser.address || '');
+      setPickupAddress(validInitPickup);
       setPickupLatitude(currentUser.latitude ?? null);
       setPickupLongitude(currentUser.longitude ?? null);
-      setUserLatitude(currentUser.latitude ?? null);
-      setUserLongitude(currentUser.longitude ?? null);
+      const isDefaultHanoiUser = Math.abs((currentUser.latitude ?? 0) - 21.0285) < 0.005 && Math.abs((currentUser.longitude ?? 0) - 105.8542) < 0.005;
+      setUserLatitude(!isDefaultHanoiUser ? (currentUser.latitude ?? null) : null);
+      setUserLongitude(!isDefaultHanoiUser ? (currentUser.longitude ?? null) : null);
       const isInternalRole = ['admin', 'staff', 'inspector'].includes(currentUser.role);
       if (initialTab && !(isInternalRole && initialTab === 'settings')) {
         setActiveTab(initialTab);
@@ -773,14 +777,18 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
             if (fresh.province) setSelectedProvinceName(fresh.province);
             if (fresh.district) setSelectedDistrictName(fresh.district);
             if (fresh.ward) setSelectedWardName(fresh.ward);
-            if (fresh.streetAddress) setUserStreetAddress(fresh.streetAddress);
-            if (fresh.latitude !== undefined && fresh.latitude !== null) {
-              setUserLatitude(fresh.latitude);
-              setPickupLatitude(fresh.latitude);
+            if (fresh.streetAddress && !fresh.streetAddress.includes('Hội đồng nhân dân')) {
+              setUserStreetAddress(fresh.streetAddress);
+              setAddress(fresh.streetAddress);
+              setPickupAddress((prev) => (!prev || prev.includes('Hội đồng nhân dân') ? fresh.streetAddress : prev));
             }
-            if (fresh.longitude !== undefined && fresh.longitude !== null) {
+            if (fresh.latitude !== undefined && fresh.latitude !== null && Math.abs(fresh.latitude - 21.0285) > 0.005) {
+              setUserLatitude(fresh.latitude);
+              setPickupLatitude((prev) => (!prev || Math.abs(prev - 21.0285) < 0.005 ? fresh.latitude : prev));
+            }
+            if (fresh.longitude !== undefined && fresh.longitude !== null && Math.abs(fresh.longitude - 105.8542) > 0.005) {
               setUserLongitude(fresh.longitude);
-              setPickupLongitude(fresh.longitude);
+              setPickupLongitude((prev) => (!prev || Math.abs(prev - 105.8542) < 0.005 ? fresh.longitude : prev));
             }
             if (fresh.gender) {
               setGender(fresh.gender.toLowerCase() as 'male' | 'female' | 'other');
@@ -872,25 +880,29 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
         if (ob.pickupAddress) {
           const pa = ob.pickupAddress;
           const fullAddr = [pa.address, pa.wardName, pa.provinceName].filter(Boolean).join(', ');
-          const saved = getSavedSellerAddress();
-          const userCurrentAddr = currentUser?.pickupAddress || currentUser?.address || saved?.address;
-          if (userCurrentAddr) {
-            setPickupAddress(userCurrentAddr);
-            setStreetAddress(userCurrentAddr);
+          const addrToUse = fullAddr || pa.address || '';
+          const isCorruptedHanoi = addrToUse.includes('Hội đồng nhân dân') && Boolean(userStreetAddress || currentUser?.streetAddress || currentUser?.address);
+          if (addrToUse && !isCorruptedHanoi) {
+            setPickupAddress(addrToUse);
+            setStreetAddress(pa.address || addrToUse);
             addressFound = true;
-          } else if (fullAddr) {
-            setPickupAddress(fullAddr);
-            setStreetAddress(pa.address || '');
-            addressFound = true;
+          } else {
+            const saved = getSavedSellerAddress();
+            const userCurrentAddr = userStreetAddress || currentUser?.streetAddress || currentUser?.pickupAddress || saved?.address;
+            if (userCurrentAddr && !userCurrentAddr.includes('Hội đồng nhân dân')) {
+              setPickupAddress(userCurrentAddr);
+              setStreetAddress(userCurrentAddr);
+              addressFound = true;
+            }
           }
-          if (currentUser?.latitude) {
+          if (currentUser?.latitude && currentUser.latitude !== 21.02851) {
             setPickupLatitude(currentUser.latitude);
-          } else if (pa.latitude) {
+          } else if (pa.latitude && !isCorruptedHanoi) {
             setPickupLatitude(pa.latitude);
           }
-          if (currentUser?.longitude) {
+          if (currentUser?.longitude && currentUser.longitude !== 105.854167) {
             setPickupLongitude(currentUser.longitude);
-          } else if (pa.longitude) {
+          } else if (pa.longitude && !isCorruptedHanoi) {
             setPickupLongitude(pa.longitude);
           }
         }
@@ -908,32 +920,36 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       if (!addressFound && pickupData && pickupData.status === 'fulfilled' && pickupData.value) {
         const pa = pickupData.value;
         const fullAddr = [pa.address, pa.wardName, pa.provinceName].filter(Boolean).join(', ');
-        const saved = getSavedSellerAddress();
-        const userCurrentAddr = currentUser?.pickupAddress || currentUser?.address || saved?.address;
-        if (userCurrentAddr) {
-          setPickupAddress(userCurrentAddr);
-          setStreetAddress(userCurrentAddr);
+        const addrToUse = fullAddr || pa.address || '';
+        const isCorruptedHanoi = addrToUse.includes('Hội đồng nhân dân') && Boolean(userStreetAddress || currentUser?.streetAddress || currentUser?.address);
+        if (addrToUse && !isCorruptedHanoi) {
+          setPickupAddress(addrToUse);
+          setStreetAddress(pa.address || addrToUse);
           addressFound = true;
-        } else if (fullAddr) {
-          setPickupAddress(fullAddr);
-          setStreetAddress(pa.address || '');
-          addressFound = true;
+        } else {
+          const saved = getSavedSellerAddress();
+          const userCurrentAddr = userStreetAddress || currentUser?.streetAddress || currentUser?.pickupAddress || saved?.address;
+          if (userCurrentAddr && !userCurrentAddr.includes('Hội đồng nhân dân')) {
+            setPickupAddress(userCurrentAddr);
+            setStreetAddress(userCurrentAddr);
+            addressFound = true;
+          }
         }
-        if (currentUser?.latitude) {
+        if (currentUser?.latitude && currentUser.latitude !== 21.02851) {
           setPickupLatitude(currentUser.latitude);
-        } else if (pa.latitude) {
+        } else if (pa.latitude && !isCorruptedHanoi) {
           setPickupLatitude(pa.latitude);
         }
-        if (currentUser?.longitude) {
+        if (currentUser?.longitude && currentUser.longitude !== 105.854167) {
           setPickupLongitude(currentUser.longitude);
-        } else if (pa.longitude) {
+        } else if (pa.longitude && !isCorruptedHanoi) {
           setPickupLongitude(pa.longitude);
         }
       }
 
       if (!addressFound) {
         const saved = getSavedSellerAddress();
-        const fallbackAddr = currentUser?.pickupAddress || currentUser?.address || saved?.address || '';
+        const fallbackAddr = userStreetAddress || currentUser?.streetAddress || (!currentUser?.pickupAddress?.includes('Hội đồng nhân dân') ? currentUser?.pickupAddress : '') || currentUser?.address || (!saved?.address?.includes('Hội đồng nhân dân') ? saved?.address : '') || '';
         if (fallbackAddr) {
           setPickupAddress(fallbackAddr);
           setStreetAddress(fallbackAddr);
@@ -1813,7 +1829,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
         };
       case 'seller':
         return {
-          label: lang === 'vi' ? 'Nhà bán hàng uy tín (Top Seller 4.9★)' : 'Verified Seller (4.9★)',
+          label: lang === 'vi' ? 'NGƯỜI BÁN HÀNG' : 'SELLER',
           className: 'bg-emerald-500/15 text-emerald-600 border-emerald-500/30',
         };
       case 'staff':
@@ -1828,7 +1844,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
         };
       case 'admin':
         return {
-          label: lang === 'vi' ? 'Quản trị viên hệ thống (Supervisor)' : 'System Administrator',
+          label: lang === 'vi' ? 'Quản trị viên hệ thống' : 'System Administrator',
           className: 'bg-rose-500/15 text-rose-600 border-rose-500/30',
         };
       default:
@@ -1856,7 +1872,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
           <div className="px-6 sm:px-8 pt-4 pb-3 flex items-center justify-between border-b border-slate-100/80">
             <div className="flex items-center gap-2.5">
               <span className="text-xs font-bold text-slate-400 uppercase tracking-wider hidden sm:inline">
-                {lang === 'vi' ? 'Hồ sơ tài khoản' : 'Account Profile'}
+                {lang === 'vi' ? 'Hồ sơ người dùng ' : 'Account Profile'}
               </span>
               <span className="text-slate-300 hidden sm:inline">•</span>
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-50 text-slate-700 text-xs font-semibold border border-slate-200 shadow-2xs">
@@ -2328,13 +2344,11 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                                     if (!isEditing) return;
                                     setGender(isSelected ? '' : g);
                                   }}
-                                  className={`py-2 px-2.5 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1.5 ${
-                                    !isEditing ? 'cursor-default opacity-85' : 'cursor-pointer'
-                                  } ${
-                                    isSelected
+                                  className={`py-2 px-2.5 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1.5 ${!isEditing ? 'cursor-default opacity-85' : 'cursor-pointer'
+                                    } ${isSelected
                                       ? 'bg-[#c34c36]/10 border-[#c34c36] text-[#c34c36] shadow-2xs font-black'
                                       : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
-                                  }`}
+                                    }`}
                                 >
                                   <span className={`w-2 h-2 rounded-full ${isSelected ? 'bg-[#c34c36]' : 'bg-slate-300'}`} />
                                   <span>{labels[g]}</span>
@@ -2376,6 +2390,19 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
                 {/* Right Column: Lalamove Leaflet Map Address Picker (lg:col-span-7) */}
                 <div className="lg:col-span-7 space-y-4">
+                  {/* Địa chỉ hồ sơ cá nhân: Cố định, không được chỉnh sửa */}
+                  {Boolean(currentUser?.streetAddress || currentUser?.address) && (
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs space-y-1">
+                      <div className="flex items-center gap-1.5 font-bold text-slate-700">
+                        <Lock className="w-3.5 h-3.5 text-slate-500" />
+                        <span>{lang === 'vi' ? 'Địa chỉ Hồ sơ cá nhân' : 'Personal Profile Address'}</span>
+                      </div>
+                      <div className="text-slate-600 pl-5 text-[11px] leading-relaxed">
+                        {currentUser?.streetAddress || currentUser?.address}
+                      </div>
+                    </div>
+                  )}
+
                   {currentRole !== 'admin' && (
                     <div className="space-y-2">
                       <LalamoveAddressPicker
@@ -2385,17 +2412,36 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                         initialPhone={phone || currentUser?.phone || ''}
                         onNameChange={(val) => setName(val)}
                         onPhoneChange={(val) => setPhone(val)}
-                        initialLatitude={userLatitude ?? undefined}
-                        initialLongitude={userLongitude ?? undefined}
-                        initialAddress={address || userStreetAddress || currentUser?.address || ''}
+                        initialLatitude={
+                          (userLatitude && Math.abs(userLatitude - 21.0285) > 0.005)
+                            ? userLatitude
+                            : (currentUser?.latitude && Math.abs(currentUser.latitude - 21.0285) > 0.005)
+                              ? currentUser.latitude
+                              : undefined
+                        }
+                        initialLongitude={
+                          (userLongitude && Math.abs(userLongitude - 105.8542) > 0.005)
+                            ? userLongitude
+                            : (currentUser?.longitude && Math.abs(currentUser.longitude - 105.8542) > 0.005)
+                              ? currentUser.longitude
+                              : undefined
+                        }
+                        initialAddress={
+                          (userStreetAddress && !userStreetAddress.includes('Hội đồng nhân dân'))
+                            ? userStreetAddress
+                            : (currentUser?.streetAddress && !currentUser.streetAddress.includes('Hội đồng nhân dân'))
+                              ? currentUser.streetAddress
+                              : (address && !address.includes('Hội đồng nhân dân'))
+                                ? address
+                                : (currentUser?.address && !currentUser.address.includes('Hội đồng nhân dân'))
+                                  ? currentUser.address
+                                  : ''
+                        }
                         onAddressConfirmed={(data) => {
                           setUserLatitude(data.latitude);
                           setUserLongitude(data.longitude);
                           setAddress(data.address);
                           setUserStreetAddress(data.address);
-                          setPickupLatitude(data.latitude);
-                          setPickupLongitude(data.longitude);
-                          setPickupAddress(data.address);
 
                           const extracted = extractWardAndCity(data.address);
                           let extWard = '';
@@ -2416,8 +2462,12 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                           saveSellerAddress(data.address, extWard || undefined, extProv || data.city);
                         }}
                         lang={lang}
-                        title={lang === 'vi' ? 'Địa chỉ cư trú / nhận hàng của bạn' : 'Your Residential / Delivery Address'}
-                        description={lang === 'vi' ? 'Định vị GPS và ghim trên bản đồ để tự động đồng bộ khi mua hàng hoặc đăng ký bán hàng.' : 'Set GPS coordinates to auto-sync for checkout and selling.'}
+                        title={lang === 'vi'
+                          ? (isApprovedSeller ? 'Địa chỉ kho bưu tá lấy hàng (Lalamove Pickup Warehouse)' : 'Địa chỉ kho / nhận hàng vận chuyển')
+                          : (isApprovedSeller ? 'Warehouse Pickup Address' : 'Shipping / Delivery Address')}
+                        description={lang === 'vi'
+                          ? 'Địa chỉ kho nơi bưu tá và kỹ thuật viên đến nhận máy / kiểm định. Hệ thống sử dụng địa chỉ này để tính phí vận chuyển và điều phối bưu tá (không dùng địa chỉ hồ sơ cá nhân).'
+                          : 'Pickup warehouse location for courier and technician visits. Used exclusively for shipping quotes and dispatch.'}
                       />
                     </div>
                   )}
@@ -2989,7 +3039,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     </h4>
                     <p className="text-xs text-emerald-800/80 leading-relaxed">
                       {lang === 'vi'
-                        ? 'Hồ sơ của bạn đã được đối soát sinh trắc học và dán tem xác thực SecondLife Verified. Bạn có thể đăng bán và giải ngân an toàn qua Escrow.'
+                        ? 'Hồ sơ của bạn đã được đối soát sinh trắc học. Bạn có thể đăng bán và giải ngân an toàn qua Escrow.'
                         : 'Your profile has passed biometric matching with a SecondLife Verified badge. You can list items and receive Escrow payouts.'}
                     </p>
                     <div className="flex items-center gap-3 pt-1 text-[11px] font-semibold text-emerald-700">
@@ -3191,22 +3241,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                   </button>
                 </div>
 
-                <div className="p-3.5 rounded-xl border border-gray-200 bg-white flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <Shield className="w-4 h-4 text-slate-500" />
-                    <div>
-                      <span className="text-xs font-bold text-slate-900 block">
-                        {lang === 'vi' ? 'Phiên đăng nhập & Thiết bị tin cậy' : 'Active Sessions & Trusted Devices'}
-                      </span>
-                      <span className="text-[11px] text-slate-500">
-                        {lang === 'vi' ? 'Đang hoạt động trên thiết bị này (Web Browser / Windows)' : 'Active on this device (Web Browser / Windows)'}
-                      </span>
-                    </div>
-                  </div>
-                  <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
-                    {lang === 'vi' ? 'Thiết Bị Tin Cậy' : 'Trusted'}
-                  </span>
-                </div>
+
               </div>
             </div>
           )}
@@ -3761,9 +3796,21 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                         <LalamoveAddressPicker
                           initialName={shopName || name || currentUser?.name || ''}
                           initialPhone={sellerPhone || phone || currentUser?.phone || ''}
-                          initialLatitude={pickupLatitude ?? undefined}
-                          initialLongitude={pickupLongitude ?? undefined}
-                          initialAddress={pickupAddress}
+                          initialLatitude={
+                            pickupLatitude && !pickupAddress?.includes('Hội đồng nhân dân')
+                              ? pickupLatitude
+                              : (userLatitude ?? currentUser?.latitude ?? pickupLatitude ?? undefined)
+                          }
+                          initialLongitude={
+                            pickupLongitude && !pickupAddress?.includes('Hội đồng nhân dân')
+                              ? pickupLongitude
+                              : (userLongitude ?? currentUser?.longitude ?? pickupLongitude ?? undefined)
+                          }
+                          initialAddress={
+                            (pickupAddress && !pickupAddress.includes('Hội đồng nhân dân'))
+                              ? pickupAddress
+                              : (userStreetAddress || currentUser?.streetAddress || address || '')
+                          }
                           onAddressConfirmed={(data) => {
                             setPickupLatitude(data.latitude);
                             setPickupLongitude(data.longitude);
@@ -4382,7 +4429,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
             className="flex items-center gap-1.5 text-xs font-bold text-red-600 hover:text-red-700 transition cursor-pointer"
           >
             <LogOut className="w-4 h-4" />
-            <span>{lang === 'vi' ? 'Đăng xuất khỏi thiết bị' : 'Log Out from Device'}</span>
+            <span>{lang === 'vi' ? 'ĐĂNG XUẤT' : 'Log Out from Device'}</span>
           </button>
 
           <div className="flex items-center gap-2.5">

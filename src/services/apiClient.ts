@@ -157,7 +157,7 @@ export function resetActivityTimer(): void {
   memoryLastActivity = now;
   try {
     localStorage.setItem(LAST_ACTIVITY_KEY, String(now));
-  } catch {}
+  } catch { }
 }
 
 export function recordUserActivity(force = false): void {
@@ -169,7 +169,7 @@ export function recordUserActivity(force = false): void {
     if (force || now - lastStored > 5000) {
       localStorage.setItem(LAST_ACTIVITY_KEY, String(now));
     }
-  } catch {}
+  } catch { }
 }
 
 export function getLastActivityTime(): number {
@@ -184,7 +184,7 @@ export function getLastActivityTime(): number {
         return memoryLastActivity;
       }
     }
-  } catch {}
+  } catch { }
   return memoryLastActivity;
 }
 
@@ -270,11 +270,11 @@ export const clearAuthTokens = () => {
     localStorage.removeItem(USER_INFO_KEY);
     localStorage.removeItem(LAST_ACTIVITY_KEY);
     resetActivityTimer();
-    
+
     // Clear legacy or additional user cached items
     localStorage.removeItem('secondlife_user');
     localStorage.removeItem('secondlife_seller_profile_address');
-    
+
     // Clear chat history cache to prevent wrong sender names for new logins
     const keysToRemove: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {

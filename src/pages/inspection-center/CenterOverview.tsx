@@ -34,6 +34,8 @@ interface Props {
     | 'setCreateStaffError'
     | 'setIsCreateStaffModalOpen'
     | 'staffList'
+    | 'staffLoadError'
+    | 'isLoadingStaff'
   >;
 }
 
@@ -46,7 +48,8 @@ export function CenterOverview({
   staff,
 }: Props) {
   const { openReadyDispatchQueue, staffWorkloadMap, stats, urgentDispatchOrders } = dispatch;
-  const { setCreatedStaffSuccessData, setCreateStaffError, setIsCreateStaffModalOpen, staffList } = staff;
+  const { setCreatedStaffSuccessData, setCreateStaffError, setIsCreateStaffModalOpen,
+    staffList, staffLoadError, isLoadingStaff } = staff;
 
   return (
     <div className="space-y-5 animate-fadeIn">
@@ -177,7 +180,11 @@ export function CenterOverview({
           </div>
 
           <div className="p-4 space-y-3">
-            {staffList.length === 0 ? (
+            {isLoadingStaff ? (
+              <p className="text-xs text-slate-500">Đang tải danh sách kỹ thuật viên...</p>
+            ) : staffLoadError ? (
+              <p role="alert" className="text-xs text-rose-700">{staffLoadError}</p>
+            ) : staffList.length === 0 ? (
               <div className="py-8 text-center text-slate-400 text-xs">
                 <Users className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                 <p>Trạm chưa có kỹ thuật viên nào trực thuộc.</p>
@@ -194,8 +201,8 @@ export function CenterOverview({
               </div>
             ) : (
               staffList.map((st) => {
-                const count = (staffWorkloadMap[st.id] || 0) + (st.email ? (staffWorkloadMap[st.email] || 0) : 0);
-                const pct = Math.min(100, Math.round((count / 5) * 100));
+                const count = staffWorkloadMap ? staffWorkloadMap[st.id] ?? 0 : null;
+                const pct = Math.min(100, Math.round(((count ?? 0) / 5) * 100));
                 return (
                   <div key={st.id} className="p-3 bg-slate-50/80 rounded-xl border border-slate-100">
                     <div className="flex items-center justify-between text-xs mb-1.5">
@@ -207,18 +214,18 @@ export function CenterOverview({
                         <span className="text-[11px] text-slate-400 truncate hidden sm:inline">({st.email})</span>
                       </div>
                       <span className="font-bold font-mono text-slate-700 text-xs shrink-0">
-                        {count} đơn đang nhận
+                        {count === null ? '—' : `${count} đơn đang nhận`}
                       </span>
                     </div>
                     <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
                       <div
-                        className={`h-full transition-all duration-500 rounded-full ${count >= 4
+                        className={`h-full transition-all duration-500 rounded-full ${(count ?? 0) >= 4
                           ? 'bg-rose-500'
-                          : count >= 2
+                          : (count ?? 0) >= 2
                             ? 'bg-amber-500'
                             : 'bg-emerald-500'
                           }`}
-                        style={{ width: `${count === 0 ? 0 : Math.max(8, pct)}%` }}
+                        style={{ width: `${!count ? 0 : Math.max(8, pct)}%` }}
                       />
                     </div>
                   </div>

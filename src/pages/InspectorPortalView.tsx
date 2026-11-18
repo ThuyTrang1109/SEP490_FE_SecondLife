@@ -64,12 +64,12 @@ import {
 import {
   inspectorService,
   InspectionOrderDto,
-  InspectionStaffDto,
   CreateInspectionStaffRequest,
   InspectionChecklistResponse,
   InspectionTravelTierDto,
   CreateChecklistTemplateRequest
 } from '../services';
+import { canInspectorCheckIn, getOrderScheduledAppointmentTime } from '../utils/inspectionAppointmentTime';
 
 interface InspectorPortalViewProps {
   orders: EscrowOrder[];
@@ -204,31 +204,12 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
 
   useEffect(() => {
     loadInspectorOrders();
-    // Đồng bộ thông tin KTV hiện tại vào danh sách nhân sự của Trung tâm
-    if (currentUser?.id || currentUser?.name) {
-      try {
-        const staffObj: InspectionStaffDto = {
-          id: currentUser.id || 'a50d1568-1111-4222-9333-7272a95473db',
-          fullName: currentUser.name || 'Nguyên (Kỹ thuật viên)',
-          email: currentUser.email || 'nguyen@secondlife.vn',
-          phone: currentUser.phone || '0987654321',
-          assignedOrdersCount: 0,
-          accountStatus: 'ACTIVE',
-        };
-        const existing: any[] = JSON.parse(localStorage.getItem('center_registered_staff') || '[]');
-        if (!existing.some((s) => s.id === staffObj.id || s.email === staffObj.email)) {
-          localStorage.setItem('center_registered_staff', JSON.stringify([...existing, staffObj]));
-        }
-      } catch { }
-    }
   }, [currentUser]);
 
   // --- MANAGER FALLBACK STATES ---
   const [activeCenter, setActiveCenter] = useState<InspectionCenter | null>(null);
   const [allOrdersList, setAllOrdersList] = useState<InspectionOrderDto[]>([]);
   const [isLoadingAllOrders, setIsLoadingAllOrders] = useState(false);
-  const [staffList, setStaffList] = useState<InspectionStaffDto[]>([]);
-  const [isLoadingStaff, setIsLoadingStaff] = useState(false);
 
   // Load active inspection center from API
   useEffect(() => {
@@ -245,9 +226,6 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
       inspectorService.getAllOrders().then((res) => {
         const items = res?.items || (res as any)?.content || (Array.isArray(res) ? res : []);
         setAllOrdersList(items);
-      }).catch(() => { });
-      inspectorService.getStaff().then((data) => {
-        if (Array.isArray(data)) setStaffList(data);
       }).catch(() => { });
     }
   }, [isCenterManager]);
@@ -489,19 +467,19 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
           cand.listing?.sellerAddress ||
           cand.listing?.location ||
           cand.shippingLegs?.[0]?.origin ||
-          'Ngã tư Công Lý – Einstein, Công Lý, Phường Thủ Đức, Thành phố Hồ Chí Minh';
+          'Kho người bán (Đang cập nhật địa chỉ)';
 
         const resolvedSellerPhone =
           assignedMeta?.sellerPhone ||
           cand.sellerPhone ||
           cand.seller?.phone ||
-          '0918 234 567';
+          'Chưa cập nhật SĐT';
 
         const resolvedSellerName =
           assignedMeta?.sellerName ||
           cand.sellerName ||
           cand.seller?.name ||
-          'Thị Thùy Trang Nguyễn';
+          'Người bán';
 
         const synthesizedOrder: EscrowOrder = {
           ...cand,
@@ -1167,9 +1145,23 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
               <section className="space-y-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
                 <header className="flex flex-wrap items-center justify-between gap-4">
                   <h1 ref={resultHeading} tabIndex={-1} className="text-xl font-black text-[#24263e]">Kết quả kiểm định</h1>
-                  <button type="button" onClick={() => setSelectedOrderId('')} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">
-                    Về hàng đợi nhiệm vụ
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {activeOrder && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigatePath(`/inspector/inspections/${encodeURIComponent(activeOrder.id)}`);
+                        }}
+                        className="rounded-xl bg-[#c34c36] hover:bg-[#a63f2d] px-4 py-2 text-sm font-bold text-white shadow-xs transition cursor-pointer flex items-center gap-1.5"
+                      >
+                        <Wrench className="w-4 h-4" />
+                        <span>Vào Bàn Đo Kiểm Đơn Này</span>
+                      </button>
+                    )}
+                    <button type="button" onClick={() => setSelectedOrderId('')} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 transition cursor-pointer">
+                      Về hàng đợi nhiệm vụ
+                    </button>
+                  </div>
                 </header>
                 <p className="text-sm text-slate-600">{isLoadingBackendOrders ? 'Đang tải kết quả…' : activeOrder ? 'Đơn này chưa có kết quả chính thức.' : 'Không tìm thấy đơn kiểm định được phân công cho bạn.'}</p>
               </section>
@@ -1360,7 +1352,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                                   </button>
                                 </span>
                                 {(() => {
-                                  const apptTime = ord.appointmentScheduledAt;
+                                  const apptTime = ord.appointmentScheduledAt || (ord as any).scheduledAt || getOrderScheduledAppointmentTime(ord);
 
                                   if (stage === 'completed') {
                                     const failed = ord.inspectionStatus === 'FAILED';
@@ -1390,7 +1382,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                                   if (stage === 'inbound') {
                                     return (
                                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-50 text-cyan-700 border border-cyan-200">
-                                        Đang Giao Về Hub
+                                        Đang Giao Đến Hub
                                       </span>
                                     );
                                   }
@@ -1402,9 +1394,14 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                                       day: '2-digit',
                                       month: '2-digit',
                                     });
+                                    const checkIn = canInspectorCheckIn(apptTime);
                                     return (
-                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
-                                        Đến Theo Hẹn ({formattedAppt})
+                                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                                        !checkIn.allowed
+                                          ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                          : 'bg-blue-50 text-blue-700 border-blue-200'
+                                      }`}>
+                                        Đến Theo Hẹn ({formattedAppt}) {!checkIn.allowed ? '• Mở nhận đơn trước 30p' : ''}
                                       </span>
                                     );
                                   }
@@ -1529,7 +1526,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                               className="flex-1 py-2 px-3 rounded-xl bg-slate-100 text-slate-400 text-xs font-bold flex items-center justify-center gap-1.5 cursor-not-allowed border border-slate-200"
                             >
                               <Clock className="w-3.5 h-3.5 text-slate-400" />
-                              <span>{stage === 'inbound' ? 'Chờ Hàng Về Hub' : stage === 'completed' ? 'Chưa có biên bản để xem' : 'Bàn đo kiểm chưa khả dụng'}</span>
+                              <span>{stage === 'inbound' ? 'Chờ Hàng Đến Hub' : stage === 'completed' ? 'Chưa có biên bản để xem' : 'Bàn đo kiểm chưa khả dụng'}</span>
                             </button>
                           ) : (
                             <button
@@ -1548,7 +1545,13 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                                 ) : (
                                   <>
                                     <QrCode className="w-3.5 h-3.5 text-amber-300" />
-                                    <span>Quét Mã Nhận Máy (Tại Nhà)</span>
+                                    <span>
+                                      {(() => {
+                                        const appt = ord.appointmentScheduledAt || (ord as any).scheduledAt || getOrderScheduledAppointmentTime(ord);
+                                        const checkIn = canInspectorCheckIn(appt);
+                                        return !checkIn.allowed ? 'Chi Tiết Lịch Hẹn (Mở nhận đơn trước 30p)' : 'Quét Mã Nhận Máy (Tại Nhà)';
+                                      })()}
+                                    </span>
                                   </>
                                 )
                               ) : (

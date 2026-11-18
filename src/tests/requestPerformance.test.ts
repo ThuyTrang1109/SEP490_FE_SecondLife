@@ -89,6 +89,37 @@ test('a completed read is fetched again instead of returning a cached value', as
   assert.equal((await second).data, 25);
 });
 
+test('inspection center staff reads switch to the signed-in center and preserve an empty roster', async (t) => {
+  const calls = interceptFetch(t);
+  const inspector = { id: 'inspector-a', email: 'inspector@example.com', fullName: 'Inspector A', accountStatus: 'LOCKED' };
+  localStorage.setItem('center_registered_staff', JSON.stringify([inspector]));
+
+  const firstCenter = inspectorService.getStaff();
+  await tick();
+  assert.equal(calls.length, 1);
+  assert.ok(calls[0].url.endsWith('/api/v1/inspector-center/staff'));
+  assert.equal(new Headers(calls[0].options.headers).get('Authorization'), 'Bearer test-session-a');
+  calls[0].result.resolve(response([inspector]));
+  assert.deepEqual(await firstCenter, [inspector]);
+
+  sessionStorage.setItem(ACCESS_TOKEN_KEY, 'test-session-b');
+  const secondCenter = inspectorService.getStaff();
+  await tick();
+  assert.equal(calls.length, 2);
+  assert.equal(new Headers(calls[1].options.headers).get('Authorization'), 'Bearer test-session-b');
+  calls[1].result.resolve(response([]));
+  assert.deepEqual(await secondCenter, []);
+});
+
+test('inspection center staff reports failed requests instead of returning a fallback roster', async (t) => {
+  const calls = interceptFetch(t);
+  const staff = inspectorService.getStaff();
+  const assertion = assert.rejects(staff, (error) => error instanceof ApiError && error.status === 500);
+  await tick();
+  calls[0].result.resolve(response(null, 500));
+  await assertion;
+});
+
 test('inspection detail shares reads during mount and reloads after a status notification', async (t) => {
   const calls = interceptFetch(t);
   const orderId = 'c40415c2-a72b-47e2-864e-e54762fbe347';

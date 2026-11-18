@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { paths } from '../../../app/router/paths';
-import { InspectionShift } from '../../../components/modals/ScheduleAppointmentModal';
 import { inspectorService, InspectionOrderDto } from '../../../services';
+import { ApiError } from '../../../services/apiClient';
+import { INSPECTION_SHIFT_HOURS, isInspectionTimeInShift, type InspectionShift } from '../../../utils/inspectionAppointmentTime';
 import { saveScopedLocalNotification } from '../../../utils/notificationStorage';
 import type { useCenterOrders } from '../orders/useCenterOrders';
 import type { useInspectorAssignment } from './useInspectorAssignment';
@@ -11,6 +12,14 @@ interface Options {
   setAssignModalOrder: ReturnType<typeof useInspectorAssignment>['setAssignModalOrder'];
   setOrders: ReturnType<typeof useCenterOrders>['setOrders'];
   showNotice: (msg: string) => void;
+}
+
+function getMinCounterDate() {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const month = String(tomorrow.getMonth() + 1).padStart(2, '0');
+  const day = String(tomorrow.getDate()).padStart(2, '0');
+  return `${tomorrow.getFullYear()}-${month}-${day}`;
 }
 
 export function useCenterAppointments({ handleOpenAssign, setAssignModalOrder, setOrders, showNotice }: Options) {
@@ -42,10 +51,8 @@ export function useCenterAppointments({ handleOpenAssign, setAssignModalOrder, s
     setReviewMode('VIEW');
     setCounterError(null);
 
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
     const pad = (n: number) => String(n).padStart(2, '0');
-    const tomorrowStr = `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth() + 1)}-${pad(tomorrow.getDate())}`;
+    const tomorrowStr = getMinCounterDate();
 
     let initialDate = tomorrowStr;
     let initialShift: InspectionShift = 'AFTERNOON';
@@ -140,6 +147,13 @@ export function useCenterAppointments({ handleOpenAssign, setAssignModalOrder, s
       } catch {}
     }
 
+    // Nếu lịch hẹn đã được chốt (CONFIRMED hoặc đã phân công KTV), khóa không cho đổi lịch hẹn nữa
+    if (resolvedApptStatus === 'CONFIRMED' || order.appointmentStatus === 'CONFIRMED' || order.status === 'ASSIGNED' || Boolean(order.inspectorId)) {
+      showNotice('Lịch hẹn này đã được chốt và xác nhận, không thể thay đổi lịch hẹn nữa.');
+      handleOpenAssign(order);
+      return;
+    }
+
     if (resolvedApptStatus === 'PENDING_CENTER_CONFIRMATION') {
       resolvedCounterTime = undefined;
       resolvedCounterShift = undefined;
@@ -182,17 +196,14 @@ export function useCenterAppointments({ handleOpenAssign, setAssignModalOrder, s
     };
     setReviewApptOrder(resolvedOrder);
 
-    // Đảm bảo initialTime luôn đúng định dạng HH:mm và nằm trong khung giờ của Ca làm việc
-    const parsedInitialHour = parseInt(initialTime.slice(0, 2), 10);
-    if (initialShift === 'MORNING' && (isNaN(parsedInitialHour) || parsedInitialHour < 8 || parsedInitialHour >= 12)) {
-      initialTime = '09:00';
-    } else if (initialShift === 'AFTERNOON' && (isNaN(parsedInitialHour) || parsedInitialHour < 13 || parsedInitialHour > 17)) {
-      initialTime = '14:00';
+    initialShift = initialShift === 'MORNING' ? 'MORNING' : 'AFTERNOON';
+    if (!isInspectionTimeInShift(initialTime, initialShift)) {
+      initialTime = initialShift === 'MORNING' ? '09:00' : '14:00';
     }
 
-    setCounterDate(initialDate);
+    setCounterDate(initialDate < tomorrowStr ? tomorrowStr : initialDate);
     setCounterShift(initialShift);
-    setCounterTime(initialTime.slice(0, 5));
+    setCounterTime(initialTime);
     setCounterNote(initialNote || 'KTV khu vực đã kín lịch ca sáng, Trung tâm xin phép đề xuất dời sang ca chiều cùng ngày.');
   };
 
@@ -339,7 +350,7 @@ export function useCenterAppointments({ handleOpenAssign, setAssignModalOrder, s
 
   // Action: Send Counter-Proposal to Seller
   const handleConfirmSendCounter = async () => {
-    if (!reviewApptOrder) return;
+    if (!reviewApptOrder || isSubmittingCounter) return;
 
     let existingCounter = reviewApptOrder.counterScheduledAt;
     try {
@@ -356,7 +367,7 @@ export function useCenterAppointments({ handleOpenAssign, setAssignModalOrder, s
       }
     } catch { }
 
-    if (existingCounter || reviewApptOrder.appointmentStatus === 'COUNTERED_BY_CENTER' || reviewApptOrder.status === 'WAITING_SELLER_APPROVAL') {
+    if (existingCounter || reviewApptOrder.appointmentStatus === 'COUNTERED_BY_CENTER') {
       setCounterError('Trung tâm đã gửi đề xuất lịch mới trước đó. Đang chờ người bán phản hồi (Đồng ý hoặc Hẹn lại), không thể gửi tiếp đề xuất lần 2.');
       return;
     }
@@ -365,8 +376,13 @@ export function useCenterAppointments({ handleOpenAssign, setAssignModalOrder, s
       setCounterError('Vui lòng chọn ngày đề xuất mới');
       return;
     }
-    if (!counterTime) {
-      setCounterError('Vui lòng chọn giờ KTV có mặt');
+    if (counterDate < getMinCounterDate()) {
+      setCounterError('Vui lòng chọn ngày đề xuất từ ngày mai trở đi.');
+      return;
+    }
+    if (!isInspectionTimeInShift(counterTime, counterShift)) {
+      const { min, max } = INSPECTION_SHIFT_HOURS[counterShift];
+      setCounterError(`Vui lòng chọn giờ trong ca đã chọn (${min}–${max}).`);
       return;
     }
     if (!counterNote.trim()) {
@@ -374,8 +390,7 @@ export function useCenterAppointments({ handleOpenAssign, setAssignModalOrder, s
       return;
     }
 
-    const timePart = counterTime?.includes(':') ? counterTime.slice(0, 5) : '14:00';
-    const scheduledDate = new Date(`${counterDate}T${timePart}:00`);
+    const scheduledDate = new Date(`${counterDate}T${counterTime}:00`);
     if (isNaN(scheduledDate.getTime())) {
       setCounterError('Ngày giờ đề xuất không hợp lệ');
       return;
@@ -389,20 +404,12 @@ export function useCenterAppointments({ handleOpenAssign, setAssignModalOrder, s
       const targetIds = new Set<string>([orderId]);
       if (linkedId) targetIds.add(linkedId);
 
-      try {
-        await inspectorService.counterAppointment(
-          orderId,
-          scheduledDate.toISOString(),
-          counterNote.trim(),
-          counterShift
-        );
-      } catch (e: any) {
-        if (e?.status === 409 || e?.message?.includes('không còn ở trạng thái cho phép thao tác')) {
-          setCounterError('Lịch hẹn hiện không còn ở trạng thái cho phép gửi đề xuất mới (đang chờ người bán phản hồi).');
-        } else {
-          console.warn('Backend counter appointment fallback:', e);
-        }
-      }
+      await inspectorService.counterAppointment(
+        orderId,
+        scheduledDate.toISOString(),
+        counterNote.trim(),
+        counterShift
+      );
 
       let prevScheduledAt = reviewApptOrder.appointmentScheduledAt;
       let prevNote = reviewApptOrder.appointmentNote;
@@ -426,16 +433,10 @@ export function useCenterAppointments({ handleOpenAssign, setAssignModalOrder, s
         linkedOrderId: linkedId,
       };
 
-      const rejectionRecord = {
-        reason: counterNote.trim(),
-        rejectedAt: new Date().toISOString(),
-        replacedByCounter: true,
-      };
-
       targetIds.forEach((id) => {
         try {
           localStorage.setItem(`order_appointment_${id}`, JSON.stringify(counterRecord));
-          localStorage.setItem(`order_appointment_rejection_${id}`, JSON.stringify(rejectionRecord));
+          localStorage.removeItem(`order_appointment_rejection_${id}`);
         } catch { }
       });
 
@@ -452,7 +453,7 @@ export function useCenterAppointments({ handleOpenAssign, setAssignModalOrder, s
                   counterScheduledAt: scheduledDate.toISOString(),
                   counterShift,
                   counterNote: counterNote.trim(),
-                  appointmentRejectionReason: counterNote.trim(),
+                  appointmentRejectionReason: undefined,
                 };
               }
               return o;
@@ -475,7 +476,7 @@ export function useCenterAppointments({ handleOpenAssign, setAssignModalOrder, s
                   counterScheduledAt: scheduledDate.toISOString(),
                   counterShift,
                   counterNote: counterNote.trim(),
-                  appointmentRejectionReason: counterNote.trim(),
+                  appointmentRejectionReason: undefined,
                 };
               }
               return o;
@@ -498,7 +499,7 @@ export function useCenterAppointments({ handleOpenAssign, setAssignModalOrder, s
                   counterScheduledAt: scheduledDate.toISOString(),
                   counterShift,
                   counterNote: counterNote.trim(),
-                  appointmentRejectionReason: counterNote.trim(),
+                  appointmentRejectionReason: undefined,
                 };
               }
               return o;
@@ -565,8 +566,12 @@ export function useCenterAppointments({ handleOpenAssign, setAssignModalOrder, s
 
       showNotice(`Đã gửi đề xuất lịch mới cho người bán đơn #${(orderId || '').slice(0, 8)} thành công!`);
       setReviewApptOrder(null);
-    } catch (err: any) {
-      setCounterError(err?.message || 'Không thể gửi đề xuất lịch hẹn');
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        setCounterError('Lịch hẹn hiện không còn ở trạng thái cho phép gửi đề xuất mới.');
+      } else {
+        setCounterError(err instanceof Error ? err.message : 'Không thể gửi đề xuất lịch hẹn');
+      }
     } finally {
       setIsSubmittingCounter(false);
     }
@@ -577,7 +582,7 @@ export function useCenterAppointments({ handleOpenAssign, setAssignModalOrder, s
     if (!rejectApptModalOrder) return;
     const reason = rejectApptReason.trim();
     if (!reason) {
-      setRejectApptError('Vui lòng nhập lý do từ chối lịch hẹn để người bán nắm rõ thông tin.');
+      setRejectApptError('Vui lòng chọn hoặc nhập lý do từ chối lịch hẹn để người bán nắm rõ thông tin.');
       return;
     }
 
@@ -585,17 +590,36 @@ export function useCenterAppointments({ handleOpenAssign, setAssignModalOrder, s
     setRejectApptError(null);
     try {
       const orderId = rejectApptModalOrder.id;
+      const targetIds = Array.from(
+        new Set(
+          [
+            orderId,
+            rejectApptModalOrder.linkedOrderId,
+            (rejectApptModalOrder as any).orderId,
+            (rejectApptModalOrder as any).inspectionOrderId,
+          ].filter(Boolean) as string[]
+        )
+      );
 
-      // 1. Lưu thông tin từ chối vào localStorage
+      // Gọi backend API nếu có
+      try {
+        await inspectorService.rejectAppointment(orderId, reason);
+      } catch (beErr) {
+        console.warn('Backend reject appointment fallback:', beErr);
+      }
+
+      // 1. Lưu thông tin từ chối vào localStorage cho mọi target ID
       const rejectionRecord = {
         orderId,
         rejectedAt: new Date().toISOString(),
         reason,
         previousScheduledAt: rejectApptModalOrder.appointmentScheduledAt,
       };
-      localStorage.setItem(`order_appointment_rejection_${orderId}`, JSON.stringify(rejectionRecord));
-      localStorage.removeItem(`order_appointment_${orderId}`);
-      localStorage.removeItem(`order_assigned_inspector_${orderId}`);
+      targetIds.forEach((tid) => {
+        localStorage.setItem(`order_appointment_rejection_${tid}`, JSON.stringify(rejectionRecord));
+        localStorage.removeItem(`order_appointment_${tid}`);
+        localStorage.removeItem(`order_assigned_inspector_${tid}`);
+      });
 
       // 2. Cập nhật recent_placed_orders
       try {
@@ -604,7 +628,7 @@ export function useCenterAppointments({ handleOpenAssign, setAssignModalOrder, s
           const list = JSON.parse(raw);
           if (Array.isArray(list)) {
             const updated = list.map((o: any) => {
-              if (o.id === orderId) {
+              if (targetIds.includes(o.id) || targetIds.includes(o.linkedOrderId) || targetIds.includes(o.inspectionOrderId)) {
                 return {
                   ...o,
                   appointmentScheduledAt: null,
@@ -628,7 +652,7 @@ export function useCenterAppointments({ handleOpenAssign, setAssignModalOrder, s
           const listCenter = JSON.parse(rawCenter);
           if (Array.isArray(listCenter)) {
             const updatedCenter = listCenter.map((o: any) => {
-              if (o.id === orderId) {
+              if (targetIds.includes(o.id) || targetIds.includes(o.linkedOrderId) || targetIds.includes(o.inspectionOrderId)) {
                 return {
                   ...o,
                   appointmentScheduledAt: null,
@@ -669,7 +693,7 @@ export function useCenterAppointments({ handleOpenAssign, setAssignModalOrder, s
       // 5. Cập nhật state danh sách đơn trong Hub
       setOrders((prev) =>
         prev.map((o) =>
-          o.id === orderId
+          targetIds.includes(o.id) || (o.linkedOrderId && targetIds.includes(o.linkedOrderId))
             ? {
               ...o,
               appointmentScheduledAt: undefined,
@@ -706,6 +730,7 @@ export function useCenterAppointments({ handleOpenAssign, setAssignModalOrder, s
 
   return {
     counterDate,
+    minCounterDate: getMinCounterDate(),
     counterError,
     counterNote,
     counterShift,

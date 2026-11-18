@@ -79,33 +79,45 @@ export function RejectAppointmentModal({ rejectApptModalOrder, appointments }: P
               setRejectApptError(null);
             }}
             placeholder="Nhập lý do cụ thể để người bán chọn lại lịch hẹn phù hợp..."
-            className="w-full p-2.5 rounded-xl border border-gray-200 text-xs font-medium focus:ring-2 focus:ring-rose-500 outline-none"
+            className={`w-full p-2.5 rounded-xl border text-xs font-medium focus:ring-2 focus:ring-rose-500 outline-none transition ${
+              rejectApptError ? 'border-rose-400 bg-rose-50/30 ring-1 ring-rose-300' : 'border-gray-200'
+            }`}
           />
 
           {/* Gợi ý nhanh */}
           <div className="space-y-1 pt-1">
-            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Gợi ý lý do nhanh:</span>
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Gợi ý lý do nhanh (ấn để chọn):</span>
             <div className="flex flex-wrap gap-1.5">
               {[
                 'KTV đã kín lịch trong khung giờ này, vui lòng chọn ca khác.',
                 'Địa chỉ ngoài phạm vi phục vụ trong khung giờ yêu cầu.',
                 'Trùng lịch bảo trì định kỳ thiết bị đo kiểm lưu động.',
                 'Vui lòng hẹn trước tối thiểu 1 ngày trong giờ hành chính.',
-              ].map((quickReason, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => setRejectApptReason(quickReason)}
-                  className="text-[10px] font-medium px-2 py-1 rounded-lg bg-gray-100 hover:bg-rose-50 hover:text-rose-700 text-slate-600 transition border border-gray-200 cursor-pointer"
-                >
-                  {quickReason}
-                </button>
-              ))}
+              ].map((quickReason, idx) => {
+                const isSelected = rejectApptReason === quickReason;
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => {
+                      setRejectApptReason(quickReason);
+                      setRejectApptError(null);
+                    }}
+                    className={`text-[10px] font-medium px-2 py-1 rounded-lg transition border cursor-pointer ${
+                      isSelected
+                        ? 'bg-rose-100 text-rose-800 border-rose-300 font-bold shadow-2xs'
+                        : 'bg-gray-100 hover:bg-rose-50 hover:text-rose-700 text-slate-600 border-gray-200'
+                    }`}
+                  >
+                    {isSelected ? '✓ ' : ''}{quickReason}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
           {rejectApptError && (
-            <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center gap-2">
+            <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center gap-2 animate-fadeIn">
               <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
               <span>{rejectApptError}</span>
             </div>
@@ -124,8 +136,10 @@ export function RejectAppointmentModal({ rejectApptModalOrder, appointments }: P
           <button
             type="button"
             onClick={handleRejectAppointment}
-            disabled={isRejectingAppt || !rejectApptReason.trim()}
-            className="px-4.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition disabled:opacity-50 cursor-pointer"
+            disabled={isRejectingAppt}
+            className={`px-4.5 py-2 rounded-xl text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition ${
+              isRejectingAppt ? 'bg-rose-400 cursor-not-allowed opacity-70' : 'bg-rose-600 hover:bg-rose-700 cursor-pointer active:scale-95'
+            }`}
           >
             {isRejectingAppt ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <XCircle className="w-3.5 h-3.5" />}
             <span>Xác Nhận Từ Chối</span>

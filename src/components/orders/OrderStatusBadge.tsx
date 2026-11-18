@@ -1,15 +1,16 @@
 import {
-  AlertTriangle, Calendar, CalendarCheck, CalendarSync, CheckCircle2, Clock,
+  AlertCircle, AlertTriangle, Calendar, CalendarCheck, CalendarSync, CheckCircle2, Clock,
   ShieldCheck, Truck, UserCheck, Wrench, XCircle,
 } from 'lucide-react';
 import type { EscrowOrder, Language, ShipmentBackend } from '../../types';
 import { formatInspectionDeadline, isInspectionPaymentExpired } from '../../utils/inspectionPaymentDeadline';
-import { buyerInspectionStageLabel, getCustomerInspectionStatus } from '../../utils/inspectionPurchase';
+import { buyerInspectionStageLabel, getCustomerInspectionStatus, getInspectionPurchaseDecision } from '../../utils/inspectionPurchase';
 import { getInboundShipmentProgress } from '../../utils/inspectionCenterData';
 import { formatVND } from '../../utils/translations';
-import type { OrderAppointment } from '../../utils/orders/orderAppointments';
+import { getOrderAppointmentRejection, type OrderAppointment } from '../../utils/orders/orderAppointments';
 import type { OrderCheck } from '../../types/orders/orderTypes';
-import { isHubInboundInProgress } from '../../utils/orders/shipmentCache';
+import { getOrderAllShipments, isHubInboundInProgress } from '../../utils/orders/shipmentCache';
+import { isOrderDeliveredToBuyer } from '../../utils/orders/orderReceipt';
 
 export interface OrderStatusBadgeOptions {
   lang: Language;
@@ -47,6 +48,17 @@ export function OrderStatusBadge({
     orderItem?.inspectionStatus
   );
 
+  const isAtHomeOrderCheck = (item: any): boolean => {
+    if (!item) return false;
+    const m = String(item.inspectionMethod || item.inspection_method || '').toUpperCase();
+    const ot = String(item.orderType || item.order_type || item.inspectionOrder?.orderType || item.inspectionOrder?.order_type || '').toUpperCase();
+    if (m === 'AT_HOME' || ot === 'AT_HOME') return true;
+    if (typeof window !== 'undefined' && item.id) {
+      if (localStorage.getItem(`order_method_${item.id}`) === 'AT_HOME') return true;
+    }
+    return false;
+  };
+
   if (orderItem && orderItem.inspectionStatus !== 'FAILED' && isOrderCancelledOrRefunded(orderItem)) {
     return (
       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
@@ -69,6 +81,223 @@ export function OrderStatusBadge({
   const sellerConfirmed = Boolean(orderItem && isOrderSellerConfirmed(orderItem));
   const inbound = orderItem && getOrderInboundShipment(orderItem);
   const inspectionStatus = orderItem?.inspectionStatus || bStatus;
+
+  // 1. Kiểm tra đơn hàng đã hoàn tất / đã giải ngân
+  const isReceiptConfirmed = Boolean(
+    orderItem && (
+      (orderItem as any).receiptConfirmedAt ||
+      (typeof window !== 'undefined' && orderItem.id && localStorage.getItem(`order_receipt_confirmed_${orderItem.id}`) === 'true')
+    )
+  );
+
+  const isCompletedOrReleased = Boolean(
+    isReceiptConfirmed ||
+    s === 'COMPLETED_RELEASED' ||
+    s === 'COMPLETED' ||
+    s === 'RELEASED' ||
+    bStatus === 'COMPLETED' ||
+    bStatus === 'RELEASED' ||
+    (orderItem?.escrowStatus as any) === 'COMPLETED_RELEASED' ||
+    (orderItem?.escrowStatus as any) === 'RELEASED'
+  );
+  if (isCompletedOrReleased) {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200">
+        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+        <span>
+          {lang === 'vi'
+            ? isSellerForThisOrder ? 'Đã Nhận Tiền Vào Ví' : 'Hoàn Tất • Đã Giải Ngân'
+            : isSellerForThisOrder ? 'Payout Transferred to Wallet' : 'Completed • Escrow Released'}
+        </span>
+      </span>
+    );
+  }
+
+  // 1.5. Kiểm tra đơn hàng đã giao thành công đến người mua (48h kiểm tra đối soát)
+  const isDeliveredToBuyer = Boolean(
+    (orderItem && isOrderDeliveredToBuyer(orderItem)) ||
+    orderItem?.shippingDeliveredAt ||
+    orderItem?.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' ||
+    bStatus === 'DELIVERED_INSPECTION_WINDOW' ||
+    bStatus === 'DELIVERED' ||
+    (orderItem as any)?.backendStatus === 'DELIVERED' ||
+    s === 'DELIVERED_INSPECTION_WINDOW' ||
+    s === 'DELIVERED' ||
+    (() => {
+      if (!orderItem?.id) return false;
+      const ships = getOrderAllShipments(orderItem.id, (orderItem as any).linkedOrderId);
+      return ships.some(
+        (sh) =>
+          (sh.leg === 'SELLER_TO_BUYER' || sh.leg === 'CENTER_TO_BUYER' || sh.leg === 'DELIVERY') &&
+          (sh.status === 'DELIVERED' || sh.status === 'COMPLETED' || sh.providerStatus === 'COMPLETED')
+      );
+    })()
+  );
+
+  if (isDeliveredToBuyer) {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-700 border border-emerald-500/30">
+        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+        <span>
+          {lang === 'vi'
+            ? isSellerForThisOrder
+              ? 'Đã giao hàng • Chờ đối soát (48h)'
+              : 'Đã giao • 48h kiểm tra đối soát'
+            : isSellerForThisOrder
+              ? 'Delivered • Buyer Review (48h)'
+              : 'Delivered • 48h Inspection Window'}
+        </span>
+      </span>
+    );
+  }
+
+  // 2. Quyết định mua hàng sau khi kiểm định ĐẠT
+  const purchaseDecision = orderItem ? getInspectionPurchaseDecision(orderItem) : null;
+  const isPurchaseAccepted = Boolean(
+    purchaseDecision === 'accepted' ||
+    orderItem?.finalPaymentPaidAt ||
+    (orderItem as any)?.inspectionDecision === 'accepted' ||
+    (orderItem as any)?.buyerDecision === 'accepted' ||
+    orderItem?.linkedOrderId ||
+    (orderItem as any)?.inspectionOrder?.finalPaymentPaidAt ||
+    (orderItem as any)?.inspectionOrder?.orderId ||
+    bStatus === 'DELIVERING_TO_BUYER' ||
+    (orderItem as any)?.status === 'DELIVERING_TO_BUYER' ||
+    (orderItem?.escrowStatus as any) === 'DELIVERING_TO_BUYER' ||
+    (orderItem?.escrowStatus as any) === 'SHIPPED_TO_BUYER'
+  );
+
+  if (isPurchaseAccepted) {
+    const isAtHomeOrder = (() => {
+      if (
+        orderItem?.inspectionMethod === 'AT_HOME' ||
+        (orderItem as any)?.orderType === 'AT_HOME' ||
+        (orderItem as any)?.inspectionScope === 'AT_HOME' ||
+        (orderItem as any)?.inspectionOrder?.orderType === 'AT_HOME' ||
+        (orderItem as any)?.inspectionOrder?.inspectionMethod === 'AT_HOME'
+      ) return true;
+
+      if (orderItem?.id && typeof window !== 'undefined') {
+        const oid = orderItem.id;
+        const linkedId = (orderItem as any).linkedOrderId || (orderItem as any).inspectionOrderId;
+        const targetIds = [oid, linkedId].filter(Boolean);
+        for (const storageKey of ['recent_placed_orders', 'center_inspection_orders', 'my_seller_inspection_orders']) {
+          try {
+            const raw = localStorage.getItem(storageKey);
+            if (raw) {
+              const list = JSON.parse(raw);
+              if (Array.isArray(list)) {
+                const found = list.find((o: any) => targetIds.includes(o.id) || targetIds.includes(o.linkedOrderId));
+                if (found && (found.orderType === 'AT_HOME' || found.inspectionMethod === 'AT_HOME')) {
+                  return true;
+                }
+              }
+            }
+          } catch { }
+        }
+      }
+      return false;
+    })();
+
+    const isShipmentCreated = Boolean(
+      (orderItem as any)?.orderShipmentCode ||
+      (orderItem as any)?.orderCode ||
+      (orderItem as any)?.carrierPickedUpAt ||
+      (orderItem as any)?.sellerReadyAt ||
+      (orderItem as any)?.status === 'DELIVERING_TO_BUYER' ||
+      (orderItem?.escrowStatus as any) === 'DELIVERING_TO_BUYER' ||
+      (orderItem?.escrowStatus as any) === 'SHIPPED_TO_BUYER' ||
+      bStatus === 'DELIVERING_TO_BUYER' ||
+      bStatus === 'SHIPPED_TO_BUYER' ||
+      (typeof window !== 'undefined' && orderItem?.id && (
+        localStorage.getItem(`order_shipment_created_${orderItem.id}`) === 'true' ||
+        localStorage.getItem(`order_packed_${orderItem.id}`) === 'true' ||
+        localStorage.getItem(`order_shipments_${orderItem.id}`) ||
+        localStorage.getItem(`sl_order_shipments_${orderItem.id}`) ||
+        ((orderItem as any).linkedOrderId && (
+          localStorage.getItem(`order_shipment_created_${(orderItem as any).linkedOrderId}`) === 'true' ||
+          localStorage.getItem(`order_packed_${(orderItem as any).linkedOrderId}`) === 'true' ||
+          localStorage.getItem(`order_shipments_${(orderItem as any).linkedOrderId}`) ||
+          localStorage.getItem(`sl_order_shipments_${(orderItem as any).linkedOrderId}`)
+        ))
+      ))
+    );
+
+    return (
+      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-300">
+        <Truck className="w-3.5 h-3.5 text-emerald-600" />
+        <span>
+          {orderItem?.carrierPickedUpAt || bStatus === 'SHIPPED'
+            ? (lang === 'vi' ? 'Đang giao hàng • Lalamove' : 'Delivering • Lalamove')
+            : isShipmentCreated
+              ? (lang === 'vi'
+                ? isAtHomeOrder
+                  ? 'Đang giao hàng • Lalamove'
+                  : 'Đã tạo vận đơn • Chờ tài xế lấy hàng'
+                : isAtHomeOrder
+                  ? 'Delivering • Lalamove'
+                  : 'Shipment Created • Awaiting Driver Pickup')
+              : lang === 'vi'
+                ? isAtHomeOrder
+                  ? 'Đã xác nhận mua • Chờ người bán gửi hàng'
+                  : isSellerForThisOrder
+                    ? 'Người mua đã mua tiếp • Chờ giao hàng & giải ngân'
+                    : 'Đã xác nhận mua • Chờ Hub giao hàng'
+                : isAtHomeOrder
+                  ? 'Purchase Confirmed • Waiting for Seller to Ship'
+                  : isSellerForThisOrder
+                    ? 'Purchase Confirmed • Delivering & Payout'
+                    : 'Purchase Confirmed • Hub Delivering'}
+        </span>
+      </span>
+    );
+  }
+
+  if (purchaseDecision === 'pending' || orderItem?.escrowStatus === 'INSPECTION_PASSED' || inspectionStatus === 'PASSED' || bStatus === 'PASSED') {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-300">
+        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+        <span>
+          {lang === 'vi'
+            ? isSellerForThisOrder
+              ? 'Kiểm định ĐẠT • Chờ người mua quyết định'
+              : 'Kiểm định ĐẠT • Chờ bạn quyết định mua'
+            : isSellerForThisOrder
+              ? 'Passed • Awaiting Buyer Decision'
+              : 'Passed • Awaiting Your Decision'}
+        </span>
+      </span>
+    );
+  }
+
+  if (purchaseDecision === 'rejected') {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-800 border border-rose-200">
+        <XCircle className="w-3.5 h-3.5 text-rose-600" />
+        <span>
+          {lang === 'vi'
+            ? isSellerForThisOrder
+              ? 'Người mua từ chối mua • Chuyển hoàn về Seller'
+              : 'Đã từ chối mua tiếp • Chờ chuyển hoàn'
+            : isSellerForThisOrder
+              ? 'Buyer Declined • Returning to Seller'
+              : 'Declined • Returning to Seller'}
+        </span>
+      </span>
+    );
+  }
+
+  if (inspectionStatus === 'FAILED' || orderItem?.escrowStatus === 'INSPECTION_FAILED' || bStatus === 'FAILED') {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-800 border border-rose-200">
+        <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+        <span>
+          {lang === 'vi' ? 'Kiểm định không đạt • Đang chuyển hoàn' : 'Inspection Failed • Returning to Seller'}
+        </span>
+      </span>
+    );
+  }
+
   const customerStatus = getCustomerInspectionStatus(inspectionStatus, undefined, orderItem?.inspectorId);
   if (customerStatus === 'INSPECTING' || customerStatus === 'INSPECTION_IN_PROGRESS') {
     return (
@@ -87,7 +316,7 @@ export function OrderStatusBadge({
         <span>
           {progress.step === 3
             ? (lang === 'vi' ? 'Đã Đến Hub Kiểm Định' : 'Delivered to Hub')
-            : (lang === 'vi' ? 'Đang vận chuyển về trung tâm kiểm định' : 'Shipping to Hub')}
+            : (lang === 'vi' ? 'Đang vận chuyển đến trung tâm kiểm định' : 'Shipping to Hub')}
         </span>
       </span>
     );
@@ -128,7 +357,7 @@ export function OrderStatusBadge({
     );
   }
   if (inspectionStatus === 'CONFIRMED_PENDING_DISPATCH') {
-    const isAtHome = orderItem?.inspectionMethod === 'AT_HOME' || (orderItem as any)?.orderType === 'AT_HOME';
+    const isAtHome = isAtHomeOrderCheck(orderItem);
     const isArrived = orderItem?.id ? isInspectorArrivedForOrder(orderItem.id, orderItem) : false;
     if (isAtHome && isArrived) {
       return (
@@ -142,15 +371,18 @@ export function OrderStatusBadge({
     }
     if (isAtHome) {
       const appt = orderItem ? getOrderAppointment(orderItem) : null;
-      const hasAppt = Boolean(appt?.scheduledAt || orderItem?.appointmentScheduledAt);
-      const isCountered =
-        appt?.status === 'COUNTERED_BY_CENTER' ||
-        Boolean(appt?.counterScheduledAt) ||
-        bStatus === 'WAITING_SELLER_APPROVAL' ||
-        orderItem?.status === 'WAITING_SELLER_APPROVAL' ||
-        (orderItem as any)?.customerStatus === 'WAITING_SELLER_APPROVAL' ||
-        (orderItem as any)?.appointmentStatus === 'COUNTERED_BY_CENTER';
-      const isPendingApproval = appt?.status === 'PENDING_CENTER_CONFIRMATION' || appt?.status === 'PENDING_CONFIRMATION';
+      const isCountered = Boolean(
+        (appt?.status === 'COUNTERED_BY_CENTER' || (orderItem as any)?.appointmentStatus === 'COUNTERED_BY_CENTER') &&
+        (Boolean(appt?.counterScheduledAt) || Boolean((orderItem as any)?.counterScheduledAt) || Boolean((orderItem as any)?.inspectionOrder?.counterScheduledAt))
+      );
+      const rejection = !isCountered && orderItem ? getOrderAppointmentRejection(orderItem) : null;
+      const isRejected = !isCountered && (
+        (orderItem as any)?.appointmentStatus === 'REJECTED' ||
+        appt?.status === 'REJECTED' ||
+        Boolean(rejection)
+      );
+      const isPendingApproval = !isRejected && !isCountered && (appt?.status === 'PENDING_CENTER_CONFIRMATION' || appt?.status === 'PENDING_CONFIRMATION');
+      const hasAppt = !isRejected && !isCountered && Boolean(appt?.scheduledAt || orderItem?.appointmentScheduledAt);
 
       let hasInsp = Boolean(orderItem?.inspectorId || (orderItem as any)?.inspectorName);
       if (!hasInsp && orderItem?.id && typeof window !== 'undefined') {
@@ -159,7 +391,7 @@ export function OrderStatusBadge({
           if (raw && JSON.parse(raw).inspectorName) hasInsp = true;
         } catch { }
       }
-      if (hasInsp) {
+      if (hasInsp && !isRejected) {
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
             <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
@@ -167,23 +399,7 @@ export function OrderStatusBadge({
           </span>
         );
       }
-      if (isCountered) {
-        return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300 animate-pulse">
-            <CalendarSync className="w-3.5 h-3.5 text-amber-700" />
-            <span>{lang === 'vi' ? (isSellerForThisOrder ? 'Hub Đề Xuất Lịch Mới • Cần Phản Hồi' : 'Hub Đề Xuất Lịch Mới • Chờ Seller Phản Hồi') : (isSellerForThisOrder ? 'Hub Proposed New Time • Response Needed' : 'Hub Proposed New Time • Awaiting Seller')}</span>
-          </span>
-        );
-      }
-      if (isPendingApproval) {
-        return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
-            <Clock className="w-3.5 h-3.5 text-blue-600" />
-            <span>{lang === 'vi' ? 'Đã Đề Xuất Lịch • Chờ Hub Duyệt' : 'Visit Proposed • Awaiting Hub Approval'}</span>
-          </span>
-        );
-      }
-      if (appt?.status === 'CONFIRMED') {
+      if (appt?.status === 'CONFIRMED' && !isRejected) {
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
             <CalendarCheck className="w-3.5 h-3.5 text-emerald-600" />
@@ -191,18 +407,59 @@ export function OrderStatusBadge({
           </span>
         );
       }
-      if (hasAppt) {
+      if (isSellerForThisOrder) {
+        if (isRejected) {
+          return (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-800 border border-rose-300">
+              <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
+              <span>{lang === 'vi' ? 'Lịch Hẹn Bị Từ Chối • Cần Hẹn Lại' : 'Appointment Rejected • Please Reschedule'}</span>
+            </span>
+          );
+        }
+        if (isCountered) {
+          return (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300 animate-pulse">
+              <CalendarSync className="w-3.5 h-3.5 text-amber-700" />
+              <span>{lang === 'vi' ? 'Hub Đề Xuất Lịch Mới • Cần Phản Hồi' : 'Hub Proposed New Time • Response Needed'}</span>
+            </span>
+          );
+        }
+        if (isPendingApproval || hasAppt) {
+          return (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
+              <Clock className="w-3.5 h-3.5 text-blue-600" />
+              <span>{lang === 'vi' ? 'Đã Đề Xuất Lịch • Chờ Hub Duyệt' : 'Visit Proposed • Awaiting Hub Approval'}</span>
+            </span>
+          );
+        }
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300">
+            <Calendar className="w-3.5 h-3.5 text-amber-600" />
+            <span>{lang === 'vi' ? 'Chờ Bạn Hẹn Lịch Đón KTV' : 'Awaiting Schedule Visit'}</span>
+          </span>
+        );
+      }
+      // Phía Buyer: Chỉ hiển thị lịch đầu tiên / trạng thái chờ KTV, không hiện các trạng thái đề xuất/đổi lịch nội bộ giữa Seller và Hub
+      if (isRejected) {
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300">
+            <Calendar className="w-3.5 h-3.5 text-amber-600" />
+            <span>{lang === 'vi' ? 'Chờ Người Bán Hẹn Lại Lịch KTV' : 'Awaiting Seller Reschedule Visit'}</span>
+          </span>
+        );
+      }
+      if (hasAppt || isPendingApproval) {
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
             <Clock className="w-3.5 h-3.5 text-blue-600" />
-            <span>{lang === 'vi' ? 'Đã Đề Xuất Lịch • Chờ Hub Duyệt' : 'Visit Proposed • Awaiting Hub Approval'}</span>
+            <span>{lang === 'vi' ? 'Đã Hẹn Lịch • Chờ KTV Khảo Sát' : 'Visit Scheduled • Awaiting Inspector'}</span>
           </span>
         );
       }
       return (
         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300">
           <Calendar className="w-3.5 h-3.5 text-amber-600" />
-          <span>{lang === 'vi' ? (isSellerForThisOrder ? 'Chờ Bạn Hẹn Lịch Đón KTV' : 'Chờ Người Bán Hẹn Lịch KTV') : 'Awaiting Schedule Visit'}</span>
+          <span>{lang === 'vi' ? 'Chờ Người Bán Hẹn Lịch Đón KTV' : 'Awaiting Seller Schedule Visit'}</span>
         </span>
       );
     }
@@ -280,12 +537,12 @@ export function OrderStatusBadge({
       return (
         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-cyan-50 text-cyan-700 border border-cyan-200">
           <Truck className="w-3.5 h-3.5 text-cyan-600" />
-          <span>{lang === 'vi' ? 'Đang Ship Về Hub Kiểm Định' : 'Shipping to Hub'}</span>
+          <span>{lang === 'vi' ? 'Đang giao đến Hub kiểm định' : 'Shipping to Hub'}</span>
         </span>
       );
     }
     if (s === 'AWAITING_INSPECTION' || s === 'HELD_IN_ESCROW') {
-      const isAtHome = orderItem?.inspectionMethod === 'AT_HOME' || (orderItem as any)?.orderType === 'AT_HOME';
+      const isAtHome = isAtHomeOrderCheck(orderItem);
       const isArrived = orderItem?.id ? isInspectorArrivedForOrder(orderItem.id, orderItem) : false;
       if (isAtHome && isArrived) {
         return (
@@ -299,15 +556,18 @@ export function OrderStatusBadge({
       }
       if (isAtHome) {
         const appt = orderItem ? getOrderAppointment(orderItem) : null;
-        const hasAppt = Boolean(appt?.scheduledAt || orderItem?.appointmentScheduledAt);
-        const isCountered =
-          appt?.status === 'COUNTERED_BY_CENTER' ||
-          Boolean(appt?.counterScheduledAt) ||
-          bStatus === 'WAITING_SELLER_APPROVAL' ||
-          orderItem?.status === 'WAITING_SELLER_APPROVAL' ||
-          (orderItem as any)?.customerStatus === 'WAITING_SELLER_APPROVAL' ||
-          (orderItem as any)?.appointmentStatus === 'COUNTERED_BY_CENTER';
-        const isPendingApproval = appt?.status === 'PENDING_CENTER_CONFIRMATION' || appt?.status === 'PENDING_CONFIRMATION';
+        const isCountered = Boolean(
+          (appt?.status === 'COUNTERED_BY_CENTER' || (orderItem as any)?.appointmentStatus === 'COUNTERED_BY_CENTER') &&
+          (Boolean(appt?.counterScheduledAt) || Boolean((orderItem as any)?.counterScheduledAt) || Boolean((orderItem as any)?.inspectionOrder?.counterScheduledAt))
+        );
+        const rejection = !isCountered && orderItem ? getOrderAppointmentRejection(orderItem) : null;
+        const isRejected = !isCountered && (
+          (orderItem as any)?.appointmentStatus === 'REJECTED' ||
+          appt?.status === 'REJECTED' ||
+          Boolean(rejection)
+        );
+        const isPendingApproval = !isRejected && !isCountered && (appt?.status === 'PENDING_CENTER_CONFIRMATION' || appt?.status === 'PENDING_CONFIRMATION');
+        const hasAppt = !isRejected && !isCountered && Boolean(appt?.scheduledAt || orderItem?.appointmentScheduledAt);
 
         let hasInsp = Boolean(orderItem?.inspectorId || (orderItem as any)?.inspectorName);
         if (!hasInsp && orderItem?.id && typeof window !== 'undefined') {
@@ -316,7 +576,7 @@ export function OrderStatusBadge({
             if (raw && JSON.parse(raw).inspectorName) hasInsp = true;
           } catch { }
         }
-        if (hasInsp) {
+        if (hasInsp && !isRejected) {
           return (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
               <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
@@ -324,23 +584,7 @@ export function OrderStatusBadge({
             </span>
           );
         }
-        if (isCountered) {
-          return (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300 animate-pulse">
-              <CalendarSync className="w-3.5 h-3.5 text-amber-700" />
-              <span>{lang === 'vi' ? (isSellerForThisOrder ? 'Hub Đề Xuất Lịch Mới • Cần Phản Hồi' : 'Hub Đề Xuất Lịch Mới • Chờ Seller Phản Hồi') : (isSellerForThisOrder ? 'Hub Proposed New Time • Response Needed' : 'Hub Proposed New Time • Awaiting Seller')}</span>
-            </span>
-          );
-        }
-        if (isPendingApproval) {
-          return (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
-              <Clock className="w-3.5 h-3.5 text-blue-600" />
-              <span>{lang === 'vi' ? 'Đã Đề Xuất Lịch • Chờ Hub Duyệt' : 'Visit Proposed • Awaiting Hub Approval'}</span>
-            </span>
-          );
-        }
-        if (appt?.status === 'CONFIRMED') {
+        if (appt?.status === 'CONFIRMED' && !isRejected) {
           return (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
               <CalendarCheck className="w-3.5 h-3.5 text-emerald-600" />
@@ -348,18 +592,59 @@ export function OrderStatusBadge({
             </span>
           );
         }
-        if (hasAppt) {
+        if (isSellerForThisOrder) {
+          if (isRejected) {
+            return (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-800 border border-rose-300">
+                <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
+                <span>{lang === 'vi' ? 'Lịch Hẹn Bị Từ Chối • Cần Hẹn Lại' : 'Appointment Rejected • Please Reschedule'}</span>
+              </span>
+            );
+          }
+          if (isCountered) {
+            return (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300 animate-pulse">
+                <CalendarSync className="w-3.5 h-3.5 text-amber-700" />
+                <span>{lang === 'vi' ? 'Hub Đề Xuất Lịch Mới • Cần Phản Hồi' : 'Hub Proposed New Time • Response Needed'}</span>
+              </span>
+            );
+          }
+          if (isPendingApproval || hasAppt) {
+            return (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                <Clock className="w-3.5 h-3.5 text-blue-600" />
+                <span>{lang === 'vi' ? 'Đã Đề Xuất Lịch • Chờ Hub Duyệt' : 'Visit Proposed • Awaiting Hub Approval'}</span>
+              </span>
+            );
+          }
+          return (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300">
+              <Calendar className="w-3.5 h-3.5 text-amber-600" />
+              <span>{lang === 'vi' ? 'Chờ Bạn Hẹn Lịch Đón KTV' : 'Awaiting Schedule Visit'}</span>
+            </span>
+          );
+        }
+        // Phía Buyer: Chỉ hiển thị lịch đầu tiên / trạng thái chờ KTV, không hiện các trạng thái đề xuất/đổi lịch nội bộ giữa Seller và Hub
+        if (isRejected) {
+          return (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300">
+              <Calendar className="w-3.5 h-3.5 text-amber-600" />
+              <span>{lang === 'vi' ? 'Chờ Người Bán Hẹn Lại Lịch KTV' : 'Awaiting Seller Reschedule Visit'}</span>
+            </span>
+          );
+        }
+        if (hasAppt || isPendingApproval) {
           return (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
               <Clock className="w-3.5 h-3.5 text-blue-600" />
-              <span>{lang === 'vi' ? 'Đã Đề Xuất Lịch • Chờ Hub Duyệt' : 'Visit Proposed • Awaiting Hub Approval'}</span>
+              <span>{lang === 'vi' ? 'Đã Hẹn Lịch • Chờ KTV Khảo Sát' : 'Visit Scheduled • Awaiting Inspector'}</span>
             </span>
           );
         }
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300">
             <Calendar className="w-3.5 h-3.5 text-amber-600" />
-            <span>{lang === 'vi' ? (isSellerForThisOrder ? 'Chờ Bạn Hẹn Lịch Đón KTV' : 'Chờ Người Bán Hẹn Lịch KTV') : 'Awaiting Schedule Visit'}</span>
+            <span>{lang === 'vi' ? 'Chờ Người Bán Hẹn Lịch Đón KTV' : 'Awaiting Seller Schedule Visit'}</span>
           </span>
         );
       }
@@ -394,6 +679,33 @@ export function OrderStatusBadge({
       );
     case 'AWAITING_INSPECTION':
       if (sellerConfirmed) {
+        const isAtHomeAwaiting = isAtHomeOrderCheck(orderItem);
+        if (isAtHomeAwaiting) {
+          const appt = orderItem ? getOrderAppointment(orderItem) : null;
+          const hasAppt = Boolean(appt?.scheduledAt || orderItem?.appointmentScheduledAt);
+          if (isSellerForThisOrder) {
+            return (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300">
+                <Calendar className="w-3.5 h-3.5 text-amber-600" />
+                <span>{lang === 'vi' ? 'Chờ Bạn Hẹn Lịch Đón KTV' : 'Awaiting Schedule Visit'}</span>
+              </span>
+            );
+          }
+          if (hasAppt) {
+            return (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                <Clock className="w-3.5 h-3.5 text-blue-600" />
+                <span>{lang === 'vi' ? 'Đã Hẹn Lịch • Chờ KTV Đến' : 'Visit Scheduled • Awaiting Inspector'}</span>
+              </span>
+            );
+          }
+          return (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300">
+              <Calendar className="w-3.5 h-3.5 text-amber-600" />
+              <span>{lang === 'vi' ? 'Chờ Người Bán Hẹn Lịch Đón KTV' : 'Awaiting Seller Schedule Visit'}</span>
+            </span>
+          );
+        }
         const isSellerPaysAll = orderItem?.inspectionFeeSplit === 'SELLER_100' || (orderItem ? getPartyInspectionFee(orderItem, false) <= 0 : false);
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">

@@ -1,4 +1,4 @@
-import { Calendar, CheckCircle2, Clock, ShieldCheck, Store, Truck, User } from 'lucide-react';
+import { CheckCircle2, Clock, ShieldCheck, Store, Truck, User } from 'lucide-react';
 import type { EscrowOrder, Language } from '../../../types';
 import type { OrderAppointment } from '../../../utils/orders/orderAppointments';
 import type { OrderCheck } from '../../../types/orders/orderTypes';
@@ -69,7 +69,7 @@ export function OrderCardSummary({
                 title={lang === 'vi' ? 'Xem điểm uy tín & đánh giá người bán' : 'View seller trust & reviews'}
               >
                 <ShieldCheck className="w-2.5 h-2.5 text-emerald-600" />
-                <span>98đ uy tín</span>
+                {/* <span>98đ uy tín</span> */}
               </button>
             </>
           )}
@@ -174,16 +174,6 @@ export function OrderCardSummary({
                         : (lang === 'vi' ? 'Người mua 100%' : 'Buyer 100%')}
                   </span>
                 </span>
-                {hasInspection && ord.inspectionMethod === 'AT_HOME' && savedAppointment?.scheduledAt && (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-orange-50 text-orange-800 border border-orange-200">
-                    <Calendar className="w-3 h-3 text-orange-600" />
-                    <span>
-                      {lang === 'vi'
-                        ? `Lịch hẹn KTV: ${new Date(savedAppointment.scheduledAt).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`
-                        : `Inspect: ${new Date(savedAppointment.scheduledAt).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`}
-                    </span>
-                  </span>
-                )}
               </div>
             )}
           </div>

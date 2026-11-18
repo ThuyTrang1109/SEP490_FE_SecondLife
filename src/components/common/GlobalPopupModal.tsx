@@ -119,9 +119,56 @@ export const GlobalPopupModal: React.FC = () => {
         </h3>
 
         {/* Message */}
-        <p className="text-xs sm:text-sm text-slate-600 leading-relaxed mb-6 font-medium whitespace-pre-line max-h-60 overflow-y-auto px-1">
+        <p className="text-xs sm:text-sm text-slate-600 leading-relaxed mb-4 font-medium whitespace-pre-line max-h-60 overflow-y-auto px-1">
           {dialogState.message}
         </p>
+
+        {/* Route Details Box (Từ đâu tới đâu) */}
+        {dialogState.routeDetails && (
+          <div className="w-full mb-6 p-3.5 rounded-2xl bg-slate-50 border border-slate-200 text-left text-xs space-y-2.5 shadow-2xs">
+            <div className="flex items-start gap-2.5">
+              <div className="w-3.5 h-3.5 rounded-full bg-blue-600 mt-0.5 shrink-0 ring-4 ring-blue-100 flex items-center justify-center">
+                <div className="w-1.5 h-1.5 rounded-full bg-white" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wider block">
+                  {dialogState.routeDetails.originTitle || 'Điểm lấy hàng (Từ Hub)'}
+                </span>
+                {dialogState.routeDetails.originName && (
+                  <span className="font-bold text-slate-900 block text-xs mt-0.5">
+                    {dialogState.routeDetails.originName}
+                  </span>
+                )}
+                <span className="text-slate-600 break-words block text-[11px] leading-relaxed mt-0.5">
+                  {dialogState.routeDetails.originAddress}
+                </span>
+              </div>
+            </div>
+
+            <div className="ml-1.5 pl-3.5 border-l-2 border-dashed border-slate-300 py-0.5 flex items-center gap-1.5 text-[10px] font-semibold text-slate-500">
+              <span>Bưu tá Lalamove giao tận tay</span>
+            </div>
+
+            <div className="flex items-start gap-2.5">
+              <div className="w-3.5 h-3.5 rounded-full bg-emerald-600 mt-0.5 shrink-0 ring-4 ring-emerald-100 flex items-center justify-center">
+                <div className="w-1.5 h-1.5 rounded-full bg-white" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider block">
+                  {dialogState.routeDetails.destinationTitle || 'Điểm giao hàng (Đến Người mua)'}
+                </span>
+                {dialogState.routeDetails.destinationName && (
+                  <span className="font-bold text-slate-900 block text-xs mt-0.5">
+                    {dialogState.routeDetails.destinationName}
+                  </span>
+                )}
+                <span className="text-slate-600 break-words block text-[11px] leading-relaxed mt-0.5">
+                  {dialogState.routeDetails.destinationAddress}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Action Buttons */}
         {isConfirmDialog ? (

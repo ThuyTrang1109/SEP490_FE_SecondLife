@@ -18,6 +18,7 @@ import {
 } from '../../../utils/inspectionCenterData';
 import { INBOUND_SHIPMENT_CONCURRENCY } from './shipmentTrackingConfig';
 import type { useCenterOrders } from './useCenterOrders';
+import { getOrderBuyerAddress, getOrderBuyerPhone, getOrderHubAddress, getOrderHubName } from '../dispatch/orderContacts';
 
 interface Options {
   currentUser: UserProfile | null | undefined;
@@ -245,9 +246,27 @@ export function useCenterShipments({ currentUser, loadingShipmentsRef, loadOrder
     bookingBuyerOrderRef.current = order.id;
     setBookingBuyerOrderId(order.id);
     try {
+      const hubAddress = getOrderHubAddress(order, currentUser);
+      const hubName = getOrderHubName(order, currentUser);
+      const buyerAddress = getOrderBuyerAddress(order);
+      const buyerName = order.buyerName || 'Nguyen Hieu Tuan';
+      const buyerPhone = getOrderBuyerPhone(order);
+
       const confirmed = await dialogService.confirm(
-        `Tạo vận đơn Lalamove giao “${order.postTitle || 'sản phẩm'}” từ Hub đến ${order.buyerName || 'người mua'} theo báo giá đã thanh toán?`,
-        { title: 'Giao hàng từ Hub đến người mua', confirmText: 'Tạo vận đơn' },
+        `Xác nhận tạo vận đơn Lalamove giao “${order.postTitle || 'sản phẩm'}” theo báo giá đã thanh toán qua Escrow?`,
+        {
+          title: 'Giao hàng từ Hub đến người mua',
+          confirmText: 'Tạo vận đơn',
+          cancelText: 'Hủy Bỏ',
+          routeDetails: {
+            originTitle: 'Điểm lấy hàng (Từ Hub)',
+            originName: hubName,
+            originAddress: hubAddress,
+            destinationTitle: 'Điểm giao hàng (Đến Người mua)',
+            destinationName: buyerPhone ? `${buyerName} (${buyerPhone})` : buyerName,
+            destinationAddress: buyerAddress,
+          },
+        },
       );
       if (!confirmed) return;
 

@@ -4,6 +4,7 @@ import { Calendar, Clock, MapPin, X, Check, RefreshCw, AlertCircle, ShieldCheck,
 import { Language } from '../../types';
 import { inspectorService } from '../../services/inspectorService';
 import { saveScopedLocalNotification } from '../../utils/notificationStorage';
+import { INSPECTION_SHIFT_HOURS, isInspectionTimeInShift, type InspectionShift } from '../../utils/inspectionAppointmentTime';
 
 interface ScheduleAppointmentModalProps {
   orderId: string;
@@ -19,7 +20,7 @@ interface ScheduleAppointmentModalProps {
   initialNote?: string;
 }
 
-export type InspectionShift = 'MORNING' | 'AFTERNOON';
+export type { InspectionShift } from '../../utils/inspectionAppointmentTime';
 
 export const MORNING_SLOTS = ['08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30'];
 export const AFTERNOON_SLOTS = ['13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30'];
@@ -378,31 +379,13 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
       return;
     }
 
-    // STRICT BUSINESS HOURS VALIDATION:
-    // Morning shift: 08:00 - 12:00
-    // Afternoon shift: 13:00 - 17:00
-    const hour = scheduledDate.getHours();
-    const minute = scheduledDate.getMinutes();
-    const timeInMinutes = hour * 60 + minute;
-
-    const morningStart = 8 * 60; // 08:00
-    const morningEnd = 12 * 60; // 12:00
-    const afternoonStart = 13 * 60; // 13:00
-    const afternoonEnd = 17 * 60; // 17:00
-
-    const isMorning = timeInMinutes >= morningStart && timeInMinutes <= morningEnd;
-    const isAfternoon = timeInMinutes >= afternoonStart && timeInMinutes <= afternoonEnd;
-
-    if (!isMorning && !isAfternoon) {
-      if (timeInMinutes > morningEnd && timeInMinutes < afternoonStart) {
-        setErrorMessage('12:00 - 13:00 là thời gian nghỉ trưa của KTV. Vui lòng chọn Ca Sáng (08:00 - 12:00) hoặc Ca Chiều (13:00 - 17:00).');
-      } else {
-        setErrorMessage('Vui lòng chọn khung giờ hành chính: Ca Sáng (08:00 - 12:00) hoặc Ca Chiều (13:00 - 17:00).');
-      }
+    if (!isInspectionTimeInShift(selectedTime, selectedShift)) {
+      const { min, max } = INSPECTION_SHIFT_HOURS[selectedShift];
+      setErrorMessage(`Vui lòng chọn giờ trong ca đã chọn (${min} - ${max}).`);
       return;
     }
 
-    const detectedShift: InspectionShift = isMorning ? 'MORNING' : 'AFTERNOON';
+    const detectedShift = selectedShift;
 
     setIsSubmitting(true);
 
@@ -475,6 +458,8 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
   };
 
   const currentSlots = selectedShift === 'MORNING' ? MORNING_SLOTS : AFTERNOON_SLOTS;
+  const shiftHours = INSPECTION_SHIFT_HOURS[selectedShift];
+  const isSelectedTimeValid = isInspectionTimeInShift(selectedTime, selectedShift);
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-4 bg-black/70 backdrop-blur-xs animate-fadeIn">
@@ -582,7 +567,7 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
           </div>
         ) : (
           /* Form for Seller */
-          <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+          <form noValidate onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
             {/* Scrollable Body - fits comfortably in one screen without overflow */}
             <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3 subtle-scrollbar">
               {/* Compact Unified Rules & Inspector Info Banner */}
@@ -709,7 +694,7 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
                     {lang === 'vi' ? '3. Khung giờ KTV có mặt *' : '3. Estimated Arrival Time *'}
                   </span>
                   <span className="text-[11px] font-mono font-bold text-amber-800 bg-amber-100/80 px-2 py-0.5 rounded">
-                    Đã chọn: {selectedTime?.slice(0, 5) || selectedTime}
+                    {isSelectedTimeValid ? 'Đã chọn' : 'Giờ không hợp lệ'}: {selectedTime?.slice(0, 5) || '--:--'}
                   </span>
                 </div>
 
@@ -743,9 +728,12 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
                     <span className="text-slate-500 font-medium">Hoặc chỉnh giờ chi tiết:</span>
                     <input
                       type="time"
-                      min={selectedShift === 'MORNING' ? '08:00' : '13:00'}
-                      max={selectedShift === 'MORNING' ? '12:00' : '17:00'}
+                      min={shiftHours.min}
+                      max={shiftHours.max}
                       value={selectedTime}
+                      aria-label={lang === 'vi' ? 'Chỉnh giờ chi tiết' : 'Custom appointment time'}
+                      aria-invalid={!isSelectedTimeValid}
+                      aria-describedby={!isSelectedTimeValid ? 'appointment-time-error' : undefined}
                       onChange={(e) => {
                         setSelectedTime(e.target.value);
                         setErrorMessage(null);
@@ -754,9 +742,16 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
                     />
                   </div>
                   <span className="text-[10px] text-slate-400">
-                    ({selectedShift === 'MORNING' ? '08:00 - 12:00' : '13:00 - 17:00'})
+                    ({shiftHours.min} - {shiftHours.max})
                   </span>
                 </div>
+                {!isSelectedTimeValid && (
+                  <p id="appointment-time-error" role="alert" className="text-[11px] font-medium text-rose-700">
+                    {lang === 'vi'
+                      ? `Vui lòng chọn giờ trong ca đã chọn (${shiftHours.min} - ${shiftHours.max}).`
+                      : `Choose a time within the selected shift (${shiftHours.min} - ${shiftHours.max}).`}
+                  </p>
+                )}
               </div>
 
               {/* Step 4: Note / Directions */}
@@ -785,7 +780,7 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
               </button>
               <button
                 type="submit"
-                disabled={isSubmitting}
+                disabled={isSubmitting || !isSelectedTimeValid}
                 className="px-4.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm hover:shadow transition disabled:opacity-50 cursor-pointer active:scale-95"
               >
                 {isSubmitting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}

@@ -30,6 +30,8 @@ interface Props {
   isOrderReceivedAtHub: ReturnType<typeof useCenterShipments>['isOrderReceivedAtHub'];
   setActiveTab: (tab: CenterTab) => void;
   staffList: ReturnType<typeof useCenterStaff>['staffList'];
+  isLoadingStaff: boolean;
+  staffLoadError: string | null;
   staffWorkloadMap: ReturnType<typeof useCenterDispatchQueue>['staffWorkloadMap'];
   assignment: Pick<ReturnType<typeof useInspectorAssignment>,
     | 'assignError'
@@ -51,6 +53,8 @@ export function AssignInspectorModal({
   isOrderReceivedAtHub,
   setActiveTab,
   staffList,
+  isLoadingStaff,
+  staffLoadError,
   staffWorkloadMap,
   assignment,
 }: Props) {
@@ -284,7 +288,11 @@ export function AssignInspectorModal({
               </span>
             </label>
 
-            {staffList.length === 0 ? (
+            {isLoadingStaff ? (
+              <p className="text-xs text-slate-500">Đang tải danh sách kỹ thuật viên...</p>
+            ) : staffLoadError ? (
+              <p role="alert" className="text-xs text-rose-700">{staffLoadError}</p>
+            ) : staffList.length === 0 ? (
               <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-800 font-medium">
                 Trung tâm chưa có kỹ thuật viên nào. Vui lòng cấp tài khoản ở trang{' '}
                 <button
@@ -307,10 +315,10 @@ export function AssignInspectorModal({
                 >
                   <option value="">-- Chọn kỹ thuật viên --</option>
                   {staffList.map((st) => {
-                    const count = staffWorkloadMap[st.id] || 0;
+                    const count = staffWorkloadMap ? staffWorkloadMap[st.id] ?? 0 : null;
                     return (
                       <option key={st.id} value={st.id}>
-                        {st.fullName} ({st.email}) — Đang có {count} task
+                        {st.fullName} ({st.email}){count === null ? '' : ` — Đang có ${count} task`}
                       </option>
                     );
                   })}
@@ -360,6 +368,30 @@ export function AssignInspectorModal({
             return null;
           })();
           const isAtHomeMissingAppt = assignModalOrder.orderType === 'AT_HOME' && !modalApptTime;
+          const isApptConfirmed = Boolean(
+            assignModalOrder.appointmentStatus === 'CONFIRMED' ||
+            assignModalOrder.status === 'CONFIRMED_PENDING_DISPATCH' ||
+            assignModalOrder.status === 'ASSIGNED' ||
+            assignModalOrder.inspectorId ||
+            Boolean(modalApptTime && assignModalOrder.appointmentStatus !== 'REJECTED' && assignModalOrder.appointmentStatus !== 'COUNTERED_BY_CENTER' && assignModalOrder.appointmentStatus !== 'PENDING_CENTER_CONFIRMATION') ||
+            (() => {
+              if (typeof window !== 'undefined') {
+                try {
+                  const raw = localStorage.getItem(`order_appointment_${assignModalOrder.id}`);
+                  if (raw) {
+                    const parsed = JSON.parse(raw);
+                    return parsed.status === 'CONFIRMED' || Boolean(parsed.scheduledAt && parsed.status !== 'REJECTED' && parsed.status !== 'COUNTERED_BY_CENTER' && parsed.status !== 'PENDING_CENTER_CONFIRMATION');
+                  }
+                } catch { }
+              }
+              return false;
+            })()
+          );
+          const isAssignDisabled = isAssigning || isLoadingStaff || Boolean(staffLoadError)
+            || !staffList.some((staff) => staff.id === selectedInspectorId)
+            || assignModalOrder.status === 'CANCELLED' || assignModalOrder.status === 'CANCELED'
+            || isAtHomeMissingAppt
+            || (assignModalOrder.orderType !== 'AT_HOME' && !isOrderReceivedAtHub(assignModalOrder));
 
           return (
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-3 border-t border-gray-100">
@@ -397,7 +429,8 @@ export function AssignInspectorModal({
               </div>
 
               <div className="flex items-center justify-end gap-2 flex-wrap">
-                {assignModalOrder.orderType === 'AT_HOME' && (
+                {/* Khi lịch hẹn đã chốt (isApptConfirmed), không cho phép đổi lịch hẹn nữa */}
+                {assignModalOrder.orderType === 'AT_HOME' && !isApptConfirmed && (
                   <button
                     type="button"
                     onClick={() => {
@@ -427,20 +460,8 @@ export function AssignInspectorModal({
                 <button
                   type="button"
                   onClick={handleConfirmAssign}
-                  disabled={
-                    isAssigning ||
-                    !selectedInspectorId ||
-                    assignModalOrder.status === 'CANCELLED' ||
-                    assignModalOrder.status === 'CANCELED' ||
-                    isAtHomeMissingAppt ||
-                    (assignModalOrder.orderType !== 'AT_HOME' && !isOrderReceivedAtHub(assignModalOrder))
-                  }
-                  className={`px-5 py-2.5 rounded-xl text-xs font-extrabold transition flex items-center justify-center gap-2 shadow-md ${isAssigning ||
-                    !selectedInspectorId ||
-                    assignModalOrder.status === 'CANCELLED' ||
-                    assignModalOrder.status === 'CANCELED' ||
-                    isAtHomeMissingAppt ||
-                    (assignModalOrder.orderType !== 'AT_HOME' && !isOrderReceivedAtHub(assignModalOrder))
+                  disabled={isAssignDisabled}
+                  className={`px-5 py-2.5 rounded-xl text-xs font-extrabold transition flex items-center justify-center gap-2 shadow-md ${isAssignDisabled
                     ? 'bg-gray-300 text-gray-500 cursor-not-allowed opacity-60'
                     : 'bg-[#c34c36] hover:bg-[#a63f2d] text-white cursor-pointer'
                     }`}

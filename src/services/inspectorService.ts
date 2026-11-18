@@ -341,6 +341,9 @@ export interface InspectionOrderDto {
   buyerId?: string;
   buyerEmail?: string;
   buyerName?: string;
+  buyerPhone?: string;
+  buyerAddress?: string;
+  inspectionCenterAddress?: string;
 
   sellerId?: string;
   sellerEmail?: string;
@@ -374,6 +377,7 @@ export interface InspectionOrderDto {
   sellerPaidAt?: string;
 
   appointmentScheduledAt?: string;
+  appointmentShift?: 'MORNING' | 'AFTERNOON';
   appointmentNote?: string;
   appointmentStatus?: 'PENDING_CENTER_CONFIRMATION' | 'COUNTERED_BY_CENTER' | 'CONFIRMED' | 'REJECTED' | string;
   counterScheduledAt?: string;
@@ -505,6 +509,19 @@ export const inspectorService = {
       inspectionOrderInFlight.clear();
     }
   },
+
+  /**
+   * Đọc dữ liệu đơn kiểm định đang có sẵn trong cache (nếu còn hạn)
+   */
+  getCachedOrder(orderId?: string): InspectionOrderDto | null {
+    if (!orderId) return null;
+    const cleanId = orderId.toLowerCase();
+    const cached = inspectionOrderCache.get(cleanId);
+    if (cached && Date.now() - cached.timestamp < INSPECTION_ORDER_TTL_MS) {
+      return cached.data;
+    }
+    return null;
+  },
   // --------------------------------------------------------------------------
   // 1. BUYER & SELLER INSPECTION FLOW (/api/v1/inspection)
   // --------------------------------------------------------------------------
@@ -512,28 +529,29 @@ export const inspectorService = {
   /**
    * Lấy danh sách các Trung tâm kiểm định SecondLife Hubs
    */
-  async getInspectionCenters(): Promise<InspectionCenter[]> {
+  async getInspectionCenters(includeUnconfigured = false): Promise<InspectionCenter[]> {
     try {
       const res = await requestGet<any>('/inspection/centers', {
         requiresAuth: true,
       });
       const data = (res as any)?.data || res;
       if (Array.isArray(data)) {
-        const mapped = data
-          .filter((c: any) => c.shippingAddressConfigured !== false)
-          .map((c: any) => ({
-            id: c.id,
-            name: c.name || 'Trung Tâm Kiểm Định SecondLife',
-            city: c.city || (c.address ? c.address.split(',').pop()?.trim() : 'Hồ Chí Minh'),
-            address: c.address ?? null,
-            phone: c.phone ?? null,
-            latitude: typeof c.latitude === 'number' ? c.latitude : null,
-            longitude: typeof c.longitude === 'number' ? c.longitude : null,
-            shippingAddressConfigured: Boolean(c.shippingAddressConfigured),
-            status: 'ACTIVE',
-          }));
+        const filtered = includeUnconfigured
+          ? data
+          : data.filter((c: any) => c.shippingAddressConfigured !== false);
+        const mapped = filtered.map((c: any) => ({
+          id: c.id,
+          name: c.name || 'Trung Tâm Kiểm Định SecondLife',
+          city: c.city || (c.address ? c.address.split(',').pop()?.trim() : 'Hồ Chí Minh'),
+          address: c.address ?? null,
+          phone: c.phone ?? null,
+          latitude: typeof c.latitude === 'number' ? c.latitude : null,
+          longitude: typeof c.longitude === 'number' ? c.longitude : null,
+          shippingAddressConfigured: Boolean(c.shippingAddressConfigured),
+          status: c.shippingAddressConfigured ? 'ACTIVE' : 'PENDING_CONFIG',
+        }));
         try {
-          if (typeof window !== 'undefined' && mapped.length > 0) {
+          if (typeof window !== 'undefined' && mapped.length > 0 && !includeUnconfigured) {
             localStorage.setItem('sl_api_inspection_centers', JSON.stringify(mapped));
           }
         } catch { }
@@ -1018,6 +1036,19 @@ export const inspectorService = {
   },
 
   /**
+   * Trung tâm kiểm định hoặc Admin từ chối lịch hẹn để người bán đặt lại
+   * POST /api/v1/inspector/orders/{orderId}/appointment/reject
+   */
+  async rejectAppointment(orderId: string, reason: string): Promise<InspectionOrderDto> {
+    const res = await request<InspectionOrderDto>(`/inspector/orders/${orderId}/appointment/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
    * Lấy bộ checklist động theo danh mục sản phẩm của đơn
    */
   async getOrderChecklist(orderId: string): Promise<InspectionChecklistResponse> {
@@ -1185,38 +1216,11 @@ export const inspectorService = {
    * Manager xem danh sách nhân viên KTV thuộc trung tâm quản lý (giải nén an toàn)
    */
   async getStaff(): Promise<InspectionStaffDto[]> {
-    try {
-      const res = await requestGet<any>('/inspector-center/staff', {
-        requiresAuth: true,
-      });
-      let staffArray: any[] = [];
-      const anyRes = res as any;
-      if (Array.isArray(anyRes)) {
-        staffArray = anyRes;
-      } else if (Array.isArray(anyRes?.data)) {
-        staffArray = anyRes.data;
-      } else if (Array.isArray(anyRes?.data?.items)) {
-        staffArray = anyRes.data.items;
-      } else if (Array.isArray(anyRes?.items)) {
-        staffArray = anyRes.items;
-      }
-
-      return staffArray.map((s: any) => ({
-        id: String(s.id || s.userId || ''),
-        email: s.email || 'ktv@secondlife.vn',
-        fullName: s.fullName || s.name || 'Kỹ thuật viên kiểm định',
-        phone: s.phone || '0901234567',
-        avatarUrl: s.avatarUrl || undefined,
-        accountStatus: s.accountStatus || 'ACTIVE',
-        emailVerified: s.emailVerified ?? true,
-        gender: s.gender || undefined,
-        role: 'INSPECTOR',
-        assignedOrdersCount: s.assignedOrdersCount || 0,
-      }));
-    } catch (err) {
-      console.warn('Lỗi getStaff từ BE:', err);
-      return [];
-    }
+    const res = await requestGet<any>('/inspector-center/staff', {
+      requiresAuth: true,
+    });
+    const data = (res as any)?.data || res;
+    return Array.isArray(data) ? data : (data?.items || []);
   },
 
   /**

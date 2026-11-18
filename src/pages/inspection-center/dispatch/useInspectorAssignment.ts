@@ -24,12 +24,13 @@ export function useInspectorAssignment({ isOrderReceivedAtHub, orders, showNotic
   const [isAssigning, setIsAssigning] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
 
-  // Auto-select first inspector if none selected when modal is open
   useEffect(() => {
-    if (assignModalOrder && !selectedInspectorId && staffList.length > 0) {
-      setSelectedInspectorId(assignModalOrder.inspectorId || staffList[0].id);
-    }
-  }, [assignModalOrder, selectedInspectorId, staffList]);
+    if (!assignModalOrder) return;
+    setSelectedInspectorId((selected) => {
+      if (staffList.some((staff) => staff.id === selected)) return selected;
+      return staffList.find((staff) => staff.id === assignModalOrder.inspectorId)?.id ?? staffList[0]?.id ?? '';
+    });
+  }, [assignModalOrder, staffList]);
 
   const handleOpenAssign = (order: InspectionOrderDto) => {
     setAssignError(null);
@@ -42,7 +43,7 @@ export function useInspectorAssignment({ isOrderReceivedAtHub, orders, showNotic
       sellerPhone: resolvedPhone,
       sellerName: resolvedName,
     });
-    setSelectedInspectorId(order.inspectorId || staffList[0]?.id || '');
+    setSelectedInspectorId(staffList.find((staff) => staff.id === order.inspectorId)?.id ?? staffList[0]?.id ?? '');
     const savedDispatchNote = localStorage.getItem(`order_dispatch_note_${order.id}`) || '';
     setAssignNote(savedDispatchNote);
   };
@@ -52,7 +53,7 @@ export function useInspectorAssignment({ isOrderReceivedAtHub, orders, showNotic
     setAssignError(null);
     if (!assignModalOrder) return;
 
-    if (!selectedInspectorId) {
+    if (!staffList.some((staff) => staff.id === selectedInspectorId)) {
       setAssignError('Vui lòng chọn kỹ thuật viên kiểm định từ danh sách trước khi xác nhận.');
       return;
     }

@@ -164,7 +164,7 @@ export function CenterOrders({
                 const progress = rawProgress || (isInboundDelivered ? { step: 3, label: 'Đã nhận tại Hub' } : null);
 
                 // Khi đơn đang ở trạng thái "Chờ Người Bán Gửi Hub" (chưa giao hàng và chưa có vận đơn),
-                // thì không hiển thị nút "Vận đơn về Hub" cũng như khung Chặng 1.
+                // thì không hiển thị nút "Vận đơn gửi đến Hub" cũng như khung Chặng 1.
                 const isWaitingSellerToHub = isAtCenter && !isInboundDelivered && !shipment && ord.status !== 'SHIPPING_TO_CENTER';
 
                 const canViewInbound = !isWaitingSellerToHub && isAtCenter && !paidHubDelivery && !isHubReturnCase(ord) &&
@@ -313,7 +313,7 @@ export function CenterOrders({
                                   className="inline-flex items-center gap-1 font-bold text-blue-700 hover:underline cursor-pointer"
                                 >
                                   <Eye className="h-3 w-3" />
-                                  Vận đơn về Hub
+                                  Vận đơn gửi đến Hub
                                 </button>
                               )}
                               {progress && (

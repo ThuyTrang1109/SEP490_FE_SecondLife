@@ -419,19 +419,26 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
     try {
       let shipList: ShipmentBackend[] = [];
       let loadedFromBackend = false;
-      if (isInspectionOrder) {
-        try {
-          shipList = await shippingService.getInspectionShipments(order.id, { isBackground });
-          loadedFromBackend = true;
-        } catch (inspShipErr) {
-          if (isHubSeller || returnOnly) throw inspShipErr;
-          console.warn('Could not load inspection shipments:', inspShipErr);
+      const targetQueryIds = [order.id, (order as any).linkedOrderId].filter(Boolean) as string[];
+
+      for (const id of targetQueryIds) {
+        if (shipList.length > 0) break;
+        if (isInspectionOrder) {
+          try {
+            shipList = await shippingService.getInspectionShipments(id, { isBackground });
+            if (shipList.length > 0) loadedFromBackend = true;
+          } catch (inspShipErr) {
+            if (isHubSeller || returnOnly) throw inspShipErr;
+            console.warn('Could not load inspection shipments:', inspShipErr);
+          }
         }
-      } else {
-        try {
-          shipList = await shippingService.getOrderShipments(order.id);
-        } catch (orderShipErr) {
-          console.warn('Could not load order shipments:', orderShipErr);
+        if (shipList.length === 0) {
+          try {
+            shipList = await shippingService.getOrderShipments(id);
+            if (shipList.length > 0) loadedFromBackend = true;
+          } catch (orderShipErr) {
+            console.warn('Could not load order shipments:', orderShipErr);
+          }
         }
       }
       if (request !== shipmentRequest.current) return;
@@ -440,13 +447,16 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
       // Nạp từ localStorage nếu backend chưa đồng bộ hoặc chưa có bản ghi
       if (shipList.length === 0 && !returnOnly) {
         try {
-          const raw = localStorage.getItem(`sl_order_shipments_${order.id}`) ||
-            localStorage.getItem(`order_shipments_${order.id}`) ||
-            localStorage.getItem(`sl_insp_shipments_${order.id}`);
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              shipList = parsed;
+          for (const id of targetQueryIds) {
+            const raw = localStorage.getItem(`sl_order_shipments_${id}`) ||
+              localStorage.getItem(`order_shipments_${id}`) ||
+              localStorage.getItem(`sl_insp_shipments_${id}`);
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                shipList = parsed;
+                break;
+              }
             }
           }
         } catch { }
@@ -460,9 +470,19 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
       if (shipList.length > 0) {
         const selected = selectedShipmentId.current;
         const returnShipment = getHubReturnState(shipList).shipment;
+        const buyerDeliveryShipment = shipList.find(
+          (s) => (s.leg === 'SELLER_TO_BUYER' || s.leg === 'CENTER_TO_BUYER' || s.leg === 'DELIVERY') && s.status !== 'CANCELLED'
+        ) || shipList.find((s) => s.leg === 'SELLER_TO_BUYER' || s.leg === 'CENTER_TO_BUYER' || s.leg === 'DELIVERY');
+
         const targetId = selected && shipList.some((s) => s.shipmentId === selected)
           ? selected
-          : (returnShipment || (isSeller && latestInbound) || shipList[0]).shipmentId;
+          : (returnShipment
+            ? returnShipment.shipmentId
+            : !isSeller && buyerDeliveryShipment
+              ? buyerDeliveryShipment.shipmentId
+              : isSeller && latestInbound
+                ? latestInbound.shipmentId
+                : shipList[0].shipmentId);
 
         if (selected !== targetId) selectShipment(targetId);
 
@@ -1089,7 +1109,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                     : 'bg-gray-100 hover:bg-gray-200 text-slate-700'
                     }`}
                 >
-                  Kiện {idx + 1} ({s.leg === 'SELLER_TO_CENTER' ? 'Chặng 1: Hub' : s.leg === 'CENTER_TO_SELLER' ? 'Hoàn trả' : s.leg === 'CENTER_TO_BUYER' ? 'Giao khách' : s.leg || 'Lalamove'})
+                  Kiện {idx + 1} ({s.leg === 'SELLER_TO_CENTER' ? 'Chặng 1: Hub' : s.leg === 'CENTER_TO_SELLER' ? 'Hoàn trả' : s.leg === 'CENTER_TO_BUYER' ? 'Giao khách' : s.leg === 'SELLER_TO_BUYER' ? 'Giao trực tiếp' : s.leg || 'Lalamove'})
                 </button>
               ))}
             </div>
@@ -1351,17 +1371,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
 
                 {/* Driver Live GPS Map (Section 10.4) */}
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-extrabold text-[11px] uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
-                      <Navigation className="w-3.5 h-3.5 text-orange-600" />
-                      <span>Vị trí GPS thời gian thực của tài xế</span>
-                    </span>
-                    {hasValidCoords && coordinates?.updatedAt && (
-                      <span className="text-[10px] text-slate-400">
-                        Cập nhật lúc: {new Date(coordinates.updatedAt).toLocaleTimeString('vi-VN')}
-                      </span>
-                    )}
-                  </div>
+
 
                   {hasValidCoords ? (
                     <div id="lalamove-driver-map" className="w-full h-56 rounded-2xl border border-gray-200 z-0 shadow-inner" />
@@ -1377,15 +1387,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                       </p>
                     </div>
                   ) : (
-                    <div className="p-3.5 bg-slate-100/80 rounded-2xl border border-gray-200 text-center text-slate-500 text-xs space-y-1">
-                      <div className="flex items-center justify-center gap-1.5 font-semibold text-slate-700">
-                        <MapPin className="w-4 h-4 text-slate-400" />
-                        <span>Chưa có vị trí GPS trực tiếp của tài xế</span>
-                      </div>
-                      <p className="text-[11px] text-slate-400">
-                        (Tài xế đang nhận đơn hoặc chuẩn bị khởi hành. Tọa độ GPS sẽ tự động hiển thị khi tài xế di chuyển)
-                      </p>
-                    </div>
+                    <span></span>
                   )}
                 </div>
 

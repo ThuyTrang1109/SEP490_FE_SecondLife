@@ -6,6 +6,7 @@ import { InspectionProposalCard } from '../components/chat/InspectionProposalCar
 import type { InspectionOrderDto } from '../services/inspectorService';
 import { buildChatProductListing } from '../utils/chatProduct';
 import { createChatInspectionReader, getChatInspectionFees, getChatInspectionOrderId, getCurrentChatInspection, matchesChatInspection } from '../utils/chatInspection';
+import { feePercentOptions } from '../utils/inspectionFeePercent';
 
 const room = { id: 'room', postId: 'post', buyerId: 'buyer', sellerId: 'seller' };
 const passed: InspectionOrderDto = { ...room, id: '17e67687-13fd-411c-8c70-be3e02b69ea9', status: 'PASSED', orderType: 'AT_CENTER' };
@@ -98,6 +99,9 @@ test('passed inspection card displays appropriate message for seller vs buyer', 
   }));
   assert.match(sellerHtml, /Sản phẩm đã kiểm định ĐẠT CHUẨN\. Đang chờ người mua xác nhận mua hàng\./);
   assert.doesNotMatch(sellerHtml, /Bạn có thể mua tiếp/);
+  assert.doesNotMatch(sellerHtml, /Đang giao hàng đến người mua/);
+  assert.doesNotMatch(sellerHtml, /Kiện hàng đã được bàn giao cho tài xế Lalamove/);
+  assert.match(sellerHtml, /Kiểm định ĐẠT • Chờ người mua quyết định/);
 
   // Buyer perspective
   const buyerHtml = renderToStaticMarkup(createElement(InspectionProposalCard, {
@@ -106,5 +110,31 @@ test('passed inspection card displays appropriate message for seller vs buyer', 
   }));
   assert.match(buyerHtml, /Sản phẩm đã kiểm định ĐẠT CHUẨN\. Bạn có thể mua tiếp\./);
   assert.doesNotMatch(buyerHtml, /Đang chờ người mua xác nhận/);
+});
+
+test('the proposal card keeps accept and reject available when there are no intermediate percentages', () => {
+  assert.deepEqual(feePercentOptions(20, 30), [25]);
+  assert.deepEqual(feePercentOptions(30, 20), [25]);
+  assert.equal(feePercentOptions(20, null).length, 20);
+
+  for (const currentRole of ['buyer', 'seller'] as const) {
+    const isBuyer = currentRole === 'buyer';
+    const renderCard = (previousBuyerFeePercent: number) => renderToStaticMarkup(createElement(InspectionProposalCard, {
+      order: {
+        ...passed,
+        status: isBuyer ? 'WAITING_BUYER_APPROVAL' : 'WAITING_SELLER_APPROVAL',
+        buyerFeePercent: 20,
+        previousBuyerFeePercent,
+      },
+      listing: buildChatProductListing(room), isBuyer, isSeller: !isBuyer, currentRole,
+      lang: 'vi', onOrderUpdated: () => {}, onRefreshOrder: async () => {},
+    }));
+    assert.match(renderCard(30), />Đề xuất lại<\/span>/);
+
+    const finalProposal = renderCard(25);
+    assert.doesNotMatch(finalProposal, />Đề xuất lại<\/span>/);
+    assert.match(finalProposal, />Đồng ý\s*<\/span>/);
+    assert.match(finalProposal, />Từ chối<\/span>/);
+  }
 });
 

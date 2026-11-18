@@ -32,6 +32,7 @@ import {
 import { SystemInspectionProposalPayload, InspectionProposalPrefillData } from '../../types';
 import { inspectorService, InspectionOrderDto } from '../../services/inspectorService';
 import { InspectionProposalModal } from '../modals/InspectionProposalModal';
+import { buyerFeePercentFor, feePercentLabel, legacyFeeSplit } from '../../utils/inspectionFeePercent';
 import { InspectionProposalCard } from './InspectionProposalCard';
 import { paths } from '../../app/router/paths';
 import { navigatePath, useBrowserLocation } from '../../app/router/browser';
@@ -476,6 +477,8 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
                 }),
                 status: updatedStatus || existing?.status || 'WAITING_BUYER_APPROVAL',
                 feePayer: prop.feePayer || (prop.feeSplit === 'BUYER_100' ? 'BUYER_PAYS' : prop.feeSplit === 'SELLER_100' ? 'SELLER_PAYS' : 'SPLIT_50_50'),
+                buyerFeePercent: prop.buyerFeePercent ?? buyerFeePercentFor(prop.feePayer ?? prop.feeSplit) ?? existing?.buyerFeePercent,
+                previousBuyerFeePercent: prop.buyerFeePercent == null ? existing?.previousBuyerFeePercent : prop.previousBuyerFeePercent,
                 buyerFeeShare: prop.buyerFeeShare ?? existing?.buyerFeeShare,
                 sellerFeeShare: prop.sellerFeeShare ?? existing?.sellerFeeShare,
                 inspectionFee: prop.baseInspectionFee ?? existing?.inspectionFee,
@@ -1020,12 +1023,9 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
       orderId: newOrder.id,
       status: 'PENDING',
       method: (newOrder.orderType as any) || 'AT_CENTER',
-      feeSplit:
-        newOrder.feePayer === 'BUYER_PAYS'
-          ? 'BUYER_100'
-          : newOrder.feePayer === 'SELLER_PAYS'
-            ? 'SELLER_100'
-            : 'SPLIT_50_50',
+      feeSplit: legacyFeeSplit(newOrder.buyerFeePercent ?? buyerFeePercentFor(newOrder.feePayer)),
+      buyerFeePercent: newOrder.buyerFeePercent,
+      previousBuyerFeePercent: newOrder.previousBuyerFeePercent,
       estimatedFeeVnd: totalAtCenterFee,
       proposedByRole: 'buyer',
       orderStatus: newOrder.status || 'WAITING_SELLER_APPROVAL',
@@ -1063,12 +1063,7 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
         syncIncomingMessage(mapDtoToChatMessage(serverDto));
       }
 
-      const feeSplitText =
-        newOrder.feePayer === 'BUYER_PAYS'
-          ? 'Người mua chịu 100%'
-          : newOrder.feePayer === 'SELLER_PAYS'
-            ? 'Người bán chịu 100%'
-            : 'Chia đôi 50/50';
+      const feeSplitText = feePercentLabel(newOrder.buyerFeePercent ?? buyerFeePercentFor(newOrder.feePayer) ?? 50, 'vi');
       const textDto = await chatService.sendMessage(
         room.id,
         `[ĐỀ XUẤT KIỂM ĐỊNH]: -  Người mua đã gửi yêu cầu kiểm định tại trung tâm. Phương án: ${feeSplitText}. Tổng phí: ${formatVND(totalAtCenterFee)}. Vui lòng xem và phản hồi trên thẻ đề xuất!`
@@ -1149,12 +1144,9 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
               ? 'COUNTERED'
               : 'PENDING',
       method: updated.orderType === 'AT_HOME' ? 'AT_HOME' : 'AT_CENTER',
-      feeSplit:
-        updated.feePayer === 'BUYER_PAYS'
-          ? 'BUYER_100'
-          : updated.feePayer === 'SELLER_PAYS'
-            ? 'SELLER_100'
-            : 'SPLIT_50_50',
+      feeSplit: legacyFeeSplit(updated.buyerFeePercent ?? buyerFeePercentFor(updated.feePayer)),
+      buyerFeePercent: updated.buyerFeePercent,
+      previousBuyerFeePercent: updated.previousBuyerFeePercent,
       estimatedFeeVnd: totalAtCenterFee,
       proposedByRole: isSeller ? 'seller' : 'buyer',
       orderStatus: updated.status,
@@ -1193,22 +1185,10 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
       }
 
       let updateNoticeText = '';
-      if (updated.status === 'WAITING_BUYER_APPROVAL') {
-        const feeSplitLabel =
-          updated.feePayer === 'BUYER_PAYS'
-            ? 'Người mua chịu 100%'
-            : updated.feePayer === 'SELLER_PAYS'
-              ? 'Người bán chịu 100%'
-              : 'Chia đôi 50/50';
-        updateNoticeText = `[ĐỀ XUẤT LẠI KIỂM ĐỊNH]: Người bán đã đề xuất lại phương án chi phí: ${feeSplitLabel}. Vui lòng xem và phản hồi trên thẻ đề xuất!`;
-      } else if (updated.status === 'WAITING_SELLER_APPROVAL') {
-        const feeSplitLabel =
-          updated.feePayer === 'BUYER_PAYS'
-            ? 'Người mua chịu 100%'
-            : updated.feePayer === 'SELLER_PAYS'
-              ? 'Người bán chịu 100%'
-              : 'Chia đôi 50/50';
-        updateNoticeText = `[ĐỀ XUẤT LẠI KIỂM ĐỊNH]: Người mua đã đề xuất lại phương án chi phí: ${feeSplitLabel}. Vui lòng xem và phản hồi trên thẻ đề xuất!`;
+      if (updated.status === 'WAITING_BUYER_APPROVAL' || updated.status === 'WAITING_SELLER_APPROVAL') {
+        const feeSplitLabel = feePercentLabel(updated.buyerFeePercent ?? buyerFeePercentFor(updated.feePayer) ?? 50, 'vi');
+        const proposer = updated.status === 'WAITING_BUYER_APPROVAL' ? 'Người bán' : 'Người mua';
+        updateNoticeText = `[ĐỀ XUẤT LẠI KIỂM ĐỊNH]: ${proposer} đã đề xuất lại phương án chi phí: ${feeSplitLabel}. Vui lòng xem và phản hồi trên thẻ đề xuất!`;
       } else if (updated.status === 'WAITING_FEE_PAYMENT' || updated.status === 'CONFIRMED_PENDING_DISPATCH') {
         updateNoticeText = `[CHẤP NHẬN ĐỀ XUẤT]: Đề xuất kiểm định đã được đồng ý. Vui lòng tiến hành nộp phí kiểm định theo quy định!`;
       } else if (updated.status === 'CANCELLED') {
@@ -1572,9 +1552,11 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
                     }
 
                     const prop = parsedSys.inspectionProposal;
-                    const effectiveOrder: InspectionOrderDto = prop ? {
+                    const effectiveOrder: InspectionOrderDto = order.buyerFeePercent == null ? {
                       ...order,
                       ...(prop.feePayer ? { feePayer: prop.feePayer } : {}),
+                      buyerFeePercent: prop.buyerFeePercent,
+                      previousBuyerFeePercent: prop.previousBuyerFeePercent,
                       ...(prop.feeSplit === 'BUYER_100' ? { feePayer: 'BUYER_PAYS' as const } : prop.feeSplit === 'SELLER_100' ? { feePayer: 'SELLER_PAYS' as const } : prop.feeSplit === 'SPLIT_50_50' ? { feePayer: 'SPLIT_50_50' as const } : {}),
                       ...(prop.buyerFeeShare != null ? { buyerFeeShare: prop.buyerFeeShare } : {}),
                       ...(prop.sellerFeeShare != null ? { sellerFeeShare: prop.sellerFeeShare } : {}),
@@ -1582,7 +1564,7 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
 
                     return (
                       <InspectionProposalCard
-                        key={`${order.id}-${effectiveOrder.status}-${effectiveOrder.feePayer}-${effectiveOrder.buyerFeeShare}-${effectiveOrder.sellerFeeShare}`}
+                        key={`${order.id}-${effectiveOrder.status}-${effectiveOrder.buyerFeePercent}-${effectiveOrder.feePayer}-${effectiveOrder.buyerFeeShare}-${effectiveOrder.sellerFeeShare}`}
                         order={effectiveOrder}
                         listing={listing}
                         isSeller={isSeller}

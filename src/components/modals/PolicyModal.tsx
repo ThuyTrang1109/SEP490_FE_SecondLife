@@ -315,7 +315,7 @@ export const PolicyModal: React.FC<PolicyModalProps> = ({
               <section className="space-y-3">
                 <h5 className="font-black text-[#24263e] text-sm">2. Cơ Chế Tranh Chấp & Hoàn Tiền</h5>
                 <ul className="list-disc pl-5 space-y-1.5 text-xs text-[#24263e]/80">
-                  <li>Nếu sản phẩm không đạt kiểm định tại Hub Lab, đơn hàng tự động hủy và tiền trong Escrow hoàn trả 100% cho Người mua.</li>
+                  <li>Nếu sản phẩm không đạt kiểm định tại Hub Lab, quy trình mua bán dừng và thiết bị được hoàn trả cho Người bán. Phí kiểm định và vận chuyển được chia theo tỷ lệ đã thống nhất. Phần dư dự phòng cước trả hàng được hoàn theo tỷ lệ này sau khi trừ cước thực tế.</li>
                   <li>Nếu sản phẩm nhận được có lỗi trầy xước hỏng hóc khác với báo cáo kiểm định, Người mua có quyền mở "Khiếu nại Escrow" trong vòng 24 giờ.</li>
                   <li>Ban quản trị SecondLife sẽ đóng băng tiền cọc và tiến hành phân xử trọng tài dựa trên dữ liệu camera kiểm định tại Hub Lab.</li>
                 </ul>

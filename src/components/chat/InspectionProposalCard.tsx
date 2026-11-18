@@ -25,6 +25,8 @@ import { walletService, notifyWalletBalanceUpdated } from '../../services/wallet
 import { shippingService } from '../../services/shippingService';
 import { Listing, Language, UserRole, EscrowOrder, ShipmentBackend } from '../../types';
 import { formatVND } from '../../utils/translations';
+import { InspectionFeePercentSelect } from '../orders/InspectionFeePercentSelect';
+import { buyerFeePercentFor, feePercentLabel, feePercentOptions } from '../../utils/inspectionFeePercent';
 import { getCashInspectionFeeShares } from '../../utils/inspectionCashShipping';
 import { getChatInspectionFees } from '../../utils/chatInspection';
 import { CHAT_PRODUCT_PLACEHOLDER } from '../../utils/chatProduct';
@@ -73,7 +75,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
 
   // Seller Counter Drawer State
   const [showCounterDrawer, setShowCounterDrawer] = useState(false);
-  const [counterFeePayer, setCounterFeePayer] = useState<'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50'>('BUYER_PAYS');
+  const [counterBuyerFeePercent, setCounterBuyerFeePercent] = useState(50);
 
   // Reject Modal State
   const [showRejectModal, setShowRejectModal] = useState(false);
@@ -212,20 +214,25 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
   );
 
   const isDelivering = Boolean(
-    !isCompleted && !isDelivered && (
-      (order as any).carrierPickedUpAt ||
-      buyerShipment?.orderCode ||
-      (order as any).orderShipmentCode ||
+    !isCompleted && !isDelivered && isPurchaseAccepted && (
       status === 'DELIVERING_TO_BUYER' ||
+      (order as any).status === 'DELIVERING_TO_BUYER' ||
       (order as any).escrowStatus === 'DELIVERING_TO_BUYER' ||
       (order as any).escrowStatus === 'SHIPPED_TO_BUYER' ||
+      (order as any).carrierPickedUpAt ||
+      (buyerShipment && (
+        buyerShipment.status === 'DELIVERING' ||
+        buyerShipment.status === 'SHIPPED' ||
+        buyerShipment.status === 'ON_GOING' ||
+        buyerShipment.status === 'ASSIGNED' ||
+        buyerShipment.providerStatus === 'DELIVERING' ||
+        buyerShipment.providerStatus === 'PICKED_UP' ||
+        buyerShipment.providerStatus === 'ON_GOING' ||
+        Boolean(buyerShipment.orderCode)
+      )) ||
       (typeof window !== 'undefined' && order.id && (
-        localStorage.getItem(`order_shipment_created_${order.id}`) === 'true' ||
-        localStorage.getItem(`order_packed_${order.id}`) === 'true' ||
-        ((order as any).linkedOrderId && (
-          localStorage.getItem(`order_shipment_created_${(order as any).linkedOrderId}`) === 'true' ||
-          localStorage.getItem(`order_packed_${(order as any).linkedOrderId}`) === 'true'
-        ))
+        localStorage.getItem(`buyer_delivery_shipment_created_${order.id}`) === 'true' ||
+        ((order as any).linkedOrderId && localStorage.getItem(`buyer_delivery_shipment_created_${(order as any).linkedOrderId}`) === 'true')
       ))
     )
   );
@@ -322,9 +329,18 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
   const buyerCommitmentDeposit = order.buyerCommitmentDeposit ?? 0;
   const buyerAmount = buyerFeeShare == null ? undefined : buyerFeeShare + buyerCommitmentDeposit;
   const itemPrice = order.finalItemPrice ?? order.postPrice;
-  const feePayerLabel = order.feePayer === 'BUYER_PAYS' ? 'Người mua chịu 100%'
-    : order.feePayer === 'SELLER_PAYS' ? 'Người bán chịu 100%'
-      : order.feePayer === 'SPLIT_50_50' ? 'Chia đôi 50% - 50%' : null;
+  const buyerFeePercent = order.buyerFeePercent ?? buyerFeePercentFor(order.feePayer);
+  const feePayerLabel = buyerFeePercent == null ? null : feePercentLabel(buyerFeePercent, lang);
+  const counterOptions = feePercentOptions(buyerFeePercent, order.previousBuyerFeePercent);
+  const canCounter = counterOptions.length > 0;
+  const toggleCounterDrawer = () => {
+    if (!canCounter) return;
+    const nextOpen = !showCounterDrawer;
+    setShowCounterDrawer(nextOpen);
+    if (nextOpen) setCounterBuyerFeePercent(counterOptions[0]);
+    setShowRejectModal(false);
+    setActionError(null);
+  };
 
   const myFeeToPay = isSeller ? sellerFeeShare : buyerAmount;
   const otherFeeToPay = isSeller ? buyerAmount : sellerFeeShare;
@@ -517,7 +533,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
     try {
       const res = await inspectorService.respondRequest(order.id, {
         action: 'COUNTER',
-        counterFeePayer: counterFeePayer,
+        counterBuyerFeePercent,
       });
       setShowCounterDrawer(false);
       onOrderUpdated(res);
@@ -639,7 +655,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
     try {
       const res = await inspectorService.buyerRespondRequest(order.id, {
         action: 'COUNTER',
-        counterFeePayer: counterFeePayer,
+        counterBuyerFeePercent,
       });
       setShowCounterDrawer(false);
       onOrderUpdated(res);
@@ -692,16 +708,6 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
     }
   };
 
-  // Preview numbers for Seller Counter option - chia chuẩn theo tỷ lệ Escrow qua Sàn
-  const preview = totalFee != null
-    ? (counterFeePayer === 'BUYER_PAYS' ? { buyer: totalFee, seller: 0 }
-      : counterFeePayer === 'SELLER_PAYS' ? { buyer: 0, seller: totalFee }
-        : { buyer: Math.round(totalFee / 2), seller: totalFee - Math.round(totalFee / 2) })
-    : null;
-  const previewHalf = totalFee != null
-    ? { buyer: Math.round(totalFee / 2), seller: totalFee - Math.round(totalFee / 2) }
-    : null;
-  const sellerOnlyPreview = totalFee;
   const vi = lang === 'vi';
   const badgeLabels: Record<string, string> = {
     WAITING_SELLER_APPROVAL: isSeller
@@ -953,29 +959,16 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                     {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <span>{lang === 'vi' ? 'Đồng ý' : 'Accept'}</span>}
                   </button>
 
-                  {/* Đề xuất lại */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const nextOpen = !showCounterDrawer;
-                      setShowCounterDrawer(nextOpen);
-                      if (nextOpen) {
-                        if (order.feePayer === 'SPLIT_50_50') {
-                          setCounterFeePayer('BUYER_PAYS');
-                        } else if (order.feePayer === 'BUYER_PAYS') {
-                          setCounterFeePayer('SPLIT_50_50');
-                        } else {
-                          setCounterFeePayer('SPLIT_50_50');
-                        }
-                      }
-                      setShowRejectModal(false);
-                      setActionError(null);
-                    }}
-                    disabled={actionLoading}
-                    className="flex-1 min-w-[110px] py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition flex items-center justify-center shadow-xs cursor-pointer disabled:opacity-50"
-                  >
-                    <span>{lang === 'vi' ? 'Đề xuất lại' : 'Counter'}</span>
-                  </button>
+                  {canCounter && (
+                    <button
+                      type="button"
+                      onClick={toggleCounterDrawer}
+                      disabled={actionLoading}
+                      className="flex-1 min-w-[110px] py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition flex items-center justify-center shadow-xs cursor-pointer disabled:opacity-50"
+                    >
+                      <span>{lang === 'vi' ? 'Đề xuất lại' : 'Counter'}</span>
+                    </button>
+                  )}
 
                   {/* Từ chối */}
                   <button
@@ -992,8 +985,13 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                   </button>
                 </div>
 
+                {!canCounter && (
+                  <p className="text-xs text-slate-600">
+                    {vi ? 'Không còn tỷ lệ trung gian để đề xuất lại.' : 'No intermediate fee split remains.'}
+                  </p>
+                )}
                 {/* Seller Counter Drawer */}
-                {showCounterDrawer && (
+                {canCounter && showCounterDrawer && (
                   <div className="mt-2.5 p-3 bg-indigo-50/70 border border-indigo-200 rounded-xl space-y-2.5 animate-fadeIn">
                     <div className="flex items-center justify-between">
                       <span className="font-extrabold text-xs text-indigo-950">
@@ -1008,48 +1006,13 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-1.5 text-center">
-                      <button
-                        type="button"
-                        onClick={() => setCounterFeePayer('BUYER_PAYS')}
-                        className={`p-2 rounded-lg border text-[11px] font-bold transition cursor-pointer ${counterFeePayer === 'BUYER_PAYS'
-                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                          : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300'
-                          }`}
-                      >
-                        <div>Buyer 100%</div>
-                        <div className="text-[9px] opacity-80 mt-0.5">0 đ</div>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setCounterFeePayer('SPLIT_50_50')}
-                        className={`p-2 rounded-lg border text-[11px] font-bold transition cursor-pointer ${counterFeePayer === 'SPLIT_50_50'
-                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                          : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300'
-                          }`}
-                      >
-                        <div>Chia 50/50</div>
-                        <div className="text-[9px] opacity-80 mt-0.5">{formatFee(previewHalf?.seller)}</div>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setCounterFeePayer('SELLER_PAYS')}
-                        className={`p-2 rounded-lg border text-[11px] font-bold transition cursor-pointer ${counterFeePayer === 'SELLER_PAYS'
-                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                          : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300'
-                          }`}
-                      >
-                        <div>Seller 100%</div>
-                        <div className="text-[9px] opacity-80 mt-0.5">{formatFee(sellerOnlyPreview)}</div>
-                      </button>
-                    </div>
-
-                    <div className="text-[11px] text-slate-600 flex justify-between bg-white p-2 rounded-lg border border-slate-200">
-                      <span>Người bán (Bạn) chịu: <strong>{formatFee(preview?.seller)}</strong></span>
-                      <span>Người mua chịu: <strong>{formatFee(preview?.buyer)}</strong></span>
-                    </div>
+                    <InspectionFeePercentSelect
+                      value={counterBuyerFeePercent}
+                      onChange={setCounterBuyerFeePercent}
+                      options={counterOptions}
+                      total={totalFee}
+                      lang={lang}
+                    />
 
                     <div className="flex justify-end gap-2 pt-1">
                       <button
@@ -1062,7 +1025,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                       <button
                         type="button"
                         onClick={handleSellerCounter}
-                        disabled={actionLoading}
+                        disabled={actionLoading || !counterOptions.includes(counterBuyerFeePercent)}
                         className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shadow-xs cursor-pointer flex items-center gap-1 disabled:opacity-50"
                       >
                         {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
@@ -1124,29 +1087,16 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                     {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <span>{lang === 'vi' ? 'Đồng ý ' : 'Accept Counter'}</span>}
                   </button>
 
-                  {/* Đề xuất lại */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const nextOpen = !showCounterDrawer;
-                      setShowCounterDrawer(nextOpen);
-                      if (nextOpen) {
-                        if (order.feePayer === 'SPLIT_50_50') {
-                          setCounterFeePayer('BUYER_PAYS');
-                        } else if (order.feePayer === 'BUYER_PAYS') {
-                          setCounterFeePayer('SPLIT_50_50');
-                        } else {
-                          setCounterFeePayer('SPLIT_50_50');
-                        }
-                      }
-                      setShowRejectModal(false);
-                      setActionError(null);
-                    }}
-                    disabled={actionLoading}
-                    className="flex-1 min-w-[100px] py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition flex items-center justify-center shadow-xs cursor-pointer disabled:opacity-50"
-                  >
-                    <span>{lang === 'vi' ? 'Đề xuất lại' : 'Counter'}</span>
-                  </button>
+                  {canCounter && (
+                    <button
+                      type="button"
+                      onClick={toggleCounterDrawer}
+                      disabled={actionLoading}
+                      className="flex-1 min-w-[100px] py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition flex items-center justify-center shadow-xs cursor-pointer disabled:opacity-50"
+                    >
+                      <span>{lang === 'vi' ? 'Đề xuất lại' : 'Counter'}</span>
+                    </button>
+                  )}
 
                   {/* Từ chối */}
                   <button
@@ -1163,8 +1113,13 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                   </button>
                 </div>
 
+                {!canCounter && (
+                  <p className="text-xs text-slate-600">
+                    {vi ? 'Không còn tỷ lệ trung gian để đề xuất lại.' : 'No intermediate fee split remains.'}
+                  </p>
+                )}
                 {/* Buyer Counter Drawer */}
-                {showCounterDrawer && (
+                {canCounter && showCounterDrawer && (
                   <div className="mt-2.5 p-3 bg-indigo-50/70 border border-indigo-200 rounded-xl space-y-2.5 animate-fadeIn">
                     <div className="flex items-center justify-between">
                       <span className="font-extrabold text-xs text-indigo-950">
@@ -1179,48 +1134,13 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-1.5 text-center">
-                      <button
-                        type="button"
-                        onClick={() => setCounterFeePayer('BUYER_PAYS')}
-                        className={`p-2 rounded-lg border text-[11px] font-bold transition cursor-pointer ${counterFeePayer === 'BUYER_PAYS'
-                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                          : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300'
-                          }`}
-                      >
-                        <div>Buyer 100%</div>
-                        <div className="text-[9px] opacity-80 mt-0.5">{formatFee(totalFee)}</div>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setCounterFeePayer('SPLIT_50_50')}
-                        className={`p-2 rounded-lg border text-[11px] font-bold transition cursor-pointer ${counterFeePayer === 'SPLIT_50_50'
-                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                          : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300'
-                          }`}
-                      >
-                        <div>Chia 50/50</div>
-                        <div className="text-[9px] opacity-80 mt-0.5">{formatFee(previewHalf?.buyer)}</div>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setCounterFeePayer('SELLER_PAYS')}
-                        className={`p-2 rounded-lg border text-[11px] font-bold transition cursor-pointer ${counterFeePayer === 'SELLER_PAYS'
-                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                          : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300'
-                          }`}
-                      >
-                        <div>Seller 100%</div>
-                        <div className="text-[9px] opacity-80 mt-0.5">0 đ</div>
-                      </button>
-                    </div>
-
-                    <div className="text-[11px] text-slate-600 flex justify-between bg-white p-2 rounded-lg border border-slate-200">
-                      <span>{lang === 'vi' ? 'Người mua (Bạn) trả:' : 'Buyer pays:'} <strong>{formatFee(preview?.buyer)}</strong></span>
-                      <span>{lang === 'vi' ? 'Người bán chịu:' : 'Seller share:'} <strong>{formatFee(preview?.seller)}</strong></span>
-                    </div>
+                    <InspectionFeePercentSelect
+                      value={counterBuyerFeePercent}
+                      onChange={setCounterBuyerFeePercent}
+                      options={counterOptions}
+                      total={totalFee}
+                      lang={lang}
+                    />
 
                     <div className="flex justify-end gap-2 pt-1">
                       <button
@@ -1233,7 +1153,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                       <button
                         type="button"
                         onClick={handleBuyerCounter}
-                        disabled={actionLoading}
+                        disabled={actionLoading || !counterOptions.includes(counterBuyerFeePercent)}
                         className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shadow-xs cursor-pointer flex items-center gap-1 disabled:opacity-50"
                       >
                         {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
@@ -1704,7 +1624,29 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                         : 'Product passed inspection and you confirmed purchase. Hub is preparing dispatch to your address.'))}
                 </p>
               </div>
-            ) : null}
+            ) : (
+              <div className="p-3 bg-amber-50/90 border border-amber-200 rounded-xl text-xs text-amber-950 space-y-1.5 animate-fadeIn">
+                <div className="font-bold flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-amber-900">
+                    <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>
+                      {isSeller
+                        ? (lang === 'vi' ? 'Kiểm định ĐẠT • Chờ người mua quyết định' : 'Inspection Passed • Awaiting Buyer Decision')
+                        : (lang === 'vi' ? 'Kiểm định ĐẠT • Vui lòng quyết định mua hàng' : 'Inspection Passed • Please make purchase decision')}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[11px] text-amber-800 leading-relaxed">
+                  {isSeller
+                    ? (lang === 'vi'
+                      ? 'Kỹ thuật viên Hub đã kiểm định ĐẠT chuẩn và dán tem niêm phong. Đang chờ người mua xem kết quả và quyết định tiếp tục mua hàng.'
+                      : 'Hub inspector confirmed the item PASSED quality standards with tamper seal. Awaiting buyer to review report and decide on purchase.')
+                    : (lang === 'vi'
+                      ? 'Thiết bị đã được KTV kiểm định ĐẠT chuẩn và dán tem niêm phong. Bạn hãy xem biên bản thẩm định và đưa ra quyết định mua hàng tiếp tục.'
+                      : 'Item PASSED inspection standards with tamper seal. Please review report and decide on purchase.')}
+                </p>
+              </div>
+            )}
           </div>
         )}
         {isFailed && (

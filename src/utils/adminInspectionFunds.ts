@@ -5,6 +5,7 @@ import type {
   AdminFundShipmentDTO,
 } from '../types/adminInspectionFunds';
 import { formatVND } from './translations';
+import { splitInspectionFee } from './inspectionFeePercent';
 
 /**
  * Map collectionStatus to user-facing labels
@@ -235,6 +236,12 @@ export function resolveFeeSplitPlan(funds?: AdminInspectionOrderFundsDTO | null)
     return { code: 'SPLIT_50_50', label: 'Chia đôi 50% - 50%', buyerPercent: 50, sellerPercent: 50 };
   }
 
+  if (funds.buyerFeePercent != null && ![0, 50, 100].includes(funds.buyerFeePercent)) {
+    const buyerPercent = funds.buyerFeePercent;
+    const sellerPercent = 100 - buyerPercent;
+    return { code: 'CUSTOM', label: `Người mua ${buyerPercent}% / Người bán ${sellerPercent}%`, buyerPercent, sellerPercent };
+  }
+
   const rawSplit = (
     funds.inspectionFeeSplit ||
     funds.feeSplit ||
@@ -298,6 +305,7 @@ export interface ReturnReserveDetails {
   surplusAmount: number;
   buyerSurplusShare: number;
   sellerSurplusShare: number;
+  refundAmountsRecorded: boolean;
   refundStatus: 'SETTLED' | 'REFUNDED_UNUSED' | 'AWAITING_CONFIRMATION' | 'PROCESSING' | 'PENDING' | 'EXCEEDS_RESERVE';
   refundStatusLabel: string;
   refundStatusBadge: { bg: string; text: string; border: string };
@@ -333,25 +341,28 @@ export function resolveReturnReserveDetails(funds?: AdminInspectionOrderFundsDTO
   // If actual fee exceeds planned amount, surplus is 0
   const surplusAmount = Math.max(0, plannedAmount - actualReturnFee);
 
-  // Split surplus according to splitPlan
-  let buyerSurplusShare = 0;
-  let sellerSurplusShare = 0;
-  if (splitPlan.code === 'SPLIT_50_50') {
-    buyerSurplusShare = Math.round(surplusAmount / 2);
-    sellerSurplusShare = surplusAmount - buyerSurplusShare;
-  } else if (splitPlan.code === 'BUYER_100') {
-    buyerSurplusShare = surplusAmount;
-    sellerSurplusShare = 0;
-  } else if (splitPlan.code === 'SELLER_100') {
-    buyerSurplusShare = 0;
-    sellerSurplusShare = surplusAmount;
-  } else {
-    buyerSurplusShare = Math.round((surplusAmount * splitPlan.buyerPercent) / 100);
-    sellerSurplusShare = surplusAmount - buyerSurplusShare;
-  }
+  let { buyer: buyerSurplusShare, seller: sellerSurplusShare } =
+    splitInspectionFee(surplusAmount, splitPlan.buyerPercent);
 
   // Determine refund status and explanation
-  const isSettled = status === 'SETTLED' || Boolean(funds?.settlement?.settledAt);
+  const isSettled = status === 'SETTLED' || Boolean(funds?.settlement?.returnShippingSettledAt);
+  const settlement = funds?.settlement;
+  const refundAmountsRecorded = isSettled &&
+    ['FAILED_INSPECTION', 'PASSED_BUYER_DEFAULTED'].includes(settlement?.outcome || '') &&
+    settlement?.buyerRefundAmount != null && settlement?.sellerRefundAmount != null;
+  const buyerDeposit = Number(funds?.fees?.buyerCommitmentDeposit ?? funds?.buyerCommitmentDeposit ?? 0);
+  const buyerRefundBeforeReturn = settlement?.outcome === 'FAILED_INSPECTION' ? buyerDeposit : 0;
+  const isLegacySellerSettlement = settlement?.outcome === 'FAILED_INSPECTION' && (
+    Number(settlement.sellerAdditionalCollected ?? 0) > 0 ||
+    Number(settlement.sellerOutstandingAmount ?? 0) > 0 ||
+    Math.round(Number(settlement.buyerRefundAmount ?? 0) * 100) >
+      Math.round((buyerRefundBeforeReturn + buyerSurplusShare) * 100)
+  );
+  if (refundAmountsRecorded) {
+    buyerSurplusShare = isLegacySellerSettlement
+      ? 0 : Math.max(0, Math.round((Number(settlement.buyerRefundAmount) - buyerRefundBeforeReturn) * 100)) / 100;
+    sellerSurplusShare = Number(settlement.sellerRefundAmount);
+  }
   const isUnused = status === 'REFUNDED_UNUSED';
   const isAwaitingConfirmation = status === 'AWAITING_CASH_CONFIRMATION';
   const isExceeded = status === 'EXCEEDS_RESERVE' || (hasActualReturnFee && actualReturnFee > plannedAmount);
@@ -368,10 +379,17 @@ export function resolveReturnReserveDetails(funds?: AdminInspectionOrderFundsDTO
 
   if (isSettled) {
     refundStatus = 'SETTLED';
-    refundStatusLabel = 'Đã hoàn tất quyết toán & hoàn ví';
+    refundStatusLabel = refundAmountsRecorded && buyerSurplusShare + sellerSurplusShare > 0
+      ? 'Đã hoàn tất quyết toán & hoàn ví' : 'Đã quyết toán cước hoàn';
     refundStatusBadge = { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' };
-    const settledTimeStr = funds?.settlement?.settledAt ? ` vào lúc ${formatAuditDateTime(funds.settlement.settledAt)}` : '';
-    refundDescription = `Đã đối soát xong cước hoàn${settledTimeStr}. Tiền dư ${formatVND(surplusAmount)} đã được tự động hoàn vào ví Người mua (${formatVND(buyerSurplusShare)}) và ví Người bán (${formatVND(sellerSurplusShare)}) theo đúng tỷ lệ ${splitPlan.label}.`;
+    const returnSettledAt = funds?.settlement?.returnShippingSettledAt;
+    const settledTimeStr = returnSettledAt ? ` vào lúc ${formatAuditDateTime(returnSettledAt)}` : '';
+    refundDescription = refundAmountsRecorded
+      ? `Đã đối soát xong cước hoàn${settledTimeStr}. Phần dư đã được tự động hoàn vào ví Người mua (${formatVND(buyerSurplusShare)}) và ví Người bán (${formatVND(sellerSurplusShare)}) theo số tiền hạch toán.`
+      : `Đã đối soát xong cước hoàn${settledTimeStr}. Phân bổ ${formatVND(buyerSurplusShare)} cho Người mua và ${formatVND(sellerSurplusShare)} cho Người bán được tính theo tỷ lệ đã chốt. Chưa có dữ liệu hạch toán khoản hoàn để xác nhận tiền vào ví.`;
+    if (refundAmountsRecorded && isLegacySellerSettlement) {
+      refundDescription += ` Đơn này đã quyết toán theo quy tắc cũ: Người mua được hoàn ${formatVND(Number(settlement.buyerRefundAmount))} trước khi đối soát cước hoàn, phần dư được xử lý cho Người bán.`;
+    }
   } else if (isUnused) {
     refundStatus = 'REFUNDED_UNUSED';
     refundStatusLabel = 'Đã hoàn toàn bộ tiền dự phòng (Không trả hàng)';
@@ -411,6 +429,7 @@ export function resolveReturnReserveDetails(funds?: AdminInspectionOrderFundsDTO
     surplusAmount,
     buyerSurplusShare,
     sellerSurplusShare,
+    refundAmountsRecorded,
     refundStatus,
     refundStatusLabel,
     refundStatusBadge,

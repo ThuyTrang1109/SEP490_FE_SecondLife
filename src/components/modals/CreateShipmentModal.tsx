@@ -664,7 +664,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
                   <div className="flex items-start gap-1.5 text-rose-800 leading-snug pt-1 border-t border-slate-100">
                     <span className="font-bold shrink-0">❌ Nếu KHÔNG ĐẠT:</span>
                     <span>
-                      Hub hoàn trả hàng về kho <strong>Người bán</strong>, Quỹ Escrow hoàn tiền 100% cho <strong>Người mua</strong>.
+                      Hub hoàn trả hàng về kho <strong>Người bán</strong>. Phần dư dự phòng cước trả hàng được hoàn cho hai bên theo tỷ lệ đã thống nhất sau khi trừ cước thực tế.
                     </span>
                   </div>
                 </div>

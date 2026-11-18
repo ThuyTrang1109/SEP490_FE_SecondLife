@@ -27,7 +27,7 @@ export function createInspectionOrderActions({
 }: Options) {
   const handleAcceptFailedInspection = async (orderId: string) => {
     const ok = await dialogService.confirm(
-      'Bạn xác nhận đồng ý với kết quả kiểm định KHÔNG ĐẠT. Hệ thống sẽ áp dụng khấu trừ điểm uy tín theo quy định và giải tỏa tiền ký quỹ hoàn lại cho người mua. Thao tác này không thể hoàn tác.',
+      'Bạn xác nhận đồng ý với kết quả kiểm định KHÔNG ĐẠT. Hệ thống sẽ áp dụng khấu trừ điểm uy tín theo quy định. Phí kiểm định và vận chuyển được chia theo tỷ lệ đã thống nhất. Phần dư dự phòng cước trả hàng sẽ được hoàn theo tỷ lệ này sau khi trừ cước thực tế. Thao tác này không thể hoàn tác.',
       {
         title: 'Xác Nhận Chấp Nhận Kết Quả Kiểm Định',
         confirmText: 'Chấp Nhận & Trừ Điểm',

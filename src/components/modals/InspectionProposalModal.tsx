@@ -22,6 +22,8 @@ import {
 } from '../../services/inspectorService';
 import { Listing, Language, UserProfile, InspectionCenter, InspectionProposalPrefillData } from '../../types';
 import { formatVND } from '../../utils/translations';
+import { InspectionFeePercentSelect } from '../orders/InspectionFeePercentSelect';
+import { buyerFeePercentFor, splitInspectionFee } from '../../utils/inspectionFeePercent';
 import { formatLalamoveVehicle } from '../../utils/lalamoveVehicle';
 import { getReusableInspectionQuote, isInspectionQuoteExpired } from '../../utils/inspectionChatDraft';
 
@@ -85,8 +87,8 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
   const buyerLongitude = initialData?.buyerLongitude ?? currentUser?.longitude ?? undefined;
 
   // Proposal configuration
-  const [feePayer, setFeePayer] = useState<'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50'>(
-    initialData?.feePayer || (initialData?.feeSplit === 'BUYER_100' ? 'BUYER_PAYS' : initialData?.feeSplit === 'SELLER_100' ? 'SELLER_PAYS' : 'SPLIT_50_50')
+  const [buyerFeePercent, setBuyerFeePercent] = useState(
+    initialData?.buyerFeePercent ?? buyerFeePercentFor(initialData?.feePayer ?? initialData?.feeSplit) ?? 50
   );
   const [agreedZinLoss, setAgreedZinLoss] = useState(Boolean(initialData?.isZinLossAcknowledged));
 
@@ -331,26 +333,8 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
   const atCenterTotalFee = atCenterQuotedTotal ?? 0;
 
   const activeTotalFee = isAtHome ? atHomeTotalFee : atCenterTotalFee;
-  const splitOptions = isAtHome
-    ? (currentHomeQuote?.atHomeSplitOptions || currentCenterQuote?.atHomeSplitOptions)
-    : currentCenterQuote?.atCenterSplitOptions;
-  const halfFee = splitOptions?.SPLIT_50_50 ?? Math.round(activeTotalFee / 2);
-  const formatQuotedFee = (fee: number | undefined) => (fee === undefined || fee === null ? '—' : formatVND(fee));
-
-  // Split calculation chuẩn theo phương thức thanh toán ký quỹ qua Sàn (100% Cashless)
-  let buyerShare = 0;
-  let sellerShare = 0;
-  if (feePayer === 'BUYER_PAYS') {
-    buyerShare = activeTotalFee;
-    sellerShare = 0;
-  } else if (feePayer === 'SELLER_PAYS') {
-    buyerShare = 0;
-    sellerShare = activeTotalFee;
-  } else {
-    // SPLIT_50_50
-    buyerShare = halfFee;
-    sellerShare = activeTotalFee - buyerShare;
-  }
+  const formatQuotedFee = (fee?: number) => fee == null ? '—' : formatVND(fee);
+  const { buyer: buyerShare, seller: sellerShare } = splitInspectionFee(activeTotalFee, buyerFeePercent);
 
   // Quote expiration
   const quoteExpiresAt = !isAtHome && currentCenterQuote?.shippingQuote?.expiresAt ? new Date(currentCenterQuote.shippingQuote.expiresAt) : null;
@@ -386,7 +370,7 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
         inspectionCenterId: selectedCenterId,
         buyerLatitude,
         buyerLongitude,
-        feePayer: feePayer,
+        buyerFeePercent,
         buyerConsentZin: true,
         buyerConsentZinLoss: true,
         expectedFeeProposalId,
@@ -408,7 +392,7 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
         inspectionCenterId: order?.inspectionCenterId || selectedCenterId,
         buyerConsentZin: true,
         orderType: inspectionMethod,
-        feePayer: feePayer,
+        buyerFeePercent: order.buyerFeePercent ?? buyerFeePercent,
         postPrice: listing.priceVnd,
         postTitle: listing.title,
         postImageUrl: listing.photos?.front,
@@ -767,84 +751,13 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
             )}
           </div>
 
-          {/* 4. PHÂN CHIA TIỀN KIỂM ĐỊNH (3 LỰA CHỌN) */}
-          <div className="space-y-2 bg-[#faf8f5] p-3.5 rounded-2xl border border-slate-200">
-            <div className="flex items-center justify-between">
-              <label className="text-[11px] font-extrabold text-[#24263e] uppercase tracking-wide flex items-center gap-1.5">
-                <Coins className="w-3.5 h-3.5 text-indigo-600" />
-                <span>{lang === 'vi' ? '4. Phương án chia phí kiểm định' : '4. Fee split options'}</span>
-              </label>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
-              {/* Option 1: Người mua 100% */}
-              <div
-                onClick={() => setFeePayer('BUYER_PAYS')}
-                className={`p-2.5 rounded-xl border-2 transition cursor-pointer text-center ${feePayer === 'BUYER_PAYS'
-                    ? 'border-[#c34c36] bg-orange-50/50 shadow-xs'
-                    : 'border-slate-200 hover:border-slate-300 bg-white'
-                  }`}
-              >
-                <div className="font-extrabold text-xs text-slate-800">
-                  {lang === 'vi' ? 'Người mua 100%' : 'Buyer 100%'}
-                </div>
-                <div className="text-[10px] text-slate-500 mt-0.5">
-                  {lang === 'vi' ? 'Bạn chịu toàn bộ' : 'You pay full'}
-                </div>
-                <div className="mt-1 font-bold text-xs text-[#c34c36]">{formatQuotedFee(quote ? activeTotalFee : undefined)}</div>
-              </div>
-
-              {/* Option 2: Chia đôi 50% - 50% */}
-              <div
-                onClick={() => setFeePayer('SPLIT_50_50')}
-                className={`p-2.5 rounded-xl border-2 transition cursor-pointer text-center relative ${feePayer === 'SPLIT_50_50'
-                    ? 'border-indigo-600 bg-indigo-50/50 shadow-xs'
-                    : 'border-slate-200 hover:border-slate-300 bg-white'
-                  }`}
-              >
-                <span className="absolute -top-2 right-2 bg-indigo-600 text-white text-[8px] font-bold px-1.5 py-0.2 rounded-full uppercase">
-                  Khuyên Dùng
-                </span>
-                <div className="font-extrabold text-xs text-slate-800">
-                  {lang === 'vi' ? 'Chia đôi 50% - 50%' : 'Split 50% - 50%'}
-                </div>
-                <div className="text-[10px] text-slate-500 mt-0.5">
-                  {lang === 'vi' ? 'Mỗi bên một nửa' : 'Half each'}
-                </div>
-                <div className="mt-1 font-bold text-xs text-indigo-700">
-                  {formatQuotedFee(quote ? halfFee : undefined)}
-                </div>
-              </div>
-
-              {/* Option 3: Người bán 100% */}
-              <div
-                onClick={() => setFeePayer('SELLER_PAYS')}
-                className={`p-2.5 rounded-xl border-2 transition cursor-pointer text-center ${feePayer === 'SELLER_PAYS'
-                    ? 'border-emerald-600 bg-emerald-50/50 shadow-xs'
-                    : 'border-slate-200 hover:border-slate-300 bg-white'
-                  }`}
-              >
-                <div className="font-extrabold text-xs text-slate-800">
-                  {lang === 'vi' ? 'Người bán 100%' : 'Seller 100%'}
-                </div>
-                <div className="text-[10px] text-slate-500 mt-0.5">
-                  {lang === 'vi' ? 'Người bán chịu' : 'Seller pays'}
-                </div>
-                <div className="mt-1 font-bold text-xs text-emerald-700">0 đ</div>
-              </div>
-            </div>
-
-            {/* Hiển thị chi tiết số tiền mỗi bên chịu */}
-            <div className="p-2.5 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between">
-              <div>
-                <span className="text-slate-500">{lang === 'vi' ? 'Bạn thanh toán:' : 'You pay:'}</span>{' '}
-                <strong className="text-[#c34c36] font-black">{formatQuotedFee(quote ? buyerShare : undefined)}</strong>
-              </div>
-              <div>
-                <span className="text-slate-500">{lang === 'vi' ? 'Người bán chịu:' : 'Seller pays:'}</span>{' '}
-                <strong className="text-slate-800 font-bold">{formatQuotedFee(quote ? sellerShare : undefined)}</strong>
-              </div>
-            </div>
+          <div className="bg-[#faf8f5] p-3.5 rounded-2xl border border-slate-200">
+            <InspectionFeePercentSelect
+              value={buyerFeePercent}
+              onChange={setBuyerFeePercent}
+              total={quote ? activeTotalFee : undefined}
+              lang={lang}
+            />
           </div>
 
           {/* 5. CAM KẾT ĐIỀU KHOẢN MỞ NIÊM PHONG (ZIN) */}

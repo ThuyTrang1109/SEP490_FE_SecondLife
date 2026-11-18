@@ -318,6 +318,7 @@ export const AdminInspectionFundsView: React.FC<AdminInspectionFundsViewProps> =
                 surplusAmount,
                 buyerSurplusShare,
                 sellerSurplusShare,
+                refundAmountsRecorded,
                 refundStatusLabel,
                 refundStatusBadge,
                 refundDescription,
@@ -369,10 +370,10 @@ export const AdminInspectionFundsView: React.FC<AdminInspectionFundsViewProps> =
 
                     <div className="p-2.5 rounded-lg bg-white border border-amber-100 shadow-2xs">
                       <span className="text-[10px] text-slate-500 block font-medium">Phương án chia tỉ lệ đơn</span>
-                      <span className="font-bold text-slate-900 text-xs block truncate mt-0.5" title={splitPlan.label}>
+                      {/* <span className="font-bold text-slate-900 text-xs block truncate mt-0.5" title={splitPlan.label}>
                         {splitPlan.label}
-                      </span>
-                      <span className="text-[10px] text-slate-500 block mt-0.5">
+                      </span> */}
+                      <span className="text-[13px] text-slate-700 block mt-0.5">
                         Mua: {splitPlan.buyerPercent}% · Bán: {splitPlan.sellerPercent}%
                       </span>
                     </div>
@@ -391,16 +392,20 @@ export const AdminInspectionFundsView: React.FC<AdminInspectionFundsViewProps> =
                   {/* Phân bổ tiền dư theo tỷ lệ */}
                   <div className="p-2.5 rounded-lg bg-white/90 border border-amber-200/80 space-y-1.5">
                     <div className="flex items-center justify-between text-[11px]">
-                      <span className="font-bold text-slate-700">Phân bổ tiền dư hoàn trả theo tỉ lệ chia của đơn:</span>
+                      <span className="font-bold text-slate-700">{refundAmountsRecorded
+                        ? 'Tiền dư đã hoàn vào ví theo hạch toán:'
+                        : 'Phân bổ tiền dư dự kiến theo tỉ lệ chia của đơn:'}</span>
                       <span className="text-[10px] text-slate-500 font-mono">Tổng tiền dư: {formatVND(surplusAmount)}</span>
                     </div>
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       <div className="p-2 rounded-md bg-slate-50 border border-slate-100 flex items-center justify-between">
-                        <span className="text-slate-600 text-[11px]">Hoàn Người mua ({splitPlan.buyerPercent}%):</span>
+                        <span className="text-slate-600 text-[11px]">{refundAmountsRecorded
+                          ? 'Đã hoàn Người mua:' : `Hoàn Người mua (${splitPlan.buyerPercent}%):`}</span>
                         <strong className="font-mono text-emerald-700">{formatVND(buyerSurplusShare)}</strong>
                       </div>
                       <div className="p-2 rounded-md bg-slate-50 border border-slate-100 flex items-center justify-between">
-                        <span className="text-slate-600 text-[11px]">Hoàn Người bán ({splitPlan.sellerPercent}%):</span>
+                        <span className="text-slate-600 text-[11px]">{refundAmountsRecorded
+                          ? 'Đã hoàn Người bán:' : `Hoàn Người bán (${splitPlan.sellerPercent}%):`}</span>
                         <strong className="font-mono text-emerald-700">{formatVND(sellerSurplusShare)}</strong>
                       </div>
                     </div>

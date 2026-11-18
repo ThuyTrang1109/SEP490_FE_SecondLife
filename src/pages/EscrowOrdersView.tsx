@@ -501,7 +501,9 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   };
 
   React.useEffect(() => {
-    if (detailModalOrder && !isOrderWithInspection(detailModalOrder) && activePhotoStage === 'inspector') {
+    if (activePhotoStage === 'handover') {
+      setActivePhotoStage('listing');
+    } else if (detailModalOrder && !isOrderWithInspection(detailModalOrder) && activePhotoStage === 'inspector') {
       setActivePhotoStage('listing');
     }
   }, [detailModalOrder, activePhotoStage]);
@@ -869,15 +871,28 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
 
   const isShipmentCreatedForOrder = (ord: EscrowOrder | null | undefined): boolean => {
     if (!ord?.id) return false;
+
+    // Đơn hàng kiểm định đang ở giai đoạn chờ phê duyệt hoặc chờ hai bên nộp phí thì chưa thể có vận đơn đóng gói
+    const rawInspStatus = String(
+      (ord as any)?.backendStatus ||
+      (ord as any)?.inspectionStatus ||
+      (ord as any)?.inspectionOrder?.status ||
+      ((ord as any).status !== 'AWAITING_INSPECTION' && (ord as any).status !== 'AWAITING_PAYMENT' && (ord as any).status !== 'HELD_IN_ESCROW' ? (ord as any).status : '') ||
+      ''
+    ).toUpperCase();
+    if (['WAITING_SELLER_APPROVAL', 'WAITING_BUYER_APPROVAL', 'WAITING_FEE_PAYMENT', 'PENDING'].includes(rawInspStatus)) {
+      return false;
+    }
+
     if (sellerInboundShipments.has(ord.id) && isHubInboundInProgress(ord)) {
       return Boolean(sellerInboundShipments.get(ord.id));
     }
     const bStatus = String((ord as any).backendStatus || (ord as any).status || ord.escrowStatus || '').toUpperCase();
     if (
       ord.carrierPickedUpAt ||
-      ord.sellerReadyAt ||
       (ord as any).orderShipmentCode ||
-      (ord as any).orderCode ||
+      (ord as any).trackingCode ||
+      (ord as any).waybillCode ||
       bStatus === 'SHIPPED' ||
       bStatus === 'DELIVERED' ||
       bStatus === 'DELIVERING_TO_BUYER' ||
@@ -999,6 +1014,11 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     // Khi người mua đã xác nhận mua tiếp: Trạng thái đã hiển thị đầy đủ ở huy hiệu trên đầu thẻ đơn (OrderStatusBadge).
     // Ngoài danh sách thẻ đơn không hiển thị lặp lại nhãn tĩnh ở thanh thao tác.
     if (decision === 'accepted' && !isInsideDetailModal) return null;
+    // Khi đơn kiểm định không đạt (failed) hoặc người mua từ chối mua tiếp (rejected):
+    // Trạng thái chi tiết (chờ hoàn / đang hoàn / đã hoàn trả)
+    // đã hiển thị đầy đủ ở huy hiệu trên đầu thẻ (OrderStatusBadge) và trong khối hành trình Chặng 2.
+    // Bỏ nhãn tĩnh ở góc dưới thanh thao tác để đồng bộ và gọn gàng.
+    if ((failed || decision === 'rejected') && !isInsideDetailModal) return null;
     const isSeller = isOrderSeller(order);
     const canDecide = decision === 'pending' && !isSeller && !isOrderCancelledOrRefunded(order);
     const returnShipment = detailOrderId === order.id && close
@@ -1015,7 +1035,8 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     // Huy hiệu trạng thái trên đầu thẻ (OrderStatusBadge) đã nêu rõ "Kiểm định ĐẠT • Chờ bạn quyết định mua",
     // đồng thời nút hành động "Xem kết quả & quyết định mua" đã hiển thị đầy đủ,
     // nên nhãn tĩnh "Chờ quyết định từ bạn" ở góc dưới cạnh nút bị trùng lặp, cần loại bỏ.
-    const shouldShowDecisionBadge = !isInsideDetailModal && !(decision === 'pending' && !isSeller);
+    // Tương tự khi failed, không hiển thị nhãn trạng thái ở góc dưới.
+    const shouldShowDecisionBadge = !isInsideDetailModal && !failed && !(decision === 'pending' && !isSeller);
 
     if (!shouldShowDecisionBadge && !returnShipment && !shouldShowButton) {
       return null;
@@ -1312,8 +1333,8 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
               </div>
               <p className="text-[11px] text-orange-900 font-medium mt-0.5">
                 {lang === 'vi'
-                  ? 'Đơn hàng mua kèm kiểm định theo phương án chia đôi phí (50/50). Vui lòng nộp phần phí kiểm định của người bán vào Escrow từ Ví SecondLife để điều phối kiểm định.'
-                  : 'Inspection fee is split 50/50. Please pay your seller fee share into Escrow to proceed with inspection dispatch.'}
+                  ? 'Đơn hàng đang chờ thanh toán phí kiểm định theo tỷ lệ đã chốt. Vui lòng nộp phần phí kiểm định của người bán vào Escrow từ Ví SecondLife để điều phối kiểm định.'
+                  : 'The inspection fee is due at the agreed split. Please pay your seller fee share into Escrow to proceed with inspection dispatch.'}
               </p>
             </div>
           </div>

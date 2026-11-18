@@ -239,7 +239,8 @@ export interface EscrowOrder {
   inspectorName?: string;
   inspectorEmail?: string;
   inspectorPhone?: string;
-  feePayer?: 'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50' | string;
+  feePayer?: string;
+  buyerFeePercent?: number;
   finalPaymentDeadline?: string | null;
   inspectionFeeSplit?: 'BUYER_100' | 'SPLIT_50_50' | 'SELLER_100';
   buyerInspectionFeeVnd?: number;
@@ -383,7 +384,7 @@ export interface SystemInspectionProposalPayload {
   type: 'INSPECTION_PROPOSAL';
   status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'CANCELLED' | 'COUNTERED';
   method: 'AT_CENTER' | 'AT_HOME';
-  feeSplit: 'BUYER_100' | 'SPLIT_50_50' | 'SELLER_100';
+  feeSplit?: 'BUYER_100' | 'SPLIT_50_50' | 'SELLER_100';
   estimatedFeeVnd: number;
   proposedByRole: 'buyer' | 'seller';
   proposalId?: string;
@@ -393,7 +394,9 @@ export interface SystemInspectionProposalPayload {
   // Rich metadata for AT_CENTER negotiation
   centerId?: string;
   centerName?: string;
-  feePayer?: 'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50';
+  feePayer?: string;
+  buyerFeePercent?: number;
+  previousBuyerFeePercent?: number | null;
   baseInspectionFee?: number;
   travelFeeRoundTrip?: number;
   travelDistanceKm?: number;
@@ -423,6 +426,7 @@ export interface InspectionProposalPrefillData {
   inspectionMethod?: 'AT_CENTER' | 'AT_HOME';
   feeSplit?: 'BUYER_100' | 'SPLIT_50_50' | 'SELLER_100';
   feePayer?: 'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50';
+  buyerFeePercent?: number;
   isZinLossAcknowledged?: boolean;
   quote?: any;
   baseInspectionFee?: number;

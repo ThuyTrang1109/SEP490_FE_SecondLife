@@ -2,6 +2,15 @@ import { NotificationItem } from '../types/notification';
 import { UserProfile, UserRole } from '../types';
 import { translateSystemNotification } from './systemNotificationTranslator';
 
+export function compareNotificationsNewestFirst(first: NotificationItem, second: NotificationItem): number {
+  const firstTime = Date.parse(first.createdAt);
+  const secondTime = Date.parse(second.createdAt);
+
+  if (Number.isNaN(firstTime)) return Number.isNaN(secondTime) ? 0 : 1;
+  if (Number.isNaN(secondTime)) return -1;
+  return secondTime - firstTime;
+}
+
 /**
  * Kiểm tra xem một thông báo có thuộc về người dùng và vai trò hiện tại hay không.
  * Ngăn chặn tuyệt đối việc tài khoản này xem được thông báo của tài khoản khác.

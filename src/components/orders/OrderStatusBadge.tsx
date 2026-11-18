@@ -1,3 +1,4 @@
+
 import {
   AlertCircle, AlertTriangle, Calendar, CalendarCheck, CalendarSync, CheckCircle2, Clock,
   ShieldCheck, Truck, UserCheck, Wrench, XCircle,
@@ -5,7 +6,7 @@ import {
 import type { EscrowOrder, Language, ShipmentBackend } from '../../types';
 import { formatInspectionDeadline, isInspectionPaymentExpired } from '../../utils/inspectionPaymentDeadline';
 import { buyerInspectionStageLabel, getCustomerInspectionStatus, getInspectionPurchaseDecision } from '../../utils/inspectionPurchase';
-import { getInboundShipmentProgress } from '../../utils/inspectionCenterData';
+import { getHubReturnProgress, getHubReturnState, getInboundShipmentProgress } from '../../utils/inspectionCenterData';
 import { formatVND } from '../../utils/translations';
 import { getOrderAppointmentRejection, type OrderAppointment } from '../../utils/orders/orderAppointments';
 import type { OrderCheck } from '../../types/orders/orderTypes';
@@ -59,16 +60,6 @@ export function OrderStatusBadge({
     return false;
   };
 
-  if (orderItem && orderItem.inspectionStatus !== 'FAILED' && isOrderCancelledOrRefunded(orderItem)) {
-    return (
-      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
-        <XCircle className="w-3.5 h-3.5 text-rose-600" />
-        <span>{isInspectionOrder
-          ? (lang === 'vi' ? 'Giao dịch đã bị hủy' : 'Transaction cancelled')
-          : (lang === 'vi' ? 'Đã Hủy • Hoàn Tiền' : 'Cancelled & Refunded')}</span>
-      </span>
-    );
-  }
   const isSellerForThisOrder = isCurrentOrderSeller !== undefined ? isCurrentOrderSeller : isSeller;
   const s = String(status || '').toUpperCase();
   const bStatus = String(
@@ -81,6 +72,29 @@ export function OrderStatusBadge({
   const sellerConfirmed = Boolean(orderItem && isOrderSellerConfirmed(orderItem));
   const inbound = orderItem && getOrderInboundShipment(orderItem);
   const inspectionStatus = orderItem?.inspectionStatus || bStatus;
+
+  const isFailedInsp =
+    s === 'FAILED' ||
+    s === 'INSPECTION_FAILED' ||
+    inspectionStatus === 'FAILED' ||
+    orderItem?.escrowStatus === 'INSPECTION_FAILED' ||
+    bStatus === 'FAILED' ||
+    String((orderItem as any)?.status || '').toUpperCase() === 'FAILED' ||
+    String((orderItem as any)?.inspectionStatus || '').toUpperCase() === 'FAILED';
+
+  const purchaseDecision = orderItem ? getInspectionPurchaseDecision(orderItem) : null;
+  const isBuyerPurchaseRejected = purchaseDecision === 'rejected';
+
+  if (orderItem && !isFailedInsp && !isBuyerPurchaseRejected && isOrderCancelledOrRefunded(orderItem)) {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
+        <XCircle className="w-3.5 h-3.5 text-rose-600" />
+        <span>{isInspectionOrder
+          ? (lang === 'vi' ? 'Giao dịch đã bị hủy' : 'Transaction cancelled')
+          : (lang === 'vi' ? 'Đã Hủy • Hoàn Tiền' : 'Cancelled & Refunded')}</span>
+      </span>
+    );
+  }
 
   // 1. Kiểm tra đơn hàng đã hoàn tất / đã giải ngân
   const isReceiptConfirmed = Boolean(
@@ -152,7 +166,6 @@ export function OrderStatusBadge({
   }
 
   // 2. Quyết định mua hàng sau khi kiểm định ĐẠT
-  const purchaseDecision = orderItem ? getInspectionPurchaseDecision(orderItem) : null;
   const isPurchaseAccepted = Boolean(
     purchaseDecision === 'accepted' ||
     orderItem?.finalPaymentPaidAt ||
@@ -271,28 +284,60 @@ export function OrderStatusBadge({
   }
 
   if (purchaseDecision === 'rejected') {
+    const allOrderShipments = (orderItem as any)?.shipments?.length
+      ? (orderItem as any).shipments
+      : (orderItem?.id ? getOrderAllShipments(orderItem.id, (orderItem as any).linkedOrderId) : []);
+    const returnShipment = (orderItem as any)?.returnShipment ||
+      allOrderShipments.find((s: any) => s.leg === 'CENTER_TO_SELLER' && s.status !== 'CANCELLED') ||
+      allOrderShipments.find((s: any) => s.leg === 'CENTER_TO_SELLER');
+    const isReturnDelivered = returnShipment?.status === 'DELIVERED' || returnShipment?.status === 'COMPLETED' || (returnShipment && getHubReturnProgress(returnShipment, lang).step === 3);
+    const isReturnInTransit = returnShipment && (returnShipment.status === 'IN_TRANSIT' || returnShipment.status === 'SHIPPED' || returnShipment.status === 'PICKED_UP' || getHubReturnProgress(returnShipment, lang).step === 2);
+
     return (
       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-800 border border-rose-200">
         <XCircle className="w-3.5 h-3.5 text-rose-600" />
         <span>
           {lang === 'vi'
-            ? isSellerForThisOrder
-              ? 'Người mua từ chối mua • Chuyển hoàn về Seller'
-              : 'Đã từ chối mua tiếp • Chờ chuyển hoàn'
-            : isSellerForThisOrder
-              ? 'Buyer Declined • Returning to Seller'
-              : 'Declined • Returning to Seller'}
+            ? isReturnDelivered
+              ? (isSellerForThisOrder ? 'Người mua từ chối mua • Đã hoàn trả hàng' : 'Đã từ chối mua tiếp • Đã hoàn trả người bán')
+              : isReturnInTransit
+                ? (isSellerForThisOrder ? 'Người mua từ chối mua • Đang chuyển hoàn về Seller' : 'Đã từ chối mua tiếp • Đang chuyển hoàn')
+                : (isSellerForThisOrder ? 'Người mua từ chối mua • Chờ trung tâm hoàn hàng' : 'Đã từ chối mua tiếp • Chờ trung tâm hoàn hàng')
+            : isReturnDelivered
+              ? 'Buyer Declined • Returned to Seller'
+              : isReturnInTransit
+                ? 'Buyer Declined • Returning to Seller'
+                : 'Buyer Declined • Pending Return'}
         </span>
       </span>
     );
   }
 
-  if (inspectionStatus === 'FAILED' || orderItem?.escrowStatus === 'INSPECTION_FAILED' || bStatus === 'FAILED') {
+  if (isFailedInsp) {
+    const allOrderShipments = (orderItem as any)?.shipments?.length
+      ? (orderItem as any).shipments
+      : (orderItem?.id ? getOrderAllShipments(orderItem.id, (orderItem as any).linkedOrderId) : []);
+    const returnShipment = (orderItem as any)?.returnShipment ||
+      allOrderShipments.find((s: any) => s.leg === 'CENTER_TO_SELLER' && s.status !== 'CANCELLED') ||
+      allOrderShipments.find((s: any) => s.leg === 'CENTER_TO_SELLER');
+    const isReturnDelivered = returnShipment?.status === 'DELIVERED' || returnShipment?.status === 'COMPLETED' || (returnShipment && getHubReturnProgress(returnShipment, lang).step === 3);
+    const isReturnInTransit = returnShipment && (returnShipment.status === 'IN_TRANSIT' || returnShipment.status === 'SHIPPED' || returnShipment.status === 'PICKED_UP' || getHubReturnProgress(returnShipment, lang).step === 2);
+
     return (
       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-800 border border-rose-200">
         <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
         <span>
-          {lang === 'vi' ? 'Kiểm định không đạt • Đang chuyển hoàn' : 'Inspection Failed • Returning to Seller'}
+          {lang === 'vi'
+            ? isReturnDelivered
+              ? 'Kiểm định không đạt • Đã hoàn trả người bán'
+              : isReturnInTransit
+                ? 'Kiểm định không đạt • Đang chuyển hoàn'
+                : 'Kiểm định không đạt • Chờ chuyển hoàn'
+            : isReturnDelivered
+              ? 'Inspection Failed • Returned to Seller'
+              : isReturnInTransit
+                ? 'Inspection Failed • Returning to Seller'
+                : 'Inspection Failed • Pending Return'}
         </span>
       </span>
     );

@@ -17,6 +17,7 @@ import {
 } from '../utils/adminInspectionFunds';
 import { AdminInspectionFundsView } from '../components/admin/AdminInspectionFundsModal';
 import { formatVND } from '../utils/translations';
+import { normalizeAdminInspectionFunds } from '../services/adminInspectionFundsService';
 
 const normalizeVND = (s: string) => s.replace(/\u00a0/g, ' ').trim();
 
@@ -476,6 +477,7 @@ test('resolveReturnReserveDetails handles SETTLED status and generates clear ref
       status: 'SETTLED',
     },
     settlement: {
+      outcome: 'FAILED_INSPECTION',
       centerPayoutAmount: 200_000,
       buyerRefundAmount: 180_000,
       sellerRefundAmount: 180_000,
@@ -500,6 +502,120 @@ test('resolveReturnReserveDetails handles SETTLED status and generates clear ref
   assert.equal(details.refundStatusLabel, 'Đã hoàn tất quyết toán & hoàn ví');
   assert.match(details.refundDescription, /Đã đối soát xong cước hoàn/);
   assert.match(details.refundDescription, /tự động hoàn vào ví/);
+});
+
+test('inspection fee settlement keeps the return reserve pending until return reconciliation', () => {
+  const details = resolveReturnReserveDetails({
+    inspectionOrderId: 'failed-inspection',
+    totalCollected: 528_260,
+    unsettledCollectedAmount: 129_960,
+    collectionStatus: 'PAID',
+    buyerFeePercent: 35,
+    returnReserve: { plannedAmount: 129_960, heldAmount: 129_960, status: 'AWAITING_RETURN_SHIPMENT' },
+    settlement: { settledAt: '2026-11-18T00:14:35Z', buyerRefundAmount: 0, sellerRefundAmount: 0 },
+  });
+
+  assert.equal(details.refundStatus, 'PENDING');
+  assert.doesNotMatch(details.refundDescription, /Đã đối soát|đã được tự động hoàn/);
+});
+
+test('the return reserve refunds the reconciled surplus at 35/65', () => {
+  const details = resolveReturnReserveDetails({
+    inspectionOrderId: 'failed-inspection',
+    totalCollected: 528_260,
+    unsettledCollectedAmount: 0,
+    collectionStatus: 'PAID',
+    buyerFeePercent: 35,
+    returnReserve: { plannedAmount: 129_960, heldAmount: 0, status: 'SETTLED' },
+    settlement: {
+      outcome: 'FAILED_INSPECTION',
+      buyerRefundAmount: 7_581,
+      sellerRefundAmount: 14_079,
+      settledAt: '2026-11-18T00:14:35Z',
+      returnShippingSettledAt: '2026-11-18T03:00:00Z',
+    },
+    shipments: [{ leg: 'CENTER_TO_SELLER', status: 'DELIVERED', actualFee: 108_300 }],
+  });
+
+  assert.equal(details.surplusAmount, 21_660);
+  assert.equal(details.buyerSurplusShare, 7_581);
+  assert.equal(details.sellerSurplusShare, 14_079);
+  assert.equal(details.refundStatus, 'SETTLED');
+  assert.equal(details.refundAmountsRecorded, true);
+});
+
+test('legacy return settlement shows recorded wallet refunds instead of recomputing 35/65', () => {
+  const funds = normalizeAdminInspectionFunds({
+    inspectionOrderId: '5e9f1bee-ac73-4d31-bae6-c1ca47a06c9a',
+    totalCollected: 528_260,
+    unsettledCollectedAmount: 0,
+    collectionStatus: 'PAID',
+    buyerFeePercent: 35,
+    buyerPayment: { amountDue: 184_891, amountCollected: 184_891 },
+    sellerPayment: { amountDue: 343_369, amountCollected: 343_369 },
+    buyerCommitmentDeposit: 0,
+    returnReserve: { plannedAmount: 129_960, heldAmount: 0, status: 'SETTLED' },
+    settlement: {
+      outcome: 'FAILED_INSPECTION',
+      sellerAdditionalCollected: '184891.00',
+      sellerOutstandingAmount: '0.00',
+      buyerRefundAmount: '184891.00',
+      sellerRefundAmount: '18460.00',
+      settledAt: '2026-11-18T00:14:35.323021Z',
+      returnShippingSettledAt: '2026-11-18T05:28:11.714849Z',
+    },
+    shipments: [{ leg: 'CENTER_TO_SELLER', status: 'DELIVERED', actualFee: 111_500 }],
+  });
+
+  assert.equal(funds.settlement?.sellerAdditionalCollected, 184_891);
+  assert.equal(funds.settlement?.returnShippingSettledAt, '2026-11-18T05:28:11.714849Z');
+  const details = resolveReturnReserveDetails(funds);
+  assert.equal(details.surplusAmount, 18_460);
+  assert.equal(details.buyerSurplusShare, 0);
+  assert.equal(details.sellerSurplusShare, 18_460);
+  assert.equal(details.refundAmountsRecorded, true);
+  assert.match(details.refundDescription, /quy tắc cũ/);
+
+  const html = renderToStaticMarkup(createElement(AdminInspectionFundsView, {
+    inspectionOrderId: funds.inspectionOrderId,
+    funds,
+  }));
+  assert.match(html, /Tiền dư đã hoàn vào ví theo hạch toán/);
+  assert.match(html, /Đã hoàn Người mua/);
+  assert.match(html, /Đã hoàn Người bán/);
+  assert.doesNotMatch(html, /6\.461|11\.999/);
+});
+
+test('a reserve marked settled without refund amounts does not confirm a wallet credit', () => {
+  const details = resolveReturnReserveDetails({
+    inspectionOrderId: 'settled-without-refund-data',
+    totalCollected: 528_260,
+    unsettledCollectedAmount: 0,
+    collectionStatus: 'PAID',
+    buyerFeePercent: 35,
+    returnReserve: { plannedAmount: 129_960, heldAmount: 0, status: 'SETTLED' },
+    shipments: [{ leg: 'CENTER_TO_SELLER', status: 'DELIVERED', actualFee: 111_500 }],
+  });
+
+  assert.equal(details.refundAmountsRecorded, false);
+  assert.equal(details.refundStatusLabel, 'Đã quyết toán cước hoàn');
+  assert.doesNotMatch(details.refundDescription, /đã được tự động hoàn/);
+});
+
+test('a refund of an unused return reserve retains its own status after fee settlement', () => {
+  const details = resolveReturnReserveDetails({
+    inspectionOrderId: 'purchased-inspection',
+    totalCollected: 528_260,
+    unsettledCollectedAmount: 0,
+    collectionStatus: 'PAID',
+    buyerFeePercent: 35,
+    returnReserve: { plannedAmount: 129_960, heldAmount: 0, status: 'REFUNDED_UNUSED' },
+    settlement: { settledAt: '2026-11-18T00:14:35Z' },
+  });
+
+  assert.equal(details.refundStatus, 'REFUNDED_UNUSED');
+  assert.equal(details.buyerSurplusShare, 45_486);
+  assert.equal(details.sellerSurplusShare, 84_474);
 });
 
 test('AdminInspectionFundsView renders full Return Reserve details (actual fee, split ratio, surplus breakdown, refund status)', () => {
@@ -544,7 +660,7 @@ test('AdminInspectionFundsView renders full Return Reserve details (actual fee, 
 
   // 3. Tiền dư khi trừ tiền vận đơn thực tế chia đúng theo tỉ lệ
   assert.match(html, /Tiền dư sau trừ cước thực tế/);
-  assert.match(html, /Phân bổ tiền dư hoàn trả theo tỉ lệ chia của đơn/);
+  assert.match(html, /Phân bổ tiền dư dự kiến theo tỉ lệ chia của đơn/);
   assert.match(html, /Hoàn Người mua \(50%\):/);
   assert.match(html, /Hoàn Người bán \(50%\):/);
   // Surplus: 7.915.200 - 46.200 = 7.869.000 -> 3.934.500 each

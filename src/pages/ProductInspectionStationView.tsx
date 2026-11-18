@@ -848,6 +848,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
         localStorage.setItem(`at_home_inspector_arrived_${id}`, arrivedAt);
         localStorage.setItem(`order_inspecting_${id}`, 'true');
         localStorage.setItem(`inspection_status_${id}`, 'INSPECTING');
+        localStorage.setItem(`order_confirmed_by_inspector_${id}`, 'true');
       });
 
       // Cập nhật recent_placed_orders
@@ -1675,11 +1676,10 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                         }
                         handleAcceptTask(activeOrder, barcodeScanInput);
                       }}
-                      className={`px-4 py-2 text-white text-xs font-black rounded-xl flex items-center gap-1.5 shadow-md transition ${
-                        isCheckInTooEarly
-                          ? 'bg-slate-400 hover:bg-slate-400 cursor-not-allowed opacity-80'
-                          : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 cursor-pointer active:scale-95'
-                      }`}
+                      className={`px-4 py-2 text-white text-xs font-black rounded-xl flex items-center gap-1.5 shadow-md transition ${isCheckInTooEarly
+                        ? 'bg-slate-400 hover:bg-slate-400 cursor-not-allowed opacity-80'
+                        : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 cursor-pointer active:scale-95'
+                        }`}
                       title={isCheckInTooEarly ? checkInEligibility.reason : 'Xác nhận tiếp nhận đơn hàng và bắt đầu kiểm định'}
                     >
                       {isCheckInTooEarly ? (
@@ -2312,18 +2312,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                       )}
                     </div>
 
-                    {canUseChecklist && <div className="flex items-center gap-2">
-                      <div className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 shrink-0 flex items-center gap-1">
-                        <Check className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>{checklist.filter((c) => c.status === 'pass').length}/{checklist.length} tiêu chuẩn Đạt</span>
-                      </div>
-                      {checklist.length > 0 && checklist.every((c) => !c.mandatory || c.status !== 'pending') && (
-                        <div className="text-xs font-bold text-white bg-emerald-600 px-3 py-1 rounded-full shadow-xs flex items-center gap-1">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-white" />
-                          <span>Đã ổn tất cả tiêu chuẩn bắt buộc</span>
-                        </div>
-                      )}
-                    </div>}
+
                   </div>
 
                   {/* Checklist Items Table */}
@@ -2421,7 +2410,6 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                             disabled={isCompletedOrder}
                             value={item.testedValue || ''}
                             onChange={(e) => handleUpdateTestedValue(item.id, e.target.value)}
-                            placeholder="VD: Nhiệt độ -19.2°C, độ ồn 38dB, cách điện an toàn..."
                             className={`flex-1 px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs outline-none focus:border-[#c34c36] ${isCompletedOrder ? 'bg-gray-100 cursor-not-allowed text-gray-700' : ''}`}
                           />
                         </div>

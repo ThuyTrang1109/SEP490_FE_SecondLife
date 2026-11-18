@@ -4,9 +4,11 @@ import { paths, resolveAppRoute } from '../app/router/paths';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { EscrowOrder, InspectionChecklistItem, Language, UserProfile, InspectionCenter } from '../types';
 import { formatVND } from '../utils/translations';
+import { isValidUUID } from '../utils/negotiationHelper';
 import { resolveInspectionCenter } from '../utils/orderUtils';
 import { getInspectionTaskResult, getInspectionTaskStage } from '../utils/inspectionTaskStatus';
 import { isOrderInspectionCompleted, ProductInspectionStationView } from './ProductInspectionStationView';
+import { isOrderConfirmedByInspector, markOrderConfirmedByInspector } from '../utils/inspectionCenterData';
 import { DigitalInspectionCertificateModal } from '../components/modals/DigitalInspectionCertificateModal';
 import { BarcodeScannerModal, playScanBeep } from '../components/modals/BarcodeScannerModal';
 import { translateSystemNotification } from '../utils/systemNotificationTranslator';
@@ -136,7 +138,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
       navigatePath('/inspector/inspections');
     }
   };
-  const [backendOrders, setBackendOrders] = useState<InspectionOrderDto[]>([]);
+  const [backendOrders, setBackendOrders] = useState<InspectionOrderDto[] | null>(null);
   const [savedResults, setSavedResults] = useState<ReadonlyMap<string, InspectionOrderDto>>(new Map());
   const [isLoadingBackendOrders, setIsLoadingBackendOrders] = useState(Boolean(requestedInspectionId));
   const [taskSearchTerm, setTaskSearchTerm] = useState('');
@@ -148,17 +150,51 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
 
   // --- NOTIFICATION BANNER ---
   const [noticeMessage, setNoticeMessage] = useState<{ text: string; isError?: boolean } | null>(null);
+  const [, setConfirmedSignal] = useState(0);
 
   const showNotice = (text: string, isError = false) => {
     setNoticeMessage({ text: translateSystemNotification(text), isError });
     setTimeout(() => setNoticeMessage(null), 4500);
   };
 
+  const handleConfirmTask = async (orderId: string, orderTitle?: string, isAtHome?: boolean) => {
+    markOrderConfirmedByInspector(orderId);
+    setConfirmedSignal((c) => c + 1);
+
+    // Optimistic Update: Cập nhật ngay lập tức state backendOrders để nút chuyển ngay sang "Đã nhận đơn", chống giật trạng thái
+    setBackendOrders((prev) => {
+      if (!Array.isArray(prev)) return prev;
+      return prev.map((bo) => {
+        if (bo.id === orderId) {
+          return {
+            ...bo,
+            status: isAtHome ? bo.status : 'INSPECTING',
+            inspectionStatus: isAtHome ? bo.status : 'INSPECTING',
+            inspectorConfirmed: true,
+          };
+        }
+        return bo;
+      });
+    });
+
+    showNotice(
+      `[Xác Nhận Đơn] Đã tiếp nhận đơn kiểm định #${orderId.slice(0, 8)}${orderTitle ? ` (${orderTitle})` : ''}. Quyền đổi KTV tại trung tâm đã được khóa!`
+    );
+    if (!isAtHome) {
+      try {
+        await inspectorService.startInspection(orderId);
+      } catch (err) {
+        console.warn('Backend startInspection notice:', err);
+      }
+    }
+  };
+
   // --- LOAD INSPECTOR'S ASSIGNED ORDERS ---
   const loadInspectorOrders = async () => {
     setIsLoadingBackendOrders(true);
     try {
-      setBackendOrders(await inspectorService.getMyOrders());
+      const orders = await inspectorService.getMyOrders();
+      setBackendOrders(orders);
     } catch (err) {
       console.warn('Lỗi tải danh sách đơn từ backend:', err);
     } finally {
@@ -174,15 +210,18 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
     const handleStorage = (e: StorageEvent) => {
       if (
         e.key?.startsWith('order_assigned_inspector_') ||
+        e.key?.startsWith('order_confirmed_by_inspector_') ||
         e.key?.startsWith('order_appointment_') ||
         e.key === 'recent_placed_orders' ||
         e.key === 'center_inspection_orders' ||
         e.key === 'secondlife_order_placed_signal'
       ) {
         loadInspectorOrders();
+        setConfirmedSignal((c) => c + 1);
       }
     };
     window.addEventListener('secondlife_order_assigned_signal', handleSignal);
+    window.addEventListener('secondlife_inspector_confirmed_signal', handleSignal);
     window.addEventListener('secondlife_appointment_scheduled', handleSignal);
     window.addEventListener('secondlife_order_placed_signal', handleSignal);
     window.addEventListener('secondlife_inspection_task_created', handleSignal);
@@ -192,6 +231,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
     window.addEventListener('storage', handleStorage);
     return () => {
       window.removeEventListener('secondlife_order_assigned_signal', handleSignal);
+      window.removeEventListener('secondlife_inspector_confirmed_signal', handleSignal);
       window.removeEventListener('secondlife_appointment_scheduled', handleSignal);
       window.removeEventListener('secondlife_order_placed_signal', handleSignal);
       window.removeEventListener('secondlife_inspection_task_created', handleSignal);
@@ -234,7 +274,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
   const effectiveOrders: EscrowOrder[] = useMemo(() => {
     const orderDetails = new Map(orders.map((order) => [order.id, order]));
 
-    const result = backendOrders.map((order): EscrowOrder => {
+    const result = (backendOrders ?? []).map((order): EscrowOrder => {
       const bo = getInspectionTaskStage(order.status) === 'completed' || getInspectionTaskResult(order)
         ? order : savedResults.get(order.id) || order;
       const { inspectorId: assignedId, inspectorName: assignedName, status: finalStatus } = bo;
@@ -382,6 +422,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
         totalAmountVnd: (bo.postPrice || 1000000) + (bo.inspectionFee || 150000) + (bo.shippingFee || 30000),
         hasInspectionService: true,
         requiresInspection: true,
+        buyerFeePercent: bo.buyerFeePercent,
         inspectionFeeSplit: bo.feePayer === 'SELLER_PAYS' ? 'SELLER_100' : bo.feePayer === 'BUYER_PAYS' ? 'BUYER_100' : 'SPLIT_50_50',
         shippingLegs: [],
         multiStagePhotos: {
@@ -413,18 +454,20 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
         const parsed = JSON.parse(rawSeller);
         if (Array.isArray(parsed)) localAssignedOrders.push(...parsed);
       }
-    } catch {}
+    } catch { }
 
     const allCandidates = [...orders, ...localAssignedOrders];
 
     for (const cand of allCandidates) {
       if (!cand?.id || seenIds.has(cand.id)) continue;
+      if (currentUser?.role === 'inspector' && backendOrders !== null &&
+        (isValidUUID(cand.id) || isValidUUID(cand.inspectionOrderId))) continue;
 
       let assignedMeta: any = null;
       try {
         const raw = localStorage.getItem(`order_assigned_inspector_${cand.id}`);
         if (raw) assignedMeta = JSON.parse(raw);
-      } catch {}
+      } catch { }
 
       const candidateInspectorId = cand.inspectorId || assignedMeta?.inspectorId;
       const candidateInspectorEmail = cand.inspectorEmail || assignedMeta?.inspectorEmail;
@@ -453,7 +496,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
         try {
           const rawAppt = localStorage.getItem(`order_appointment_${cand.id}`);
           if (rawAppt) apptMeta = JSON.parse(rawAppt);
-        } catch {}
+        } catch { }
 
         const finalStatus = cand.backendStatus || cand.inspectionStatus || cand.status || 'ASSIGNED';
         const isAtHome = cand.orderType === 'AT_HOME' || cand.inspectionMethod === 'AT_HOME';
@@ -516,7 +559,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
 
     result.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     return result;
-  }, [backendOrders, orders, savedResults]);
+  }, [backendOrders, currentUser, orders, savedResults, selectedOrderId]);
 
   // --- KPI COMPUTATIONS FOR INSPECTOR ---
   const activeOrder = useMemo(() => {
@@ -953,154 +996,152 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
         {/* MAIN WORKSPACE CONTENT */}
         <main className="flex-1 overflow-y-auto bg-[#faf8f5] p-4 sm:p-6 lg:p-8 space-y-6 min-w-0">
           {!showResult && <>
-          {/* Top Title & Breadcrumb Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-gray-200/60">
-            <div>
-              <div className="flex items-center gap-2 text-xs font-semibold text-gray-500 mb-1">
-                <span>Trạm Đo Kiểm</span>
-                <ChevronRight className="w-3.5 h-3.5" />
-                <span className="text-[#c34c36] font-bold">
-                  {inspectorTab === 'workbench' && 'Bàn Đo Kiểm Trực Tiếp'}
-                  {inspectorTab === 'tasks' && 'Hàng Đợi Nhiệm Vụ & Lịch Hẹn'}
-                  {inspectorTab === 'certificates' && 'Sổ Chứng Thư Số & Hồ Sơ'}
-                  {inspectorTab === 'standards' && 'Tiêu Chuẩn Kỹ Thuật ISO 17025'}
-                </span>
-              </div>
-              <h1 className="text-xl sm:text-2xl font-black text-[#24263e] tracking-tight flex flex-wrap items-center gap-2.5">
-                <span>
-                  {inspectorTab === 'workbench' && 'Bàn Làm Việc Kỹ Thuật Viên'}
-                  {inspectorTab === 'tasks' && 'Hàng Đợi Nhiệm Vụ & Lịch Đo Kiểm'}
-                  {inspectorTab === 'certificates' && 'Sổ Tay Hồ Sơ & Chứng Thư Số'}
-                  {inspectorTab === 'standards' && 'Tiêu Chuẩn Phòng Lab ISO/IEC 17025'}
-                </span>
-                <span className="text-xs bg-emerald-100 text-emerald-800 border border-emerald-300 px-2.5 py-0.5 rounded-full font-bold">
-                  Đang Trực Ca
-                </span>
-              </h1>
-              <p className="text-xs text-slate-500 mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-medium">
-                <span>Kĩ thuật viên: <strong className="text-slate-800">{inspectorName}</strong></span>
-                <span>•</span>
-                <span>Mã: <strong className="font-mono text-[#c34c36]">{inspectorId}</strong></span>
-                <span>•</span>
-                <span>Trạm: <strong>{stationCode}</strong></span>
-
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2.5">
-              <button
-                type="button"
-                onClick={loadInspectorOrders}
-                disabled={isLoadingBackendOrders}
-                className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold border border-slate-200 shadow-xs flex items-center gap-2 transition cursor-pointer"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isLoadingBackendOrders ? 'animate-spin' : ''}`} />
-                <span>Đồng Bộ Hàng Đợi</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Real-Time Inspector KPI Stats (4 Cards) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Card 1: Hàng Đợi Tiếp Nhận */}
-            <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-xs hover:shadow-md transition">
-              <div className="flex items-center justify-between">
-                <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600">
-                  <ClipboardList className="w-5 h-5" />
+            {/* Top Title & Breadcrumb Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-gray-200/60">
+              <div>
+                <div className="flex items-center gap-2 text-xs font-semibold text-gray-500 mb-1">
+                  <span>Trạm Đo Kiểm</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                  <span className="text-[#c34c36] font-bold">
+                    {inspectorTab === 'workbench' && 'Bàn Đo Kiểm Trực Tiếp'}
+                    {inspectorTab === 'tasks' && 'Hàng Đợi Nhiệm Vụ & Lịch Hẹn'}
+                    {inspectorTab === 'certificates' && 'Sổ Chứng Thư Số & Hồ Sơ'}
+                    {inspectorTab === 'standards' && 'Tiêu Chuẩn Kỹ Thuật ISO 17025'}
+                  </span>
                 </div>
-                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
-                  Hàng đợi ngày
-                </span>
-              </div>
-              <div className="mt-3">
-                <div className="text-2xl font-black text-[#24263e]">
-                  {assignedCount} <span className="text-xs font-semibold text-slate-500">đơn</span>
-                </div>
-                <p className="text-xs text-slate-500 mt-0.5 font-medium">
-                  {lang === 'vi' ? 'Đơn hàng được phân công thẩm định' : 'Total assigned tasks'}
+                <h1 className="text-xl sm:text-2xl font-black text-[#24263e] tracking-tight flex flex-wrap items-center gap-2.5">
+                  <span>
+                    {inspectorTab === 'workbench' && 'Bàn Làm Việc Kỹ Thuật Viên'}
+                    {inspectorTab === 'tasks' && 'Hàng Đợi Nhiệm Vụ & Lịch Đo Kiểm'}
+                    {inspectorTab === 'certificates' && 'Sổ Tay Hồ Sơ & Chứng Thư Số'}
+                    {inspectorTab === 'standards' && 'Tiêu Chuẩn Phòng Lab ISO/IEC 17025'}
+                  </span>
+                  <span className="text-xs bg-emerald-100 text-emerald-800 border border-emerald-300 px-2.5 py-0.5 rounded-full font-bold">
+                    Đang Trực Ca
+                  </span>
+                </h1>
+                <p className="text-xs text-slate-500 mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-medium">
+                  <span>Kĩ thuật viên: <strong className="text-slate-800">{inspectorName}</strong></span>
+                  <span>•</span>
+                  <span>Mã: <strong className="font-mono text-[#c34c36]">{inspectorId}</strong></span>
+                  <span>•</span>
+                  <span>Trạm: <strong>{stationCode}</strong></span>
+
                 </p>
               </div>
-              <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-semibold">
-                <span>Chờ đo kiểm:</span>
-                <span className="text-blue-600 font-bold">{inProgressCount} thiết bị</span>
+
+              <div className="flex flex-wrap items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={loadInspectorOrders}
+                  disabled={isLoadingBackendOrders}
+                  className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold border border-slate-200 shadow-xs flex items-center gap-2 transition cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingBackendOrders ? 'animate-spin' : ''}`} />
+                  <span>Đồng Bộ Hàng Đợi</span>
+                </button>
               </div>
             </div>
 
-            {/* Card 2: Đang Đo Kiểm */}
-            <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-xs hover:shadow-md transition">
-              <div className="flex items-center justify-between">
-                <div className="w-10 h-10 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600">
-                  <Wrench className="w-5 h-5" />
+            {/* Real-Time Inspector KPI Stats (4 Cards) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Card 1: Hàng Đợi Tiếp Nhận */}
+              <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-xs hover:shadow-md transition">
+                <div className="flex items-center justify-between">
+                  <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600">
+                    <ClipboardList className="w-5 h-5" />
+                  </div>
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                    Hàng đợi ngày
+                  </span>
                 </div>
-                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-                  ISO 5 Bước
-                </span>
-              </div>
-              <div className="mt-3">
-                <div className="text-2xl font-black text-[#24263e]">
-                  {inProgressCount} <span className="text-xs font-semibold text-slate-500">máy</span>
+                <div className="mt-3">
+                  <div className="text-2xl font-black text-[#24263e]">
+                    {assignedCount} <span className="text-xs font-semibold text-slate-500">đơn</span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5 font-medium">
+                    {lang === 'vi' ? 'Đơn hàng được phân công thẩm định' : 'Total assigned tasks'}
+                  </p>
                 </div>
-                <p className="text-xs text-slate-500 mt-0.5 font-medium">
-                  {lang === 'vi' ? 'Đo áp suất, vi mạch & cảm biến' : 'In-progress testing steps'}
-                </p>
+                <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-semibold">
+                  <span>Chờ đo kiểm:</span>
+                  <span className="text-blue-600 font-bold">{inProgressCount} thiết bị</span>
+                </div>
               </div>
-              <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-semibold">
-                <span>Trạng thái:</span>
-                <span className="text-amber-600 font-bold flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span>
-                  Đang thao tác
-                </span>
-              </div>
-            </div>
 
-            {/* Card 3: Khảo Sát Tận Nơi */}
-            <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-xs hover:shadow-md transition">
-              <div className="flex items-center justify-between">
-                <div className="w-10 h-10 rounded-xl bg-purple-50 border border-purple-100 flex items-center justify-center text-purple-600">
-                  <Navigation className="w-5 h-5" />
-                </div>
-                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
-                  Lưu động tận nơi
-                </span>
-              </div>
-              <div className="mt-3">
-                <div className="text-2xl font-black text-[#24263e]">
-                  {atHomeCount} <span className="text-xs font-semibold text-slate-500">lịch hẹn</span>
-                </div>
-                <p className="text-xs text-slate-500 mt-0.5 font-medium">
-                  {lang === 'vi' ? 'Khảo sát & thẩm định tại nhà khách' : 'At-home on-site visits'}
-                </p>
-              </div>
-              <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-semibold">
-                <span>Slot hẹn gần nhất:</span>
-                <span className="text-purple-600 font-bold">09:30 - 11:30</span>
-              </div>
-            </div>
+              {/* Card 2: Đang Đo Kiểm */}
+              <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-xs hover:shadow-md transition">
+                <div className="flex items-center justify-between">
+                  <div className="w-10 h-10 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600">
+                    <Wrench className="w-5 h-5" />
+                  </div>
 
-            {/* Card 4: Nghiệm Thu Pass */}
-            <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-xs hover:shadow-md transition">
-              <div className="flex items-center justify-between">
-                <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
-                  <ShieldCheck className="w-5 h-5" />
                 </div>
-                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                  Chuẩn Pass ISO
-                </span>
-              </div>
-              <div className="mt-3">
-                <div className="text-2xl font-black text-emerald-600">
-                  {completedOrders.length ? `${passRate}%` : passRate} <span className="text-xs font-semibold text-slate-500">({completedOrders.length} đơn)</span>
+                <div className="mt-3">
+                  <div className="text-2xl font-black text-[#24263e]">
+                    {inProgressCount} <span className="text-xs font-semibold text-slate-500">máy</span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5 font-medium">
+                    {lang === 'vi' ? 'Đo áp suất, vi mạch & cảm biến' : 'In-progress testing steps'}
+                  </p>
                 </div>
-                <p className="text-xs text-slate-500 mt-0.5 font-medium">
-                  {lang === 'vi' ? 'Đã cấp tem niêm phong số hóa' : 'Digital seal issued'}
-                </p>
+                <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-semibold">
+                  <span>Trạng thái:</span>
+                  <span className="text-amber-600 font-bold flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span>
+                    Đang thao tác
+                  </span>
+                </div>
               </div>
-              <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-semibold">
-                <span>Tiêu chuẩn:</span>
-                <span className="text-emerald-700 font-bold">Grade A & B (Like New)</span>
+
+              {/* Card 3: Khảo Sát Tận Nơi */}
+              <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-xs hover:shadow-md transition">
+                <div className="flex items-center justify-between">
+                  <div className="w-10 h-10 rounded-xl bg-purple-50 border border-purple-100 flex items-center justify-center text-purple-600">
+                    <Navigation className="w-5 h-5" />
+                  </div>
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+                    Lưu động tận nơi
+                  </span>
+                </div>
+                <div className="mt-3">
+                  <div className="text-2xl font-black text-[#24263e]">
+                    {atHomeCount} <span className="text-xs font-semibold text-slate-500">lịch hẹn</span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5 font-medium">
+                    {lang === 'vi' ? 'Khảo sát & thẩm định tại nhà khách' : 'At-home on-site visits'}
+                  </p>
+                </div>
+                <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-semibold">
+                  <span>Slot hẹn gần nhất:</span>
+                  <span className="text-purple-600 font-bold">09:30 - 11:30</span>
+                </div>
+              </div>
+
+              {/* Card 4: Nghiệm Thu Pass */}
+              <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-xs hover:shadow-md transition">
+                <div className="flex items-center justify-between">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
+                    <ShieldCheck className="w-5 h-5" />
+                  </div>
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    Chuẩn Pass ISO
+                  </span>
+                </div>
+                <div className="mt-3">
+                  <div className="text-2xl font-black text-emerald-600">
+                    {completedOrders.length ? `${passRate}%` : passRate} <span className="text-xs font-semibold text-slate-500">({completedOrders.length} đơn)</span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5 font-medium">
+                    {lang === 'vi' ? 'Đã cấp tem niêm phong số hóa' : 'Digital seal issued'}
+                  </p>
+                </div>
+                <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-semibold">
+                  <span>Tiêu chuẩn:</span>
+                  <span className="text-emerald-700 font-bold">Grade A & B (Like New)</span>
+                </div>
               </div>
             </div>
-          </div>
 
           </>}
 
@@ -1297,7 +1338,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                       try {
                         const raw = localStorage.getItem(`order_appointment_${ord.id}`);
                         if (raw) return JSON.parse(raw)?.scheduledAt;
-                      } catch {}
+                      } catch { }
                       return null;
                     })();
                     const isInspectorArrived = typeof window !== 'undefined' ? Boolean(
@@ -1306,6 +1347,10 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                       (ord as any).status === 'INSPECTING' ||
                       (ord as any).backendStatus === 'INSPECTING'
                     ) : false;
+                    const isOrderConfirmed = isOrderConfirmedByInspector({
+                      ...ord,
+                      stage,
+                    });
                     const canOpenWorkbench = isAtHome
                       ? Boolean(apptTime)
                       : (stage === 'assigned' || stage === 'inspecting');
@@ -1396,11 +1441,10 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                                     });
                                     const checkIn = canInspectorCheckIn(apptTime);
                                     return (
-                                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                                        !checkIn.allowed
-                                          ? 'bg-amber-50 text-amber-800 border-amber-200'
-                                          : 'bg-blue-50 text-blue-700 border-blue-200'
-                                      }`}>
+                                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${!checkIn.allowed
+                                        ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                        : 'bg-blue-50 text-blue-700 border-blue-200'
+                                        }`}>
                                         Đến Theo Hẹn ({formattedAppt}) {!checkIn.allowed ? '• Mở nhận đơn trước 30p' : ''}
                                       </span>
                                     );
@@ -1410,6 +1454,14 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                                     return (
                                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
                                         Chờ Người Bán Hẹn Lịch (8h-12h, 13h-17h)
+                                      </span>
+                                    );
+                                  }
+
+                                  if (isOrderConfirmed && stage === 'assigned') {
+                                    return (
+                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                        Đã Tiếp Nhận • Chờ Đo Kiểm
                                       </span>
                                     );
                                   }
@@ -1529,38 +1581,69 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                               <span>{stage === 'inbound' ? 'Chờ Hàng Đến Hub' : stage === 'completed' ? 'Chưa có biên bản để xem' : 'Bàn đo kiểm chưa khả dụng'}</span>
                             </button>
                           ) : (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSelectedOrderId(ord.id);
-                              }}
-                              className="flex-1 py-2 px-3 rounded-xl bg-[#24263e] hover:bg-[#1a1c2e] text-white text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs active:scale-[0.99]"
-                            >
-                              {isAtHome ? (
-                                isInspectorArrived ? (
-                                  <>
-                                    <Wrench className="w-3.5 h-3.5 text-[#fce5da]" />
-                                    <span>Vào Bàn Đo Kiểm (Tại Nhà)</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <QrCode className="w-3.5 h-3.5 text-amber-300" />
-                                    <span>
-                                      {(() => {
-                                        const appt = ord.appointmentScheduledAt || (ord as any).scheduledAt || getOrderScheduledAppointmentTime(ord);
-                                        const checkIn = canInspectorCheckIn(appt);
-                                        return !checkIn.allowed ? 'Chi Tiết Lịch Hẹn (Mở nhận đơn trước 30p)' : 'Quét Mã Nhận Máy (Tại Nhà)';
-                                      })()}
-                                    </span>
-                                  </>
-                                )
+                            <div className="flex-1 flex items-center gap-2">
+                              {!isOrderConfirmed ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleConfirmTask(ord.id, ord.listing?.title, isAtHome)}
+                                    className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs active:scale-[0.99]"
+                                    title="Xác nhận tiếp nhận đơn này. Hệ thống sẽ khóa quyền đổi kỹ thuật viên tại trung tâm để tránh xung đột dữ liệu."
+                                  >
+                                    <CheckCircle2 className="w-3.5 h-3.5" />
+                                    <span>Xác Nhận Đơn</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled
+                                    className="flex-1 py-2 px-3 rounded-xl bg-slate-100 text-slate-400 text-xs font-bold flex items-center justify-center gap-1.5 cursor-not-allowed border border-slate-200"
+                                    title="Vui lòng bấm 'Xác Nhận Đơn' trước khi vào bàn đo kiểm."
+                                  >
+                                    <Wrench className="w-3.5 h-3.5 text-slate-400" />
+                                    <span>Vào Bàn Đo Kiểm</span>
+                                  </button>
+                                </>
                               ) : (
                                 <>
-                                  <Wrench className="w-3.5 h-3.5 text-[#fce5da]" />
-                                  <span>Vào Bàn Đo Kiểm</span>
+                                  <div className="inline-flex items-center gap-1 px-2.5 py-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold shrink-0">
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                    <span>Đã nhận đơn</span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedOrderId(ord.id);
+                                    }}
+                                    className="flex-1 py-2 px-3 rounded-xl bg-[#24263e] hover:bg-[#1a1c2e] text-white text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs active:scale-[0.99]"
+                                  >
+                                    {isAtHome ? (
+                                      isInspectorArrived ? (
+                                        <>
+                                          <Wrench className="w-3.5 h-3.5 text-[#fce5da]" />
+                                          <span>Vào Bàn Đo Kiểm (Tại Nhà)</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <QrCode className="w-3.5 h-3.5 text-amber-300" />
+                                          <span>
+                                            {(() => {
+                                              const appt = ord.appointmentScheduledAt || (ord as any).scheduledAt || getOrderScheduledAppointmentTime(ord);
+                                              const checkIn = canInspectorCheckIn(appt);
+                                              return !checkIn.allowed ? 'Chi Tiết Lịch Hẹn (Mở nhận đơn trước 30p)' : 'Quét Mã Nhận Máy (Tại Nhà)';
+                                            })()}
+                                          </span>
+                                        </>
+                                      )
+                                    ) : (
+                                      <>
+                                        <Wrench className="w-3.5 h-3.5 text-[#fce5da]" />
+                                        <span>Vào Bàn Đo Kiểm</span>
+                                      </>
+                                    )}
+                                  </button>
                                 </>
                               )}
-                            </button>
+                            </div>
                           )}
                         </div>
                       </div>

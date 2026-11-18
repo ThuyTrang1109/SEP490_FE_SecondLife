@@ -42,12 +42,30 @@ export function useCenterOrderRefresh({
     window.addEventListener('secondlife_appointment_scheduled', handleSignal);
     window.addEventListener('secondlife_appointment_confirmed', handleSignal);
     window.addEventListener('secondlife_appointment_countered', handleSignal);
+    window.addEventListener('secondlife_inspector_confirmed_signal', handleSignal);
+
+    let channel: BroadcastChannel | null = null;
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        channel = new BroadcastChannel('secondlife_inspection_channel');
+        channel.onmessage = (event) => {
+          if (
+            event.data?.type === 'INSPECTOR_CONFIRMED' ||
+            event.data?.type === 'ORDER_ASSIGNED' ||
+            event.data?.type === 'APPOINTMENT_SCHEDULED'
+          ) {
+            handleSignal();
+          }
+        };
+      }
+    } catch {}
 
     const handleStorage = (e: StorageEvent) => {
       if (
         e.key === 'recent_placed_orders' ||
         e.key === 'center_inspection_orders' ||
         e.key?.startsWith('order_assigned_inspector_') ||
+        e.key?.startsWith('order_confirmed_by_inspector_') ||
         e.key?.startsWith('order_appointment_') ||
         e.key?.startsWith('inspection_status_') ||
         e.key?.startsWith('hub_package_received_') ||
@@ -67,6 +85,7 @@ export function useCenterOrderRefresh({
     if (showOrderShipments) document.addEventListener('visibilitychange', refreshOrderTracking);
 
     return () => {
+      channel?.close();
       window.removeEventListener('secondlife_order_placed_signal', handleSignal);
       window.removeEventListener('secondlife_inspection_task_created', handleSignal);
       window.removeEventListener('secondlife_order_assigned_signal', handleSignal);
@@ -76,6 +95,7 @@ export function useCenterOrderRefresh({
       window.removeEventListener('secondlife_appointment_scheduled', handleSignal);
       window.removeEventListener('secondlife_appointment_confirmed', handleSignal);
       window.removeEventListener('secondlife_appointment_countered', handleSignal);
+      window.removeEventListener('secondlife_inspector_confirmed_signal', handleSignal);
       window.removeEventListener('storage', handleStorage);
       window.clearInterval(trackingTimer);
       document.removeEventListener('visibilitychange', refreshOrderTracking);

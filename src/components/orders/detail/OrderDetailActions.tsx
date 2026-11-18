@@ -371,8 +371,13 @@ export function OrderDetailActions({
                             (detailModalOrder.escrowStatus as string) !== 'SHIPPED_TO_BUYER' &&
                             (detailModalOrder.escrowStatus as string) !== 'DELIVERED_INSPECTION_WINDOW' &&
                             (detailModalOrder.escrowStatus as string) !== 'COMPLETED_RELEASED' &&
+                            (detailModalOrder.escrowStatus as string) !== 'INSPECTION_FAILED' &&
+                            (detailModalOrder as any).backendStatus !== 'FAILED' &&
                             (
-                              ((detailModalOrder.escrowStatus as string) !== 'INSPECTION_PASSED' && (detailModalOrder as any).backendStatus !== 'PASSED') ||
+                              ((detailModalOrder.escrowStatus as string) !== 'INSPECTION_PASSED' &&
+                               (detailModalOrder.escrowStatus as string) !== 'INSPECTION_FAILED' &&
+                               (detailModalOrder as any).backendStatus !== 'PASSED' &&
+                               (detailModalOrder as any).backendStatus !== 'FAILED') ||
                               (detailIsAtHome && detailIsPurchaseAccepted)
                             ) && (
                               <div className="flex flex-col sm:flex-row items-stretch gap-2 flex-1">

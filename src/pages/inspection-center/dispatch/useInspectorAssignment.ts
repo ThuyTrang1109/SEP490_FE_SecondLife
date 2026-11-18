@@ -2,7 +2,7 @@ import { getOrderSellerAddress, getOrderSellerName, getOrderSellerPhone } from '
 import { useState, useEffect } from 'react';
 import { paths } from '../../../app/router/paths';
 import { inspectorService, InspectionOrderDto } from '../../../services';
-import { getCenterDispatchStage } from '../../../utils/inspectionCenterData';
+import { getCenterDispatchStage, isInspectorAssignmentLocked } from '../../../utils/inspectionCenterData';
 import { saveScopedLocalNotification } from '../../../utils/notificationStorage';
 import type { useCenterOrders } from '../orders/useCenterOrders';
 import type { useCenterShipments } from '../orders/useCenterShipments';
@@ -11,11 +11,12 @@ import type { useCenterStaff } from '../staff/useCenterStaff';
 interface Options {
   isOrderReceivedAtHub: ReturnType<typeof useCenterShipments>['isOrderReceivedAtHub'];
   orders: ReturnType<typeof useCenterOrders>['orders'];
+  setOrders?: ReturnType<typeof useCenterOrders>['setOrders'];
   showNotice: (msg: string) => void;
   staffList: ReturnType<typeof useCenterStaff>['staffList'];
 }
 
-export function useInspectorAssignment({ isOrderReceivedAtHub, orders, showNotice, staffList }: Options) {
+export function useInspectorAssignment({ isOrderReceivedAtHub, orders, setOrders, showNotice, staffList }: Options) {
   // --- Assign Modal State ---
   const [assignModalOrder, setAssignModalOrder] = useState<InspectionOrderDto | null>(null);
 
@@ -34,6 +35,10 @@ export function useInspectorAssignment({ isOrderReceivedAtHub, orders, showNotic
 
   const handleOpenAssign = (order: InspectionOrderDto) => {
     setAssignError(null);
+    if (isInspectorAssignmentLocked(order)) {
+      showNotice('Kỹ thuật viên đã xác nhận đơn hoặc đang tiến hành kiểm định. Quyền đổi KTV đã bị khóa.');
+      return;
+    }
     const resolvedAddr = getOrderSellerAddress(order);
     const resolvedPhone = getOrderSellerPhone(order);
     const resolvedName = getOrderSellerName(order);
@@ -53,19 +58,25 @@ export function useInspectorAssignment({ isOrderReceivedAtHub, orders, showNotic
     setAssignError(null);
     if (!assignModalOrder) return;
 
+    const currentOrder = orders.find((order) => order.id === assignModalOrder.id);
+    if (!currentOrder) {
+      setAssignError('Đơn không còn trong danh sách điều phối của trung tâm.');
+      return;
+    }
+
+    if (isInspectorAssignmentLocked(currentOrder)) {
+      setAssignError('Kỹ thuật viên đã xác nhận đơn hoặc đang tiến hành kiểm định. Quyền đổi KTV đã bị khóa.');
+      return;
+    }
+
     if (!staffList.some((staff) => staff.id === selectedInspectorId)) {
       setAssignError('Vui lòng chọn kỹ thuật viên kiểm định từ danh sách trước khi xác nhận.');
       return;
     }
 
-    const currentOrder = orders.find((order) => order.id === assignModalOrder.id) ?? assignModalOrder;
     const stage = getCenterDispatchStage(currentOrder, isOrderReceivedAtHub(currentOrder));
     if (!stage) {
       setAssignError('Đơn kiểm định hiện không ở giai đoạn điều phối.');
-      return;
-    }
-    if (stage === 'WAITING_FOR_HUB') {
-      setAssignError('Hub cần xác nhận đã nhận kiện hàng trước khi giao task cho KTV.');
       return;
     }
 
@@ -91,6 +102,21 @@ export function useInspectorAssignment({ isOrderReceivedAtHub, orders, showNotic
         localStorage.removeItem(`order_dispatch_note_${assignModalOrder.id}`);
       }
 
+      // Xóa triệt để mọi cờ xác nhận KTV cũ đối với đơn này (cho mọi biến thể ID)
+      const allTargetIds = [
+        assignModalOrder.id,
+        (assignModalOrder as any).orderId,
+        (assignModalOrder as any).linkedOrderId,
+        (assignModalOrder as any).inspectionOrderId,
+      ].filter(Boolean) as string[];
+
+      allTargetIds.forEach((id) => {
+        localStorage.removeItem(`order_confirmed_by_inspector_${id}`);
+        localStorage.removeItem(`order_confirmed_by_inspector_at_${id}`);
+        localStorage.removeItem(`inspection_status_${id}`);
+        localStorage.removeItem(`inspector_confirmed_order_${id}`);
+      });
+
       localStorage.setItem(
         `order_assigned_inspector_${assignModalOrder.id}`,
         JSON.stringify({
@@ -114,7 +140,7 @@ export function useInspectorAssignment({ isOrderReceivedAtHub, orders, showNotic
         if (raw) {
           const list = JSON.parse(raw);
           const updated = list.map((o: any) => {
-            if (o.id === assignModalOrder.id) {
+            if (allTargetIds.includes(o.id) || allTargetIds.includes(o.linkedOrderId) || allTargetIds.includes(o.inspectionOrderId)) {
               return {
                 ...o,
                 inspectorId: selectedInspectorId,
@@ -123,9 +149,10 @@ export function useInspectorAssignment({ isOrderReceivedAtHub, orders, showNotic
                 sellerAddress: resolvedSellerAddress,
                 sellerPhone: resolvedSellerPhone,
                 sellerName: resolvedSellerName,
-                status: assignedOrder.status,
-                backendStatus: assignedOrder.status,
-                inspectionStatus: assignedOrder.customerStatus || assignedOrder.status,
+                inspectorConfirmed: false,
+                status: assignedOrder.status || 'DISPATCHED',
+                backendStatus: assignedOrder.status || 'DISPATCHED',
+                inspectionStatus: 'DISPATCHED',
               };
             }
             return o;
@@ -139,7 +166,7 @@ export function useInspectorAssignment({ isOrderReceivedAtHub, orders, showNotic
         const rawCenter = localStorage.getItem('center_inspection_orders');
         let listCenter = rawCenter ? JSON.parse(rawCenter) : [];
         if (!Array.isArray(listCenter)) listCenter = [];
-        const existingIdx = listCenter.findIndex((o: any) => o.id === assignModalOrder.id);
+        const existingIdx = listCenter.findIndex((o: any) => allTargetIds.includes(o.id) || allTargetIds.includes(o.linkedOrderId) || allTargetIds.includes(o.inspectionOrderId));
         if (existingIdx >= 0) {
           listCenter[existingIdx] = {
             ...listCenter[existingIdx],
@@ -149,8 +176,10 @@ export function useInspectorAssignment({ isOrderReceivedAtHub, orders, showNotic
             sellerAddress: resolvedSellerAddress,
             sellerPhone: resolvedSellerPhone,
             sellerName: resolvedSellerName,
-            status: assignedOrder.status,
-            backendStatus: assignedOrder.status,
+            inspectorConfirmed: false,
+            status: assignedOrder.status || 'DISPATCHED',
+            backendStatus: assignedOrder.status || 'DISPATCHED',
+            customerStatus: undefined,
           };
         } else {
           listCenter.unshift({
@@ -161,11 +190,38 @@ export function useInspectorAssignment({ isOrderReceivedAtHub, orders, showNotic
             sellerAddress: resolvedSellerAddress,
             sellerPhone: resolvedSellerPhone,
             sellerName: resolvedSellerName,
-            status: assignedOrder.status,
-            backendStatus: assignedOrder.status,
+            inspectorConfirmed: false,
+            status: assignedOrder.status || 'DISPATCHED',
+            backendStatus: assignedOrder.status || 'DISPATCHED',
           });
         }
         localStorage.setItem('center_inspection_orders', JSON.stringify(listCenter));
+      } catch { }
+
+      // Cập nhật ngay vào state orders của Hub để CenterDispatch hiển thị nút "Đổi KTV" khả dụng
+      if (setOrders) {
+        setOrders((prev) => prev.map((ord) => {
+          if (allTargetIds.includes(ord.id)) {
+            return {
+              ...ord,
+              inspectorId: selectedInspectorId,
+              inspectorName: inspectorName,
+              inspectorEmail: inspectorEmail,
+              inspectorConfirmed: false,
+              status: assignedOrder.status || 'DISPATCHED',
+              backendStatus: assignedOrder.status || 'DISPATCHED',
+            };
+          }
+          return ord;
+        }));
+      }
+
+      try {
+        if (typeof BroadcastChannel !== 'undefined') {
+          const bc = new BroadcastChannel('secondlife_inspection_channel');
+          bc.postMessage({ type: 'ORDER_ASSIGNED', orderId: assignModalOrder.id, inspectorId: selectedInspectorId });
+          bc.close();
+        }
       } catch { }
 
       // Send local scoped notification for the Seller and Inspector

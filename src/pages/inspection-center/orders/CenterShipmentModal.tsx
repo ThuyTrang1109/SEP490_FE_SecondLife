@@ -2,7 +2,7 @@ import { MapPin, RefreshCw, Loader2, Plus, Truck, Package } from 'lucide-react';
 import { LalamoveProgress } from '../../../components/common/LalamoveProgress';
 import { InspectionCashShipmentStatus } from '../../../components/inspection/InspectionCashShipmentStatus';
 import { UserProfile } from '../../../types';
-import { canBookCenterBuyerDelivery, canBookCenterReturn, getHubReturnProgress, getReturnReserveMessage } from '../../../utils/inspectionCenterData';
+import { canBookCenterBuyerDelivery, canBookCenterReturn, getHubReturnProgress, getInboundShipmentProgress, getReturnReserveMessage } from '../../../utils/inspectionCenterData';
 import { resolveInspectionCenter } from '../../../utils/orderUtils';
 import { formatVND } from '../../../utils/translations';
 import type { useCenterProfile } from '../useCenterProfile';
@@ -32,7 +32,9 @@ interface Props {
     | 'shipmentModalRequestRef'
     | 'shipmentSuccess'
     | 'syncingShipments'
-  >;
+  > & {
+    isOrderReceivedAtHub?: ReturnType<typeof useCenterShipments>['isOrderReceivedAtHub'];
+  };
 }
 
 export function CenterShipmentModal({ centerProfile, currentUser, shipmentModalOrder, shipments }: Props) {
@@ -49,6 +51,7 @@ export function CenterShipmentModal({ centerProfile, currentUser, shipmentModalO
     inboundShipments,
     inspectionShipments,
     isLoadingShipments,
+    isOrderReceivedAtHub,
     setReturnQuoteOrder,
     setShipmentError,
     setShipmentSuccess,
@@ -64,6 +67,18 @@ export function CenterShipmentModal({ centerProfile, currentUser, shipmentModalO
     canBookCenterReturn(shipmentModalOrder, currentUser?.id, currentUser?.role, hubReturns.get(orderId));
   const canBookBuyerDelivery = hasCheckedShipments &&
     canBookCenterBuyerDelivery(shipmentModalOrder, currentUser?.id, buyerShipments.get(orderId));
+
+  const effectiveShipments = inspectionShipments.length > 0
+    ? inspectionShipments
+    : (() => {
+        const inbound = inboundShipments.get(orderId);
+        if (inbound) return [inbound];
+        const buyer = buyerShipments.get(orderId);
+        if (buyer) return [buyer];
+        const ret = hubReturns.get(orderId)?.shipment;
+        if (ret) return [ret];
+        return [];
+      })();
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in">
@@ -108,7 +123,7 @@ export function CenterShipmentModal({ centerProfile, currentUser, shipmentModalO
         <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 pb-2 shrink-0">
           <div className="inline-flex items-center gap-1.5 rounded-xl bg-[#24263e] px-3.5 py-1.5 text-xs font-bold text-white">
             <Package className="w-3.5 h-3.5" />
-            <span>Lộ Trình Vận Đơn ({inspectionShipments.length})</span>
+            <span>Lộ Trình Vận Đơn ({effectiveShipments.length})</span>
           </div>
           {canBookReturn && (
             <button
@@ -143,14 +158,14 @@ export function CenterShipmentModal({ centerProfile, currentUser, shipmentModalO
                 <Loader2 className="w-6 h-6 animate-spin text-[#c34c36]" />
                 <span>Đang tải lộ trình vận chuyển từ máy chủ...</span>
               </div>
-            ) : inspectionShipments.length === 0 ? (
+            ) : effectiveShipments.length === 0 ? (
               <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-2xl space-y-2">
                 <Truck className="w-8 h-8 text-slate-300 mx-auto" />
                 <p className="font-bold text-slate-700">Chưa có vận đơn nào cho đơn kiểm định này.</p>
               </div>
             ) : (
               <div className="space-y-3">
-                {inspectionShipments.map((s, idx) => {
+                {effectiveShipments.map((s, idx) => {
                   const isSellerToCenter = s.leg === 'SELLER_TO_CENTER';
                   const isCenterToBuyer = s.leg === 'CENTER_TO_BUYER';
                   const isCenterToSeller = s.leg === 'CENTER_TO_SELLER';
@@ -182,14 +197,73 @@ export function CenterShipmentModal({ centerProfile, currentUser, shipmentModalO
                           </span>
                         </div>
                         <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                          {isCenterToSeller ? getHubReturnProgress(s).label : (s.providerStatus || s.status || 'ĐANG_ĐIỀU_PHỐI')}
+                          {isCenterToSeller
+                            ? getHubReturnProgress(s).label
+                            : isSellerToCenter
+                              ? ((s.status === 'DELIVERED' || s.status === 'COMPLETED' || s.providerStatus === 'COMPLETED' || Boolean(isOrderReceivedAtHub?.(shipmentModalOrder)))
+                                ? 'Đã nhận tại Hub'
+                                : (getInboundShipmentProgress(s).label || s.providerStatus || s.status || 'Đang điều phối'))
+                              : isCenterToBuyer
+                                ? ((s.status === 'DELIVERED' || s.status === 'COMPLETED' || s.providerStatus === 'COMPLETED')
+                                  ? 'Đã giao tới người mua'
+                                  : (getInboundShipmentProgress(s).label || s.providerStatus || s.status || 'Đang điều phối'))
+                                : (s.providerStatus || s.status || 'Đang điều phối')}
                         </span>
                       </div>
 
                       <InspectionCashShipmentStatus shipment={s} />
+
+                      {isSellerToCenter && (() => {
+                        const rawProg = getInboundShipmentProgress(s);
+                        const isDelivered = s.status === 'DELIVERED' || s.status === 'COMPLETED' || s.providerStatus === 'COMPLETED' || rawProg.step === 3 || Boolean(isOrderReceivedAtHub?.(shipmentModalOrder));
+                        const step = isDelivered ? 3 : rawProg.step;
+                        return (
+                          <div className="space-y-2 text-[11px] text-slate-700">
+                            <LalamoveProgress
+                              title="Tiến trình vận chuyển Lalamove (Người bán → Hub)"
+                              routeBadge="Chặng 1: Seller ➔ Hub"
+                              currentStep={step}
+                              completeCurrentStep={isDelivered}
+                            />
+                            {s.shareLink && (
+                              <a href={s.shareLink} target="_blank" rel="noreferrer" className="font-bold text-blue-700 hover:underline inline-block">
+                                Theo dõi trên Lalamove
+                              </a>
+                            )}
+                            {s.lastError && <p className="text-rose-700">{s.lastError}</p>}
+                          </div>
+                        );
+                      })()}
+
+                      {isCenterToBuyer && (() => {
+                        const buyerProg = getInboundShipmentProgress(s);
+                        const isDelivered = s.status === 'DELIVERED' || s.status === 'COMPLETED' || s.providerStatus === 'COMPLETED' || buyerProg.step === 3;
+                        return (
+                          <div className="space-y-2 text-[11px] text-slate-700">
+                            <LalamoveProgress
+                              title="Tiến trình giao hàng Lalamove (Hub → Người mua)"
+                              routeBadge="Chặng 2: Hub ➔ Buyer"
+                              currentStep={buyerProg.step}
+                              completeCurrentStep={isDelivered}
+                            />
+                            {s.shareLink && (
+                              <a href={s.shareLink} target="_blank" rel="noreferrer" className="font-bold text-blue-700 hover:underline inline-block">
+                                Theo dõi trên Lalamove
+                              </a>
+                            )}
+                            {s.lastError && <p className="text-rose-700">{s.lastError}</p>}
+                          </div>
+                        );
+                      })()}
+
                       {isCenterToSeller && (
                         <div className="space-y-2 text-[11px] text-slate-700">
-                          <LalamoveProgress currentStep={getHubReturnProgress(s).step} completeCurrentStep={s.status === 'DELIVERED'} />
+                          <LalamoveProgress
+                            title="Tiến trình hoàn trả Lalamove (Hub → Người bán)"
+                            routeBadge="Chặng Hoàn Trả: Hub ➔ Seller"
+                            currentStep={getHubReturnProgress(s).step}
+                            completeCurrentStep={s.status === 'DELIVERED'}
+                          />
                           <p>Dự phòng {shipmentModalOrder.returnShippingReserveFee == null ? '—' : formatVND(shipmentModalOrder.returnShippingReserveFee)} · Cước thực tế {s.actualFee == null ? 'Chưa có' : formatVND(s.actualFee)}</p>
                           {s.deliveredAt && <p>Giao hoàn lúc {new Date(s.deliveredAt).toLocaleString('vi-VN')}</p>}
                           <p>{getReturnReserveMessage(shipmentModalOrder.returnShippingReserveFee, s)}</p>

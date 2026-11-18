@@ -1,4 +1,5 @@
 import { CheckCircle2, Clock, ShieldCheck, Store, Truck, User } from 'lucide-react';
+import { buyerFeePercentFor, feePercentLabel } from '../../../utils/inspectionFeePercent';
 import type { EscrowOrder, Language } from '../../../types';
 import type { OrderAppointment } from '../../../utils/orders/orderAppointments';
 import type { OrderCheck } from '../../../types/orders/orderTypes';
@@ -109,26 +110,53 @@ export function OrderCardSummary({
               <span>{lang === 'vi' ? 'Số lượng: 1' : 'Qty: 1'}</span>
             </div>
 
-            {!isOrderCancelledOrRefunded(ord) ? (
-              orderIsSeller ? (
-                <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
-                  <span className="inline-flex items-center gap-1 text-slate-600">
-                    <Truck className="w-3.5 h-3.5 text-slate-400" />
-                    <span>{lang === 'vi' ? 'Tài xế: Lalamove (Lấy tại kho Seller)' : 'Courier: Lalamove (Pickup at Seller)'}</span>
-                  </span>
-                  {ord.sellerConfirmedAt ? (
-                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                      <span>{lang === 'vi' ? 'Đã xác nhận đơn' : 'Confirmed'}</span>
+            {(() => {
+              const isFailedInspection = ord.inspectionStatus === 'FAILED' ||
+                ord.escrowStatus === 'INSPECTION_FAILED' ||
+                String((ord as any).backendStatus || '').toUpperCase() === 'FAILED' ||
+                String((ord as any).status || '').toUpperCase() === 'FAILED';
+
+              if (isFailedInspection || isOrderCancelledOrRefunded(ord)) {
+                return (
+                  Boolean((ord as any).note || (ord as any).inspectionNote || ord.cancellationReason) && (() => {
+                    const displayReason = formatOrderCancellationReason(
+                      (ord as any).note || (ord as any).inspectionNote || ord.cancellationReason,
+                      lang
+                    );
+                    if (!displayReason) return null;
+                    return (
+                      <p className="text-[11px] text-rose-600 font-medium mt-0.5 line-clamp-2">
+                        <span className="font-semibold">{lang === 'vi' ? 'Lý do: ' : 'Reason: '}</span>
+                        {displayReason}
+                      </p>
+                    );
+                  })()
+                );
+              }
+
+              if (orderIsSeller) {
+                return (
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+                    <span className="inline-flex items-center gap-1 text-slate-600">
+                      <Truck className="w-3.5 h-3.5 text-slate-400" />
+                      <span>{lang === 'vi' ? 'Tài xế: Lalamove (Lấy tại kho Seller)' : 'Courier: Lalamove (Pickup at Seller)'}</span>
                     </span>
-                  ) : ord.confirmationDeadline ? (
-                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
-                      <Clock className="w-3 h-3 text-amber-600" />
-                      <span>{lang === 'vi' ? 'Hạn xác nhận: ' : 'Confirm before: '}{new Date(ord.confirmationDeadline).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}</span>
-                    </span>
-                  ) : null}
-                </div>
-              ) : (
+                    {ord.sellerConfirmedAt ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                        <span>{lang === 'vi' ? 'Đã xác nhận đơn' : 'Confirmed'}</span>
+                      </span>
+                    ) : ord.confirmationDeadline ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                        <Clock className="w-3 h-3 text-amber-600" />
+                        <span>{lang === 'vi' ? 'Hạn xác nhận: ' : 'Confirm before: '}{new Date(ord.confirmationDeadline).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}</span>
+                      </span>
+                    ) : null}
+                  </div>
+                );
+              }
+
+              return (
                 <div className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                   <ShieldCheck className="w-3.5 h-3.5" />
                   <span>
@@ -137,22 +165,8 @@ export function OrderCardSummary({
                       : (lang === 'vi' ? 'Bảo Vệ Người Mua (Escrow)' : 'Buyer Protection (Escrow)')}
                   </span>
                 </div>
-              )
-            ) : (
-              Boolean((ord as any).note || (ord as any).inspectionNote || ord.cancellationReason) && (() => {
-                const displayReason = formatOrderCancellationReason(
-                  (ord as any).note || (ord as any).inspectionNote || ord.cancellationReason,
-                  lang
-                );
-                if (!displayReason) return null;
-                return (
-                  <p className="text-[11px] text-rose-600 font-medium mt-0.5 line-clamp-2">
-                    <span className="font-semibold">{lang === 'vi' ? 'Lý do: ' : 'Reason: '}</span>
-                    {displayReason}
-                  </p>
-                );
-              })()
-            )}
+              );
+            })()}
 
             {/* Inspection Method & Fee Sharing Badge */}
             {hasInspection && !isOrderCancelledOrRefunded(ord) && (
@@ -167,11 +181,7 @@ export function OrderCardSummary({
                 </span>
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
                   <span>
-                    {ord.inspectionFeeSplit === 'SPLIT_50_50'
-                      ? (lang === 'vi' ? 'Chia đôi phí 50/50' : 'Split 50/50')
-                      : ord.inspectionFeeSplit === 'SELLER_100'
-                        ? (lang === 'vi' ? 'Người bán 100%' : 'Seller 100%')
-                        : (lang === 'vi' ? 'Người mua 100%' : 'Buyer 100%')}
+                    {feePercentLabel(ord.buyerFeePercent ?? buyerFeePercentFor(ord.inspectionFeeSplit) ?? 100, lang)}
                   </span>
                 </span>
               </div>

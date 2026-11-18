@@ -126,6 +126,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
   const assignment = useInspectorAssignment({
     isOrderReceivedAtHub,
     orders,
+    setOrders,
     showNotice,
     staffList,
   });

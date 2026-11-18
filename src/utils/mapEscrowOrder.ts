@@ -514,6 +514,7 @@ export function mapEscrowOrder(bOrd: any, {
     cancelledBy: isCompletedOrReleased ? null : (bOrd.cancelledBy || null),
     hasInspectionService: isInspectionOrder,
     feePayer: resolvedFeePayer,
+    buyerFeePercent: bOrd.buyerFeePercent ?? rawInspOrder.buyerFeePercent,
     inspectionFeeSplit: resolvedFeeSplit,
     sellerFeeShare: resolvedSellerFeeShare,
     buyerFeeShare: resolvedBuyerFeeShare,

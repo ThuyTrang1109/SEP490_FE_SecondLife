@@ -274,7 +274,7 @@ export function OrderCardActions({
               )}
 
               {/* GIAI ĐOẠN NỘP PHÍ KIỂM ĐỊNH (WAITING_FEE_PAYMENT) CHO SELLER */}
-              {String((ord as any)?.backendStatus || '').toUpperCase() === 'WAITING_FEE_PAYMENT' && (
+              {['WAITING_FEE_PAYMENT'].includes(String((ord as any)?.backendStatus || (ord as any)?.inspectionStatus || (ord as any)?.inspectionOrder?.status || ord.status || '').toUpperCase()) && (
                 (() => {
                   const isFeePending = isPartyInspectionFeePending(ord, true);
                   const sellerFee = getPartyInspectionFee(ord, true);
@@ -341,7 +341,8 @@ export function OrderCardActions({
 
               {/* GIAI ĐOẠN 2: ĐÃ XÁC NHẬN • ĐANG ĐÓNG GÓI */}
               {isOrderSellerConfirmed(ord) &&
-                !['WAITING_SELLER_APPROVAL', 'WAITING_BUYER_APPROVAL', 'WAITING_FEE_PAYMENT', 'PENDING'].includes(String((ord as any)?.backendStatus || (ord as any)?.inspectionStatus || (ord as any)?.inspectionOrder?.status || ord.status || '').toUpperCase()) &&
+                !isPendingApprovalOrFeeInAction &&
+                !['WAITING_SELLER_APPROVAL', 'WAITING_BUYER_APPROVAL', 'WAITING_FEE_PAYMENT', 'PENDING', 'INSPECTION_FAILED', 'FAILED'].includes(String((ord as any)?.backendStatus || (ord as any)?.inspectionStatus || (ord as any)?.inspectionOrder?.status || ord.status || '').toUpperCase()) &&
                 (ord.status as string) !== 'WAITING_SELLER_APPROVAL' &&
                 (ord as any).backendStatus !== 'WAITING_SELLER_APPROVAL' &&
                 (ord as any).inspectionStatus !== 'WAITING_SELLER_APPROVAL' &&
@@ -356,8 +357,10 @@ export function OrderCardActions({
                 ord.escrowStatus !== 'SHIPPED_TO_BUYER' &&
                 ord.escrowStatus !== 'DELIVERED_INSPECTION_WINDOW' &&
                 ord.escrowStatus !== 'COMPLETED_RELEASED' &&
+                ord.escrowStatus !== 'INSPECTION_FAILED' &&
+                (ord as any).backendStatus !== 'FAILED' &&
                 (
-                  (!['INSPECTION_PASSED', 'PASSED'].includes(ord.escrowStatus || '') && (ord as any).backendStatus !== 'PASSED') ||
+                  (!['INSPECTION_PASSED', 'PASSED', 'INSPECTION_FAILED', 'FAILED'].includes(ord.escrowStatus || '') && (ord as any).backendStatus !== 'PASSED' && (ord as any).backendStatus !== 'FAILED') ||
                   (isAtHome && isPurchaseAccepted)
                 ) && (
                   <>
@@ -409,9 +412,11 @@ export function OrderCardActions({
                   </>
                 )}
 
-              {/* GIAI ĐOẠN 3: ĐÃ ĐÓNG GÓI • CHỜ SHIPPER ĐẾN LẤY */}
-              {(!hasInspection || !isAtHome) &&
-                (hasInboundTracking || isOrderPacked(ord)) &&
+              {/* GIAI ĐOẠN 3: ĐÃ ĐÓNG GÓI • CHỜ SHIPPER ĐẾN LẤY (CHỈ DÀNH CHO ĐƠN TRỰC TIẾP KHÔNG KIỂM ĐỊNH) */}
+              {!isPendingApprovalOrFeeInAction &&
+                !hasInspection &&
+                !isAtHome &&
+                isOrderPacked(ord) &&
                 !isOrderReceiptConfirmed(ord) &&
                 ord.backendStatus !== 'COMPLETED' &&
                 !ord.shippingDeliveredAt &&
@@ -444,8 +449,11 @@ export function OrderCardActions({
                   </>
                 )}
 
-              {/* GIAI ĐOẠN 4: ĐANG GIAO HÀNG (Hoặc đã hoàn thành) */}
-              {!isAtHome && !hasInboundTracking && (ord.carrierPickedUpAt ||
+              {/* GIAI ĐOẠN 4: ĐANG GIAO HÀNG (Hoặc đã hoàn thành) (CHỈ DÀNH CHO ĐƠN TRỰC TIẾP KHÔNG KIỂM ĐỊNH) */}
+              {!isPendingApprovalOrFeeInAction &&
+                !hasInspection &&
+                !isAtHome &&
+                (ord.carrierPickedUpAt ||
                 ord.backendStatus === 'SHIPPED' ||
                 ord.backendStatus === 'DELIVERED' ||
                 (ord.escrowStatus as string) === 'SHIPPED_TO_BUYER' ||
@@ -632,7 +640,7 @@ export function OrderCardActions({
               )}
 
               {/* Buyer Bank Transfer Escrow Deposit (CHỈ HIỆN KHI ĐƠN HÀNG CHƯA THANH TOÁN TIỀN HÀNG ESCROW BAN ĐẦU) */}
-              {!orderIsSeller && isOrderUnpaid(ord) && String((ord as any)?.backendStatus || '').toUpperCase() !== 'WAITING_FEE_PAYMENT' && ord.inspectionFeeSplit !== 'SELLER_100' && (
+              {!orderIsSeller && isOrderUnpaid(ord) && !['WAITING_FEE_PAYMENT'].includes(String((ord as any)?.backendStatus || (ord as any)?.inspectionStatus || (ord as any)?.inspectionOrder?.status || ord.status || '').toUpperCase()) && ord.inspectionFeeSplit !== 'SELLER_100' && (
                 <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     onClick={(e) => {
@@ -654,7 +662,7 @@ export function OrderCardActions({
               )}
 
               {/* GIAI ĐOẠN NỘP PHÍ KIỂM ĐỊNH (WAITING_FEE_PAYMENT) CHO BUYER (Chỉ hiện khi Người Mua có nghĩa vụ đóng phí > 0) */}
-              {!orderIsSeller && String((ord as any)?.backendStatus || '').toUpperCase() === 'WAITING_FEE_PAYMENT' && (
+              {!orderIsSeller && ['WAITING_FEE_PAYMENT'].includes(String((ord as any)?.backendStatus || (ord as any)?.inspectionStatus || (ord as any)?.inspectionOrder?.status || ord.status || '').toUpperCase()) && (
                 (() => {
                   const buyerFee = getPartyInspectionFee(ord, false);
                   if (buyerFee <= 0 || ord.inspectionFeeSplit === 'SELLER_100') return null;

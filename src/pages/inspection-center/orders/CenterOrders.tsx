@@ -1,4 +1,4 @@
-import { ClipboardList, ChevronDown, Loader2, Eye, Check, Truck, RotateCcw } from 'lucide-react';
+import { ClipboardList, ChevronDown, Loader2, Eye, Truck, RotateCcw } from 'lucide-react';
 import React, { type ReactNode } from 'react';
 import { LalamoveProgress } from '../../../components/common/LalamoveProgress';
 import { CenterInspectionFees, CenterInspectionFeeStatus } from '../../../components/inspection/CenterInspectionFees';
@@ -38,7 +38,6 @@ interface Props {
     | 'deniedShipmentOrders'
     | 'expandedBuyerOrderId'
     | 'expandedInboundOrderId'
-    | 'expandedReturnOrderId'
     | 'handleBookBuyerDelivery'
     | 'handleOpenShipmentModal'
     | 'hubReturns'
@@ -46,7 +45,6 @@ interface Props {
     | 'isOrderReceivedAtHub'
     | 'setExpandedBuyerOrderId'
     | 'setExpandedInboundOrderId'
-    | 'setExpandedReturnOrderId'
     | 'setReturnQuoteOrder'
   >;
   orderHistory: Pick<ReturnType<typeof useCenterOrderHistory>,
@@ -75,7 +73,6 @@ export function CenterOrders({
     deniedShipmentOrders,
     expandedBuyerOrderId,
     expandedInboundOrderId,
-    expandedReturnOrderId,
     handleBookBuyerDelivery,
     handleOpenShipmentModal,
     hubReturns,
@@ -83,7 +80,6 @@ export function CenterOrders({
     isOrderReceivedAtHub,
     setExpandedBuyerOrderId,
     setExpandedInboundOrderId,
-    setExpandedReturnOrderId,
     setReturnQuoteOrder,
   } = shipments;
   const { expandedFeeOrderId, feeFilter, orderHistoryRows, setExpandedFeeOrderId, setFeeFilter } = orderHistory;
@@ -161,53 +157,24 @@ export function CenterOrders({
                     isOrderReceivedAtHub(ord)
                   )
                 );
-                const progress = rawProgress || (isInboundDelivered ? { step: 3, label: 'Đã nhận tại Hub' } : null);
+                const progress = isInboundDelivered
+                  ? { step: 3, label: 'Đã nhận tại Hub' }
+                  : (rawProgress || null);
 
                 // Khi đơn đang ở trạng thái "Chờ Người Bán Gửi Hub" (chưa giao hàng và chưa có vận đơn),
                 // thì không hiển thị nút "Vận đơn gửi đến Hub" cũng như khung Chặng 1.
                 const isWaitingSellerToHub = isAtCenter && !isInboundDelivered && !shipment && ord.status !== 'SHIPPING_TO_CENTER';
 
-                const canViewInbound = !isWaitingSellerToHub && isAtCenter && !paidHubDelivery && !isHubReturnCase(ord) &&
-                  (shouldTrackInboundShipment(ord) || hasCertificate) &&
+                const canViewInbound = !isWaitingSellerToHub && isAtCenter &&
+                  (shouldTrackInboundShipment(ord) || hasCertificate || isInboundDelivered || Boolean(shipment)) &&
                   canReadCenterInspectionShipments(ord, currentUser?.id) && !deniedShipmentOrders.has(ord.id);
                 const returnState = hubReturns.get(ord.id);
                 const returnShipment = returnState?.shipment;
                 const canBookReturn = canBookCenterReturn(ord, currentUser?.id, currentUser?.role, returnState);
 
-                // Tự động ẩn / thu gọn tiến trình Chặng 1 sau 15 phút từ lúc nhận hàng tại Hub
-                const isInboundOver15Min = Boolean(
-                  isInboundDelivered && (() => {
-                    if (returnShipment || buyerShipment) return true;
-                    const rawDelivered = shipment?.deliveredAt || (shipment as any)?.completedAt || (shipment as any)?.updatedAt || ord.updatedAt || ord.createdAt;
-                    if (rawDelivered) {
-                      const ts = new Date(rawDelivered).getTime();
-                      if (!isNaN(ts) && (Date.now() - ts > 15 * 60 * 1000)) return true;
-                    }
-                    if (typeof window !== 'undefined' && ord.id) {
-                      const key = `inbound_delivered_ts_${ord.id}`;
-                      const stored = localStorage.getItem(key);
-                      if (stored) {
-                        const storedTs = Number(stored);
-                        if (!isNaN(storedTs) && (Date.now() - storedTs > 15 * 60 * 1000)) return true;
-                      } else {
-                        if (hasCertificate) {
-                          localStorage.setItem(key, String(Date.now() - 20 * 60 * 1000));
-                          return true;
-                        }
-                        localStorage.setItem(key, String(Date.now()));
-                      }
-                    }
-                    return false;
-                  })()
-                );
-
-                const isExpandedInbound = expandedInboundOrderId === ord.id;
-                const isExpandedReturn = expandedReturnOrderId === ord.id;
                 const isExpandedBuyer = expandedBuyerOrderId === ord.id;
                 const isExpandedFees = expandedFeeOrderId === ord.id;
-                const hasAnyExpanded = isExpandedFees || isExpandedInbound || isExpandedReturn || isExpandedBuyer;
-                const inboundProgressId = `inbound-progress-${ord.id}`;
-                const returnProgressId = `return-progress-${ord.id}`;
+                const hasAnyExpanded = isExpandedFees || isExpandedBuyer;
                 const buyerProgressId = `buyer-progress-${ord.id}`;
                 const feeDetailsId = `fee-details-${ord.id}`;
                 const hasInboundInfo = !isWaitingSellerToHub && isAtCenter && (shipment || progress || shouldTrackInboundShipment(ord) || canViewInbound || isInboundDelivered);
@@ -270,25 +237,10 @@ export function CenterOrders({
 
                         {/* 2. CHẶNG 1: VẬN CHUYỂN TỪ NGƯỜI BÁN VỀ HUB (KIỂM ĐỊNH) */}
                         {hasInboundInfo && (
-                          <div className={`rounded-xl border p-2.5 text-[11px] transition-all shadow-2xs ${isInboundOver15Min
-                            ? 'border-blue-200/80 bg-blue-50/40 text-slate-700'
-                            : 'border-blue-200 bg-blue-50/70 text-blue-950'
-                            }`}>
-                            <div className="flex flex-wrap items-center justify-between gap-1.5 font-bold">
-                              <span className="flex items-center gap-1.5 text-blue-950">
-                                <Truck className="h-3.5 w-3.5 text-blue-600 shrink-0" />
-                                Chặng 1: Người bán → Hub
-                              </span>
-                              {isInboundOver15Min ? (
-                                <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800 border border-emerald-300">
-                                  <Check className="h-3 w-3" />
-                                  Đã nhận tại Hub (&gt;15 phút)
-                                </span>
-                              ) : (
-                                <span className="rounded-md bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-800 border border-blue-200">
-                                  {progress?.label || (isInboundDelivered ? 'Đã nhận tại Hub' : 'Đang điều phối')}
-                                </span>
-                              )}
+                          <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-2.5 text-[11px] shadow-2xs text-blue-950">
+                            <div className="flex items-center gap-1.5 font-bold text-blue-950">
+                              <Truck className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                              <span>Chặng 1: Người bán → Hub</span>
                             </div>
 
                             {shipment && <InspectionCashShipmentStatus shipment={shipment} />}
@@ -309,32 +261,11 @@ export function CenterOrders({
                               {canViewInbound && (
                                 <button
                                   type="button"
-                                  onClick={() => void handleOpenShipmentModal(ord)}
+                                  onClick={() => void handleOpenShipmentModal(ord, 'SELLER_TO_CENTER')}
                                   className="inline-flex items-center gap-1 font-bold text-blue-700 hover:underline cursor-pointer"
                                 >
                                   <Eye className="h-3 w-3" />
                                   Vận đơn gửi đến Hub
-                                </button>
-                              )}
-                              {progress && (
-                                <button
-                                  type="button"
-                                  aria-expanded={isExpandedInbound}
-                                  aria-controls={isExpandedInbound ? inboundProgressId : undefined}
-                                  onClick={() => setExpandedInboundOrderId(isExpandedInbound ? null : ord.id)}
-                                  className="inline-flex items-center gap-1 font-bold text-blue-800 hover:underline focus-visible:outline-blue-700 cursor-pointer"
-                                >
-                                  {isInboundOver15Min ? (
-                                    <>
-                                      <RotateCcw className="h-3 w-3" />
-                                      {isExpandedInbound ? 'Ẩn tiến trình Chặng 1' : 'Mở lại xem tiến trình Chặng 1 (Seller → Hub)'}
-                                    </>
-                                  ) : (
-                                    <>
-                                      {isExpandedInbound ? 'Ẩn tiến trình' : 'Xem tiến trình'}
-                                    </>
-                                  )}
-                                  <ChevronDown aria-hidden="true" className={`h-3 w-3 transition-transform ${isExpandedInbound ? 'rotate-180' : ''}`} />
                                 </button>
                               )}
                             </div>
@@ -390,16 +321,6 @@ export function CenterOrders({
                                     className="font-bold text-amber-800 hover:underline cursor-pointer"
                                   >
                                     Chi tiết vận đơn
-                                  </button>
-                                  <button
-                                    type="button"
-                                    aria-expanded={isExpandedReturn}
-                                    aria-controls={isExpandedReturn ? returnProgressId : undefined}
-                                    onClick={() => setExpandedReturnOrderId(isExpandedReturn ? null : ord.id)}
-                                    className="inline-flex items-center gap-1 font-bold text-amber-800 hover:underline cursor-pointer"
-                                  >
-                                    {isExpandedReturn ? 'Ẩn tiến trình' : 'Xem tiến trình hoàn trả'}
-                                    <ChevronDown aria-hidden="true" className={`h-3 w-3 transition-transform ${isExpandedReturn ? 'rotate-180' : ''}`} />
                                   </button>
                                 </div>
                               </div>
@@ -511,65 +432,6 @@ export function CenterOrders({
                       </tr>
                     )}
 
-                    {/* Dòng mở rộng: Tiến trình Chặng 1 (Người bán → Hub) */}
-                    {progress && isExpandedInbound && (
-                      <tr role="row" id={inboundProgressId} className="block xl:table-row animate-fadeIn">
-                        <td role="cell" colSpan={7} className="block bg-blue-50/30 px-4 py-3 xl:table-cell border-l-4 border-l-blue-600 border-b-2 border-b-blue-200">
-                          <div className="rounded-2xl border-2 border-blue-400/60 bg-white p-4 shadow-sm ring-4 ring-blue-500/10 space-y-3">
-                            <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-blue-100 text-xs font-bold text-blue-900">
-                              <span className="flex items-center gap-2">
-                                <span className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-pulse" />
-                                <Truck className="h-4 w-4 text-blue-600" />
-                                <span>Lộ trình Chặng 1 của đơn #{ord.id.slice(0, 8)}: Người Bán ({ord.sellerName || 'Người bán'}) ➔ Hub ({ord.postTitle})</span>
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => setExpandedInboundOrderId(null)}
-                                className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-bold transition cursor-pointer"
-                              >
-                                ✕ Đóng tiến trình
-                              </button>
-                            </div>
-                            <LalamoveProgress
-                              title="Tiến trình vận chuyển Lalamove (Người bán → Hub)"
-                              routeBadge="Chặng 1: Seller ➔ Hub"
-                              currentStep={progress.step}
-                              completeCurrentStep={progress.step === 3}
-                            />
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-
-                    {/* Dòng mở rộng: Tiến trình Chặng Hoàn Trả (Hub → Người bán) */}
-                    {returnShipment && isExpandedReturn && (
-                      <tr role="row" id={returnProgressId} className="block xl:table-row animate-fadeIn">
-                        <td role="cell" colSpan={7} className="block bg-amber-50/30 px-4 py-3 xl:table-cell border-l-4 border-l-amber-600 border-b-2 border-b-amber-200">
-                          <div className="rounded-2xl border-2 border-amber-400/60 bg-white p-4 shadow-sm ring-4 ring-amber-500/10 space-y-3">
-                            <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-amber-100 text-xs font-bold text-amber-900">
-                              <span className="flex items-center gap-2">
-                                <span className="w-2.5 h-2.5 rounded-full bg-amber-600 animate-pulse" />
-                                <RotateCcw className="h-4 w-4 text-amber-600" />
-                                <span>Lộ trình hoàn hàng của đơn #{ord.id.slice(0, 8)}: Hub ➔ Người Bán ({ord.sellerName || 'Người bán'})</span>
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => setExpandedReturnOrderId(null)}
-                                className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 text-[11px] font-bold transition cursor-pointer"
-                              >
-                                ✕ Đóng tiến trình
-                              </button>
-                            </div>
-                            <LalamoveProgress
-                              title="Tiến trình vận chuyển hoàn trả Lalamove (Hub → Người bán)"
-                              routeBadge="Chặng Hoàn Trả: Hub ➔ Seller"
-                              currentStep={getHubReturnProgress(returnShipment).step}
-                              completeCurrentStep={returnShipment.status === 'DELIVERED'}
-                            />
-                          </div>
-                        </td>
-                      </tr>
-                    )}
 
                     {/* Dòng mở rộng: Tiến trình Chặng Giao Hàng (Hub → Người mua) */}
                     {buyerShipment && isExpandedBuyer && (

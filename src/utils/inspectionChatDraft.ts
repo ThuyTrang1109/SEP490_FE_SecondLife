@@ -2,8 +2,10 @@ import { paths } from '../app/router/paths';
 import type { InspectionProposalPrefillData, UserRole } from '../types';
 import type { InspectionQuoteResponse } from '../services/inspectorService';
 
+import { feePercentOptions } from './inspectionFeePercent';
+
 const proposalAction = 'inspection_proposal';
-const handoffKeys = ['action', 'postId', 'centerId', 'method', 'feeSplit'];
+const handoffKeys = ['action', 'postId', 'centerId', 'method', 'feeSplit', 'buyerFeePercent'];
 
 export function inspectionChatParams(location: string) {
   return new URL(location, 'http://localhost').searchParams;
@@ -40,12 +42,17 @@ export function inspectionChatDraftFromUrl(location: string, postId: string): In
   const params = inspectionChatParams(location);
   const method = params.get('method');
   const split = params.get('feeSplit');
-  return {
+  const percent = Number(params.get('buyerFeePercent') ?? NaN);
+  const draft: InspectionProposalPrefillData = {
     postId,
     centerId: params.get('centerId') || undefined,
     inspectionMethod: method === 'AT_HOME' || method === 'AT_CENTER' ? method : undefined,
     feeSplit: split === 'BUYER_100' || split === 'SELLER_100' || split === 'SPLIT_50_50' ? split : undefined,
   };
+  if (feePercentOptions().includes(percent)) {
+    draft.buyerFeePercent = percent;
+  }
+  return draft;
 }
 
 export function isInspectionQuoteExpired(quote: InspectionQuoteResponse, method: 'AT_CENTER' | 'AT_HOME', now = Date.now()) {

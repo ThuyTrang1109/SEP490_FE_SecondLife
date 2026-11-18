@@ -109,7 +109,6 @@ export function getCenterDispatchStage(
   }
 
   if (!dispatchStatuses.has(order.status)) return null;
-  if (order.orderType !== 'AT_HOME' && !receivedAtHub) return 'WAITING_FOR_HUB';
 
   if (order.orderType === 'AT_HOME') {
     if (!apptTime || apptStatus === 'REJECTED') {
@@ -125,6 +124,11 @@ export function getCenterDispatchStage(
 
 export function shouldTrackInboundShipment(order: { orderType?: string; status: string }) {
   return order.orderType === 'AT_CENTER' && inboundTrackingStatuses.has(order.status);
+}
+
+export function filterCenterApiOrders(orders: InspectionOrderDto[], centerId: string): InspectionOrderDto[] {
+  // The scoped API also authorizes legacy orders through the assigned inspector's manager.
+  return orders.filter((order) => order.inspectionCenterId == null || order.inspectionCenterId === centerId);
 }
 
 export function canReadCenterInspectionShipments(order: Pick<InspectionOrderDto, 'inspectionCenterId'>, centerId?: string) {
@@ -304,4 +308,159 @@ export function getInboundShipmentProgress(
     case 'CREATING': return progress(null, 'Đang tạo vận đơn', 'Creating shipment');
     default: return progress(null, 'Đang chờ cập nhật vận đơn', 'Awaiting shipment update');
   }
+}
+
+/**
+ * Kiểm tra xem Kỹ thuật viên đã xác nhận đơn hay chưa.
+ * Đơn chỉ được tính là đã xác nhận khi:
+ * 1. KTV đã ấn nút "Xác Nhận Đơn" (order_confirmed_by_inspector_{id} === 'true' hoặc inspectorConfirmed === true).
+ * 2. Đơn đã hoàn tất kiểm định (PASSED, FAILED, COMPLETED).
+ */
+export function isOrderConfirmedByInspector(order: {
+  id?: string;
+  orderId?: string;
+  status?: string;
+  backendStatus?: string;
+  customerStatus?: string;
+  inspectorId?: string;
+  inspectorConfirmed?: boolean;
+  stage?: string;
+  note?: string;
+}): boolean {
+  if (!order || !order.inspectorId) return false;
+
+  const rawStatus = (order.status || order.backendStatus || '').toUpperCase();
+
+  // 1. Nếu đơn đã xong hoặc đang giao cho người mua thì chắc chắn đã qua kiểm định
+  const trulyDoneStatuses = new Set([
+    'PASSED',
+    'FAILED',
+    'COMPLETED',
+    'DELIVERING_TO_BUYER',
+  ]);
+  if (trulyDoneStatuses.has(rawStatus)) {
+    return true;
+  }
+
+  // 2. Kiểm tra cờ xác nhận cục bộ của KTV (khi KTV bấm "Xác Nhận Đơn")
+  if (typeof window !== 'undefined') {
+    const possibleIds = [
+      order.id,
+      order.orderId,
+      (order as any).linkedOrderId,
+      (order as any).inspectionOrderId,
+    ].filter(Boolean) as string[];
+
+    for (const tid of possibleIds) {
+      if (
+        localStorage.getItem(`order_confirmed_by_inspector_${tid}`) === 'true' ||
+        localStorage.getItem(`inspection_status_${tid}`) === 'INSPECTING'
+      ) {
+        return true;
+      }
+    }
+  }
+
+  // 3. Nếu trong note có đánh dấu KTV đã xác nhận
+  if (order.note && order.note.includes('[INSPECTOR_CONFIRMED]')) {
+    return true;
+  }
+
+  // 4. Nếu đơn đang ở trạng thái vừa phân công (DISPATCHED, SCHEDULED, CONFIRMED_PENDING_DISPATCH)
+  // và CHƯA có cờ xác nhận ở trên -> Chắc chắn KTV CHƯA xác nhận đơn -> KHÔNG ĐƯỢC KHÓA!
+  if (['DISPATCHED', 'SCHEDULED', 'CONFIRMED_PENDING_DISPATCH'].includes(rawStatus)) {
+    return false;
+  }
+
+  // 5. Nếu đơn đang thực sự kiểm định tại bàn
+  if (rawStatus === 'INSPECTING' || rawStatus === 'INSPECTION_IN_PROGRESS') {
+    return true;
+  }
+
+  if (order.inspectorConfirmed) return true;
+
+  return false;
+}
+
+/**
+ * Kiểm tra xem quyền thay đổi KTV (Đổi KTV) tại Trung tâm kiểm định có bị khóa hay không.
+ * Quy tắc:
+ * - Chỉ khóa KHI Kỹ thuật viên phụ trách ĐÃ xác nhận đơn, đơn đang đo kiểm, hoặc đơn đã hoàn tất kiểm định.
+ * - Nếu KTV CHƯA ấn "Xác Nhận Đơn" (chưa tiếp nhận), Trung tâm vẫn hoàn toàn có quyền "Đổi KTV".
+ */
+export function isInspectorAssignmentLocked(order: {
+  id?: string;
+  orderId?: string;
+  status?: string;
+  backendStatus?: string;
+  customerStatus?: string;
+  inspectorId?: string;
+  inspectorConfirmed?: boolean;
+  stage?: string;
+  note?: string;
+}): boolean {
+  if (!order || !order.inspectorId) return false;
+  return isOrderConfirmedByInspector(order);
+}
+
+/**
+ * Đánh dấu đơn kiểm định đã được KTV xác nhận tiếp nhận.
+ * Đồng thời cập nhật các danh sách cục bộ và phát tín hiệu cho các bên (CenterDispatch, InspectorPortal,...).
+ */
+export function markOrderConfirmedByInspector(orderId: string, additionalIds?: string[]): void {
+  if (!orderId || typeof window === 'undefined') return;
+
+  const allIds = Array.from(new Set([orderId, ...(additionalIds || [])].filter(Boolean)));
+  allIds.forEach((id) => {
+    localStorage.setItem(`order_confirmed_by_inspector_${id}`, 'true');
+    localStorage.setItem(`order_confirmed_by_inspector_at_${id}`, new Date().toISOString());
+  });
+
+  const isMatched = (o: any) => allIds.some((id) => o.id === id || o.orderId === id || o.linkedOrderId === id || o.inspectionOrderId === id);
+
+  try {
+    const rawCenter = localStorage.getItem('center_inspection_orders');
+    if (rawCenter) {
+      const list = JSON.parse(rawCenter);
+      if (Array.isArray(list)) {
+        const updated = list.map((o: any) => {
+          if (isMatched(o)) {
+            return { ...o, inspectorConfirmed: true };
+          }
+          return o;
+        });
+        localStorage.setItem('center_inspection_orders', JSON.stringify(updated));
+      }
+    }
+  } catch {}
+
+  try {
+    const rawRecent = localStorage.getItem('recent_placed_orders');
+    if (rawRecent) {
+      const list = JSON.parse(rawRecent);
+      if (Array.isArray(list)) {
+        const updated = list.map((o: any) => {
+          if (isMatched(o)) {
+            return { ...o, inspectorConfirmed: true };
+          }
+          return o;
+        });
+        localStorage.setItem('recent_placed_orders', JSON.stringify(updated));
+      }
+    }
+  } catch {}
+
+  try {
+    if (typeof BroadcastChannel !== 'undefined') {
+      const bc = new BroadcastChannel('secondlife_inspection_channel');
+      bc.postMessage({ type: 'INSPECTOR_CONFIRMED', orderId, ids: allIds });
+      bc.close();
+    }
+  } catch {}
+
+  window.dispatchEvent(
+    new CustomEvent('secondlife_inspector_confirmed_signal', {
+      detail: { orderId, ids: allIds },
+    })
+  );
 }

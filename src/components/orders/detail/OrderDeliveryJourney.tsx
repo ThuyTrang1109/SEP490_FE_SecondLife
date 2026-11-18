@@ -788,13 +788,22 @@ export function OrderDeliveryJourney({
                       {modalInboundShipment?.orderCode ? (
                         <span className="text-blue-700 font-bold">Lalamove #{modalInboundShipment.orderCode}</span>
                       ) : (
-                        <span className={`text-[11px] font-sans font-medium px-2 py-0.5 rounded border ${isOrderSellerConfirmed(detailModalOrder)
-                          ? 'text-blue-700 bg-blue-50 border-blue-200'
-                          : 'text-amber-700 bg-amber-50 border-amber-200'
+                        <span className={`text-[11px] font-sans font-medium px-2 py-0.5 rounded border ${
+                          isModalWaitingFeePayment || isModalWaitingSellerApproval || isModalWaitingBuyerApproval
+                            ? 'text-amber-800 bg-amber-50 border-amber-300 font-semibold'
+                            : isOrderSellerConfirmed(detailModalOrder)
+                              ? 'text-blue-700 bg-blue-50 border-blue-200'
+                              : 'text-amber-700 bg-amber-50 border-amber-200'
                           }`}>
-                          {detailInboundLabel || (isOrderSellerConfirmed(detailModalOrder)
-                            ? (lang === 'vi' ? 'Đang chuẩn bị điều phối vận chuyển' : 'Preparing dispatch')
-                            : (lang === 'vi' ? 'Chưa tạo vận đơn Lalamove' : 'Pending courier'))}
+                          {detailInboundLabel || (
+                            isModalWaitingFeePayment
+                              ? (lang === 'vi' ? 'Chờ hoàn tất nộp phí kiểm định' : 'Awaiting inspection fee')
+                              : isModalWaitingSellerApproval || isModalWaitingBuyerApproval
+                                ? (lang === 'vi' ? 'Chờ xác nhận yêu cầu' : 'Pending approval')
+                                : isOrderSellerConfirmed(detailModalOrder)
+                                  ? (lang === 'vi' ? 'Đang chuẩn bị điều phối vận chuyển' : 'Preparing dispatch')
+                                  : (lang === 'vi' ? 'Chưa tạo vận đơn Lalamove' : 'Pending courier')
+                          )}
                         </span>
                       )}
                     </span>
@@ -845,7 +854,16 @@ export function OrderDeliveryJourney({
                 <div className="mt-auto pt-2.5 border-t border-slate-200/80 text-[11px] text-slate-500 flex items-start gap-1">
                   <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
                   <span className="break-words leading-relaxed">
-                    {detailModalOrder.shippingLegs[0]?.timeline[detailModalOrder.shippingLegs[0].timeline.length - 1]?.description || (lang === 'vi' ? 'Khởi tạo đơn hàng kiểm định Hub. Chờ bưu tá Lalamove chuyển kiện hàng về Hub.' : 'Hub inspection shipment created. Awaiting Lalamove pickup.')}
+                    {isModalWaitingFeePayment
+                      ? (lang === 'vi'
+                        ? 'Đang chờ các bên nộp phí kiểm định. Vận đơn Lalamove Chặng 1 sẽ được điều phối sau khi hoàn tất nộp phí.'
+                        : 'Awaiting fee payment. Leg 1 courier dispatch will be arranged once all fees are settled.')
+                      : isModalWaitingSellerApproval || isModalWaitingBuyerApproval
+                        ? (lang === 'vi'
+                          ? 'Đang chờ xác nhận yêu cầu kiểm định từ các bên.'
+                          : 'Awaiting approval from parties.')
+                        : (detailModalOrder.shippingLegs[0]?.timeline[detailModalOrder.shippingLegs[0].timeline.length - 1]?.description ||
+                           (lang === 'vi' ? 'Khởi tạo đơn hàng kiểm định Hub. Chờ bưu tá Lalamove chuyển kiện hàng về Hub.' : 'Hub inspection shipment created. Awaiting Lalamove pickup.'))}
                   </span>
                 </div>
               </div>
@@ -962,31 +980,8 @@ export function OrderDeliveryJourney({
                             <Truck className="w-3.5 h-3.5" />
                             <span>Chi tiết vận đơn</span>
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => setExpandedDetailLeg2((prev) => !prev)}
-                            className={`inline-flex items-center gap-1 font-bold text-xs hover:underline cursor-pointer ${isModalInspFailed || isModalRejected ? 'text-rose-700 hover:text-rose-900' : 'text-emerald-700 hover:text-emerald-900'
-                              }`}
-                          >
-                            <span>{expandedDetailLeg2 ? 'Ẩn tiến trình' : 'Xem tiến trình'}</span>
-                            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${expandedDetailLeg2 ? 'rotate-180' : ''}`} />
-                          </button>
                         </div>
                       </div>
-                      {expandedDetailLeg2 && (
-                        <div className={`pt-2 border-t ${isModalInspFailed || isModalRejected ? 'border-rose-100' : 'border-emerald-100'}`}>
-                          <LalamoveProgress
-                            title={(isModalInspFailed || isModalRejected)
-                              ? "Tiến trình vận chuyển hoàn trả Lalamove (Hub → Người bán)"
-                              : "Tiến trình vận chuyển giao hàng Lalamove (Hub → Khách mua)"}
-                            routeBadge={(isModalInspFailed || isModalRejected) ? "Chặng Hoàn Trả: Hub ➔ Seller" : "Chặng Giao Hàng: Hub ➔ Buyer"}
-                            currentStep={(isModalInspFailed || isModalRejected)
-                              ? getHubReturnProgress(modalLeg2Shipment, lang).step
-                              : getBuyerDeliveryProgress(modalLeg2Shipment, lang).step}
-                            completeCurrentStep={modalLeg2Shipment.status === 'DELIVERED' || ((isModalInspFailed || isModalRejected) ? getHubReturnProgress(modalLeg2Shipment, lang).step === 3 : getBuyerDeliveryProgress(modalLeg2Shipment, lang).step === 3)}
-                          />
-                        </div>
-                      )}
                     </div>
                   )}
                 </div>

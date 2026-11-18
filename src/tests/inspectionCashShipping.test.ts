@@ -30,22 +30,11 @@ test('only completed cash inspection legs with known cước can be confirmed', 
   assert.equal(canConfirmInspectionCash({ ...delivered, cashConfirmedAt: '2026-11-11T02:00:00Z' }), false);
 });
 
-test('confirmed cash status renders an explicit zero reimbursement', () => {
+test('inspection cash status component is retired and renders empty', () => {
   const markup = renderToStaticMarkup(createElement(InspectionCashShipmentStatus, {
     shipment: { ...delivered, cashConfirmedAt: '2026-11-11T02:00:00Z', cashPaidAmount: 340_000, cashReimbursedAmount: 0 },
   }));
-  assert.match(markup, /Đã quyết toán cước \(Sandbox\)/);
-  assert.match(markup, /Hoàn ứng 0/);
-});
-
-test('delivered Hub returns show automatic reimbursement while outbound legs wait for review', () => {
-  const returnMarkup = renderToStaticMarkup(createElement(InspectionCashShipmentStatus, {
-    shipment: { ...delivered, leg: 'CENTER_TO_SELLER', cashPayerId: 'hub-id' },
-  }));
-  const outboundMarkup = renderToStaticMarkup(createElement(InspectionCashShipmentStatus, { shipment: delivered }));
-  assert.match(returnMarkup, /Chờ hoàn ứng tự động/);
-  assert.doesNotMatch(returnMarkup, /Staff\/Admin/);
-  assert.match(outboundMarkup, /Staff\/Admin cần xác nhận/);
+  assert.equal(markup, '');
 });
 
 test('cash review requires the permission for the corresponding role', () => {

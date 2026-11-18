@@ -1,5 +1,6 @@
 import type { EscrowOrder, ShipmentBackend } from '../../types';
 import { shouldTrackInboundShipment } from '../inspectionCenterData';
+import { getInspectionPurchaseDecision } from '../inspectionPurchase';
 
 export function getOrderAllShipments(orderId?: string | null, linkedOrderId?: string | null): ShipmentBackend[] {
   if (typeof window === 'undefined') return [];
@@ -24,8 +25,15 @@ export function getOrderAllShipments(orderId?: string | null, linkedOrderId?: st
 }
 
 export function isHubInboundInProgress(order: EscrowOrder) {
+  const status = String(order.inspectionStatus || order.backendStatus || order.status || '').toUpperCase();
+  const method = String(order.inspectionMethod || (order as any).orderType || '').toUpperCase();
+  const isAtCenter = method === 'AT_CENTER' || order.hasInspectionService;
   return shouldTrackInboundShipment({
     orderType: order.inspectionMethod,
-    status: order.inspectionStatus || order.backendStatus || order.status || '',
-  });
+    status,
+  }) || (
+    isAtCenter &&
+    (['FAILED', 'INSPECTION_FAILED', 'PASSED', 'INSPECTION_PASSED', 'DELIVERING_TO_BUYER', 'SHIPPED_TO_BUYER', 'RETURNING_TO_SELLER', 'RETURNED_TO_SELLER'].includes(status) ||
+      getInspectionPurchaseDecision(order) === 'rejected')
+  );
 }

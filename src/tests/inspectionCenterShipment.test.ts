@@ -4,11 +4,38 @@ import { createElement, type ComponentProps } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { LalamoveProgress } from '../components/common/LalamoveProgress';
 import { CenterShipmentModal } from '../pages/inspection-center/orders/CenterShipmentModal';
-import type { ShipmentBackend } from '../types';
-import { canReadCenterInspectionShipments, getCenterDispatchStage, getInboundShipmentProgress, getLatestInboundShipment, shouldTrackCenterInspectionShipments, shouldTrackInboundShipment } from '../utils/inspectionCenterData';
+import { useCenterOrders } from '../pages/inspection-center/orders/useCenterOrders';
+import type { EscrowOrder, ShipmentBackend, UserProfile } from '../types';
+import { canReadCenterInspectionShipments, filterCenterApiOrders, getCenterDispatchStage, getInboundShipmentProgress, getLatestInboundShipment, shouldTrackCenterInspectionShipments, shouldTrackInboundShipment } from '../utils/inspectionCenterData';
 import { canBookHubBuyerDelivery, getHubBuyerShipmentLabel, getLatestInspectionShipment, isPaidHubBuyerDelivery } from '../utils/inspectionCenterData';
 import { canAppealInspection, getHubReturnProgress, getHubReturnState, getReturnReserveMessage, isCenterReturnEligible, shouldSyncHubReturnOnOpen } from '../utils/inspectionCenterData';
 import { isExpiredInspectionPurchase } from '../utils/inspectionPurchase';
+
+test('the center list excludes explicitly foreign orders returned by the API', () => {
+  const orders = [
+    { id: 'own-order', postId: 'post-a', status: 'DISPATCHED', inspectionCenterId: 'center-a' },
+    { id: 'foreign-order', postId: 'post-b', status: 'DISPATCHED', inspectionCenterId: 'center-b' },
+    { id: 'legacy-order', postId: 'post-c', status: 'DISPATCHED', inspectionCenterId: null },
+  ];
+
+  assert.deepEqual(filterCenterApiOrders(orders, 'center-a').map(({ id }) => id), ['own-order', 'legacy-order']);
+});
+
+test('the center queue waits for API authorization before displaying initial escrow orders', () => {
+  function QueuePreview() {
+    const { orders } = useCenterOrders({
+      currentUser: { id: 'center-a', role: 'inspection_center' } as UserProfile,
+      initialOrders: [{ id: 'foreign-order', hasInspectionService: true, inspectionCenterId: 'center-b' } as EscrowOrder],
+      lang: 'vi',
+      loadingShipmentsRef: { current: false },
+      showNotice: () => {},
+      showOrderShipments: false,
+    });
+    return createElement('div', null, orders.map(({ id }) => id).join(','));
+  }
+
+  assert.equal(renderToStaticMarkup(createElement(QueuePreview)), '<div></div>');
+});
 
 test('dispatch only includes orders in the operational queue', () => {
   for (const status of [
@@ -19,9 +46,9 @@ test('dispatch only includes orders in the operational queue', () => {
   }
 });
 
-test('dispatch distinguishes Hub intake, ready assignments and assigned orders', () => {
+test('dispatch distinguishes ready assignments and assigned orders', () => {
   const order = { status: 'SHIPPING_TO_CENTER', orderType: 'AT_CENTER' };
-  assert.equal(getCenterDispatchStage(order, false), 'WAITING_FOR_HUB');
+  assert.equal(getCenterDispatchStage(order, false), 'READY_TO_ASSIGN');
   assert.equal(getCenterDispatchStage(order, true), 'READY_TO_ASSIGN');
   assert.equal(getCenterDispatchStage({ ...order, status: 'INSPECTING', inspectorId: 'ktv' }, true), 'ASSIGNED');
   assert.equal(getCenterDispatchStage({ status: 'CONFIRMED_PENDING_DISPATCH', orderType: 'AT_HOME' }, false), 'WAITING_SELLER_APPOINTMENT');
@@ -93,6 +120,7 @@ test('the shipment modal offers only the outbound action allowed by the inspecti
     inboundShipments: new Map(),
     inspectionShipments: [],
     isLoadingShipments: false,
+    isOrderReceivedAtHub: () => true,
     setReturnQuoteOrder: () => {},
     setShipmentError: () => {},
     setShipmentSuccess: () => {},
@@ -139,6 +167,15 @@ test('the shipment modal offers only the outbound action allowed by the inspecti
   assert.doesNotMatch(render(declined, {
     hubReturns: new Map([[order.id, getHubReturnState([inbound, shipment('return', 'CENTER_TO_SELLER', 'READY_TO_PICK')])]]),
   }), returnAction);
+
+  // Test hiển thị tiến trình Lalamove Chặng 1 trong modal vận đơn Hub
+  const inboundHtml = render({ status: 'PASSED' }, {
+    inspectionShipments: [shipment('inbound-1', 'SELLER_TO_CENTER', 'DELIVERED')],
+  });
+  assert.match(inboundHtml, /Tiến trình vận chuyển Lalamove \(Người bán → Hub\)/);
+  assert.match(inboundHtml, /Chặng 1: Seller ➔ Hub/);
+  assert.match(inboundHtml, /Tạo vận đơn/);
+  assert.match(inboundHtml, /Đã giao thành công/);
 });
 
 test('a delivered return shows the wallet check without changing failed inspection appeal eligibility', () => {

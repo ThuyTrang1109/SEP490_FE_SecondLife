@@ -1,4 +1,5 @@
 import { CheckCircle2, Clock, ShieldCheck } from 'lucide-react';
+import { buyerFeePercentFor, feePercentLabel, splitInspectionFee } from '../../../utils/inspectionFeePercent';
 import type { EscrowOrder, Language, ShipmentBackend } from '../../../types';
 import type { InspectionOrderDto } from '../../../services/inspectorService';
 import { formatInspectionDeadline } from '../../../utils/inspectionPaymentDeadline';
@@ -59,6 +60,9 @@ export function OrderFeeBreakdown({
               : rawFeePayer === 'BUYER_PAYS' || rawFeePayer === 'BUYER_100'
                 ? 'BUYER_100'
                 : getInspectionFeeSplit(detailModalOrder);
+
+        const buyerFeePercent = detailInspectionDto?.buyerFeePercent ?? detailModalOrder.buyerFeePercent
+          ?? buyerFeePercentFor(feePayerSplit) ?? 100;
 
         const inspStatus = String(
           detailInspectionDto?.status ||
@@ -144,10 +148,7 @@ export function OrderFeeBreakdown({
             shippingFeeToHub,
             feePayerSplit === 'SELLER_100' ? 'SELLER_PAYS' : feePayerSplit === 'SPLIT_50_50' ? 'SPLIT_50_50' : 'BUYER_PAYS'
           )
-          : {
-            buyer: feePayerSplit === 'BUYER_100' ? totalInspectionCalculatedFee : feePayerSplit === 'SELLER_100' ? 0 : Math.round(totalInspectionCalculatedFee / 2),
-            seller: feePayerSplit === 'SELLER_100' ? totalInspectionCalculatedFee : feePayerSplit === 'BUYER_100' ? 0 : Math.round(totalInspectionCalculatedFee / 2),
-          };
+          : splitInspectionFee(totalInspectionCalculatedFee, buyerFeePercent);
 
         const buyerFeeShare = Number(
           detailInspectionDto?.buyerFeeShare ??
@@ -375,11 +376,7 @@ export function OrderFeeBreakdown({
                   <span>{lang === 'vi' ? 'Phương án chia phí:' : 'Fee Split Plan:'}</span>
                 </span>
                 <span className="font-black text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                  {feePayerSplit === 'SPLIT_50_50'
-                    ? (lang === 'vi' ? 'Chia đôi phí 50/50' : 'Split 50/50')
-                    : feePayerSplit === 'SELLER_100'
-                      ? (lang === 'vi' ? 'Người bán 100%' : 'Seller 100%')
-                      : (lang === 'vi' ? 'Người mua 100%' : 'Buyer 100%')}
+                  {feePercentLabel(buyerFeePercent, lang)}
                 </span>
               </div>
 
@@ -551,14 +548,8 @@ export function OrderFeeBreakdown({
                     ? (lang === 'vi' ? 'người bán' : 'seller')
                     : feePayerSplit === 'BUYER_100'
                       ? (lang === 'vi' ? 'người mua' : 'buyer')
-                      : (lang === 'vi' ? 'cả hai bên theo tỷ lệ 50/50' : 'both parties (50/50)');
-                const feePayerDescription =
-                  feePayerSplit === 'SELLER_100'
-                    ? (lang === 'vi' ? 'Người bán nộp 100%' : 'Seller 100%')
-                    : feePayerSplit === 'BUYER_100'
-                      ? (lang === 'vi' ? 'Người mua nộp 100%' : 'Buyer 100%')
-                      : (lang === 'vi' ? 'Chia 50/50' : 'Split 50/50');
-
+                      : (lang === 'vi' ? 'cả hai bên theo tỷ lệ đã chốt' : 'both parties at the agreed split');
+                const feePayerDescription = feePercentLabel(buyerFeePercent, lang);
                 return (
                   <div className="p-3 bg-rose-50/70 border border-rose-200 rounded-xl space-y-1.5 text-xs text-rose-950 mt-2">
                     <div className="font-bold flex items-center justify-between text-rose-900">
@@ -592,6 +583,13 @@ export function OrderFeeBreakdown({
                                 ? 'Đơn kiểm định đã kết thúc. Phí và tiền cọc được xử lý đối soát theo quy định.'
                                 : 'Inspection order ended. Fees are handled according to policy.')))}
                     </p>
+                    {isInspectionFailed && (
+                      <p className="text-[11px] text-rose-800/90 leading-relaxed">
+                        {lang === 'vi'
+                          ? 'Phí kiểm định và vận chuyển được chia theo tỷ lệ đã thống nhất. Phần dư dự phòng cước trả hàng được hoàn theo tỷ lệ này sau khi trừ cước thực tế.'
+                          : 'Inspection and shipping costs follow the agreed split. Any unused return reserve is refunded at that split after deducting the actual return shipping cost.'}
+                      </p>
+                    )}
                     {isAtCenter && returnReserveFee > 0 && (
                       <div className="pt-1.5 border-t border-rose-200/80 text-[11px] text-rose-900 flex items-center justify-between">
                         <span>{lang === 'vi' ? `Khoản dự phòng cước hoàn (${formatVND(returnReserveFee)} · ${feePayerDescription}):` : `Return shipping reserve (${formatVND(returnReserveFee)}):`}</span>
@@ -606,7 +604,7 @@ export function OrderFeeBreakdown({
                           ) ? (
                             <span className="font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded text-[10px]">
                               {lang === 'vi'
-                                ? `Đã hoàn về ví ${feePayerSplit === 'SELLER_100' ? 'người bán' : feePayerSplit === 'BUYER_100' ? 'người mua' : '(tỷ lệ 50/50)'}`
+                                ? `Đã hoàn về ví ${feePayerSplit === 'SELLER_100' ? 'người bán' : feePayerSplit === 'BUYER_100' ? 'người mua' : 'hai bên theo tỷ lệ đã chốt'}`
                                 : 'Refunded'}
                             </span>
                           ) : detailShipments.some((s) => s.leg === 'CENTER_TO_SELLER' || s.leg === 'RETURN') ? (

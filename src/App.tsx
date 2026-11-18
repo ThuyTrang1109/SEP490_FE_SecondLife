@@ -380,7 +380,7 @@ export default function App() {
       }
     }
     const query = `?postId=${encodeURIComponent(listing.id)}${action ? `&action=${encodeURIComponent(action)}` : ''}${prefill?.centerId ? `&centerId=${encodeURIComponent(prefill.centerId)}` : ''
-      }${prefill?.inspectionMethod ? `&method=${encodeURIComponent(prefill.inspectionMethod)}` : ''}${prefill?.feeSplit ? `&feeSplit=${encodeURIComponent(prefill.feeSplit)}` : ''
+      }${prefill?.inspectionMethod ? `&method=${encodeURIComponent(prefill.inspectionMethod)}` : ''}${prefill?.buyerFeePercent != null ? `&buyerFeePercent=${prefill.buyerFeePercent}` : ''}${prefill?.feeSplit ? `&feeSplit=${encodeURIComponent(prefill.feeSplit)}` : ''
       }`;
     navigatePath(paths.chat(navigationRole) + query);
   };
@@ -659,6 +659,7 @@ export default function App() {
 
   // Core Data State
   const [listings, setListings] = useState<Listing[]>([]);
+  const [marketplaceRefreshVersion, setMarketplaceRefreshVersion] = useState(0);
   const [orders, setOrders] = useState<EscrowOrder[]>(() => {
     // Only use local stored orders if NO access token (guest/unauthenticated)
     // Authenticated users must load real orders from server to prevent status jumping and bleed
@@ -1038,12 +1039,12 @@ export default function App() {
 
     // 2. Nhận diện tình trạng máy (Condition Grade)
     let detectedGrade: ConditionGrade = 'Like New';
-    const conditionStr = (post.itemCondition || descLower).toLowerCase();
-    if (conditionStr.includes('99%') || conditionStr.includes('như mới') || conditionStr.includes('like new') || conditionStr.includes('brand new')) {
+    const conditionStr = (post.itemCondition || descLower).toLowerCase().replaceAll('_', ' ');
+    if (conditionStr === 'new' || conditionStr.includes('99%') || conditionStr.includes('như mới') || conditionStr.includes('like new') || conditionStr.includes('brand new')) {
       detectedGrade = 'Like New';
     } else if (conditionStr.includes('95%') || conditionStr.includes('tốt') || conditionStr.includes('good') || conditionStr.includes('chắc chắn')) {
       detectedGrade = 'Good';
-    } else if (conditionStr.includes('90%') || conditionStr.includes('khá') || conditionStr.includes('fair')) {
+    } else if (conditionStr === 'used' || conditionStr.includes('90%') || conditionStr.includes('khá') || conditionStr.includes('fair')) {
       detectedGrade = 'Fair';
     }
 
@@ -1248,6 +1249,7 @@ export default function App() {
 
   // Synchronize listings directly with Backend
   const loadListingsFromBackend = React.useCallback(async (force = false) => {
+    if (force) setMarketplaceRefreshVersion((version) => version + 1);
     const now = Date.now();
     if (!force && isFetchingListingsRef.current) return;
     if (!force && now - lastListingsFetchRef.current < 20000 && listingsRef.current.length > 0) {
@@ -1897,11 +1899,9 @@ export default function App() {
   // Refresh listings on mount or when switching to listing-centric tabs
   React.useEffect(() => {
     if (routeAccess !== 'allowed' || isRestoringSession) return;
-    const listingTabs = ['home', 'marketplace', 'seller-dashboard', 'create-listing', 'admin-dashboard'];
-    if (listingTabs.includes(activeTab)) {
-      initCatalogCache();
-      loadListingsFromBackend();
-    }
+    const listingTabs = ['home', 'seller-dashboard', 'create-listing', 'admin-dashboard'];
+    if (activeTab === 'marketplace' || listingTabs.includes(activeTab)) initCatalogCache();
+    if (listingTabs.includes(activeTab)) loadListingsFromBackend();
   }, [loadListingsFromBackend, activeTab, routeAccess, isRestoringSession]);
 
   // Orders are only refreshed when user accesses order-sensitive tabs or on auth change
@@ -2533,7 +2533,7 @@ export default function App() {
       const buyerNotif: NotificationItem = {
         id: `notif-insp-buyer-fail-${orderId}-${Date.now()}`,
         title: `Kết quả kiểm định: KHÔNG ĐẠT TIÊU CHUẨN`,
-        message: `Sản phẩm "${productTitle}" (Đơn #${shortOrderId}) KHÔNG ĐẠT tiêu chuẩn chất lượng tại Hub. Lý do: ${meta?.inspectorNotes || summary || 'Không đúng mô tả kỹ thuật'}. Tiền ký quỹ 100% đang được tự động hoàn trả vào ví của bạn.`,
+        message: `Sản phẩm "${productTitle}" (Đơn #${shortOrderId}) KHÔNG ĐẠT tiêu chuẩn chất lượng tại Hub. Lý do: ${meta?.inspectorNotes || summary || 'Không đúng mô tả kỹ thuật'}. Phí kiểm định và vận chuyển được chia theo tỷ lệ đã thống nhất. Nếu có khoản dự phòng cước trả hàng, phần dư sẽ được hoàn theo tỷ lệ này sau khi trừ cước thực tế.`,
         type: 'INSPECTION',
         referenceId: orderId,
         referenceType: 'INSPECTION_ORDER',
@@ -2879,19 +2879,10 @@ export default function App() {
 
               {activeTab === 'marketplace' && (
                 <MarketplaceView
-                  listings={listings.filter((l) => {
-                    const boughtIds = getBoughtListingIds();
-                    if (boughtIds.has(String(l.id))) return false;
-                    if (l.status === 'reserved' || l.status === 'sold') return false;
-                    if (l.backendStatus === 'RESERVED' || l.backendStatus === 'SOLD') return false;
-                    return l.status === 'active' || l.backendStatus === 'ACTIVE';
-                  })}
+                  mapListing={mapBackendPostToListing}
+                  refreshVersion={marketplaceRefreshVersion}
                   onSelectListing={(listing) => openProduct(listing)}
                   lang={lang}
-                  onPostClick={() => {
-                    setEditingDraft(null);
-                    handleTabChange('create-listing');
-                  }}
                 />
               )}
 

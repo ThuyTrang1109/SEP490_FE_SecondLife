@@ -137,6 +137,7 @@ export interface ConfirmInspectionPurchaseRequest {
 
 export interface InspectionBuyerRespondRequest {
   action: 'ACCEPT' | 'REJECT' | 'COUNTER';
+  counterBuyerFeePercent?: number;
   counterFeePayer?: 'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50';
   buyerConsentZin?: boolean;
   note?: string;
@@ -149,7 +150,8 @@ export interface ReturnShippingPolicyResponse {
 export interface CreateInspectionRequest {
   postId: string;
   orderType: 'AT_HOME' | 'AT_CENTER';
-  feePayer: 'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50';
+  feePayer?: 'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50';
+  buyerFeePercent?: number;
   buyerConsentZinLoss?: boolean;
   buyerConsentZin?: boolean;
   buyerLatitude?: number;
@@ -171,6 +173,7 @@ export interface CreateInspectionRequest {
 export interface InspectionSellerRespondRequest {
   action: 'ACCEPT' | 'COUNTER' | 'REJECT';
   counterOrderType?: 'AT_HOME' | 'AT_CENTER';
+  counterBuyerFeePercent?: number;
   counterFeePayer?: 'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50';
   sellerConsentZinLoss?: boolean;
   sellerConsentZin?: boolean;
@@ -351,6 +354,7 @@ export interface InspectionOrderDto {
 
   inspectorId?: string;
   inspectorName?: string;
+  inspectorConfirmed?: boolean;
 
   orderType?: 'AT_HOME' | 'AT_CENTER' | string;
   feePayer?: 'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50' | string;
@@ -368,6 +372,8 @@ export interface InspectionOrderDto {
   feeSettledAt?: string | null;
   linkedOrderId?: string | null;
 
+  buyerFeePercent?: number;
+  previousBuyerFeePercent?: number | null;
   buyerFeeShare?: number;
   sellerFeeShare?: number;
   cashShippingSimulation?: boolean;
@@ -653,7 +659,8 @@ export const inspectorService = {
     const payload: any = {
       postId: data.postId,
       orderType: data.orderType === 'AT_HOME' ? 'AT_HOME' : 'AT_CENTER',
-      feePayer: data.feePayer || 'BUYER_PAYS',
+      feePayer: data.buyerFeePercent == null ? (data.feePayer ?? 'BUYER_PAYS') : undefined,
+      buyerFeePercent: data.buyerFeePercent,
       buyerLatitude: data.orderType === 'AT_HOME' ? buyerLat : undefined,
       buyerLongitude: data.orderType === 'AT_HOME' ? buyerLng : undefined,
       buyerDeliveryAddress: normalizedAddress,
@@ -705,6 +712,7 @@ export const inspectorService = {
     const payload = {
       action: data.action,
       counterFeePayer: data.counterFeePayer,
+      counterBuyerFeePercent: data.counterBuyerFeePercent,
       buyerConsentZin: data.action === 'ACCEPT' ? (data.buyerConsentZin ?? true) : undefined,
       note: data.note || undefined,
     };

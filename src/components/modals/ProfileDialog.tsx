@@ -71,7 +71,7 @@ import {
   getReputationEventMeta,
 } from '../../services/reputationService';
 import { LiveFaceScannerModal, VnptEkycResultData } from './LiveFaceScannerModal';
-import { saveSellerAddress, extractWardAndCity, getSavedSellerAddress, cleanFullAddress, formatCombinedAddress } from '../../utils/addressUtils';
+import { extractWardAndCity, cleanFullAddress, formatCombinedAddress } from '../../utils/addressUtils';
 import { LalamoveAddressPicker } from '../common/LalamoveAddressPicker';
 
 export type ProfileTab = 'info' | 'reputation' | 'wallet' | 'kyc' | 'reports' | 'security' | 'settings';
@@ -855,7 +855,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
     }
   }, [isOpen]);
 
-  // Fetch address and catalogue from Backend
+  // Fetch address and catalogue directly from Backend API
   const fetchAddressFromBackend = async (showNotification = false) => {
     setIsLoadingAddressFromBe(true);
     try {
@@ -870,6 +870,48 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
       let addressFound = false;
 
+      // 1. Ưu tiên tuyệt đối dữ liệu địa chỉ kho từ Backend API (GET /api/v1/shipping/pickup-address hoặc Onboarding)
+      const rawPickup = (pickupData && pickupData.status === 'fulfilled' && pickupData.value?.address)
+        ? pickupData.value
+        : (onboardingData && onboardingData.status === 'fulfilled' && onboardingData.value?.pickupAddress?.address)
+          ? onboardingData.value.pickupAddress
+          : null;
+
+      if (rawPickup && rawPickup.address) {
+        const fullAddr = rawPickup.address.trim();
+        setPickupAddress(fullAddr);
+        setStreetAddress(fullAddr);
+        setUserStreetAddress(fullAddr);
+        setAddress(fullAddr);
+
+        if (rawPickup.latitude != null) {
+          const lat = Number(rawPickup.latitude);
+          setPickupLatitude(lat);
+          setUserLatitude(lat);
+        }
+        if (rawPickup.longitude != null) {
+          const lng = Number(rawPickup.longitude);
+          setPickupLongitude(lng);
+          setUserLongitude(lng);
+        }
+
+        if (rawPickup.name) {
+          setShopName(rawPickup.name);
+        }
+        if (rawPickup.phone) {
+          setSellerPhone(rawPickup.phone);
+        }
+
+        const extracted = extractWardAndCity(fullAddr);
+        if (extracted) {
+          const [w, c] = extracted.split(',').map((s) => s.trim());
+          if (w) setSelectedWardName(w);
+          if (c) setSelectedProvinceName(c);
+        }
+
+        addressFound = true;
+      }
+
       if (onboardingData && onboardingData.status === 'fulfilled' && onboardingData.value) {
         const ob = onboardingData.value;
         if (ob.shopName) setShopName(ob.shopName);
@@ -877,35 +919,6 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
         if (ob.email) setShopEmail(ob.email);
         if (ob.emailVerified) setIsShopEmailVerified(true);
 
-        if (ob.pickupAddress) {
-          const pa = ob.pickupAddress;
-          const fullAddr = [pa.address, pa.wardName, pa.provinceName].filter(Boolean).join(', ');
-          const addrToUse = fullAddr || pa.address || '';
-          const isCorruptedHanoi = addrToUse.includes('Hội đồng nhân dân') && Boolean(userStreetAddress || currentUser?.streetAddress || currentUser?.address);
-          if (addrToUse && !isCorruptedHanoi) {
-            setPickupAddress(addrToUse);
-            setStreetAddress(pa.address || addrToUse);
-            addressFound = true;
-          } else {
-            const saved = getSavedSellerAddress();
-            const userCurrentAddr = userStreetAddress || currentUser?.streetAddress || currentUser?.pickupAddress || saved?.address;
-            if (userCurrentAddr && !userCurrentAddr.includes('Hội đồng nhân dân')) {
-              setPickupAddress(userCurrentAddr);
-              setStreetAddress(userCurrentAddr);
-              addressFound = true;
-            }
-          }
-          if (currentUser?.latitude && currentUser.latitude !== 21.02851) {
-            setPickupLatitude(currentUser.latitude);
-          } else if (pa.latitude && !isCorruptedHanoi) {
-            setPickupLatitude(pa.latitude);
-          }
-          if (currentUser?.longitude && currentUser.longitude !== 105.854167) {
-            setPickupLongitude(currentUser.longitude);
-          } else if (pa.longitude && !isCorruptedHanoi) {
-            setPickupLongitude(pa.longitude);
-          }
-        }
         if (ob.provinceId) {
           setSelectedProvinceId(ob.provinceId);
           shippingService.getWards(ob.provinceId)
@@ -917,42 +930,19 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
         }
       }
 
-      if (!addressFound && pickupData && pickupData.status === 'fulfilled' && pickupData.value) {
-        const pa = pickupData.value;
-        const fullAddr = [pa.address, pa.wardName, pa.provinceName].filter(Boolean).join(', ');
-        const addrToUse = fullAddr || pa.address || '';
-        const isCorruptedHanoi = addrToUse.includes('Hội đồng nhân dân') && Boolean(userStreetAddress || currentUser?.streetAddress || currentUser?.address);
-        if (addrToUse && !isCorruptedHanoi) {
-          setPickupAddress(addrToUse);
-          setStreetAddress(pa.address || addrToUse);
-          addressFound = true;
-        } else {
-          const saved = getSavedSellerAddress();
-          const userCurrentAddr = userStreetAddress || currentUser?.streetAddress || currentUser?.pickupAddress || saved?.address;
-          if (userCurrentAddr && !userCurrentAddr.includes('Hội đồng nhân dân')) {
-            setPickupAddress(userCurrentAddr);
-            setStreetAddress(userCurrentAddr);
-            addressFound = true;
-          }
-        }
-        if (currentUser?.latitude && currentUser.latitude !== 21.02851) {
+      if (!addressFound && currentUser?.streetAddress) {
+        const fallbackAddr = currentUser.streetAddress;
+        setPickupAddress(fallbackAddr);
+        setStreetAddress(fallbackAddr);
+        setUserStreetAddress(fallbackAddr);
+        setAddress(fallbackAddr);
+        if (currentUser.latitude != null) {
           setPickupLatitude(currentUser.latitude);
-        } else if (pa.latitude && !isCorruptedHanoi) {
-          setPickupLatitude(pa.latitude);
+          setUserLatitude(currentUser.latitude);
         }
-        if (currentUser?.longitude && currentUser.longitude !== 105.854167) {
+        if (currentUser.longitude != null) {
           setPickupLongitude(currentUser.longitude);
-        } else if (pa.longitude && !isCorruptedHanoi) {
-          setPickupLongitude(pa.longitude);
-        }
-      }
-
-      if (!addressFound) {
-        const saved = getSavedSellerAddress();
-        const fallbackAddr = userStreetAddress || currentUser?.streetAddress || (!currentUser?.pickupAddress?.includes('Hội đồng nhân dân') ? currentUser?.pickupAddress : '') || currentUser?.address || (!saved?.address?.includes('Hội đồng nhân dân') ? saved?.address : '') || '';
-        if (fallbackAddr) {
-          setPickupAddress(fallbackAddr);
-          setStreetAddress(fallbackAddr);
+          setUserLongitude(currentUser.longitude);
         }
       }
 
@@ -1277,7 +1267,6 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
       const selProv = provinces.find((p) => String(p._id) === String(selectedProvinceId) || String((p as any).id) === String(selectedProvinceId));
       const selWard = wards.find((w) => String(w._id) === String(selectedWardId) || String((w as any).id) === String(selectedWardId));
-      saveSellerAddress(cleanFullAddress(pickupAddress.trim() || streetAddress.trim()), selWard?.name, selProv?.name);
 
       await shippingService.sendSellerOnboardingEmailCode();
       setHasSentShopOtp(true);
@@ -1741,13 +1730,10 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       },
     };
 
-    saveSellerAddress(
-      cleanedPickup || fullAddr,
-      effectiveWard || undefined,
-      effectiveProv || undefined
-    );
-
     try {
+      const finalLat = pickupLatitude ?? userLatitude ?? currentUser?.latitude ?? null;
+      const finalLng = pickupLongitude ?? userLongitude ?? currentUser?.longitude ?? null;
+
       await userService.updateMyProfile({
         fullName: name.trim(),
         phone: phone.trim() || undefined,
@@ -1757,17 +1743,17 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
         district: selectedDistrictName.trim() || undefined,
         ward: selectedWardName.trim() || undefined,
         streetAddress: cleanedStreet || fullAddr || undefined,
-        latitude: userLatitude ?? pickupLatitude ?? currentUser?.latitude ?? null,
-        longitude: userLongitude ?? pickupLongitude ?? currentUser?.longitude ?? null,
+        latitude: finalLat,
+        longitude: finalLng,
       });
 
-      if (pickupLatitude && pickupLongitude) {
+      if (finalLat != null && finalLng != null) {
         try {
           await shippingService.savePickupAddress({
             name: shopName || name.trim() || currentUser?.name || 'Gian Hàng',
             phone: sellerPhone || phone.trim() || currentUser?.phone || '0900000000',
-            latitude: pickupLatitude,
-            longitude: pickupLongitude,
+            latitude: finalLat,
+            longitude: finalLng,
           });
         } catch (_) { }
       }
@@ -2413,35 +2399,35 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                         onNameChange={(val) => setName(val)}
                         onPhoneChange={(val) => setPhone(val)}
                         initialLatitude={
-                          (userLatitude && Math.abs(userLatitude - 21.0285) > 0.005)
-                            ? userLatitude
-                            : (currentUser?.latitude && Math.abs(currentUser.latitude - 21.0285) > 0.005)
-                              ? currentUser.latitude
-                              : undefined
+                          (pickupLatitude && Math.abs(pickupLatitude - 21.0285) > 0.005)
+                            ? pickupLatitude
+                            : (userLatitude && Math.abs(userLatitude - 21.0285) > 0.005)
+                              ? userLatitude
+                              : (currentUser?.latitude && Math.abs(currentUser.latitude - 21.0285) > 0.005)
+                                ? currentUser.latitude
+                                : undefined
                         }
                         initialLongitude={
-                          (userLongitude && Math.abs(userLongitude - 105.8542) > 0.005)
-                            ? userLongitude
-                            : (currentUser?.longitude && Math.abs(currentUser.longitude - 105.8542) > 0.005)
-                              ? currentUser.longitude
-                              : undefined
+                          (pickupLongitude && Math.abs(pickupLongitude - 105.8542) > 0.005)
+                            ? pickupLongitude
+                            : (userLongitude && Math.abs(userLongitude - 105.8542) > 0.005)
+                              ? userLongitude
+                              : (currentUser?.longitude && Math.abs(currentUser.longitude - 105.8542) > 0.005)
+                                ? currentUser.longitude
+                                : undefined
                         }
                         initialAddress={
-                          (userStreetAddress && !userStreetAddress.includes('Hội đồng nhân dân'))
-                            ? userStreetAddress
-                            : (currentUser?.streetAddress && !currentUser.streetAddress.includes('Hội đồng nhân dân'))
-                              ? currentUser.streetAddress
-                              : (address && !address.includes('Hội đồng nhân dân'))
-                                ? address
-                                : (currentUser?.address && !currentUser.address.includes('Hội đồng nhân dân'))
-                                  ? currentUser.address
-                                  : ''
+                          pickupAddress || userStreetAddress || address || currentUser?.streetAddress || currentUser?.address || ''
                         }
                         onAddressConfirmed={(data) => {
                           setUserLatitude(data.latitude);
                           setUserLongitude(data.longitude);
+                          setPickupLatitude(data.latitude);
+                          setPickupLongitude(data.longitude);
                           setAddress(data.address);
                           setUserStreetAddress(data.address);
+                          setPickupAddress(data.address);
+                          setStreetAddress(data.address);
 
                           const extracted = extractWardAndCity(data.address);
                           let extWard = '';
@@ -2459,7 +2445,6 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                           if (extProv) setSelectedProvinceName(extProv);
                           if (data.name && !name) setName(data.name);
                           if (data.phone && !phone) setPhone(data.phone);
-                          saveSellerAddress(data.address, extWard || undefined, extProv || data.city);
                         }}
                         lang={lang}
                         title={lang === 'vi'
@@ -3818,7 +3803,6 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                             setStreetAddress(data.address);
                             if (data.name && !shopName) setShopName(data.name);
                             if (data.phone && !sellerPhone) setSellerPhone(data.phone);
-                            saveSellerAddress(data.address, undefined, data.city);
                           }}
                           lang={lang}
                           title={lang === 'vi' ? 'Địa chỉ kho lấy hàng Lalamove' : 'Lalamove Pickup Location'}

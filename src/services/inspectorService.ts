@@ -355,6 +355,8 @@ export interface InspectionOrderDto {
   inspectorId?: string;
   inspectorName?: string;
   inspectorConfirmed?: boolean;
+  inspectorConfirmedAt?: string;
+  assignmentLocked?: boolean;
 
   orderType?: 'AT_HOME' | 'AT_CENTER' | string;
   feePayer?: 'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50' | string;
@@ -776,6 +778,10 @@ export const inspectorService = {
     return fetchPromise;
   },
 
+  getOrderById(orderId: string, options?: Pick<RequestOptions, 'isBackground' | 'signal'> & { bypassCache?: boolean }): Promise<InspectionOrderDto> {
+    return this.getOrder(orderId, options);
+  },
+
   /**
    * Buyer xem danh sách đơn mua có kiểm định của mình
    */
@@ -960,6 +966,45 @@ export const inspectorService = {
   },
 
   /**
+   * KTV xác nhận tiếp nhận đơn kiểm định (Áp dụng cho cả AT_HOME và AT_CENTER).
+   * Gửi tín hiệu xác nhận lên Backend để đánh dấu inspectorConfirmed và khóa đổi KTV trên toàn hệ thống.
+   */
+  async confirmTask(orderId: string, isAtHome?: boolean): Promise<InspectionOrderDto> {
+    // 1. Thử gọi POST /inspector/orders/{orderId}/confirm-task (endpoint chuẩn BE cần có)
+    try {
+      const res = await request<InspectionOrderDto>(`/inspector/orders/${orderId}/confirm-task`, {
+        method: 'POST',
+        requiresAuth: true,
+      });
+      return (res as any)?.data || res;
+    } catch {
+      // 2. Nếu là AT_HOME và BE chưa có confirm-task: thử xác nhận lịch hẹn
+      if (isAtHome) {
+        try {
+          const res = await request<InspectionOrderDto>(`/inspector/orders/${orderId}/appointment/confirm`, {
+            method: 'POST',
+            requiresAuth: true,
+          });
+          return (res as any)?.data || res;
+        } catch {
+          // fallback xuống start bên dưới
+        }
+      }
+      // 3. Fallback: gọi startInspection
+      const res = await request<InspectionOrderDto>(`/inspector/orders/${orderId}/start`, {
+        method: 'POST',
+        body: JSON.stringify({
+          orderCode: orderId,
+          barcodeInput: orderId,
+          checkInCode: orderId,
+        }),
+        requiresAuth: true,
+      });
+      return (res as any)?.data || res;
+    }
+  },
+
+  /**
    * KTV bắt đầu tiến hành kiểm định đơn hàng (chuyển trạng thái sang INSPECTING)
    */
   async startInspection(
@@ -1000,6 +1045,7 @@ export const inspectorService = {
       body: JSON.stringify({ scheduledAt, note, shift }),
       requiresAuth: true,
     });
+    this.invalidateOrderCache(orderId);
     return (res as any)?.data || res;
   },
 
@@ -1011,6 +1057,7 @@ export const inspectorService = {
       method: 'POST',
       requiresAuth: true,
     });
+    this.invalidateOrderCache(orderId);
     return (res as any)?.data || res;
   },
 
@@ -1023,6 +1070,7 @@ export const inspectorService = {
       method: 'POST',
       requiresAuth: true,
     });
+    this.invalidateOrderCache(orderId);
     return (res as any)?.data || res;
   },
 
@@ -1040,6 +1088,7 @@ export const inspectorService = {
       body: JSON.stringify({ counterScheduledAt, counterNote, counterShift }),
       requiresAuth: true,
     });
+    this.invalidateOrderCache(orderId);
     return (res as any)?.data || res;
   },
 
@@ -1053,6 +1102,7 @@ export const inspectorService = {
       body: JSON.stringify({ reason }),
       requiresAuth: true,
     });
+    this.invalidateOrderCache(orderId);
     return (res as any)?.data || res;
   },
 

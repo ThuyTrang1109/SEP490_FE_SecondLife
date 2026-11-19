@@ -33,12 +33,29 @@ export function useInspectorAssignment({ isOrderReceivedAtHub, orders, setOrders
     });
   }, [assignModalOrder, staffList]);
 
-  const handleOpenAssign = (order: InspectionOrderDto) => {
+  const handleOpenAssign = async (order: InspectionOrderDto) => {
     setAssignError(null);
     if (isInspectorAssignmentLocked(order)) {
       showNotice('Kỹ thuật viên đã xác nhận đơn hoặc đang tiến hành kiểm định. Quyền đổi KTV đã bị khóa.');
       return;
     }
+
+    // Kiểm tra trực tiếp với Backend để ngăn đổi KTV nếu KTV ở trình duyệt khác vừa ấn xác nhận
+    try {
+      const latestOrder = await inspectorService.getOrder(order.id, { bypassCache: true });
+      if (latestOrder && isInspectorAssignmentLocked(latestOrder)) {
+        if (setOrders) {
+          setOrders((prev) =>
+            prev.map((o) => (o.id === order.id ? { ...o, ...latestOrder, inspectorConfirmed: true } : o))
+          );
+        }
+        showNotice('Kỹ thuật viên đã xác nhận tiếp nhận đơn này. Quyền đổi KTV đã bị khóa!');
+        return;
+      }
+    } catch {
+      // Tiếp tục nếu mạng bận hoặc đơn giả lập
+    }
+
     const resolvedAddr = getOrderSellerAddress(order);
     const resolvedPhone = getOrderSellerPhone(order);
     const resolvedName = getOrderSellerName(order);
@@ -67,6 +84,22 @@ export function useInspectorAssignment({ isOrderReceivedAtHub, orders, setOrders
     if (isInspectorAssignmentLocked(currentOrder)) {
       setAssignError('Kỹ thuật viên đã xác nhận đơn hoặc đang tiến hành kiểm định. Quyền đổi KTV đã bị khóa.');
       return;
+    }
+
+    // Tái kiểm tra với Backend ngay trước khi gửi lệnh điều phối
+    try {
+      const latestOrder = await inspectorService.getOrder(assignModalOrder.id, { bypassCache: true });
+      if (latestOrder && isInspectorAssignmentLocked(latestOrder)) {
+        if (setOrders) {
+          setOrders((prev) =>
+            prev.map((o) => (o.id === assignModalOrder.id ? { ...o, ...latestOrder, inspectorConfirmed: true } : o))
+          );
+        }
+        setAssignError('Kỹ thuật viên đã xác nhận tiếp nhận đơn này. Quyền đổi KTV đã bị khóa!');
+        return;
+      }
+    } catch {
+      // Tiếp tục
     }
 
     if (!staffList.some((staff) => staff.id === selectedInspectorId)) {
@@ -306,6 +339,19 @@ export function useInspectorAssignment({ isOrderReceivedAtHub, orders, setOrders
       } catch { }
       const msg = err?.message || 'Giao task kiểm định thất bại. Vui lòng thử lại.';
       setAssignError(msg);
+      if (
+        msg.toLowerCase().includes('khóa') ||
+        msg.toLowerCase().includes('tiếp nhận') ||
+        msg.toLowerCase().includes('xác nhận') ||
+        msg.toLowerCase().includes('locked') ||
+        msg.toLowerCase().includes('conflict')
+      ) {
+        if (setOrders) {
+          setOrders((prev) =>
+            prev.map((o) => (o.id === assignModalOrder.id ? { ...o, inspectorConfirmed: true } : o))
+          );
+        }
+      }
     } finally {
       setIsAssigning(false);
     }

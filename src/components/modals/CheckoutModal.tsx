@@ -1981,7 +1981,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             window.dispatchEvent(new CustomEvent('secondlife_order_placed_signal', { detail: newOrder }));
             window.dispatchEvent(new CustomEvent('secondlife_listing_status_changed', { detail: { id: listing.id, status: 'reserved' } }));
             window.dispatchEvent(new CustomEvent('secondlife_inspection_task_created', { detail: newOrder }));
-            window.dispatchEvent(new CustomEvent('secondlife_notification', { detail: sellerNotifItem }));
             localStorage.setItem('secondlife_order_placed_signal', String(Date.now()));
           } catch { }
         }

@@ -102,3 +102,56 @@ test('uses the settled payout without inferring a policy rate from the fee', () 
   assert.equal(payout?.sellerPayout, 140_000);
   assert.equal(payout?.ratePercent, undefined);
 });
+
+test('OrderSettlement returns null when isSeller is false (hidden on Buyer side)', async () => {
+  const { OrderSettlement } = await import('../components/orders/detail/OrderSettlement');
+  const dummyOrder: any = {
+    id: 'ord-123',
+    itemPriceVnd: 500000,
+    shippingDeliveredAt: '2026-11-18T10:00:00Z',
+    escrowStatus: 'HELD',
+  };
+
+  const buyerElement = OrderSettlement({
+    order: dummyOrder,
+    detailBuyerInspectionStage: null,
+    isOrderReceiptConfirmed: () => false,
+    orderSettlement: {
+      settlementId: 'st-01',
+      sellerPayout: 475000,
+      platformCommission: 25000,
+      shippingFee: 0,
+      commissionBase: 500000,
+      settledAt: '2026-11-18T10:00:00Z',
+      currency: 'VND',
+    },
+    isEscrowReleased: true,
+    isLoadingSettlement: false,
+    orderCommission: null,
+    isSeller: false,
+  });
+
+  assert.equal(buyerElement, null);
+
+  const sellerElement = OrderSettlement({
+    order: dummyOrder,
+    detailBuyerInspectionStage: null,
+    isOrderReceiptConfirmed: () => false,
+    orderSettlement: {
+      settlementId: 'st-01',
+      sellerPayout: 475000,
+      platformCommission: 25000,
+      shippingFee: 0,
+      commissionBase: 500000,
+      settledAt: '2026-11-18T10:00:00Z',
+      currency: 'VND',
+    },
+    isEscrowReleased: true,
+    isLoadingSettlement: false,
+    orderCommission: null,
+    isSeller: true,
+  });
+
+  assert.notEqual(sellerElement, null);
+});
+

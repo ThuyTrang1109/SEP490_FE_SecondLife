@@ -80,13 +80,11 @@ export function OrderCardActions({
   const isCounteredAppointment = !isPendingApprovalOrFeeInAction && Boolean(
     (
       (savedAppointment?.status === 'COUNTERED_BY_CENTER' && Boolean(savedAppointment?.counterScheduledAt)) ||
-      Boolean(savedAppointment?.counterScheduledAt) ||
       ((ord as any).appointmentStatus === 'COUNTERED_BY_CENTER' && Boolean((ord as any).counterScheduledAt)) ||
-      Boolean((ord as any).counterScheduledAt) ||
       Boolean((ord as any).inspectionOrder?.counterScheduledAt)
     ) &&
     savedAppointment?.status !== 'PENDING_CENTER_CONFIRMATION' &&
-    ord.appointmentStatus !== 'PENDING_CENTER_CONFIRMATION' &&
+    (ord as any).appointmentStatus !== 'PENDING_CENTER_CONFIRMATION' &&
     ord.status !== 'CONFIRMED_PENDING_DISPATCH'
   );
   const appointmentRejection = !isCounteredAppointment && !isPendingApprovalOrFeeInAction ? getOrderAppointmentRejection(ord) : null;
@@ -352,9 +350,8 @@ export function OrderCardActions({
                 ord.backendStatus !== 'COMPLETED' &&
                 !ord.shippingDeliveredAt &&
                 !isOrderPacked(ord) &&
-                ord.backendStatus !== 'SHIPPED' &&
+                (isAtHome || (ord.backendStatus !== 'SHIPPED' && ord.escrowStatus !== 'SHIPPED_TO_BUYER')) &&
                 ord.backendStatus !== 'DELIVERED' &&
-                ord.escrowStatus !== 'SHIPPED_TO_BUYER' &&
                 ord.escrowStatus !== 'DELIVERED_INSPECTION_WINDOW' &&
                 ord.escrowStatus !== 'COMPLETED_RELEASED' &&
                 ord.escrowStatus !== 'INSPECTION_FAILED' &&

@@ -223,10 +223,8 @@ export function useCenterOrders({ currentUser, initialOrders, lang, loadingShipm
             (item as any).backendStatus === 'INSPECTING'
           );
           const savedStatus = typeof window !== 'undefined' ? localStorage.getItem(`inspection_status_${item.id}`) : null;
-          const isWaitingInspectorConfirmation = ['DISPATCHED', 'SCHEDULED', 'CONFIRMED_PENDING_DISPATCH'].includes(item.status || '');
-          const resolvedInspectorConfirmed = isWaitingInspectorConfirmation
-            ? Boolean(item.inspectorId && isConfirmedLocally)
-            : Boolean(item.inspectorId) && (isConfirmedLocally || item.inspectorConfirmed || false);
+          const isConfirmedByBackend = Boolean(item.inspectorConfirmed || (item as any).assignmentLocked || (item as any).inspectorConfirmedAt);
+          const resolvedInspectorConfirmed = Boolean(item.inspectorId) && (isConfirmedByBackend || isConfirmedLocally);
           return {
             ...item,
             status: savedStatus || item.status,
@@ -599,10 +597,8 @@ export function useCenterOrders({ currentUser, initialOrders, lang, loadingShipm
             (ord as any).backendStatus === 'INSPECTING'
           );
 
-          const isWaitingInspectorConfirmation = ['DISPATCHED', 'SCHEDULED', 'CONFIRMED_PENDING_DISPATCH'].includes(ord.status || resolvedStatus || '');
-          const resolvedInspectorConfirmed = isWaitingInspectorConfirmation
-            ? Boolean(hasValidAssign && isConfirmedLocally)
-            : Boolean(hasValidAssign) && (isConfirmedLocally || ord.inspectorConfirmed || false);
+          const isConfirmedByBackend = Boolean(ord.inspectorConfirmed || (ord as any).assignmentLocked || (ord as any).inspectorConfirmedAt);
+          const resolvedInspectorConfirmed = Boolean(hasValidAssign) && (isConfirmedByBackend || isConfirmedLocally);
 
           combinedMap.set(ord.id, {
             ...ord,

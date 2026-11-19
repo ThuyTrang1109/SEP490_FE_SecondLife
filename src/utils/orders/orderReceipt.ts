@@ -1,6 +1,26 @@
 import type { EscrowOrder, ShipmentBackend } from '../../types';
 import { getOrderAllShipments } from './shipmentCache';
 import { getInspectionPurchaseDecision } from '../inspectionPurchase';
+import { getBuyerDeliveryProgress } from '../inspectionCenterData';
+
+export function getAtHomeDeliveryStage(order: EscrowOrder, shipments?: ShipmentBackend[]) {
+  // DELIVERING_TO_BUYER can begin when the buyer pays, before the seller books Lalamove.
+  const deliveryShipments = shipments ?? [...new Set([order.id, order.linkedOrderId, order.inspectionOrderId])]
+    .flatMap((id) => getOrderAllShipments(id));
+  const shipment = deliveryShipments.find((entry) =>
+    entry.leg === 'SELLER_TO_BUYER' && Boolean(entry.orderCode?.trim()) &&
+    !['CANCELLED', 'CANCELED', 'FAILED', 'REJECTED', 'EXPIRED', 'RETURNED', 'CREATING', 'CREATION_UNCERTAIN'].includes(entry.status.toUpperCase()) &&
+    !['CANCELLED', 'CANCELED', 'REJECTED', 'EXPIRED'].includes(entry.providerStatus?.toUpperCase() ?? '')
+  );
+
+  const progress = shipment ? getBuyerDeliveryProgress(shipment).step : null;
+  if (order.shippingDeliveredAt || progress === 3) return 'delivered';
+  if (order.carrierPickedUpAt || progress === 2 ||
+      ['PICKED_UP', 'PICKED', 'SHIPPED', 'DELIVERING', 'IN_TRANSIT'].includes(shipment?.status.toUpperCase() ?? '')) {
+    return 'in_transit';
+  }
+  return shipment ? 'awaiting_pickup' : 'awaiting_shipment';
+}
 
 /**
  * Kiểm tra xem đơn hàng có phải là đơn có dịch vụ kiểm định hay không.

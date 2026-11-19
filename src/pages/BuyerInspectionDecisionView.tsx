@@ -1626,7 +1626,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                         : 'Bạn đã hoàn tất nhận hàng và đối soát. Tiền hàng đã được giải ngân cho người bán.')
                       : isOrderDelivered
                         ? (isUserSeller
-                          ? 'Khách mua có 48 giờ để dùng thử và kiểm tra đối soát trước khi hệ thống tự động giải ngân vào ví của bạn.'
+                          ? 'Khách mua có 48 giờ để kiểm tra đối soát trước khi hệ thống tự động giải ngân vào ví của bạn.'
                           : 'Bạn có 48 giờ để kiểm tra và đối soát thiết bị trước khi hệ thống tự động giải ngân cho người bán.')
                         : isAtHome
                           ? (isUserSeller
@@ -1653,8 +1653,8 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
         ) : isUserSeller ? (
           /* Banner thông báo dành riêng cho Người bán khi đơn ĐANG XỬ LÝ */
           <div className={`py-3.5 px-4 sm:py-4 sm:px-5 rounded-2xl text-white shadow-md relative overflow-hidden ${isInspecting || isInboundDelivered
-              ? 'bg-gradient-to-r from-emerald-800 via-teal-900 to-[#24263e]'
-              : 'bg-gradient-to-r from-slate-800 via-indigo-900 to-[#24263e]'
+            ? 'bg-gradient-to-r from-emerald-800 via-teal-900 to-[#24263e]'
+            : 'bg-gradient-to-r from-slate-800 via-indigo-900 to-[#24263e]'
             }`}>
             <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="space-y-1 sm:space-y-1.5">

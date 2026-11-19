@@ -27,7 +27,8 @@ function shouldShowPackedCreateShipmentButton(
   order: MockOrder,
   hasInspection: boolean,
   isSeller: boolean,
-  isPurchaseAccepted: boolean = false
+  isPurchaseAccepted: boolean = false,
+  isInsideDetailModal: boolean = false
 ): boolean {
   if (!isSeller) return false;
   const isSellerConfirmed = Boolean(order.sellerConfirmedAt);
@@ -41,9 +42,15 @@ function shouldShowPackedCreateShipmentButton(
     return false;
   }
 
+  // Inside detail modal: NEVER show "Đã gói hàng • Tạo đơn vận chuyển" when purchase accepted
+  if (isInsideDetailModal && isPurchaseAccepted) {
+    return false;
+  }
+
+  // Outside card view: AT_HOME after purchase accepted DOES show create shipment button
   const isAtHome = hasInspection && (order.inspectionMethod === 'AT_HOME' || order.orderType === 'AT_HOME');
   if (isAtHome && isPurchaseAccepted) {
-    return true;
+    return !isInsideDetailModal;
   }
 
   if (order.escrowStatus === 'INSPECTION_PASSED' || backendStatus === 'PASSED') {
@@ -183,7 +190,7 @@ test('At-Home Inspection Modal and Card Action Buttons Rules', async (t) => {
     assert.strictEqual(showSchedule, false, 'Passed order must not show schedule button');
   });
 
-  await t.test('[TEST 3b] When AT_HOME inspection has PASSED and buyer ACCEPTED purchase, seller DOES see "Đã gói hàng • Tạo đơn vận chuyển"', () => {
+  await t.test('[TEST 3b] When AT_HOME inspection has PASSED and buyer ACCEPTED purchase, seller DOES see "Đã gói hàng • Tạo đơn vận chuyển" on card, but NOT inside detail modal', () => {
     const order: MockOrder = {
       id: 'ord-at-home-accepted',
       hasInspectionService: true,
@@ -195,8 +202,13 @@ test('At-Home Inspection Modal and Card Action Buttons Rules', async (t) => {
       buyerId,
     };
 
-    const showShipment = shouldShowPackedCreateShipmentButton(order, true, true, true);
-    assert.strictEqual(showShipment, true, 'AT_HOME after purchase accepted must show create shipment button');
+    // Outside card view: DOES see create shipment button
+    const showShipmentCard = shouldShowPackedCreateShipmentButton(order, true, true, true, false);
+    assert.strictEqual(showShipmentCard, true, 'AT_HOME after purchase accepted must show create shipment button on card view');
+
+    // Inside detail modal: does NOT see create shipment button
+    const showShipmentDetail = shouldShowPackedCreateShipmentButton(order, true, true, true, true);
+    assert.strictEqual(showShipmentDetail, false, 'Inside detail modal, seller must NOT see create shipment button');
 
     const showSchedule = shouldShowScheduleVisitButton(order, true, true);
     assert.strictEqual(showSchedule, false, 'Passed order must not show schedule button');

@@ -87,7 +87,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
     }
     setIsLoading(true);
     try {
-      const res = await notificationService.getNotifications({ page: 0, size: QUICK_NOTIFICATION_LIMIT });
+      const res = await notificationService.getNotifications({ page: 0, size: 20 });
       const localNotifs = getScopedLocalNotifications(currentUser, currentRole);
       const combined = [...localNotifs, ...(res.content || [])];
       const seen = new Set<string>();
@@ -329,7 +329,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
 
       {/* Dropdown Quick View Popover */}
       {isOpen && (
-        <div className="absolute right-0 mt-2.5 w-[360px] sm:w-[400px] max-w-[92vw] bg-[#24263e]/95 backdrop-blur-xl border border-white/20 rounded-3xl shadow-2xl text-white z-50 overflow-hidden animate-fadeIn">
+        <div className="absolute right-0 mt-2.5 w-[440px] sm:w-[500px] md:w-[540px] max-w-[95vw] bg-[#24263e]/95 backdrop-blur-xl border border-white/20 rounded-3xl shadow-2xl text-white z-50 overflow-hidden animate-fadeIn">
           {/* Popover Header */}
           <div className="p-4 border-b border-white/15 flex items-center justify-between bg-white/5">
             <div className="flex items-center gap-2">

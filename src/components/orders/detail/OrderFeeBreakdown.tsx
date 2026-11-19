@@ -137,6 +137,12 @@ export function OrderFeeBreakdown({
           detailModalOrder.buyerCommitmentDeposit ??
           0
         );
+        const purchaseItemPrice = detailInspectionDto?.finalItemPrice ?? detailModalOrder.itemPriceVnd;
+        const purchaseDeliveryFee = detailInspectionDto?.finalShippingFee ?? detailModalOrder.finalShippingFee;
+        const purchaseTotalBeforeDeposit = purchaseDeliveryFee == null ? null : purchaseItemPrice + purchaseDeliveryFee;
+        const purchaseDeliveryLabel = isAtHome
+          ? (lang === 'vi' ? 'Cước giao hàng (Người bán → Người mua)' : 'Delivery fee (Seller → Buyer)')
+          : (lang === 'vi' ? 'Cước giao hàng (Hub → Người mua)' : 'Delivery fee (Hub → Buyer)');
 
         const totalInspectionCalculatedFee = isAtHome
           ? (baseInspectionFee + travelFee)
@@ -173,6 +179,9 @@ export function OrderFeeBreakdown({
           detailModalOrder.sellerPaidAt ||
           (detailModalOrder as any)?.seller_paid_at
         );
+        const appliedPurchaseDeposit = isBuyerInspectionPaid && buyerCommitmentDeposit > 0 &&
+          purchaseTotalBeforeDeposit != null && purchaseTotalBeforeDeposit - buyerCommitmentDeposit === detailModalOrder.totalPaidVnd
+          ? buyerCommitmentDeposit : 0;
 
         const isBuyerShareFulfilled = (buyerFeeShare <= 0 && buyerCommitmentDeposit <= 0) || isBuyerInspectionPaid;
         const isSellerShareFulfilled = sellerFeeShare <= 0 || isSellerInspectionPaid;
@@ -245,33 +254,21 @@ export function OrderFeeBreakdown({
               </span>
             </div>
 
-            {/* Product price row */}
-            <div className="flex justify-between items-center text-[#24263e]/80">
-              {isPhase2Paid ? (
-                <>
-                  <span className="font-medium">
-                    {lang === 'vi' ? 'Tiền hàng đang giữ trong Escrow:' : 'Item Price (Held in Escrow):'}
+            {!isPhase2Paid && (
+              <div className="flex justify-between items-center text-[#24263e]/80">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-medium text-[#24263e]">
+                    {lang === 'vi' ? 'Giá sản phẩm · Chưa thanh toán' : 'Product Price · Unpaid'}:
                   </span>
-                  <span className="font-semibold text-[#24263e]">
-                    {formatVND(detailModalOrder.itemPriceVnd)}
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">
+                    {lang === 'vi' ? 'Chưa thanh toán (GĐ 2)' : 'Phase 2 Unpaid'}
                   </span>
-                </>
-              ) : (
-                <>
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-medium text-[#24263e]">
-                      {lang === 'vi' ? 'Giá sản phẩm · Chưa thanh toán' : 'Product Price · Unpaid'}:
-                    </span>
-                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">
-                      {lang === 'vi' ? 'Chưa thanh toán (GĐ 2)' : 'Phase 2 Unpaid'}
-                    </span>
-                  </div>
-                  <span className="font-semibold text-slate-700">
-                    {formatVND(detailModalOrder.itemPriceVnd || detailInspectionDto?.postPrice || 0)}
-                  </span>
-                </>
-              )}
-            </div>
+                </div>
+                <span className="font-semibold text-slate-700">
+                  {formatVND(detailModalOrder.itemPriceVnd || detailInspectionDto?.postPrice || 0)}
+                </span>
+              </div>
+            )}
 
             {/* Base inspection fee */}
             <div className="flex justify-between items-center text-[#24263e]/70">
@@ -444,17 +441,14 @@ export function OrderFeeBreakdown({
               )}
             </div>
 
-            {/* Phase 2 Hub -> Buyer shipping quote (only when inspection passed or Phase 2 paid) */}
-            {(isInspectionPassed || isPhase2Paid) && hubToBuyerShippingFee > 0 && (
+            {/* Phase 2 Hub -> Buyer shipping quote before payment */}
+            {isInspectionPassed && !isPhase2Paid && hubToBuyerShippingFee > 0 && (
               <div className="flex justify-between items-center text-[#24263e]/70">
                 <span>{lang === 'vi' ? 'Cước giao hàng tận tay (Hub → Buyer):' : 'Hub → Buyer Delivery Fee:'}</span>
                 <div className="text-right">
                   <span className="font-semibold text-[#24263e]">{formatVND(hubToBuyerShippingFee)}</span>
-                  <span className={`ml-1.5 text-[10px] px-1.5 py-0.5 rounded font-bold ${isPhase2Paid ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'
-                    }`}>
-                    {isPhase2Paid
-                      ? (lang === 'vi' ? 'Đã thanh toán (GĐ 2)' : 'Paid (Phase 2)')
-                      : (lang === 'vi' ? 'Thanh toán khi mua tiếp' : 'Due upon purchase')}
+                  <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded font-bold bg-blue-100 text-blue-800">
+                    {lang === 'vi' ? 'Thanh toán khi mua tiếp' : 'Due upon purchase'}
                   </span>
                 </div>
               </div>
@@ -480,7 +474,33 @@ export function OrderFeeBreakdown({
                   )}
                 </span>
               </div>
-              {!isPhase2Paid && (
+              {isPhase2Paid ? (
+                <div className="mt-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-[11px] text-slate-700">
+                  <dl className="space-y-1.5">
+                    <div className="flex justify-between gap-3">
+                      <dt>{lang === 'vi' ? 'Tiền hàng' : 'Item price'}</dt>
+                      <dd className="shrink-0 font-semibold text-[#24263e]">{formatVND(purchaseItemPrice)}</dd>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <dt>{purchaseDeliveryLabel}</dt>
+                      <dd className="text-right font-semibold text-[#24263e]">
+                        {purchaseDeliveryFee != null ? formatVND(purchaseDeliveryFee) : (lang === 'vi' ? 'Chưa có chi tiết' : 'Details unavailable')}
+                      </dd>
+                    </div>
+                    {appliedPurchaseDeposit > 0 && (
+                      <div className="flex justify-between gap-3">
+                        <dt>{lang === 'vi' ? 'Cọc cam kết đã khấu trừ' : 'Commitment deposit applied'}</dt>
+                        <dd className="shrink-0 font-semibold text-[#24263e]">{formatVND(-appliedPurchaseDeposit)}</dd>
+                      </div>
+                    )}
+                  </dl>
+                  {purchaseTotalBeforeDeposit != null && purchaseTotalBeforeDeposit - appliedPurchaseDeposit !== detailModalOrder.totalPaidVnd && (
+                    <p className="mt-1.5 text-slate-500">
+                      {lang === 'vi' ? 'Các khoản trên chưa đối chiếu được với tổng thanh toán.' : 'These amounts do not reconcile with the payment total.'}
+                    </p>
+                  )}
+                </div>
+              ) : (
                 <div className="text-[11px] text-right mt-0.5">
                   {!isBothUpfrontPaid ? (
                     <span className="text-orange-700 font-medium">

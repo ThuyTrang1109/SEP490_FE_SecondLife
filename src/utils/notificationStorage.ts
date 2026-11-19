@@ -3,12 +3,20 @@ import { UserProfile, UserRole } from '../types';
 import { translateSystemNotification } from './systemNotificationTranslator';
 
 export function compareNotificationsNewestFirst(first: NotificationItem, second: NotificationItem): number {
-  const firstTime = Date.parse(first.createdAt);
-  const secondTime = Date.parse(second.createdAt);
+  const parseTime = (iso?: string | null): number => {
+    if (!iso) return 0;
+    const t = new Date(iso).getTime();
+    return Number.isNaN(t) ? 0 : t;
+  };
 
-  if (Number.isNaN(firstTime)) return Number.isNaN(secondTime) ? 0 : 1;
-  if (Number.isNaN(secondTime)) return -1;
-  return secondTime - firstTime;
+  const firstTime = parseTime(first?.createdAt);
+  const secondTime = parseTime(second?.createdAt);
+
+  if (secondTime !== firstTime) {
+    return secondTime - firstTime;
+  }
+  // Nếu cùng thời điểm, sắp xếp theo ID giảm dần (ID mới hơn đứng trước)
+  return String(second?.id || '').localeCompare(String(first?.id || ''));
 }
 
 /**
@@ -29,115 +37,115 @@ export function isNotificationForUser(
   const role = String(currentRole || currentUser.role || '').toUpperCase();
   const userRoles = Array.isArray((currentUser as any)?.roles)
     ? (currentUser as any).roles.map((r: any) => String(r).toUpperCase())
-    : [];
+    : [role];
+
+  const isSellerUser = role === 'SELLER' || userRoles.includes('SELLER');
+  const isInspectorUser =
+    role === 'INSPECTOR' ||
+    role === 'INSPECTION_CENTER' ||
+    userRoles.includes('INSPECTOR') ||
+    userRoles.includes('INSPECTION_CENTER');
+  const isAdminUser = role === 'ADMIN' || userRoles.includes('ADMIN');
 
   const targetId = item.recipientId || item.userId;
   const itemRecipientName = String((item as any)?.recipientName || (item as any)?.sellerName || '').trim().toLowerCase();
   const itemRecipientEmail = String((item as any)?.recipientEmail || (item as any)?.sellerEmail || '').trim().toLowerCase();
-
-  // 1. Kiểm tra đích danh người dùng trước tiên:
-  // Nếu thông báo gửi đích danh cho currentUserId thì hiển thị ngay lập tức
-  if (targetId && String(targetId) === currentUserId) {
-    return true;
-  }
-
-  // 1.1 Khớp theo tên hiển thị hoặc email của người nhận/người bán
-  if (currentUserName && itemRecipientName && currentUserName === itemRecipientName) {
-    return true;
-  }
-  if (currentUserEmail && itemRecipientEmail && currentUserEmail === itemRecipientEmail) {
-    return true;
-  }
-
-  // 1.2 Nếu thông báo đã chỉ định đích danh người khác (khác currentUserId và khác tên/email)
-  // Lưu ý: Nếu thông báo gửi cho vai trò SELLER hoặc BUYER và người dùng đang ở vai trò đó, vẫn cho phép hiển thị
   const targetRole = String(item.recipientRole || '').toUpperCase();
-  if (targetId && String(targetId) !== currentUserId && itemRecipientName && itemRecipientName !== currentUserName) {
-    if (targetRole !== 'SELLER' && targetRole !== 'BUYER') {
-      return false;
-    }
-    // Nếu là SELLER nhưng người dùng hiện tại lại là ADMIN/INSPECTOR/CENTER thì không hiển thị
-    if (targetRole === 'SELLER' && (role === 'INSPECTOR' || role === 'INSPECTION_CENTER' || role === 'ADMIN')) {
-      return false;
-    }
-  }
-
-  // 2. Kiểm tra vai trò chuyên biệt (Inspector, Inspection Center, Admin)
-  if (['INSPECTOR', 'INSPECTION_CENTER'].includes(targetRole)) {
-    return role === 'INSPECTOR' || role === 'INSPECTION_CENTER' || userRoles.includes('INSPECTOR') || userRoles.includes('INSPECTION_CENTER');
-  }
-  if (targetRole === 'ADMIN') {
-    return role === 'ADMIN' || userRoles.includes('ADMIN');
-  }
-
-  // 3. Đối với người dùng cá nhân C2C (vừa là Người mua vừa là Người bán):
-  // Thông báo của Người bán (SELLER) sẽ hiển thị cho tài khoản nếu họ là người bán hoặc có bài đăng/đơn bán
-  if (targetRole === 'SELLER') {
-    if (role === 'INSPECTOR' || role === 'INSPECTION_CENTER' || role === 'ADMIN') {
-      return false; // Portal chuyên biệt không hiển thị thông báo seller thông thường
-    }
-    // Nếu thông báo gửi cho người bán và người dùng này là user/seller/buyer cá nhân
-    return true;
-  }
-
-  if (targetRole === 'BUYER') {
-    if (role === 'INSPECTOR' || role === 'INSPECTION_CENTER' || role === 'ADMIN') {
-      return false;
-    }
-    return true;
-  }
-
-  if (['ALL', 'SYSTEM'].includes(targetRole)) {
-    return true;
-  }
-
-  // 4. Phân loại theo ngữ cảnh nội dung nếu thông báo chưa gắn metadata:
+  const actionUrl = String(item.actionUrl || '');
   const title = (item.title || '').toLowerCase();
   const msg = (item.message || '').toLowerCase();
   const itemType = String(item.type || '').toUpperCase();
 
-  // Thông báo dành riêng cho Trung tâm kiểm định / KTV
-  if (
-    title.includes('nhiệm vụ kiểm định') ||
-    title.includes('phân công ktv') ||
-    msg.includes('trung tâm vui lòng điều phối') ||
-    msg.includes('phân công ktv') ||
-    itemType === 'INSPECTION_TASK'
-  ) {
-    return role === 'INSPECTOR' || role === 'INSPECTION_CENTER';
+  // 1. Kiểm tra đích danh người nhận (Target ID):
+  if (targetId) {
+    if (String(targetId) === currentUserId) {
+      return true;
+    }
+    // Nếu ID không khớp, kiểm tra email (phòng trường hợp ID string vs number hoặc mock)
+    if (currentUserEmail && itemRecipientEmail && currentUserEmail === itemRecipientEmail) {
+      return true;
+    }
+    // Nếu targetId chỉ định người khác, tuyệt đối không hiển thị cho tài khoản này
+    return false;
   }
 
-  // Thông báo dành cho Người bán
-  if (
+  // 2. Kiểm tra theo email người nhận nếu có
+  if (currentUserEmail && itemRecipientEmail && currentUserEmail !== itemRecipientEmail) {
+    return false;
+  }
+
+  // 3. Phân quyền vai trò chuyên biệt (Inspector, Inspection Center, Admin)
+  if (['INSPECTOR', 'INSPECTION_CENTER'].includes(targetRole) || itemType === 'INSPECTION_TASK') {
+    return isInspectorUser;
+  }
+  if (targetRole === 'ADMIN') {
+    return isAdminUser;
+  }
+
+  // 4. Kiểm tra thông báo dành riêng cho Người bán (SELLER)
+  const isSellerNotification =
+    targetRole === 'SELLER' ||
+    actionUrl.startsWith('/seller') ||
+    itemType === 'INSPECTION_SELLER_REQUEST' ||
     title.includes('yêu cầu kiểm định') ||
     title.includes('đơn kiểm định mới') ||
     title.includes('kiểm định tại nhà') ||
-    title.includes('kiểm định qua hub') ||
     title.includes('hẹn lịch ktv') ||
     title.includes('có đơn hàng mới') ||
+    title.includes('đơn đặt hàng mới cần xác nhận') ||
+    title.includes('đơn đặt hàng mới đã ký quỹ') ||
     title.includes('người mua từ chối mua tiếp') ||
     title.includes('sản phẩm của bạn') ||
-    itemType === 'INSPECTION_SELLER_REQUEST' ||
     msg.includes('vừa đặt mua sản phẩm') ||
     msg.includes('vừa đặt cọc kiểm định') ||
     msg.includes('vừa gửi yêu cầu kiểm định') ||
-    msg.includes('hẹn lịch ktv') ||
     msg.includes('chuẩn bị gửi hàng') ||
-    msg.includes('thiết bị của bạn')
-  ) {
-    return role !== 'INSPECTOR' && role !== 'INSPECTION_CENTER' && role !== 'ADMIN';
+    msg.includes('thiết bị của bạn') ||
+    msg.includes('vừa ký quỹ thành công cho sản phẩm');
+
+  if (isSellerNotification) {
+    // Nếu người dùng không có vai trò SELLER (ví dụ chỉ là BUYER, hoặc Admin/KTV portal) -> KHÔNG hiển thị
+    if (!isSellerUser || isInspectorUser || isAdminUser) {
+      return false;
+    }
+    if (currentUserName && itemRecipientName && currentUserName !== itemRecipientName) {
+      return false;
+    }
+    return true;
   }
 
-  // Thông báo dành cho Người mua
-  if (
+  // 5. Kiểm tra thông báo dành riêng cho Người mua (BUYER)
+  const isBuyerNotification =
+    targetRole === 'BUYER' ||
+    actionUrl.startsWith('/buyer') ||
     title.includes('kết quả kiểm định') ||
     title.includes('đặt đơn kiểm định') ||
     title.includes('đặt đơn hàng') ||
+    title.includes('ký quỹ đơn hàng thành công') ||
+    msg.includes('bạn đã đặt mua sản phẩm') ||
+    msg.includes('bạn đã ký quỹ escrow') ||
     msg.includes('hoàn tất thẩm định') ||
     msg.includes('xác nhận quyết định nhận hàng') ||
-    msg.includes('hoàn trả 100%')
-  ) {
-    return role !== 'INSPECTOR' && role !== 'INSPECTION_CENTER' && role !== 'ADMIN';
+    msg.includes('hoàn trả 100%');
+
+  if (isBuyerNotification) {
+    if (isInspectorUser || isAdminUser) {
+      return false;
+    }
+    if (currentUserName && itemRecipientName && currentUserName !== itemRecipientName) {
+      return false;
+    }
+    return true;
+  }
+
+  // 6. Thông báo phát chung cho toàn hệ thống
+  if (['ALL', 'SYSTEM'].includes(targetRole)) {
+    return true;
+  }
+
+  // 7. Mặc định: Không hiển thị cho Inspector/Admin nếu không thuộc nhiệm vụ
+  if (isInspectorUser || isAdminUser) {
+    return false;
   }
 
   return true;
@@ -184,6 +192,7 @@ export function getScopedLocalNotifications(
 
   return list
     .filter((n) => isNotificationForUser(n, currentUser, currentRole))
+    .sort(compareNotificationsNewestFirst)
     .map((n) => ({
       ...n,
       title: translateSystemNotification(n.title),

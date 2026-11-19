@@ -12,6 +12,7 @@ interface Props {
   isEscrowReleased: boolean;
   isLoadingSettlement: boolean;
   orderCommission: OrderCommissionDTO | null;
+  isSeller?: boolean;
 }
 
 export function OrderSettlement({
@@ -22,7 +23,10 @@ export function OrderSettlement({
   isEscrowReleased,
   isLoadingSettlement,
   orderCommission,
+  isSeller,
 }: Props) {
+  if (isSeller === false) return null;
+
   const commissionPayout = orderCommission && getCommissionPayout(orderCommission);
   return (
     <>

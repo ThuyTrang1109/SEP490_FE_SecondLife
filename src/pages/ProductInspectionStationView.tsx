@@ -2150,7 +2150,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                           onChange={(e) => setPackagingStatus(e.target.value as any)}
                           className={`w-full px-3.5 py-2.5 bg-white border border-gray-200 rounded-xl font-semibold outline-none focus:border-[#c34c36] shadow-2xs text-gray-800 transition ${isCompletedOrder ? 'bg-gray-100 cursor-not-allowed opacity-80' : ''}`}
                         >
-                          <option value="INTACT">Nguyên vẹn 100% - Đóng gói mút xốp / bọc chuẩn</option>
+                          <option value="INTACT">Nguyên vẹn - Đóng gói mút xốp / bọc chuẩn</option>
                           <option value="SLIGHT_DAMAGE">Bao bì / hộp hơi trầy xước nhưng máy an toàn</option>
                           <option value="HEAVY_DAMAGE">Bao bì rách nặng / Thùng móp méo có nguy cơ va đập</option>
                         </select>

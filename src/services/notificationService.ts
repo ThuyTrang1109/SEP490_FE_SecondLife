@@ -41,6 +41,7 @@ export const notificationService = {
     const q = new URLSearchParams();
     q.set('page', String(page));
     q.set('size', String(size));
+    q.set('sort', 'createdAt,desc');
     if (unreadOnly !== undefined) {
       q.set('unreadOnly', String(unreadOnly));
     }

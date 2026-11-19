@@ -25,7 +25,12 @@ export function createAppointmentActions({
         if (targetInspectionId !== orderId) {
           await inspectorService.acceptAppointmentCounter(orderId);
         } else if (finalScheduledAt) {
-          await inspectorService.scheduleAppointment(orderId, finalScheduledAt, 'Người bán đã đồng ý lịch hẹn đề xuất từ Trung tâm');
+          await inspectorService.scheduleAppointment(
+            orderId,
+            finalScheduledAt,
+            'Người bán đã đồng ý lịch hẹn đề xuất từ Trung tâm',
+            finalShift
+          );
         }
       } catch (e) {
         console.warn('Backend accept counter fallback:', e);

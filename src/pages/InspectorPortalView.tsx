@@ -180,12 +180,21 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
     showNotice(
       `[Xác Nhận Đơn] Đã tiếp nhận đơn kiểm định #${orderId.slice(0, 8)}${orderTitle ? ` (${orderTitle})` : ''}. Quyền đổi KTV tại trung tâm đã được khóa!`
     );
-    if (!isAtHome) {
-      try {
-        await inspectorService.startInspection(orderId);
-      } catch (err) {
-        console.warn('Backend startInspection notice:', err);
+
+    // Phát tín hiệu tới các tab khác
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        const bc = new BroadcastChannel('secondlife_inspection_channel');
+        bc.postMessage({ type: 'INSPECTOR_CONFIRMED', orderId });
+        bc.close();
       }
+      window.dispatchEvent(new CustomEvent('secondlife_inspector_confirmed_signal', { detail: { orderId } }));
+    } catch { }
+
+    try {
+      await inspectorService.confirmTask(orderId, isAtHome);
+    } catch (err) {
+      console.warn('Backend confirmTask notice:', err);
     }
   };
 

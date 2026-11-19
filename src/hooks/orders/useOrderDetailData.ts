@@ -117,6 +117,57 @@ export function useOrderDetailData(
       });
     return () => { active = false; };
   }, [detailOrderId, detailIsInspection, linkedOrderId]);
+
+  // Real-time synchronization for appointment lifecycle events
+  React.useEffect(() => {
+    if (!detailOrderId) return;
+    const targetIds = [detailOrderId, linkedOrderId].filter(Boolean) as string[];
+
+    const handleScheduled = (e: any) => {
+      const d = e?.detail;
+      if (!d) return;
+      if (targetIds.includes(d.orderId) || (d.linkedOrderId && targetIds.includes(d.linkedOrderId)) || (d.inspectionOrderId && targetIds.includes(d.inspectionOrderId))) {
+        setDetailInspectionDto((prev) => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            appointmentScheduledAt: d.scheduledAt,
+            appointmentShift: d.shift || 'MORNING',
+            appointmentNote: d.note || '',
+            appointmentStatus: d.status || 'PENDING_CENTER_CONFIRMATION',
+            counterScheduledAt: null,
+            counterShift: null,
+            counterNote: null,
+          };
+        });
+      }
+    };
+
+    const handleRefresh = (e: any) => {
+      const d = e?.detail;
+      if (d?.orderId && !targetIds.includes(d.orderId) && !targetIds.includes(d.linkedOrderId)) return;
+      if (detailIsInspection) {
+        inspectorService.getOrder(detailOrderId, { bypassCache: true })
+          .catch(() => linkedOrderId ? inspectorService.getOrder(linkedOrderId, { bypassCache: true }) : null)
+          .then((dto) => {
+            if (dto) setDetailInspectionDto(dto);
+          })
+          .catch(() => {});
+      }
+    };
+
+    window.addEventListener('secondlife_appointment_scheduled', handleScheduled);
+    window.addEventListener('secondlife_appointment_confirmed', handleRefresh);
+    window.addEventListener('secondlife_appointment_countered', handleRefresh);
+    window.addEventListener('secondlife_appointment_rejected', handleRefresh);
+
+    return () => {
+      window.removeEventListener('secondlife_appointment_scheduled', handleScheduled);
+      window.removeEventListener('secondlife_appointment_confirmed', handleRefresh);
+      window.removeEventListener('secondlife_appointment_countered', handleRefresh);
+      window.removeEventListener('secondlife_appointment_rejected', handleRefresh);
+    };
+  }, [detailOrderId, linkedOrderId, detailIsInspection]);
   return {
     detailShipments, setDetailShipments, isLoadingDetailShipments,
     detailInspectionDto, setDetailInspectionDto,

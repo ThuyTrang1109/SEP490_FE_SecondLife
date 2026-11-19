@@ -199,17 +199,14 @@ export function OrderDetailActions({
                                   (detailModalOrder as any).scheduledAt ||
                                   (detailModalOrder as any).inspectionOrder?.appointmentScheduledAt
                                 );
-                                const isCounteredAppt = Boolean(
-                                  (
-                                    (savedAppointment?.status === 'COUNTERED_BY_CENTER' && Boolean(savedAppointment?.counterScheduledAt)) ||
-                                    Boolean(savedAppointment?.counterScheduledAt) ||
-                                    ((detailModalOrder as any).appointmentStatus === 'COUNTERED_BY_CENTER' && Boolean((detailModalOrder as any).counterScheduledAt)) ||
-                                    Boolean((detailModalOrder as any).counterScheduledAt) ||
-                                    Boolean((detailModalOrder as any).inspectionOrder?.counterScheduledAt)
-                                  ) &&
-                                  savedAppointment?.status !== 'PENDING_CENTER_CONFIRMATION' &&
-                                  detailModalOrder.appointmentStatus !== 'PENDING_CENTER_CONFIRMATION' &&
-                                  detailModalOrder.status !== 'CONFIRMED_PENDING_DISPATCH'
+                                const isPendingCenterAppt = Boolean(
+                                  savedAppointment?.status === 'PENDING_CENTER_CONFIRMATION' ||
+                                  (detailModalOrder as any).appointmentStatus === 'PENDING_CENTER_CONFIRMATION'
+                                );
+                                const isCounteredAppt = !isPendingCenterAppt && Boolean(
+                                  (savedAppointment?.status === 'COUNTERED_BY_CENTER' && Boolean(savedAppointment?.counterScheduledAt)) ||
+                                  ((detailModalOrder as any).appointmentStatus === 'COUNTERED_BY_CENTER' && Boolean((detailModalOrder as any).counterScheduledAt)) ||
+                                  Boolean((detailModalOrder as any).inspectionOrder?.counterScheduledAt)
                                 );
                                 const detailApptRejection = !isCounteredAppt ? getOrderAppointmentRejection(detailModalOrder) : null;
 
@@ -366,23 +363,18 @@ export function OrderDetailActions({
                             detailModalOrder.backendStatus !== 'COMPLETED' &&
                             !detailModalOrder.shippingDeliveredAt &&
                             !isOrderPacked(detailModalOrder) &&
-                            detailModalOrder.backendStatus !== 'SHIPPED' &&
+                            !detailIsPurchaseAccepted &&
+                            (detailIsAtHome || (detailModalOrder.backendStatus !== 'SHIPPED' && detailModalOrder.escrowStatus !== 'SHIPPED_TO_BUYER')) &&
                             detailModalOrder.backendStatus !== 'DELIVERED' &&
-                            (detailModalOrder.escrowStatus as string) !== 'SHIPPED_TO_BUYER' &&
                             (detailModalOrder.escrowStatus as string) !== 'DELIVERED_INSPECTION_WINDOW' &&
                             (detailModalOrder.escrowStatus as string) !== 'COMPLETED_RELEASED' &&
                             (detailModalOrder.escrowStatus as string) !== 'INSPECTION_FAILED' &&
                             (detailModalOrder as any).backendStatus !== 'FAILED' &&
-                            (
-                              ((detailModalOrder.escrowStatus as string) !== 'INSPECTION_PASSED' &&
-                               (detailModalOrder.escrowStatus as string) !== 'INSPECTION_FAILED' &&
-                               (detailModalOrder as any).backendStatus !== 'PASSED' &&
-                               (detailModalOrder as any).backendStatus !== 'FAILED') ||
-                              (detailIsAtHome && detailIsPurchaseAccepted)
-                            ) && (
+                            (detailModalOrder.escrowStatus as string) !== 'INSPECTION_PASSED' &&
+                            (detailModalOrder as any).backendStatus !== 'PASSED' && (
                               <div className="flex flex-col sm:flex-row items-stretch gap-2 flex-1">
-                                {/* Nút Đã Đóng Gói • Tạo Đơn Lalamove cho Chặng 1 hoặc đơn thông thường hoặc đơn AT_HOME sau khi người mua chốt mua */}
-                                {(!detailHasInspection || !detailIsAtHome || (detailIsAtHome && detailIsPurchaseAccepted)) && (
+                                {/* Nút Đã Đóng Gói • Tạo Đơn Lalamove cho Chặng 1 của AT_CENTER hoặc đơn thông thường (không hiện cho đơn kiểm định ở nhà và không hiện khi người mua đã mua tiếp) */}
+                                {(!detailHasInspection || !detailIsAtHome) && (
                                   <button
                                     onClick={() => {
                                       setCreateShipmentOrder(detailModalOrder);
@@ -407,25 +399,31 @@ export function OrderDetailActions({
                                     (detailModalOrder as any).scheduledAt ||
                                     (detailModalOrder as any).inspectionOrder?.appointmentScheduledAt
                                   );
-                                  const isCounteredInDetail = Boolean(
+                                  const isPendingCenterInDetail = Boolean(
+                                    appt?.status === 'PENDING_CENTER_CONFIRMATION' ||
+                                    (detailModalOrder as any).appointmentStatus === 'PENDING_CENTER_CONFIRMATION'
+                                  );
+                                  const isCounteredInDetail = !isPendingCenterInDetail && Boolean(
                                     (
                                       (appt?.status === 'COUNTERED_BY_CENTER' && Boolean(appt?.counterScheduledAt)) ||
-                                      Boolean(appt?.counterScheduledAt) ||
                                       ((detailModalOrder as any).appointmentStatus === 'COUNTERED_BY_CENTER' && Boolean((detailModalOrder as any).counterScheduledAt)) ||
-                                      Boolean((detailModalOrder as any).counterScheduledAt) ||
                                       Boolean((detailModalOrder as any).inspectionOrder?.counterScheduledAt)
-                                    ) &&
-                                    appt?.status !== 'PENDING_CENTER_CONFIRMATION' &&
-                                    detailModalOrder.appointmentStatus !== 'PENDING_CENTER_CONFIRMATION' &&
-                                    detailModalOrder.status !== 'CONFIRMED_PENDING_DISPATCH'
+                                    )
                                   );
 
                                   if (isCounteredInDetail) {
+                                    const counterPayload = appt || {
+                                      scheduledAt: (detailModalOrder as any).appointmentScheduledAt || (detailModalOrder as any).counterScheduledAt,
+                                      counterScheduledAt: (detailModalOrder as any).counterScheduledAt || appt?.counterScheduledAt || appt?.scheduledAt,
+                                      counterShift: (detailModalOrder as any).counterShift || 'AFTERNOON',
+                                      counterNote: (detailModalOrder as any).counterNote || 'KTV khu vực đã kín lịch ca sáng, Trung tâm xin phép đề xuất dời sang ca chiều cùng ngày.',
+                                      status: 'COUNTERED_BY_CENTER',
+                                    };
                                     return (
                                       <div className="flex flex-col sm:flex-row items-stretch gap-2 flex-1">
                                         <button
                                           type="button"
-                                          onClick={() => handleSellerAcceptCounterAppointment(detailModalOrder.id, appt)}
+                                          onClick={() => handleSellerAcceptCounterAppointment(detailModalOrder.id, counterPayload)}
                                           disabled={orderActionLoading === detailModalOrder.id}
                                           className="flex-1 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                                           title={lang === 'vi' ? 'Đồng ý với ngày giờ mới mà Trung tâm kiểm định đề xuất' : 'Accept Hub suggested appointment'}
@@ -682,21 +680,7 @@ export function OrderDetailActions({
                         </div>
                       )}
 
-                    {/* Nút Theo Dõi Vận Đơn dành cho Người mua khi đã có vận đơn (kiểm định tại nhà xem trực tiếp trong Bước 2) */}
-                    {!isOrderSeller(detailModalOrder) &&
-                      !detailBuyerInspectionStage &&
-                      !isOrderReceiptConfirmed(detailModalOrder) &&
-                      !detailIsAtHome &&
-                      isShipmentCreatedForOrder(detailModalOrder) && (
-                        <button
-                          type="button"
-                          onClick={() => setTrackingOrder(detailModalOrder)}
-                          className="py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
-                        >
-                          <Truck className="w-4 h-4 text-white" />
-                          <span>{lang === 'vi' ? 'Theo Dõi Vận Đơn Lalamove' : 'Lalamove Tracking'}</span>
-                        </button>
-                      )}
+
 
                     {/* Chỉ Người Mua (Buyer) mới có nút Đã Nhận Hàng & Khiếu Nại Trả Hàng khi đơn đã giao thành công và CHƯA xác nhận */}
                     {!isOrderSeller(detailModalOrder) &&

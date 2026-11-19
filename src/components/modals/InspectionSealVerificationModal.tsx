@@ -201,11 +201,10 @@ export const InspectionSealVerificationModal: React.FC<InspectionSealVerificatio
           <div className="space-y-4 animate-fadeIn">
             {/* Integrity Status Alert Banner */}
             <div
-              className={`p-4 rounded-2xl border flex items-center justify-between gap-3 ${
-                isTampered
+              className={`p-4 rounded-2xl border flex items-center justify-between gap-3 ${isTampered
                   ? 'bg-rose-50 border-rose-300 text-rose-900'
                   : 'bg-emerald-50 border-emerald-300 text-emerald-900'
-              }`}
+                }`}
             >
               <div className="flex items-center gap-3">
                 {isTampered ? (
@@ -226,9 +225,8 @@ export const InspectionSealVerificationModal: React.FC<InspectionSealVerificatio
               </div>
 
               <span
-                className={`px-3 py-1 rounded-full text-xs font-black uppercase ${
-                  isTampered ? 'bg-rose-200 text-rose-900' : 'bg-emerald-200 text-emerald-900'
-                }`}
+                className={`px-3 py-1 rounded-full text-xs font-black uppercase ${isTampered ? 'bg-rose-200 text-rose-900' : 'bg-emerald-200 text-emerald-900'
+                  }`}
               >
                 {verificationData.currentSealStatus}
               </span>
@@ -305,7 +303,7 @@ export const InspectionSealVerificationModal: React.FC<InspectionSealVerificatio
                         onChange={(e) => setSealCondition(e.target.value as any)}
                         className="w-full p-2 bg-white border border-slate-300 rounded-lg text-xs"
                       >
-                        <option value="INTACT">Nguyên vẹn 100% (INTACT)</option>
+                        <option value="INTACT">Nguyên vẹn (INTACT)</option>
                         <option value="TAMPERED">Bị rách / Có dấu hiệu bóc (TAMPERED)</option>
                       </select>
                     </div>
@@ -370,15 +368,14 @@ export const InspectionSealVerificationModal: React.FC<InspectionSealVerificatio
                             {log.scanStage === 'INITIAL_SEAL'
                               ? '1. NIÊM PHONG LẦN ĐẦU'
                               : log.scanStage === 'CARRIER_HANDOVER'
-                              ? '2. BÀN GIAO VẬN CHUYỂN'
-                              : '3. GIAO TẬN TAY NGƯỜI MUA'}
+                                ? '2. BÀN GIAO VẬN CHUYỂN'
+                                : '3. GIAO TẬN TAY NGƯỜI MUA'}
                           </span>
                           <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
-                              log.sealCondition === 'TAMPERED'
+                            className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${log.sealCondition === 'TAMPERED'
                                 ? 'bg-rose-100 text-rose-800'
                                 : 'bg-emerald-100 text-emerald-800'
-                            }`}
+                              }`}
                           >
                             {log.sealCondition}
                           </span>
@@ -406,11 +403,11 @@ export const InspectionSealVerificationModal: React.FC<InspectionSealVerificatio
                         <span>
                           {log.scannedAt
                             ? new Date(log.scannedAt).toLocaleTimeString('vi-VN', {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                                day: '2-digit',
-                                month: '2-digit'
-                              })
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              day: '2-digit',
+                              month: '2-digit'
+                            })
                             : 'Mới đây'}
                         </span>
                       </div>

@@ -920,8 +920,19 @@ export default function App() {
     if (target.origin !== window.location.origin) return;
     if (target.pathname.includes('/wallet')) { setIsTopUpModalOpen(true); return; }
     const match = resolveAppRoute(`${target.pathname}${target.search}${target.hash}`, currentRole);
+    const access = getRouteAccess(match, currentUser);
+    if (access === 'unauthorized') {
+      if (match.tab === 'orders') {
+        const orderId = match.params.orderId;
+        const fallbackUrl = orderId ? paths.orders(currentRole, orderId) : pathForTab('orders', currentRole);
+        navigatePath(fallbackUrl);
+        return;
+      }
+      navigatePath(pathForTab('notifications', currentRole));
+      return;
+    }
     navigatePath(match.url);
-  }, [currentRole]);
+  }, [currentRole, currentUser]);
 
 
 
@@ -1575,6 +1586,7 @@ export default function App() {
           ...matchedInsp,
           id: item.id,
           inspectionOrderId: matchedInsp.id,
+          purchaseShippingFee: item.shippingFee,
           orderType: matchedInsp.orderType || item.orderType,
           inspectionMethod: matchedInsp.orderType || item.inspectionMethod || 'AT_HOME',
           inspectionStatus: matchedInsp.status || item.inspectionStatus,
@@ -1614,6 +1626,7 @@ export default function App() {
           ...matchedInsp,
           id: item.id,
           inspectionOrderId: matchedInsp.id,
+          purchaseShippingFee: item.shippingFee,
           orderType: matchedInsp.orderType || item.orderType,
           inspectionMethod: matchedInsp.orderType || item.inspectionMethod || 'AT_HOME',
           inspectionStatus: matchedInsp.status || item.inspectionStatus,
@@ -2002,12 +2015,18 @@ export default function App() {
     window.addEventListener('secondlife_order_placed_signal', triggerDebouncedFetch);
     window.addEventListener('secondlife_inspection_task_created', triggerDebouncedFetch);
     window.addEventListener('secondlife_order_assigned_signal', triggerDebouncedFetch);
+    window.addEventListener('secondlife_appointment_countered', triggerDebouncedFetch);
+    window.addEventListener('secondlife_appointment_scheduled', triggerDebouncedFetch);
+    window.addEventListener('secondlife_appointment_confirmed', triggerDebouncedFetch);
+    window.addEventListener('secondlife_appointment_rejected', triggerDebouncedFetch);
     const handleStorage = (e: StorageEvent) => {
       if (
         e.key === 'secondlife_order_placed_signal' ||
         e.key === 'recent_placed_orders' ||
         e.key === 'center_inspection_orders' ||
-        e.key?.startsWith('order_assigned_inspector_')
+        e.key === 'my_seller_inspection_orders' ||
+        e.key?.startsWith('order_assigned_inspector_') ||
+        e.key?.startsWith('order_appointment_')
       ) {
         triggerDebouncedFetch();
       }
@@ -2018,6 +2037,10 @@ export default function App() {
       window.removeEventListener('secondlife_order_placed_signal', triggerDebouncedFetch);
       window.removeEventListener('secondlife_inspection_task_created', triggerDebouncedFetch);
       window.removeEventListener('secondlife_order_assigned_signal', triggerDebouncedFetch);
+      window.removeEventListener('secondlife_appointment_countered', triggerDebouncedFetch);
+      window.removeEventListener('secondlife_appointment_scheduled', triggerDebouncedFetch);
+      window.removeEventListener('secondlife_appointment_confirmed', triggerDebouncedFetch);
+      window.removeEventListener('secondlife_appointment_rejected', triggerDebouncedFetch);
       window.removeEventListener('storage', handleStorage);
     };
   }, [loadUserOrders]);

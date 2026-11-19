@@ -37,6 +37,7 @@ import { isOrderReceivedAtHub } from '../../pages/ProductInspectionStationView';
 import { CreateShipmentModal } from '../modals/CreateShipmentModal';
 import { ScheduleAppointmentModal } from '../modals/ScheduleAppointmentModal';
 import { readOrderAppointment } from '../../utils/orders/orderAppointments';
+import { getAtHomeDeliveryStage } from '../../utils/orders/orderReceipt';
 import {
   formatInspectionDeadline,
   isInspectionPaymentExpired,
@@ -176,16 +177,20 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
 
   const [allShipments, setAllShipments] = useState<ShipmentBackend[]>(() => {
     if (typeof window === 'undefined' || !order.id) return [];
-    return getOrderAllShipments(order.id, (order as any).linkedOrderId);
+    const targetIds = [...new Set([order.id, (order as any).linkedOrderId, (order as any).inspectionOrderId])].filter(Boolean);
+    return targetIds.flatMap((id) => getOrderAllShipments(id));
   });
   const buyerShipment = allShipments.find((s) => (s.leg === 'SELLER_TO_BUYER' || s.leg === 'CENTER_TO_BUYER' || s.leg === 'DELIVERY') && s.status !== 'CANCELLED')
     || allShipments.find((s) => s.leg === 'SELLER_TO_BUYER' || s.leg === 'CENTER_TO_BUYER' || s.leg === 'DELIVERY');
+
+  const atHomeDeliveryStage = isAtHome ? getAtHomeDeliveryStage(order as any, allShipments) : null;
 
   const isDelivered = Boolean(
     !isCompleted && (
       (order as any).shippingDeliveredAt ||
       (order as any).escrowStatus === 'DELIVERED_INSPECTION_WINDOW' ||
       (order as any).backendStatus === 'DELIVERED' ||
+      (isAtHome && atHomeDeliveryStage === 'delivered') ||
       (buyerShipment && (
         buyerShipment.status === 'DELIVERED' ||
         buyerShipment.status === 'COMPLETED' ||
@@ -193,7 +198,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
       )) ||
       (() => {
         if (typeof window === 'undefined' || !order.id) return false;
-        const targetIds = [order.id, (order as any).linkedOrderId].filter(Boolean);
+        const targetIds = [order.id, (order as any).linkedOrderId, (order as any).inspectionOrderId].filter(Boolean);
         for (const storageKey of ['recent_placed_orders', 'center_inspection_orders', 'my_seller_inspection_orders']) {
           try {
             const raw = localStorage.getItem(storageKey);
@@ -213,26 +218,24 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
     )
   );
 
-  const isDelivering = Boolean(
+  const isAwaitingPickup = Boolean(
     !isCompleted && !isDelivered && isPurchaseAccepted && (
-      status === 'DELIVERING_TO_BUYER' ||
-      (order as any).status === 'DELIVERING_TO_BUYER' ||
-      (order as any).escrowStatus === 'DELIVERING_TO_BUYER' ||
-      (order as any).escrowStatus === 'SHIPPED_TO_BUYER' ||
-      (order as any).carrierPickedUpAt ||
-      (buyerShipment && (
-        buyerShipment.status === 'DELIVERING' ||
-        buyerShipment.status === 'SHIPPED' ||
-        buyerShipment.status === 'ON_GOING' ||
-        buyerShipment.status === 'ASSIGNED' ||
-        buyerShipment.providerStatus === 'DELIVERING' ||
-        buyerShipment.providerStatus === 'PICKED_UP' ||
-        buyerShipment.providerStatus === 'ON_GOING' ||
-        Boolean(buyerShipment.orderCode)
-      )) ||
-      (typeof window !== 'undefined' && order.id && (
-        localStorage.getItem(`buyer_delivery_shipment_created_${order.id}`) === 'true' ||
-        ((order as any).linkedOrderId && localStorage.getItem(`buyer_delivery_shipment_created_${(order as any).linkedOrderId}`) === 'true')
+      (isAtHome && atHomeDeliveryStage === 'awaiting_pickup') ||
+      (!isAtHome && buyerShipment && Boolean(buyerShipment.orderCode) &&
+        !['DELIVERING', 'SHIPPED', 'PICKED_UP', 'IN_TRANSIT', 'ON_GOING'].includes(buyerShipment.status?.toUpperCase() || '') &&
+        !['DELIVERING', 'PICKED_UP', 'ON_GOING'].includes(buyerShipment.providerStatus?.toUpperCase() || ''))
+    )
+  );
+
+  const isDelivering = Boolean(
+    !isCompleted && !isDelivered && !isAwaitingPickup && isPurchaseAccepted && (
+      (isAtHome && atHomeDeliveryStage === 'in_transit') ||
+      (!isAtHome && (
+        Boolean((order as any).carrierPickedUpAt) ||
+        (buyerShipment && (
+          ['DELIVERING', 'SHIPPED', 'ON_GOING', 'IN_TRANSIT', 'PICKED_UP'].includes(buyerShipment.status?.toUpperCase() || '') ||
+          ['DELIVERING', 'PICKED_UP', 'ON_GOING'].includes(buyerShipment.providerStatus?.toUpperCase() || '')
+        ))
       ))
     )
   );
@@ -386,6 +389,18 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
       if (active) setShipmentState((prev) => (prev === 'created' ? 'created' : 'unavailable'));
     });
 
+    if (isAtHome && isPurchaseAccepted) {
+      const purchaseId = (order as any).linkedOrderId || order.id;
+      void shippingService.getOrderShipments(purchaseId, { isBackground: true }).then((shipments) => {
+        if (!active || !shipments?.length) return;
+        setAllShipments((prev) => {
+          const ids = new Set(prev.map((s) => s.shipmentId || s.orderCode));
+          const additions = shipments.filter((s) => !ids.has(s.shipmentId || s.orderCode));
+          return [...prev, ...additions];
+        });
+      }).catch(() => { });
+    }
+
     const targetOrderId = (order as any).linkedOrderId;
     if (targetOrderId && targetOrderId !== order.id) {
       void shippingService.getInspectionShipments(targetOrderId, { isBackground: true }).then((shipments) => {
@@ -400,6 +415,19 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
 
     return () => { active = false; };
   }, [order.id, (order as any).updatedAt, (order as any).linkedOrderId, isAtCenter, isPurchaseAccepted, isFailed, isCancelled, shipmentRetry]);
+
+  useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key && (e.key.startsWith('sl_order_shipments_') || e.key.startsWith('order_shipments_'))) {
+        const targetIds = [...new Set([order.id, (order as any).linkedOrderId, (order as any).inspectionOrderId])].filter(Boolean);
+        if (targetIds.some((id) => e.key === `sl_order_shipments_${id}` || e.key === `order_shipments_${id}`)) {
+          setAllShipments(targetIds.flatMap((id) => getOrderAllShipments(id)));
+        }
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, [order.id, (order as any).linkedOrderId, (order as any).inspectionOrderId]);
 
   const escrowOrderForShipment = useMemo<EscrowOrder>(() => {
     return {
@@ -741,7 +769,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
     PAYMENT_EXPIRED: vi ? 'Hết hạn nộp phí' : 'Payment expired',
     DELIVERING_TO_BUYER: isSeller
       ? (vi ? 'Người mua đã mua tiếp' : 'Purchase confirmed')
-      : (vi ? 'Đã xác nhận mua tiếp' : 'Purchase confirmed'),
+      : (vi ? 'Người mua đã mua tiếp' : 'Purchase confirmed'),
     COMPLETED: vi ? 'Giao dịch hoàn tất' : 'Completed',
   };
 
@@ -1483,25 +1511,25 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                     ? (isSeller
                       ? (lang === 'vi' ? 'Đã giao hàng thành công • Chờ đối soát (48h)' : 'Delivered successfully • Review window (48h)')
                       : (lang === 'vi' ? 'Đã nhận hàng • 48h kiểm tra đối soát' : 'Package delivered • 48h inspection window'))
-                    : isDelivering
+                    : isPurchaseAccepted
                       ? (isSeller
-                        ? (lang === 'vi' ? 'Đang giao hàng đến người mua • Lalamove' : 'Delivering to buyer • Lalamove')
-                        : (lang === 'vi' ? 'Đang giao hàng tới bạn • Lalamove' : 'Delivering to you • Lalamove'))
-                      : isSeller
                         ? (lang === 'vi'
-                          ? (isPurchaseAccepted
-                            ? 'Sản phẩm đã kiểm định ĐẠT CHUẨN. Người mua đã xác nhận mua hàng.'
-                            : 'Sản phẩm đã kiểm định ĐẠT CHUẨN. Đang chờ người mua xác nhận mua hàng.')
-                          : (isPurchaseAccepted
-                            ? 'Product passed inspection. Buyer confirmed purchase.'
-                            : 'Product passed inspection. Awaiting buyer confirmation.'))
+                          ? 'Sản phẩm đã kiểm định ĐẠT CHUẨN. Người mua đã xác nhận mua hàng.'
+                          : 'Product passed inspection. Buyer confirmed purchase.')
                         : (lang === 'vi'
-                          ? (isPurchaseAccepted
-                            ? 'Sản phẩm đã kiểm định ĐẠT CHUẨN. Bạn đã xác nhận mua hàng thành công.'
-                            : 'Sản phẩm đã kiểm định ĐẠT CHUẨN. Bạn có thể mua tiếp.')
-                          : (isPurchaseAccepted
-                            ? 'Product passed inspection. You have completed purchase.'
-                            : 'Product passed inspection. You can proceed with the purchase.'))}
+                          ? 'Sản phẩm đã kiểm định ĐẠT CHUẨN. Bạn đã xác nhận mua hàng thành công.'
+                          : 'Product passed inspection. You have completed purchase.'))
+                      : isDelivering
+                        ? (isSeller
+                          ? (lang === 'vi' ? 'Đang giao hàng đến người mua • Lalamove' : 'Delivering to buyer • Lalamove')
+                          : (lang === 'vi' ? 'Đang giao hàng tới bạn • Lalamove' : 'Delivering to you • Lalamove'))
+                        : isSeller
+                          ? (lang === 'vi'
+                            ? 'Sản phẩm đã kiểm định ĐẠT CHUẨN. Đang chờ người mua xác nhận mua hàng.'
+                            : 'Product passed inspection. Awaiting buyer confirmation.')
+                          : (lang === 'vi'
+                            ? 'Sản phẩm đã kiểm định ĐẠT CHUẨN. Bạn có thể mua tiếp.'
+                            : 'Product passed inspection. You can proceed with the purchase.')}
               </span>
             </p>
             {isCompleted ? (
@@ -1551,7 +1579,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                 <p className="text-[11px] text-emerald-800 leading-relaxed">
                   {isSeller
                     ? (lang === 'vi'
-                      ? 'Tài xế đã giao kiện hàng thành công tới người mua. Khách mua có 48 giờ để dùng thử và kiểm tra đối soát trước khi hệ thống tự động giải ngân vào ví của bạn.'
+                      ? 'Tài xế đã giao kiện hàng thành công tới người mua. Khách mua có 48 giờ để kiểm tra đối soát trước khi hệ thống tự động giải ngân vào ví của bạn.'
                       : 'Driver has delivered package to buyer. Buyer has 48 hours inspection window before escrow is released to your wallet.')
                     : (lang === 'vi'
                       ? 'Kiện hàng đã được giao thành công đến bạn. Bạn có 48 giờ để dùng thử và kiểm tra đối soát trước khi hệ thống tự động giải ngân cho người bán.'
@@ -1581,8 +1609,35 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                       ? 'Kiện hàng đã được bàn giao cho tài xế Lalamove vận chuyển giao đến người mua.'
                       : 'Parcel is sealed with tamper-proof seal and handed to Lalamove driver for delivery to buyer.')
                     : (lang === 'vi'
-                      ? 'Tài xế Lalamove đang vận chuyển kiện hàng (nguyên tem niêm phong) đến địa chỉ nhận hàng của bạn.'
+                      ? 'Tài xế Lalamove đang vận chuyển kiện hàng đến địa chỉ nhận hàng của bạn.'
                       : 'Lalamove driver is delivering the sealed parcel to your address.')}
+                </p>
+              </div>
+            ) : isAwaitingPickup ? (
+              <div className="p-3 bg-teal-50/90 border border-teal-200 rounded-xl text-xs text-teal-950 space-y-1.5 animate-fadeIn">
+                <div className="font-bold flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-teal-800">
+                    <Truck className="w-4 h-4 text-teal-600 shrink-0" />
+                    <span>
+                      {isSeller
+                        ? (lang === 'vi' ? 'Đã tạo vận đơn • Chờ tài xế lấy hàng' : 'Shipment Created • Awaiting Driver')
+                        : (lang === 'vi' ? 'Người bán đã tạo vận đơn • Chờ tài xế lấy hàng' : 'Shipment Created • Awaiting Driver Pickup')}
+                    </span>
+                  </div>
+                  {buyerShipment?.orderCode && (
+                    <span className="text-[10px] font-mono text-teal-800 bg-teal-100 px-2 py-0.5 rounded-md border border-teal-300">
+                      #{buyerShipment.orderCode}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-teal-800 leading-relaxed">
+                  {isSeller
+                    ? (lang === 'vi'
+                      ? 'Đã tạo vận đơn Lalamove thành công. Vui lòng giữ nguyên tem niêm phong và bàn giao kiện hàng cho tài xế khi đến lấy.'
+                      : 'Lalamove shipment created successfully. Keep tamper seal intact and hand over parcel to driver upon arrival.')
+                    : (lang === 'vi'
+                      ? 'Người bán đã tạo vận đơn Lalamove thành công. Tài xế sẽ đến nhận kiện hàng nguyên tem niêm phong để phát đến bạn.'
+                      : 'Lalamove shipment created. Driver will pick up sealed package from seller.')}
                 </p>
               </div>
             ) : isPurchaseAccepted ? (

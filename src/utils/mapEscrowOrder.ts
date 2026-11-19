@@ -536,6 +536,7 @@ export function mapEscrowOrder(bOrd: any, {
     inspectionStatus: bOrd.__isInspection ? customerInspectionStatus : undefined,
     linkedOrderId: bOrd.__isInspection ? bOrd.linkedOrderId : undefined,
     finalPaymentPaidAt: bOrd.__isInspection ? bOrd.finalPaymentPaidAt : undefined,
+    finalShippingFee: bOrd.finalShippingFee ?? rawInspOrder.finalShippingFee ?? bOrd.purchaseShippingFee,
     homeCheckedInAt: bOrd.homeCheckedInAt,
     inspectionMethod: isInspectionOrder
       ? ((

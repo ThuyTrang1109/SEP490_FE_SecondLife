@@ -11,7 +11,7 @@ import { formatVND } from '../../utils/translations';
 import { getOrderAppointmentRejection, type OrderAppointment } from '../../utils/orders/orderAppointments';
 import type { OrderCheck } from '../../types/orders/orderTypes';
 import { getOrderAllShipments, isHubInboundInProgress } from '../../utils/orders/shipmentCache';
-import { isOrderDeliveredToBuyer } from '../../utils/orders/orderReceipt';
+import { getAtHomeDeliveryStage, isOrderDeliveredToBuyer } from '../../utils/orders/orderReceipt';
 
 export interface OrderStatusBadgeOptions {
   lang: Language;
@@ -128,7 +128,9 @@ export function OrderStatusBadge({
   }
 
   // 1.5. Kiểm tra đơn hàng đã giao thành công đến người mua (48h kiểm tra đối soát)
+  const atHomeDeliveryStage = orderItem && isAtHomeOrderCheck(orderItem) ? getAtHomeDeliveryStage(orderItem) : null;
   const isDeliveredToBuyer = Boolean(
+    atHomeDeliveryStage === 'delivered' ||
     (orderItem && isOrderDeliveredToBuyer(orderItem)) ||
     orderItem?.shippingDeliveredAt ||
     orderItem?.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' ||
@@ -212,55 +214,30 @@ export function OrderStatusBadge({
       return false;
     })();
 
-    const isShipmentCreated = Boolean(
-      (orderItem as any)?.orderShipmentCode ||
-      (orderItem as any)?.orderCode ||
-      (orderItem as any)?.carrierPickedUpAt ||
-      (orderItem as any)?.sellerReadyAt ||
-      (orderItem as any)?.status === 'DELIVERING_TO_BUYER' ||
-      (orderItem?.escrowStatus as any) === 'DELIVERING_TO_BUYER' ||
-      (orderItem?.escrowStatus as any) === 'SHIPPED_TO_BUYER' ||
-      bStatus === 'DELIVERING_TO_BUYER' ||
-      bStatus === 'SHIPPED_TO_BUYER' ||
-      (typeof window !== 'undefined' && orderItem?.id && (
-        localStorage.getItem(`order_shipment_created_${orderItem.id}`) === 'true' ||
-        localStorage.getItem(`order_packed_${orderItem.id}`) === 'true' ||
-        localStorage.getItem(`order_shipments_${orderItem.id}`) ||
-        localStorage.getItem(`sl_order_shipments_${orderItem.id}`) ||
-        ((orderItem as any).linkedOrderId && (
-          localStorage.getItem(`order_shipment_created_${(orderItem as any).linkedOrderId}`) === 'true' ||
-          localStorage.getItem(`order_packed_${(orderItem as any).linkedOrderId}`) === 'true' ||
-          localStorage.getItem(`order_shipments_${(orderItem as any).linkedOrderId}`) ||
-          localStorage.getItem(`sl_order_shipments_${(orderItem as any).linkedOrderId}`)
-        ))
-      ))
-    );
+    // 1. Gói qua Hub (AT_CENTER):
+    // Người bán ĐÃ gửi hàng đến Hub ở Chặng 1, người mua ĐÃ thanh toán mua tiếp
+    // -> Trạng thái chuẩn hiển thị cho cả hai bên (Seller & Buyer) là "Người mua đã mua tiếp"
+    if (!isAtHomeOrder) {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-300">
+          <Truck className="w-3.5 h-3.5 text-emerald-600" />
+          <span>{lang === 'vi' ? 'Người mua đã mua tiếp' : 'Purchase Confirmed'}</span>
+        </span>
+      );
+    }
 
+    const deliveryStage = atHomeDeliveryStage ?? (orderItem && getAtHomeDeliveryStage(orderItem));
     return (
       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-300">
         <Truck className="w-3.5 h-3.5 text-emerald-600" />
         <span>
-          {orderItem?.carrierPickedUpAt || bStatus === 'SHIPPED'
+          {deliveryStage === 'in_transit'
             ? (lang === 'vi' ? 'Đang giao hàng • Lalamove' : 'Delivering • Lalamove')
-            : isShipmentCreated
-              ? (lang === 'vi'
-                ? isAtHomeOrder
-                  ? 'Đang giao hàng • Lalamove'
-                  : 'Đã tạo vận đơn • Chờ tài xế lấy hàng'
-                : isAtHomeOrder
-                  ? 'Delivering • Lalamove'
-                  : 'Shipment Created • Awaiting Driver Pickup')
-              : lang === 'vi'
-                ? isAtHomeOrder
-                  ? 'Đã xác nhận mua • Chờ người bán gửi hàng'
-                  : isSellerForThisOrder
-                    ? 'Người mua đã mua tiếp • Chờ giao hàng & giải ngân'
-                    : 'Đã xác nhận mua • Chờ Hub giao hàng'
-                : isAtHomeOrder
-                  ? 'Purchase Confirmed • Waiting for Seller to Ship'
-                  : isSellerForThisOrder
-                    ? 'Purchase Confirmed • Delivering & Payout'
-                    : 'Purchase Confirmed • Hub Delivering'}
+            : deliveryStage === 'awaiting_pickup'
+              ? (lang === 'vi' ? 'Đã tạo vận đơn • Chờ tài xế lấy hàng' : 'Shipment Created • Awaiting Driver Pickup')
+              : isSellerForThisOrder
+                ? (lang === 'vi' ? 'Người mua đã mua tiếp • Chờ gửi hàng' : 'Purchase Confirmed • Please Ship')
+                : (lang === 'vi' ? 'Đã xác nhận mua • Chờ người bán gửi hàng' : 'Purchase Confirmed • Waiting for Seller to Ship')}
         </span>
       </span>
     );
@@ -377,16 +354,28 @@ export function OrderStatusBadge({
   }
 
   if (bStatus === 'WAITING_SELLER_APPROVAL' || (s === 'AWAITING_INSPECTION' && bStatus === 'WAITING_SELLER_APPROVAL')) {
-    return (
-      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-500/15 text-amber-800 border border-amber-500/30">
-        <Clock className="w-3.5 h-3.5 text-amber-600" />
-        <span>
-          {lang === 'vi'
-            ? isSellerForThisOrder ? 'Yêu Cầu Kiểm Định Mới • Chờ Bạn Xác Nhận' : 'Đã Gửi Yêu Cầu • Chờ Người Bán Xác Nhận'
-            : isSellerForThisOrder ? 'New Inspection Request • Awaiting Your Approval' : 'Inspection Requested • Awaiting Seller Approval'}
-        </span>
-      </span>
+    const isAtHome = isAtHomeOrderCheck(orderItem);
+    const appt = orderItem ? getOrderAppointment(orderItem) : null;
+    const isPendingCenter1 = Boolean(
+      appt?.status === 'PENDING_CENTER_CONFIRMATION' ||
+      (orderItem as any)?.appointmentStatus === 'PENDING_CENTER_CONFIRMATION'
     );
+    const isCountered = isAtHome && !isPendingCenter1 && Boolean(
+      (appt?.status === 'COUNTERED_BY_CENTER' || (orderItem as any)?.appointmentStatus === 'COUNTERED_BY_CENTER' || (orderItem as any)?.inspectionOrder?.appointmentStatus === 'COUNTERED_BY_CENTER') &&
+      (Boolean(appt?.counterScheduledAt) || Boolean((orderItem as any)?.counterScheduledAt) || Boolean((orderItem as any)?.inspectionOrder?.counterScheduledAt))
+    );
+    if (!isCountered) {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-500/15 text-amber-800 border border-amber-500/30">
+          <Clock className="w-3.5 h-3.5 text-amber-600" />
+          <span>
+            {lang === 'vi'
+              ? isSellerForThisOrder ? 'Yêu Cầu Kiểm Định Mới • Chờ Bạn Xác Nhận' : 'Đã Gửi Yêu Cầu • Chờ Người Bán Xác Nhận'
+              : isSellerForThisOrder ? 'New Inspection Request • Awaiting Your Approval' : 'Inspection Requested • Awaiting Seller Approval'}
+          </span>
+        </span>
+      );
+    }
   }
 
   if (bStatus === 'WAITING_BUYER_APPROVAL' || (s === 'AWAITING_INSPECTION' && bStatus === 'WAITING_BUYER_APPROVAL')) {
@@ -416,8 +405,12 @@ export function OrderStatusBadge({
     }
     if (isAtHome) {
       const appt = orderItem ? getOrderAppointment(orderItem) : null;
-      const isCountered = Boolean(
-        (appt?.status === 'COUNTERED_BY_CENTER' || (orderItem as any)?.appointmentStatus === 'COUNTERED_BY_CENTER') &&
+      const isPendingCenter2 = Boolean(
+        appt?.status === 'PENDING_CENTER_CONFIRMATION' ||
+        (orderItem as any)?.appointmentStatus === 'PENDING_CENTER_CONFIRMATION'
+      );
+      const isCountered = !isPendingCenter2 && Boolean(
+        (appt?.status === 'COUNTERED_BY_CENTER' || (orderItem as any)?.appointmentStatus === 'COUNTERED_BY_CENTER' || (orderItem as any)?.inspectionOrder?.appointmentStatus === 'COUNTERED_BY_CENTER') &&
         (Boolean(appt?.counterScheduledAt) || Boolean((orderItem as any)?.counterScheduledAt) || Boolean((orderItem as any)?.inspectionOrder?.counterScheduledAt))
       );
       const rejection = !isCountered && orderItem ? getOrderAppointmentRejection(orderItem) : null;
@@ -601,8 +594,12 @@ export function OrderStatusBadge({
       }
       if (isAtHome) {
         const appt = orderItem ? getOrderAppointment(orderItem) : null;
-        const isCountered = Boolean(
-          (appt?.status === 'COUNTERED_BY_CENTER' || (orderItem as any)?.appointmentStatus === 'COUNTERED_BY_CENTER') &&
+        const isPendingCenter3 = Boolean(
+          appt?.status === 'PENDING_CENTER_CONFIRMATION' ||
+          (orderItem as any)?.appointmentStatus === 'PENDING_CENTER_CONFIRMATION'
+        );
+        const isCountered = !isPendingCenter3 && Boolean(
+          (appt?.status === 'COUNTERED_BY_CENTER' || (orderItem as any)?.appointmentStatus === 'COUNTERED_BY_CENTER' || (orderItem as any)?.inspectionOrder?.appointmentStatus === 'COUNTERED_BY_CENTER') &&
           (Boolean(appt?.counterScheduledAt) || Boolean((orderItem as any)?.counterScheduledAt) || Boolean((orderItem as any)?.inspectionOrder?.counterScheduledAt))
         );
         const rejection = !isCountered && orderItem ? getOrderAppointmentRejection(orderItem) : null;
@@ -792,8 +789,12 @@ export function OrderStatusBadge({
           <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
           <span>
             {lang === 'vi'
-              ? isSellerForThisOrder ? 'Đã Ký Quỹ Escrow • Chờ Bạn Giao Hàng' : 'Đã Ký Quỹ Escrow • Chờ Người Bán Giao'
-              : 'Escrow Protected • Awaiting Shipping'}
+              ? sellerConfirmed
+                ? (isSellerForThisOrder ? 'Đã Ký Quỹ Escrow • Chờ Bạn Giao Hàng' : 'Đã Ký Quỹ Escrow • Chờ Người Bán Giao')
+                : (isSellerForThisOrder ? 'Đã Ký Quỹ Escrow • Chờ Bạn Xác Nhận' : 'Đã Ký Quỹ Escrow • Chờ Người Bán Xác Nhận')
+              : sellerConfirmed
+                ? 'Escrow Protected • Awaiting Shipping'
+                : 'Escrow Protected • Awaiting Confirmation'}
           </span>
         </span>
       );

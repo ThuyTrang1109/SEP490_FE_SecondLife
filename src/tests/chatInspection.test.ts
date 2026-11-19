@@ -112,6 +112,34 @@ test('passed inspection card displays appropriate message for seller vs buyer', 
   assert.doesNotMatch(buyerHtml, /Đang chờ người mua xác nhận/);
 });
 
+test('at-home inspection card after purchase accepted shows awaiting shipment before carrier pickup', () => {
+  const purchaseAcceptedOrder: InspectionOrderDto = {
+    ...room,
+    id: 'order-athome-123',
+    status: 'DELIVERING_TO_BUYER',
+    orderType: 'AT_HOME',
+    finalPaymentPaidAt: '2026-11-18T10:00:00Z',
+  };
+
+  // Seller perspective
+  const sellerHtml = renderToStaticMarkup(createElement(InspectionProposalCard, {
+    order: purchaseAcceptedOrder, listing: buildChatProductListing(room), isSeller: true, isBuyer: false,
+    currentRole: 'seller', lang: 'vi', onOrderUpdated: () => {}, onRefreshOrder: async () => {},
+  }));
+  assert.match(sellerHtml, /Đã Xác Nhận Mua • Chờ bạn gửi hàng/);
+  assert.doesNotMatch(sellerHtml, /Đang giao hàng đến người mua • Lalamove/);
+  assert.doesNotMatch(sellerHtml, /Kiện hàng đã được bàn giao cho tài xế Lalamove/);
+
+  // Buyer perspective
+  const buyerHtml = renderToStaticMarkup(createElement(InspectionProposalCard, {
+    order: purchaseAcceptedOrder, listing: buildChatProductListing(room), isSeller: false, isBuyer: true,
+    currentRole: 'buyer', lang: 'vi', onOrderUpdated: () => {}, onRefreshOrder: async () => {},
+  }));
+  assert.match(buyerHtml, /Đã Duyệt Mua • Chờ người bán gửi hàng/);
+  assert.doesNotMatch(buyerHtml, /Đang giao hàng tới bạn • Lalamove/);
+  assert.doesNotMatch(buyerHtml, /Kiện hàng đã được bàn giao cho tài xế Lalamove/);
+});
+
 test('the proposal card keeps accept and reject available when there are no intermediate percentages', () => {
   assert.deepEqual(feePercentOptions(20, 30), [25]);
   assert.deepEqual(feePercentOptions(30, 20), [25]);

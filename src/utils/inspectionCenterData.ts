@@ -95,12 +95,14 @@ export function getCenterDispatchStage(
 
   // Khi lịch hẹn tại nhà đang trong giai đoạn thương lượng (Hub đã gửi đề xuất mới, chờ Seller duyệt):
   const isCountered = order.orderType === 'AT_HOME' && Boolean(
-    apptStatus !== 'PENDING_CENTER_CONFIRMATION' &&
+    counterTime ||
     (
-      apptStatus === 'COUNTERED_BY_CENTER' ||
-      counterTime ||
-      (order.status === 'WAITING_SELLER_APPROVAL' && (apptTime || counterTime)) ||
-      ((order as any).customerStatus === 'WAITING_SELLER_APPROVAL' && (apptTime || counterTime))
+      apptStatus !== 'PENDING_CENTER_CONFIRMATION' &&
+      (
+        apptStatus === 'COUNTERED_BY_CENTER' ||
+        (order.status === 'WAITING_SELLER_APPROVAL' && (apptTime || counterTime)) ||
+        ((order as any).customerStatus === 'WAITING_SELLER_APPROVAL' && (apptTime || counterTime))
+      )
     )
   );
 
@@ -324,14 +326,26 @@ export function isOrderConfirmedByInspector(order: {
   customerStatus?: string;
   inspectorId?: string;
   inspectorConfirmed?: boolean;
+  assignmentLocked?: boolean;
+  inspectorConfirmedAt?: string;
   stage?: string;
   note?: string;
 }): boolean {
   if (!order || !order.inspectorId) return false;
 
+  // 1. Kiểm tra cờ xác nhận từ Backend DTO hoặc thuộc tính khóa điều phối rõ ràng
+  if (
+    order.inspectorConfirmed === true ||
+    (order as any).assignmentLocked === true ||
+    (order as any).isInspectorConfirmed === true ||
+    Boolean((order as any).inspectorConfirmedAt)
+  ) {
+    return true;
+  }
+
   const rawStatus = (order.status || order.backendStatus || '').toUpperCase();
 
-  // 1. Nếu đơn đã xong hoặc đang giao cho người mua thì chắc chắn đã qua kiểm định
+  // 2. Nếu đơn đã xong hoặc đang giao cho người mua thì chắc chắn đã qua kiểm định
   const trulyDoneStatuses = new Set([
     'PASSED',
     'FAILED',
@@ -342,7 +356,17 @@ export function isOrderConfirmedByInspector(order: {
     return true;
   }
 
-  // 2. Kiểm tra cờ xác nhận cục bộ của KTV (khi KTV bấm "Xác Nhận Đơn")
+  // 3. Nếu đơn đang thực sự kiểm định tại bàn hoặc đã tiếp nhận
+  if (
+    rawStatus === 'INSPECTING' ||
+    rawStatus === 'INSPECTION_IN_PROGRESS' ||
+    rawStatus === 'CONFIRMED_BY_INSPECTOR' ||
+    rawStatus === 'ACCEPTED'
+  ) {
+    return true;
+  }
+
+  // 4. Kiểm tra cờ xác nhận cục bộ của KTV (khi KTV bấm "Xác Nhận Đơn" trên cùng browser)
   if (typeof window !== 'undefined') {
     const possibleIds = [
       order.id,
@@ -361,23 +385,16 @@ export function isOrderConfirmedByInspector(order: {
     }
   }
 
-  // 3. Nếu trong note có đánh dấu KTV đã xác nhận
+  // 5. Nếu trong note có đánh dấu KTV đã xác nhận
   if (order.note && order.note.includes('[INSPECTOR_CONFIRMED]')) {
     return true;
   }
 
-  // 4. Nếu đơn đang ở trạng thái vừa phân công (DISPATCHED, SCHEDULED, CONFIRMED_PENDING_DISPATCH)
+  // 6. Nếu đơn đang ở trạng thái vừa phân công (DISPATCHED, SCHEDULED, CONFIRMED_PENDING_DISPATCH)
   // và CHƯA có cờ xác nhận ở trên -> Chắc chắn KTV CHƯA xác nhận đơn -> KHÔNG ĐƯỢC KHÓA!
   if (['DISPATCHED', 'SCHEDULED', 'CONFIRMED_PENDING_DISPATCH'].includes(rawStatus)) {
     return false;
   }
-
-  // 5. Nếu đơn đang thực sự kiểm định tại bàn
-  if (rawStatus === 'INSPECTING' || rawStatus === 'INSPECTION_IN_PROGRESS') {
-    return true;
-  }
-
-  if (order.inspectorConfirmed) return true;
 
   return false;
 }

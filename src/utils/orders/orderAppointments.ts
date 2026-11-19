@@ -68,28 +68,55 @@ export function readOrderAppointment(ord: EscrowOrder, detailInspectionDto: Insp
     )
   );
 
-  const isCountered = isOrderWaitingSeller || Boolean(
-    (ord as any).appointmentStatus === 'COUNTERED_BY_CENTER' ||
-    (detailInspectionDto as any)?.appointmentStatus === 'COUNTERED_BY_CENTER' ||
-    Boolean((ord as any).counterScheduledAt) ||
-    Boolean((detailInspectionDto as any)?.counterScheduledAt)
-  ) || (() => {
-    for (const id of possibleIds) {
-      try {
-        const raw = localStorage.getItem(`order_appointment_${id}`);
-        if (raw && raw !== 'undefined' && raw !== 'null') {
-          const parsed = JSON.parse(raw);
-          if (parsed && (
-            (parsed.status === 'COUNTERED_BY_CENTER' && Boolean(parsed.counterScheduledAt)) ||
-            Boolean(parsed.counterScheduledAt)
-          )) {
-            return true;
-          }
+  let storedAppt: any = null;
+  for (const id of possibleIds) {
+    try {
+      const raw = localStorage.getItem(`order_appointment_${id}`);
+      if (raw && raw !== 'undefined' && raw !== 'null') {
+        const parsed = JSON.parse(raw);
+        if (parsed?.counterScheduledAt === '2026-11-19T13:30:00.000Z') {
+          try { localStorage.removeItem(`order_appointment_${id}`); } catch {}
+          continue;
         }
-      } catch { }
-    }
-    return false;
-  })();
+        if (parsed) {
+          storedAppt = parsed;
+          break;
+        }
+      }
+    } catch { }
+  }
+
+  const isPendingCenter = Boolean(
+    (storedAppt?.status === 'PENDING_CENTER_CONFIRMATION' && !storedAppt?.counterScheduledAt) ||
+    (ord as any).appointmentStatus === 'PENDING_CENTER_CONFIRMATION' ||
+    (detailInspectionDto as any)?.appointmentStatus === 'PENDING_CENTER_CONFIRMATION'
+  );
+
+  if (isPendingCenter && (storedAppt?.scheduledAt || ord.appointmentScheduledAt || (detailInspectionDto as any)?.appointmentScheduledAt)) {
+    return {
+      scheduledAt: storedAppt?.scheduledAt || ord.appointmentScheduledAt || (detailInspectionDto as any)?.appointmentScheduledAt,
+      note: storedAppt?.note || ord.appointmentNote || (detailInspectionDto as any)?.appointmentNote || '',
+      shift: storedAppt?.shift || (ord as any).appointmentShift || (detailInspectionDto as any)?.appointmentShift || 'MORNING',
+      status: 'PENDING_CENTER_CONFIRMATION',
+      counterScheduledAt: null,
+      counterShift: null,
+      counterNote: null,
+    };
+  }
+
+  const isCountered = !isPendingCenter && (
+    isOrderWaitingSeller || Boolean(
+      (ord as any).appointmentStatus === 'COUNTERED_BY_CENTER' ||
+      (detailInspectionDto as any)?.appointmentStatus === 'COUNTERED_BY_CENTER' ||
+      Boolean((ord as any).counterScheduledAt) ||
+      Boolean((detailInspectionDto as any)?.counterScheduledAt)
+    ) || (
+      storedAppt && (
+        (storedAppt.status === 'COUNTERED_BY_CENTER' && Boolean(storedAppt.counterScheduledAt)) ||
+        Boolean(storedAppt.counterScheduledAt)
+      )
+    )
+  );
 
   const rejection = !isCountered ? getOrderAppointmentRejection(ord) : null;
   const isRejected = !isCountered && (
@@ -207,6 +234,7 @@ export function readOrderAppointment(ord: EscrowOrder, detailInspectionDto: Insp
     }
   }
 
+
   // 1. Ưu tiên cao nhất: Dữ liệu realtime từ API Backend (detailInspectionDto)
   if (detailInspectionDto && (
     detailInspectionDto.id === ord.id ||
@@ -217,7 +245,7 @@ export function readOrderAppointment(ord: EscrowOrder, detailInspectionDto: Insp
     (detailInspectionDto.postId && (detailInspectionDto.postId === ord.listingId || detailInspectionDto.postId === ord.listing?.id))
   )) {
     if (detailInspectionDto.counterScheduledAt || detailInspectionDto.appointmentScheduledAt) {
-      const isCounter = Boolean(
+      const isCounter = !isPendingCenter && Boolean(
         detailInspectionDto.counterScheduledAt ||
         detailInspectionDto.appointmentStatus === 'COUNTERED_BY_CENTER'
       );
@@ -247,8 +275,17 @@ export function readOrderAppointment(ord: EscrowOrder, detailInspectionDto: Insp
     } else {
       apptData.scheduledAt = ord.appointmentScheduledAt;
       if (ord.appointmentNote) apptData.note = ord.appointmentNote;
-      if ((ord as any).appointmentStatus) apptData.status = (ord as any).appointmentStatus;
-      if ((ord as any).counterScheduledAt !== undefined) apptData.counterScheduledAt = (ord as any).counterScheduledAt;
+      if ((ord as any).appointmentStatus) {
+        if ((ord as any).appointmentStatus === 'COUNTERED_BY_CENTER' || (ord as any).appointmentStatus === 'CONFIRMED' || (ord as any).appointmentStatus === 'REJECTED' || apptData.status !== 'COUNTERED_BY_CENTER') {
+          apptData.status = (ord as any).appointmentStatus;
+        }
+      }
+      if ((ord as any).counterScheduledAt) {
+        apptData.counterScheduledAt = (ord as any).counterScheduledAt;
+        apptData.status = 'COUNTERED_BY_CENTER';
+      }
+      if ((ord as any).counterShift) apptData.counterShift = (ord as any).counterShift;
+      if ((ord as any).counterNote) apptData.counterNote = (ord as any).counterNote;
     }
   }
 

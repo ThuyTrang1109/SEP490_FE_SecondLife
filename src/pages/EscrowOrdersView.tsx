@@ -59,6 +59,7 @@ import { OrderActionDialog } from '../components/orders/OrderActionDialog';
 import { OrderStatusBadge } from '../components/orders/OrderStatusBadge';
 import type { ConfirmDialogState } from '../types/orders/orderTypes';
 import { getOrderAllShipments, isHubInboundInProgress } from '../utils/orders/shipmentCache';
+import { getAtHomeDeliveryStage } from '../utils/orders/orderReceipt';
 import { readOrderAppointment } from '../utils/orders/orderAppointments';
 import { getCommissionPayout, getInspectionPayoutPreview, getOrderFinanceLookup, getSettlementPayout, type SellerPayoutData } from '../utils/orders/orderFinance';
 import { isOrderWithInspection } from '../utils/orders/orderReceipt';
@@ -422,8 +423,8 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     window.addEventListener('storage', handler);
 
     const handleApptSignal = (e?: any) => {
-      if (e?.detail?.orderId && e?.detail?.counterScheduledAt) {
-        const d = e.detail;
+      const d = e?.detail;
+      if (d?.orderId && d?.counterScheduledAt) {
         const targetIds = [d.orderId, d.linkedOrderId].filter(Boolean);
         targetIds.forEach((tid) => {
           try {
@@ -437,6 +438,38 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
               counterNote: d.counterNote,
             }));
           } catch { }
+        });
+        setDetailModalOrder((prev) => {
+          if (!prev) return null;
+          const ids = [prev.id, (prev as any).linkedOrderId, (prev as any).inspectionOrderId].filter(Boolean);
+          if (ids.includes(d.orderId) || (d.linkedOrderId && ids.includes(d.linkedOrderId))) {
+            return {
+              ...prev,
+              appointmentStatus: 'COUNTERED_BY_CENTER',
+              counterScheduledAt: d.counterScheduledAt,
+              counterShift: d.counterShift,
+              counterNote: d.counterNote,
+            };
+          }
+          return prev;
+        });
+      } else if (d?.orderId && d?.scheduledAt) {
+        setDetailModalOrder((prev) => {
+          if (!prev) return null;
+          const ids = [prev.id, (prev as any).linkedOrderId, (prev as any).inspectionOrderId].filter(Boolean);
+          if (ids.includes(d.orderId) || (d.linkedOrderId && ids.includes(d.linkedOrderId)) || (d.inspectionOrderId && ids.includes(d.inspectionOrderId))) {
+            return {
+              ...prev,
+              appointmentScheduledAt: d.scheduledAt,
+              appointmentShift: d.shift || 'MORNING',
+              appointmentNote: d.note || '',
+              appointmentStatus: d.status || 'PENDING_CENTER_CONFIRMATION',
+              counterScheduledAt: null,
+              counterShift: null,
+              counterNote: null,
+            };
+          }
+          return prev;
         });
       }
       setApptTick((t) => t + 1);
@@ -508,7 +541,32 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     }
   }, [detailModalOrder, activePhotoStage]);
 
-  const detailFinance = getOrderFinanceLookup(detailModalOrder);
+  React.useEffect(() => {
+    if (!detailModalOrder) return;
+    const freshOrder = orders.find(
+      (order) => order.id === detailModalOrder.id || (order as any).linkedOrderId === detailModalOrder.id
+    );
+    if (freshOrder) {
+      setDetailModalOrder((prev) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          ...freshOrder,
+          ...((prev as any).appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !(freshOrder as any).counterScheduledAt ? {
+            appointmentStatus: 'PENDING_CENTER_CONFIRMATION',
+            appointmentScheduledAt: prev.appointmentScheduledAt,
+            appointmentShift: (prev as any).appointmentShift,
+            appointmentNote: prev.appointmentNote,
+            counterScheduledAt: null,
+            counterShift: null,
+            counterNote: null,
+          } : {})
+        };
+      });
+    }
+  }, [orders]);
+
+  const detailFinance = detailModalOrder && isOrderSeller(detailModalOrder) ? getOrderFinanceLookup(detailModalOrder) : null;
   const financeOrderId = detailFinance?.orderId;
   const financeResource = detailFinance?.resource;
   const financeRowId = detailModalOrder?.id;
@@ -883,6 +941,8 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     if (['WAITING_SELLER_APPROVAL', 'WAITING_BUYER_APPROVAL', 'WAITING_FEE_PAYMENT', 'PENDING'].includes(rawInspStatus)) {
       return false;
     }
+
+    if (ord.inspectionMethod === 'AT_HOME') return getAtHomeDeliveryStage(ord) !== 'awaiting_shipment';
 
     if (sellerInboundShipments.has(ord.id) && isHubInboundInProgress(ord)) {
       return Boolean(sellerInboundShipments.get(ord.id));
@@ -1475,7 +1535,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
               ord.escrowStatus === 'INSPECTION_PASSED'
             );
             const buyerInspectionStage = orderIsSeller ? null : getBuyerInspectionStage(ord);
-            const ordShipment = getOrderInboundShipment(ord);
+            const ordShipment = ord.inspectionMethod === 'AT_HOME' ? null : getOrderInboundShipment(ord);
             const inboundProgress = ordShipment ? getInboundShipmentProgress(ordShipment, lang) : null;
             const inboundLabel = inboundProgress?.label || getSellerInboundLabel(ord);
             const hasActiveShipment = isShipmentCreatedForOrder(ord) || Boolean(ordShipment);
@@ -1641,6 +1701,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
             isOrderSeller={isOrderSeller}
             setInspectionActionNotice={setInspectionActionNotice}
             setCreateShipmentOrder={setCreateShipmentOrder}
+            isOrderSellerConfirmed={isOrderSellerConfirmed}
           />
 
           <OrderDeliveryJourney
@@ -1692,7 +1753,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
             lang={lang}
           />
 
-          {financeResource && (
+          {financeResource && isOrderSeller(detailModalOrder) && (
             <OrderSettlement
               order={detailModalOrder}
               detailBuyerInspectionStage={detailBuyerInspectionStage}
@@ -1701,6 +1762,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
               isEscrowReleased={financeResource === 'settlement'}
               isLoadingSettlement={!displayedFinancialData}
               orderCommission={displayedFinancialData?.commission ?? null}
+              isSeller={isOrderSeller(detailModalOrder)}
             />
           )}
         </OrderDetailModal>
@@ -1802,6 +1864,15 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
           isOpen={!!schedulingOrder}
           onClose={() => setSchedulingOrder(null)}
           onSuccess={() => {
+            if (detailModalOrder && (detailModalOrder.id === schedulingOrder.id || (detailModalOrder as any).linkedOrderId === schedulingOrder.id || (detailModalOrder as any).inspectionOrderId === schedulingOrder.id)) {
+              setDetailModalOrder((prev) => prev ? {
+                ...prev,
+                appointmentStatus: 'PENDING_CENTER_CONFIRMATION',
+                counterScheduledAt: null,
+                counterShift: null,
+                counterNote: null,
+              } : null);
+            }
             onRefreshOrders?.();
           }}
           lang={lang}

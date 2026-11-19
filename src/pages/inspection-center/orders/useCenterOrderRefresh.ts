@@ -79,10 +79,11 @@ export function useCenterOrderRefresh({
     const refreshOrderTracking = () => {
       if (!document.hidden && !isUserIdle()) void loadOrders(true);
     };
-    const trackingTimer = showOrderShipments
+    const shouldPoll = showOrderShipments || isDispatchTab;
+    const trackingTimer = shouldPoll
       ? window.setInterval(refreshOrderTracking, INBOUND_SHIPMENT_REFRESH_MS)
       : undefined;
-    if (showOrderShipments) document.addEventListener('visibilitychange', refreshOrderTracking);
+    if (shouldPoll) document.addEventListener('visibilitychange', refreshOrderTracking);
 
     return () => {
       channel?.close();
@@ -98,7 +99,7 @@ export function useCenterOrderRefresh({
       window.removeEventListener('secondlife_inspector_confirmed_signal', handleSignal);
       window.removeEventListener('storage', handleStorage);
       window.clearInterval(trackingTimer);
-      document.removeEventListener('visibilitychange', refreshOrderTracking);
+      if (shouldPoll) document.removeEventListener('visibilitychange', refreshOrderTracking);
     };
   }, [needsOrders, needsStaff, showOrderShipments, isDispatchTab, centerId]);
 }

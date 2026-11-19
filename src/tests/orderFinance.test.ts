@@ -119,6 +119,7 @@ test('OrderSettlement returns null when isSeller is false (hidden on Buyer side)
     orderSettlement: {
       settlementId: 'st-01',
       sellerPayout: 475000,
+      rawCommission: 25000,
       platformCommission: 25000,
       shippingFee: 0,
       commissionBase: 500000,
@@ -140,6 +141,7 @@ test('OrderSettlement returns null when isSeller is false (hidden on Buyer side)
     orderSettlement: {
       settlementId: 'st-01',
       sellerPayout: 475000,
+      rawCommission: 25000,
       platformCommission: 25000,
       shippingFee: 0,
       commissionBase: 500000,

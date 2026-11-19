@@ -36,10 +36,11 @@ import { buyerFeePercentFor, feePercentLabel, legacyFeeSplit } from '../../utils
 import { InspectionProposalCard } from './InspectionProposalCard';
 import { paths } from '../../app/router/paths';
 import { navigatePath, useBrowserLocation } from '../../app/router/browser';
-import { formatVndInput, cleanVndInput } from '../../utils/numberToWords';
+import { formatVndInput, cleanVndInput, handleVndInputChange, handleVndInputKeyDown } from '../../utils/numberToWords';
 import { clearInspectionChatIntent, inspectionChatDraftFromUrl, isInspectionProposalForPost, matchesInspectionChatDraft } from '../../utils/inspectionChatDraft';
 import { createChatInspectionReader, getChatInspectionOrderId, getCurrentChatInspection, isActiveChatInspection, matchesChatInspection } from '../../utils/chatInspection';
 import { getChatPostStatusBadge } from '../../utils/chatProduct';
+import { UserAvatar } from '../common/UserAvatar';
 
 export interface DedicatedChatRoomProps {
   room: ChatRoomDto;
@@ -120,13 +121,10 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
   }, [isSeller, room, listing.sellerName, isNameOfCurrentUser, lang]);
 
   const resolvedPartnerAvatar = useMemo(() => {
-    const defaultBuyerAvatar = "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200";
-    const defaultSellerAvatar = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200";
-
     if (isSeller) {
-      return room?.buyerAvatar || defaultBuyerAvatar;
+      return room?.buyerAvatar || null;
     } else {
-      return room?.sellerAvatar || listing.sellerAvatar || defaultSellerAvatar;
+      return room?.sellerAvatar || listing.sellerAvatar || null;
     }
   }, [isSeller, room, listing.sellerAvatar]);
 
@@ -1266,14 +1264,13 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
             </button>
           )}
 
-          <div className="relative shrink-0">
-            <img
-              src={resolvedPartnerAvatar}
-              alt={resolvedPartnerName}
-              className={`w-10 h-10 sm:w-11 sm:h-11 rounded-xl object-cover shrink-0 ${isSeller ? 'border-2 border-white/20' : 'border border-[#24263e]/20'
-                }`}
-            />
-          </div>
+          <UserAvatar
+            src={resolvedPartnerAvatar}
+            name={resolvedPartnerName}
+            className={`w-10 h-10 sm:w-11 sm:h-11 rounded-xl shrink-0 ${isSeller ? 'border-2 border-white/20' : 'border border-[#24263e]/20'
+              }`}
+            role={isSeller ? 'buyer' : 'seller'}
+          />
 
           <div className="overflow-hidden">
             <div className="flex items-center gap-1.5 flex-wrap">
@@ -1709,10 +1706,11 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
                   <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
                     <div className="flex items-end gap-1.5 max-w-[80%]">
                       {!isMe && (
-                        <img
+                        <UserAvatar
                           src={resolvedPartnerAvatar}
-                          alt={resolvedPartnerName}
-                          className="w-7 h-7 rounded-lg object-cover border border-slate-200 shrink-0 mb-1"
+                          name={resolvedPartnerName}
+                          className="w-7 h-7 rounded-lg border border-slate-200 shrink-0 mb-1"
+                          role={isSeller ? 'buyer' : 'seller'}
                         />
                       )}
                       <div>
@@ -1781,15 +1779,21 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
                 inputMode="numeric"
                 value={offerInput > 0 ? formatVndInput(offerInput) : ''}
                 onChange={(e) => {
-                  const cleaned = cleanVndInput(e.target.value);
-                  setOfferInput(cleaned ? Number(cleaned) : 0);
-                  setOfferError(null);
+                  handleVndInputChange(e, (num) => {
+                    setOfferInput(num);
+                    setOfferError(null);
+                  });
                 }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
                     handleSendOffer();
+                    return;
                   }
+                  handleVndInputKeyDown(e, (num) => {
+                    setOfferInput(num);
+                    setOfferError(null);
+                  });
                 }}
                 placeholder="VD: 1.500.000"
                 className={`w-full px-3.5 py-2 pr-9 border rounded-xl text-xs font-bold text-[#24263e] bg-white focus:outline-none ${isSeller ? 'focus:border-blue-600' : 'focus:border-[#c34c36]'

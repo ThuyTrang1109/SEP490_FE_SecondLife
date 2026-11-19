@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Sparkles,
   Camera,
@@ -33,7 +33,9 @@ import {
   RotateCcw,
   PlayCircle,
   Lock,
-  Wrench
+  Wrench,
+  Calendar,
+  Search
 } from 'lucide-react';
 import {
   ItemCategory,
@@ -46,7 +48,7 @@ import {
   UserCredit
 } from '../types';
 import { translations, formatVND } from '../utils/translations';
-import { numberToVietnameseWords, formatVndInput, cleanVndInput } from '../utils/numberToWords';
+import { numberToVietnameseWords, formatVndInput, cleanVndInput, handleVndInputChange, handleVndInputKeyDown } from '../utils/numberToWords';
 import {
   mediaService,
   postService,
@@ -233,6 +235,12 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   const [isLoadingCategories, setIsLoadingCategories] = useState(false);
   const [isLoadingItems, setIsLoadingItems] = useState(false);
 
+  // Toàn bộ danh mục sản phẩm phục vụ tìm kiếm nhanh (Tự động điền Danh mục & Sản phẩm)
+  const [allItems, setAllItems] = useState<ItemBackend[]>([]);
+  const [isLoadingAllItems, setIsLoadingAllItems] = useState<boolean>(false);
+  const [productSearchQuery, setProductSearchQuery] = useState<string>('');
+  const [isProductSearchOpen, setIsProductSearchOpen] = useState<boolean>(false);
+
   // Basic Form State
   const [title, setTitle] = useState('');
   const [isSuggestingTitle, setIsSuggestingTitle] = useState(false);
@@ -401,11 +409,139 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   }, [pickupKey, refreshVersion]);
   const currentYear = useMemo(() => new Date().getFullYear(), []);
   const maxAllowedPurchaseYear = currentYear;
+
+  // Ngày hôm nay (YYYY-MM-DD)
+  const todayStr = useMemo(() => {
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }, []);
+
+  // Ngày tối đa cho phép chọn: hôm qua (YYYY-MM-DD) - Tuyệt đối không cho chọn hôm nay hoặc tương lai
+  const maxAllowedPurchaseDate = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }, []);
+
+  const formatDateDisplayVN = (isoDate: string): string => {
+    if (!isoDate) return '';
+    const parts = isoDate.split('-');
+    if (parts.length === 3) {
+      return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+    return isoDate;
+  };
+
+  const parseDateStringToIso = (text: string): string | null => {
+    if (!text) return null;
+    const s = text.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const m = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+    if (m) {
+      const dd = m[1].padStart(2, '0');
+      const mm = m[2].padStart(2, '0');
+      const yyyy = m[3];
+      return `${yyyy}-${mm}-${dd}`;
+    }
+    return null;
+  };
+
   const [brand, setBrand] = useState('');
   const [model, setModel] = useState('');
-  const [purchaseYear, setPurchaseYear] = useState<number>(() => {
-    return currentYear;
+
+  // Ngày mua sản phẩm (mặc định: ngày hôm qua - ngày gần nhất trong quá khứ)
+  const [purchaseDate, setPurchaseDate] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
   });
+
+  // Text hiển thị / cho phép tự nhập ngày dd/mm/yyyy
+  const [purchaseDateInputText, setPurchaseDateInputText] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${dd}/${mm}/${yyyy}`;
+  });
+
+  const [purchaseYear, setPurchaseYear] = useState<number>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return d.getFullYear();
+  });
+
+  const dateInputRef = useRef<HTMLInputElement>(null);
+
+  const handleDatePick = (isoVal: string) => {
+    setPurchaseDate(isoVal);
+    setPurchaseDateInputText(formatDateDisplayVN(isoVal));
+    const [y] = isoVal.split('-').map(Number);
+    if (Number.isFinite(y) && y >= 1990) {
+      setPurchaseYear(y);
+    }
+  };
+
+  const handleDateTextChange = (text: string) => {
+    setPurchaseDateInputText(text);
+    const iso = parseDateStringToIso(text);
+    if (iso) {
+      setPurchaseDate(iso);
+      const [y] = iso.split('-').map(Number);
+      if (Number.isFinite(y) && y >= 1990) {
+        setPurchaseYear(y);
+      }
+    } else {
+      if (!text.trim()) {
+        setPurchaseDate('');
+      }
+    }
+  };
+
+  const quickDateShortcuts = useMemo(() => [
+    { label: 'Hôm qua', daysAgo: 1 },
+    { label: '1 tháng trước', monthsAgo: 1 },
+    { label: '3 tháng trước', monthsAgo: 3 },
+    { label: '6 tháng trước', monthsAgo: 6 },
+    { label: '1 năm trước', yearsAgo: 1 },
+    { label: '2 năm trước', yearsAgo: 2 },
+    { label: '3 năm trước', yearsAgo: 3 },
+    { label: 'Đầu năm nay', startOfYear: true },
+  ], []);
+
+  const applyQuickDate = (item: { label: string; daysAgo?: number; monthsAgo?: number; yearsAgo?: number; startOfYear?: boolean }) => {
+    const d = new Date();
+    if (item.daysAgo) {
+      d.setDate(d.getDate() - item.daysAgo);
+    } else if (item.monthsAgo) {
+      d.setMonth(d.getMonth() - item.monthsAgo);
+    } else if (item.yearsAgo) {
+      d.setFullYear(d.getFullYear() - item.yearsAgo);
+    } else if (item.startOfYear) {
+      d.setMonth(0, 1);
+    }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (d >= today) {
+      d.setDate(today.getDate() - 1);
+    }
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const iso = `${yyyy}-${mm}-${dd}`;
+    handleDatePick(iso);
+  };
+
   const [purchaseTimeNote, setPurchaseTimeNote] = useState<string>('');
   const [originalPriceVnd, setOriginalPriceVnd] = useState<number | ''>('');
   const [itemCondition, setItemCondition] = useState<string>('USED_GOOD');
@@ -423,17 +559,34 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   const [hasSubmittedStep2, setHasSubmittedStep2] = useState(false);
   const [hasSubmittedStep3, setHasSubmittedStep3] = useState(false);
 
-  // Validation lỗi tại chỗ (Inline Validation)
-  const purchaseYearError = useMemo(() => {
-    if (!purchaseYear && purchaseYear !== 0) return 'Vui lòng nhập năm mua sản phẩm.';
-    if (purchaseYear > maxAllowedPurchaseYear) {
-      return `Năm mua không hợp lý (${purchaseYear} là năm tương lai). Sản phẩm đồ cũ đã qua sử dụng phải có năm mua từ năm 1990 đến năm ${maxAllowedPurchaseYear}.`;
+  // Validation lỗi tại chỗ (Inline Validation) - Giới hạn thời gian mua: chỉ được chọn ngày trong quá khứ (< hôm nay)
+  const purchaseDateError = useMemo(() => {
+    if (!purchaseDate || !purchaseDate.trim()) {
+      return 'Vui lòng chọn hoặc nhập ngày mua sản phẩm.';
     }
-    if (purchaseYear < 1990) {
-      return 'Năm mua không hợp lý (tối thiểu từ năm 1990).';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(purchaseDate)) {
+      return 'Định dạng ngày mua không hợp lệ. Vui lòng chọn từ lịch hoặc nhập theo định dạng dd/mm/yyyy.';
+    }
+    const [y, m, d] = purchaseDate.split('-').map(Number);
+    const parsedDate = new Date(y, m - 1, d);
+    if (
+      isNaN(parsedDate.getTime()) ||
+      parsedDate.getFullYear() !== y ||
+      parsedDate.getMonth() !== m - 1 ||
+      parsedDate.getDate() !== d
+    ) {
+      return 'Ngày mua không tồn tại trên lịch.';
+    }
+    if (purchaseDate >= todayStr) {
+      return 'Thời gian mua phải là ngày trong quá khứ (không được chọn hôm nay hoặc ngày tương lai). Bạn có thể chọn ngày đã qua trong năm nay hoặc các năm trước.';
+    }
+    if (purchaseDate < '1990-01-01') {
+      return 'Thời gian mua không hợp lý (tối thiểu từ năm 1990).';
     }
     return null;
-  }, [purchaseYear, maxAllowedPurchaseYear]);
+  }, [purchaseDate, todayStr]);
+
+  const purchaseYearError = purchaseDateError;
 
   const brandError = useMemo(() => {
     if (!brand || !brand.trim()) return 'Vui lòng nhập hoặc chọn thương hiệu sản phẩm.';
@@ -863,6 +1016,18 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             const parsed = JSON.parse(savedAns);
             if (parsed && typeof parsed === 'object') setQuestionAnswers(parsed);
           }
+          const savedDate = (draft as any).purchaseDate || localStorage.getItem(`post_purchase_date_${cleanId}`);
+          const draftYear = (draft as any).purchaseYear;
+          if (savedDate) {
+            handleDatePick(savedDate);
+          } else if (draftYear) {
+            setPurchaseYear(draftYear);
+            if (draftYear < currentYear) {
+              handleDatePick(`${draftYear}-06-15`);
+            } else {
+              handleDatePick(maxAllowedPurchaseDate);
+            }
+          }
         } catch { }
         showToast(lang === 'vi' ? `Đã tải lại bản nháp #${cleanId.slice(0, 8)} thành công!` : 'Draft loaded successfully!');
         setIsLoadDraftModalOpen(false);
@@ -882,7 +1047,18 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       setTitle(initialDraft.title || '');
       setBrand(initialDraft.brand || '');
       setModel(initialDraft.model || '');
-      if (initialDraft.purchaseYear) setPurchaseYear(initialDraft.purchaseYear);
+      const savedDate = (initialDraft as any).purchaseDate || localStorage.getItem(`post_purchase_date_${initialDraft.id}`);
+      if (savedDate) {
+        handleDatePick(savedDate);
+      } else if (initialDraft.purchaseYear) {
+        setPurchaseYear(initialDraft.purchaseYear);
+        const y = initialDraft.purchaseYear;
+        if (y < currentYear) {
+          handleDatePick(`${y}-06-15`);
+        } else {
+          handleDatePick(maxAllowedPurchaseDate);
+        }
+      }
       const savedTimeNote = (initialDraft as any).purchaseTimeNote || localStorage.getItem(`post_purchase_time_note_${initialDraft.id}`);
       if (savedTimeNote) setPurchaseTimeNote(savedTimeNote);
       const existingSellingPrice = initialDraft.priceVnd || (initialDraft as any).price || '';
@@ -1959,6 +2135,94 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     }
   }, [selectedCategoryId, initialDraft?.itemId]);
 
+  // Load toàn bộ sản phẩm trên hệ thống để phục vụ tìm kiếm nhanh (Tự động điền danh mục & thiết bị)
+  useEffect(() => {
+    setIsLoadingAllItems(true);
+    itemService.getItems()
+      .then((items) => {
+        if (Array.isArray(items) && items.length > 0) {
+          setAllItems(items.filter(i => i.selectable !== false));
+        }
+      })
+      .catch((err) => console.warn('Lỗi tải toàn bộ danh mục sản phẩm:', err))
+      .finally(() => setIsLoadingAllItems(false));
+  }, []);
+
+  // Hàm loại bỏ dấu tiếng Việt để tìm kiếm sản phẩm thông minh không phân biệt dấu
+  const removeVietnameseAccents = (str: string): string => {
+    return (str || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd')
+      .replace(/Đ/g, 'D')
+      .toLowerCase()
+      .trim();
+  };
+
+  // Danh sách sản phẩm được lọc theo từ khóa tìm kiếm
+  const filteredProducts = useMemo(() => {
+    const q = removeVietnameseAccents(productSearchQuery);
+    if (!q) {
+      // Khi chưa gõ từ khóa, gợi ý 15 sản phẩm phổ biến nhất
+      return allItems.slice(0, 15).map((item) => {
+        const cat = backendCategories.find((c) => c.id === item.categoryId);
+        return {
+          ...item,
+          categoryName: cat?.name || 'Đồ gia dụng',
+        };
+      });
+    }
+
+    return allItems
+      .filter((item) => {
+        const cat = backendCategories.find((c) => c.id === item.categoryId);
+        const nameNorm = removeVietnameseAccents(item.name);
+        const catNorm = removeVietnameseAccents(cat?.name || '');
+        const descNorm = removeVietnameseAccents(item.description || '');
+        return nameNorm.includes(q) || catNorm.includes(q) || descNorm.includes(q);
+      })
+      .map((item) => {
+        const cat = backendCategories.find((c) => c.id === item.categoryId);
+        return {
+          ...item,
+          categoryName: cat?.name || 'Đồ gia dụng',
+        };
+      })
+      .slice(0, 30);
+  }, [allItems, backendCategories, productSearchQuery]);
+
+  // Khi chọn sản phẩm từ ô tìm kiếm: TỰ ĐỘNG ĐIỀN CẢ DANH MỤC VÀ SẢN PHẨM
+  const handleSelectProductFromSearch = (item: ItemBackend & { categoryName?: string }) => {
+    setSelectedCategoryId(item.categoryId);
+    setSelectedItemId(item.id);
+    setProductSearchQuery(item.name);
+    setIsProductSearchOpen(false);
+
+    // Đảm bảo item xuất hiện ngay trong backendItems
+    setBackendItems((prev) => {
+      if (prev.some((i) => i.id === item.id)) return prev;
+      return [item, ...prev];
+    });
+
+    const catName = item.categoryName || backendCategories.find((c) => c.id === item.categoryId)?.name || '';
+    showToast(lang === 'vi' ? `✓ Đã tự động chọn: ${item.name} (${catName})` : `✓ Selected: ${item.name} (${catName})`);
+  };
+
+  const handleClearProductSearch = () => {
+    setProductSearchQuery('');
+    setIsProductSearchOpen(true);
+  };
+
+  // Đồng bộ ô tìm kiếm khi sản phẩm được chọn từ dropdown hoặc tải bản nháp
+  useEffect(() => {
+    if (selectedItemId && allItems.length > 0) {
+      const found = allItems.find((i) => i.id === selectedItemId);
+      if (found && !isProductSearchOpen && !productSearchQuery) {
+        setProductSearchQuery(found.name);
+      }
+    }
+  }, [selectedItemId, allItems, isProductSearchOpen, productSearchQuery]);
+
   // Handle Photo File selection (multi-file or single-file)
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files: File[] = e.target.files ? (Array.from(e.target.files) as File[]) : [];
@@ -2075,9 +2339,9 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       return false;
     }
 
-    if (purchaseYearError) {
-      showToast(purchaseYearError);
-      const el = document.getElementById('purchase-year-input') || document.querySelector('input[type="number"]');
+    if (purchaseDateError) {
+      showToast(purchaseDateError);
+      const el = document.getElementById('purchase-date-input') || document.getElementById('purchase-date-text-input');
       el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       (el as HTMLElement)?.focus?.();
       return false;
@@ -2251,6 +2515,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             localStorage.setItem(`post_original_price_${initRes.postId}`, String(numOrig));
           } catch { }
         }
+        if (purchaseDate) {
+          try {
+            localStorage.setItem(`post_purchase_date_${initRes.postId}`, purchaseDate);
+          } catch { }
+        }
         if (purchaseTimeNote && purchaseTimeNote.trim()) {
           try {
             localStorage.setItem(`post_purchase_time_note_${initRes.postId}`, purchaseTimeNote.trim());
@@ -2269,6 +2538,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           brand: brand?.trim() || '',
           model: model?.trim() || '',
           purchaseYear,
+          purchaseDate,
           purchaseTimeNote: purchaseTimeNote.trim() || undefined,
           originalPriceVnd: numOrig > 0 ? numOrig : undefined,
           canDisassemble
@@ -2592,7 +2862,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           localStorage.setItem(`post_can_disassemble_${postId}`, String(canDisassemble));
         } catch { }
       }
-      const cleanDesc = description.trim().replace(/<!--(?:sl_orig_price|ORIGINAL_PRICE):\d+-->/gi, '').trim();
+      const sanitizedDesc = sanitizeDescriptionForAiScan(description.trim(), currentYear);
+      if (sanitizedDesc !== description.trim()) {
+        setDescription(sanitizedDesc);
+      }
+      const cleanDesc = sanitizedDesc.replace(/<!--(?:sl_orig_price|ORIGINAL_PRICE):\d+-->/gi, '').trim();
       const descToSend = numOrig > 0 ? `${cleanDesc}\n\n<!--sl_orig_price:${numOrig}-->` : cleanDesc;
 
       // Cập nhật draft trước, sau đó mới xác nhận mô tả để tránh race condition làm descriptionAccepted bị ghi đè về false
@@ -2786,6 +3060,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
     const numericOrigPrice = typeof originalPriceVnd === 'number' && originalPriceVnd > 0 ? originalPriceVnd : undefined;
 
+    if (purchaseDate) {
+      try {
+        localStorage.setItem(`post_purchase_date_${postId}`, purchaseDate);
+      } catch { }
+    }
     if (purchaseTimeNote && purchaseTimeNote.trim()) {
       try {
         localStorage.setItem(`post_purchase_time_note_${postId}`, purchaseTimeNote.trim());
@@ -2804,6 +3083,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       brand: finalBrand,
       model: model?.trim() || '',
       purchaseYear,
+      purchaseDate,
       purchaseTimeNote: purchaseTimeNote.trim() || undefined,
       originalPriceVnd: numericOrigPrice,
       canDisassemble
@@ -2979,7 +3259,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       const cleanDesc = sanitizedDesc.replace(/<!--(?:sl_orig_price|ORIGINAL_PRICE):\d+-->/gi, '').trim();
       const descToSend = numericOrigPrice > 0 ? `${cleanDesc}\n\n<!--sl_orig_price:${numericOrigPrice}-->` : cleanDesc;
 
-      const submitRes = await postService.submitPost(postId, {
+      const submitPayload = {
         title: title.trim(),
         description: descToSend,
         price: finalPriceVnd,
@@ -2987,7 +3267,33 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         shippingLength: parcel.length,
         shippingWidth: parcel.width,
         shippingHeight: parcel.height
-      });
+      };
+
+      // Đồng bộ và xác nhận nội dung mô tả lên backend trước khi submit để tránh lỗi 409 Conflict
+      try {
+        await postService.acceptDescription(postId, descToSend);
+        setDescriptionAccepted(true);
+      } catch (acceptErr) {
+        console.warn('Đồng bộ xác nhận mô tả trước submit:', acceptErr);
+      }
+
+      let submitRes: PostSubmitResponse;
+      try {
+        submitRes = await postService.submitPost(postId, submitPayload);
+      } catch (firstErr: any) {
+        if (
+          firstErr?.status === 409 ||
+          firstErr?.message?.toLowerCase().includes('accept') ||
+          firstErr?.message?.toLowerCase().includes('description') ||
+          firstErr?.message?.toLowerCase().includes('mô tả')
+        ) {
+          await postService.acceptDescription(postId, descToSend);
+          setDescriptionAccepted(true);
+          submitRes = await postService.submitPost(postId, submitPayload);
+        } else {
+          throw firstErr;
+        }
+      }
 
       setSubmitResult(submitRes);
       try {
@@ -3001,6 +3307,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       const submitItmName = submitItm?.name || '';
       const finalOrigPrice = numericOrigPrice > 0 ? numericOrigPrice : undefined;
 
+      if (purchaseDate) {
+        try {
+          localStorage.setItem(`post_purchase_date_${postId}`, purchaseDate);
+        } catch { }
+      }
       if (purchaseTimeNote && purchaseTimeNote.trim()) {
         try {
           localStorage.setItem(`post_purchase_time_note_${postId}`, purchaseTimeNote.trim());
@@ -3019,6 +3330,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         brand: brand?.trim() || '',
         model: model?.trim() || '',
         purchaseYear,
+        purchaseDate,
         purchaseTimeNote: purchaseTimeNote.trim() || undefined,
         originalPriceVnd: finalOrigPrice,
         canDisassemble
@@ -3220,6 +3532,148 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             </button>
           </div>
 
+          {/* Ô TÌM KIẾM SẢN PHẨM NHANH (TỰ ĐIỀN DANH MỤC & SẢN PHẨM) */}
+          <div className="relative space-y-2.5 p-4 sm:p-5 bg-gradient-to-r from-orange-50/80 via-amber-50/50 to-slate-50 rounded-2xl border-2 border-dashed border-[#c34c36]/30 shadow-2xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <label className="text-xs font-black text-[#24263e] flex items-center gap-1.5">
+                <Search className="w-4 h-4 text-[#c34c36]" />
+                <span>Tìm kiếm sản phẩm nhanh (Khuyên dùng)</span>
+                <span className="text-[10px] bg-[#c34c36] text-white px-2 py-0.5 rounded-full font-bold ml-1">
+                  Tự động điền danh mục
+                </span>
+              </label>
+              {selectedItemId && (
+                <span className="text-[11px] text-emerald-800 font-bold bg-emerald-100/90 border border-emerald-200/80 px-2.5 py-0.5 rounded-lg flex items-center gap-1 self-start sm:self-auto">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  Đã tự động điền danh mục & loại thiết bị
+                </span>
+              )}
+            </div>
+
+            <p className="text-[11px] text-slate-600 leading-relaxed">
+              Bạn không cần nhớ sản phẩm thuộc danh mục nào. Chỉ cần gõ tên sản phẩm (VD: <em>Tủ lạnh, Quạt cây, Nồi chiên, Máy giặt, Robot hút bụi...</em>), hệ thống sẽ <strong>tự động nhận diện và điền luôn danh mục tương ứng</strong> cho bạn.
+            </p>
+
+            <div className="relative">
+              <div className="relative flex items-center">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 pointer-events-none" />
+                <input
+                  id="product-quick-search-input"
+                  type="text"
+                  value={productSearchQuery}
+                  onChange={(e) => {
+                    setProductSearchQuery(e.target.value);
+                    setIsProductSearchOpen(true);
+                  }}
+                  onFocus={() => setIsProductSearchOpen(true)}
+                  placeholder="🔍 Gõ tìm tên thiết bị (VD: Tủ lạnh, Quạt điện, Nồi chiên, Lò vi sóng, Máy lọc không khí...)"
+                  className="w-full pl-10 pr-9 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/20 transition shadow-xs"
+                />
+                {productSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={handleClearProductSearch}
+                    className="absolute right-2.5 p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition cursor-pointer"
+                    title="Xóa tìm kiếm"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Dropdown danh sách kết quả tìm kiếm */}
+              {isProductSearchOpen && (
+                <div
+                  className="absolute left-0 right-0 top-full mt-1.5 bg-white border border-slate-200 rounded-2xl shadow-xl z-30 max-h-72 overflow-y-auto divide-y divide-slate-100 animate-fadeIn"
+                  onMouseDown={(e) => e.preventDefault()}
+                >
+                  <div className="p-2.5 bg-slate-50 flex items-center justify-between text-[11px] font-bold text-slate-500 sticky top-0 z-10 border-b border-slate-100">
+                    <span>
+                      {productSearchQuery
+                        ? `Tìm thấy ${filteredProducts.length} sản phẩm phù hợp:`
+                        : (isLoadingAllItems ? 'Đang tải danh sách thiết bị...' : 'Sản phẩm phổ biến gợi ý (Bấm để tự điền danh mục):')}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsProductSearchOpen(false)}
+                      className="text-[10px] text-slate-400 hover:text-slate-600 cursor-pointer font-normal"
+                    >
+                      Đóng ✕
+                    </button>
+                  </div>
+
+                  {filteredProducts.length > 0 ? (
+                    filteredProducts.map((p) => {
+                      const isSelected = p.id === selectedItemId;
+                      return (
+                        <div
+                          key={p.id}
+                          onClick={() => handleSelectProductFromSearch(p)}
+                          className={`p-3 hover:bg-orange-50/70 transition cursor-pointer flex items-center justify-between gap-3 ${isSelected ? 'bg-orange-50 border-l-4 border-l-[#c34c36]' : ''
+                            }`}
+                        >
+                          <div className="flex-1 min-w-0">
+                            <div className="font-bold text-xs text-[#24263e] flex items-center gap-2">
+                              <span>{p.name}</span>
+                              {isSelected && (
+                                <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-bold">
+                                  Đang chọn
+                                </span>
+                              )}
+                            </div>
+                            {p.description && (
+                              <p className="text-[11px] text-slate-400 truncate mt-0.5">{p.description}</p>
+                            )}
+                          </div>
+
+                          <div className="shrink-0 text-right">
+                            <span className="text-[10px] font-bold bg-amber-100 text-amber-900 px-2 py-0.5 rounded-full border border-amber-200/70 inline-flex items-center gap-1">
+                              📁 {p.categoryName}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="p-4 text-center text-xs text-slate-400">
+                      Không tìm thấy thiết bị nào khớp với từ khóa "{productSearchQuery}". Bạn có thể chọn danh mục và loại thiết bị ở bên dưới.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Thẻ trạng thái sản phẩm và danh mục đã được chọn */}
+            {selectedItemId && (
+              <div className="p-2.5 bg-white rounded-xl border border-emerald-200 flex flex-wrap items-center justify-between gap-2 shadow-2xs">
+                <div className="flex items-center gap-2 text-xs flex-wrap">
+                  <span className="text-slate-500 font-medium">Thiết bị đã chọn:</span>
+                  <span className="font-black text-[#24263e]">
+                    {allItems.find((i) => i.id === selectedItemId)?.name ||
+                      backendItems.find((i) => i.id === selectedItemId)?.name ||
+                      'Thiết bị'}
+                  </span>
+                  <span className="text-slate-300">•</span>
+                  <span className="text-slate-500 font-medium">Thuộc danh mục:</span>
+                  <span className="font-bold text-amber-900 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 text-[11px]">
+                    {backendCategories.find((c) => c.id === selectedCategoryId)?.name || 'Danh mục'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsProductSearchOpen(true);
+                    const el = document.getElementById('product-quick-search-input');
+                    (el as HTMLElement)?.focus?.();
+                  }}
+                  className="text-[11px] font-bold text-[#c34c36] hover:underline cursor-pointer"
+                >
+                  Đổi sản phẩm khác
+                </button>
+              </div>
+            )}
+          </div>
+
           {/* Category & Item Dropdowns */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
@@ -3290,7 +3744,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               )}
             </div>
 
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 md:col-span-2">
               <label className="text-xs font-bold text-[#24263e]">Thương hiệu (Brand) *</label>
               <input
                 id="brand-input"
@@ -3323,73 +3777,80 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               </div>
             </div>
 
+            {/* THỜI GIAN MUA SẢN PHẨM (CHỈ CHỌN NGÀY TRONG QUÁ KHỨ) */}
             <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-[#24263e]">Năm mua *</label>
-                <span className="text-[10px] text-slate-400 font-medium">(Tối đa: {maxAllowedPurchaseYear})</span>
-              </div>
-              <input
-                id="purchase-year-input"
-                type="number"
-                value={purchaseYear}
-                onChange={(e) => setPurchaseYear(Number(e.target.value))}
-                min={1990}
-                max={maxAllowedPurchaseYear}
-                placeholder={`VD: 2022 (tối đa ${maxAllowedPurchaseYear})`}
-                className={`w-full px-3.5 py-2.5 bg-slate-50 border rounded-xl text-xs text-[#24263e] focus:outline-none transition ${purchaseYearError
-                  ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
-                  : 'border-gray-200 focus:border-[#c34c36]'
-                  }`}
-              />
-              {purchaseYearError && (
-                <p className="text-[11px] text-rose-600 font-bold flex items-center gap-1 mt-1 animate-fadeIn">
-                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                  <span>{purchaseYearError}</span>
-                </p>
-              )}
-            </div>
-
-            {/* Ghi chú khoảng thời gian mua */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-[#24263e]">
-                  {lang === 'vi' ? 'Ghi chú khoảng thời gian mua' : 'Purchase Time Note'}
+              <div className="flex items-center justify-between flex-wrap gap-1">
+                <label className="text-xs font-bold text-[#24263e] flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-[#c34c36]" />
+                  <span>Thời gian mua sản phẩm *</span>
                 </label>
-                <span className="text-[10px] text-slate-400 font-medium">
-                  {lang === 'vi' ? '(Không bắt buộc)' : '(Optional)'}
+                <span className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200/80 px-2 py-0.5 rounded-full font-semibold">
+                  Chỉ chọn ngày quá khứ (&lt; hôm nay)
                 </span>
               </div>
-              <input
-                id="purchase-time-note-input"
-                type="text"
-                value={purchaseTimeNote}
-                onChange={(e) => setPurchaseTimeNote(e.target.value)}
-                placeholder={
-                  lang === 'vi'
-                    ? 'VD: Mua khoảng giữa năm 2023, đã dùng khoảng 6 tháng, mua đợt Tết...'
-                    : 'E.g. Bought around mid-2023, used for ~6 months...'
-                }
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-gray-200 rounded-xl text-xs text-[#24263e] focus:outline-none focus:border-[#c34c36] transition"
-              />
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                {[
-                  'Dưới 6 tháng',
-                  'Khoảng 6 - 12 tháng',
-                  'Khoảng 1 - 2 năm',
-                  'Trên 2 năm',
-                  'Mua mới đầu năm nay',
-                  'Mua cuối năm ngoái'
-                ].map((tag) => (
+
+              {/* Ô nhập ngày hợp nhất: Vừa gõ tay vừa có nút cuộn lịch */}
+              <div className="relative">
+                <input
+                  id="purchase-date-text-input"
+                  type="text"
+                  value={purchaseDateInputText}
+                  onChange={(e) => handleDateTextChange(e.target.value)}
+                  placeholder="dd/mm/yyyy (VD: 15/10/2023 hoặc bấm icon lịch)"
+                  className={`w-full pl-3.5 pr-11 py-2.5 bg-slate-50 border rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none transition shadow-2xs ${hasSubmittedStep1 && purchaseDateError
+                    ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
+                    : 'border-gray-200 focus:border-[#c34c36]'
+                    }`}
+                />
+
+                {/* Nút bấm & Input Date ẩn để mở bộ cuộn lịch */}
+                <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center">
+                  <input
+                    ref={dateInputRef}
+                    id="purchase-date-input"
+                    type="date"
+                    min="1990-01-01"
+                    max={maxAllowedPurchaseDate}
+                    value={purchaseDate}
+                    onChange={(e) => handleDatePick(e.target.value)}
+                    className="w-8 h-8 opacity-0 absolute right-0 top-0 cursor-pointer z-10"
+                    title="Bấm để cuộn chọn lịch"
+                  />
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 group-hover:text-[#c34c36] hover:bg-slate-200/50 transition pointer-events-none">
+                    <Calendar className="w-4 h-4 text-slate-500" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Thông báo hợp lệ / lỗi gọn gàng */}
+              {hasSubmittedStep1 && purchaseDateError ? (
+                <p className="text-[11px] text-rose-600 font-bold flex items-center gap-1 mt-1 animate-fadeIn">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{purchaseDateError}</span>
+                </p>
+              ) : purchaseDate && !purchaseDateError ? (
+                <div className="flex items-center justify-between text-[11px] text-slate-500 pt-0.5">
+                  <span className="flex items-center gap-1 text-emerald-600 font-medium">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span>Đã chọn: <strong className="text-slate-800 font-bold">{formatDateDisplayVN(purchaseDate)}</strong> (Năm {purchaseYear})</span>
+                  </span>
+                  <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-1.5 py-0.2 rounded font-semibold">
+                    Hợp lệ (Quá khứ)
+                  </span>
+                </div>
+              ) : null}
+
+              {/* Chọn nhanh ngày trong quá khứ */}
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                <span className="text-[10px] text-slate-400 font-medium shrink-0 mr-0.5">Gợi ý nhanh:</span>
+                {quickDateShortcuts.map((item) => (
                   <button
-                    key={tag}
+                    key={item.label}
                     type="button"
-                    onClick={() => setPurchaseTimeNote(purchaseTimeNote === tag ? '' : tag)}
-                    className={`px-2.5 py-1 text-[11px] font-medium rounded-lg transition-colors cursor-pointer ${purchaseTimeNote === tag
-                      ? 'bg-[#c34c36] text-white border border-[#c34c36]'
-                      : 'bg-white border border-gray-200 hover:border-[#c34c36] hover:text-[#c34c36] text-slate-700'
-                      }`}
+                    onClick={() => applyQuickDate(item)}
+                    className="px-2 py-0.5 text-[11px] font-medium rounded-lg transition-colors cursor-pointer bg-white border border-gray-200 hover:border-[#c34c36] hover:text-[#c34c36] text-slate-600 shadow-2xs"
                   >
-                    {tag}
+                    {item.label}
                   </button>
                 ))}
               </div>
@@ -3408,20 +3869,27 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 maxLength={14}
                 value={originalPriceVnd ? formatVndInput(originalPriceVnd.toString()) : ''}
                 onChange={(e) => {
-                  const raw = cleanVndInput(e.target.value, 10);
-                  const numVal = raw ? Number(raw) : '';
-                  setOriginalPriceVnd(numVal);
-                  if (typeof numVal === 'number' && numVal > 0) {
-                    try {
-                      localStorage.setItem('temp_creating_original_price', String(numVal));
-                      if (postId) {
-                        localStorage.setItem(`post_original_price_${postId}`, String(numVal));
-                      }
-                    } catch { }
-                  }
-                  if (initialDraft && typeof numVal === 'number') {
-                    setFinalPriceVnd(numVal);
-                  }
+                  handleVndInputChange(e, (numVal) => {
+                    const finalVal = numVal > 0 ? numVal : '';
+                    setOriginalPriceVnd(finalVal);
+                    if (typeof finalVal === 'number' && finalVal > 0) {
+                      try {
+                        localStorage.setItem('temp_creating_original_price', String(finalVal));
+                        if (postId) {
+                          localStorage.setItem(`post_original_price_${postId}`, String(finalVal));
+                        }
+                      } catch { }
+                    }
+                    if (initialDraft && typeof finalVal === 'number') {
+                      setFinalPriceVnd(finalVal);
+                    }
+                  }, 10);
+                }}
+                onKeyDown={(e) => {
+                  handleVndInputKeyDown(e, (numVal) => {
+                    const finalVal = numVal > 0 ? numVal : '';
+                    setOriginalPriceVnd(finalVal);
+                  });
                 }}
                 placeholder={initialDraft ? (lang === 'vi' ? 'VD: 600.000' : 'E.g. 600,000') : (lang === 'vi' ? 'VD: 5.000.000' : 'E.g. 5,000,000')}
                 className={`w-full px-3.5 py-2.5 bg-slate-50 border rounded-xl text-xs font-medium text-[#24263e] focus:outline-none tabular-nums transition ${originalPriceError
@@ -4718,8 +5186,14 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                     maxLength={15}
                     value={finalPriceVnd > 0 ? formatVndInput(finalPriceVnd.toString()) : ''}
                     onChange={(e) => {
-                      const numericValue = cleanVndInput(e.target.value, 11);
-                      setFinalPriceVnd(numericValue ? Number(numericValue) : 0);
+                      handleVndInputChange(e, (numVal) => {
+                        setFinalPriceVnd(numVal);
+                      }, 11);
+                    }}
+                    onKeyDown={(e) => {
+                      handleVndInputKeyDown(e, (numVal) => {
+                        setFinalPriceVnd(numVal);
+                      });
                     }}
                     placeholder="VD: 500.000"
                     className={`w-full pl-4 pr-12 py-3 rounded-xl border ${hasSubmittedStep3 && (!finalPriceVnd || finalPriceVnd < 1000 || finalPriceVnd > 1000000000)
@@ -5025,8 +5499,14 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 maxLength={15}
                 value={finalPriceVnd > 0 ? formatVndInput(finalPriceVnd.toString()) : ''}
                 onChange={(e) => {
-                  const numericValue = cleanVndInput(e.target.value, 11);
-                  setFinalPriceVnd(numericValue ? Number(numericValue) : 0);
+                  handleVndInputChange(e, (numVal) => {
+                    setFinalPriceVnd(numVal);
+                  }, 11);
+                }}
+                onKeyDown={(e) => {
+                  handleVndInputKeyDown(e, (numVal) => {
+                    setFinalPriceVnd(numVal);
+                  });
                 }}
                 className={`w-full px-4 py-3 bg-white border ${!finalPriceVnd || finalPriceVnd < 1000 || finalPriceVnd > 1000000000
                   ? 'border-rose-400 focus:border-rose-500 ring-2 ring-rose-200'
@@ -5119,7 +5599,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 <h4 className="text-base font-black text-[#24263e]">{title}</h4>
               </div>
               <div className="text-right">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Giá sản phẩm</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Giá niêm yết</span>
                 <span className="text-xl font-black text-[#c34c36]">{formatVND(finalPriceVnd)}</span>
               </div>
             </div>
@@ -5282,26 +5762,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               )}
             </div>
 
-            {/* Địa chỉ kho lấy hàng của người bán */}
-            <div className="pt-2 border-t border-slate-200">
-              <span className="text-xs font-bold text-slate-600 block mb-2">
-                <MapPin className="w-4 h-4 inline mr-1 text-[#c34c36]" />
-                {lang === 'vi' ? 'Địa chỉ lấy hàng người bán (Cập nhật theo thông tin người bán):' : 'Seller Pickup Location (Updated with seller profile):'}
-              </span>
-              <div className="bg-white p-3.5 rounded-xl border border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div>
-                  <div className="text-xs font-bold text-[#24263e]">
-                    {currentSellerFullAddress || (lang === 'vi' ? 'Kho hàng SecondLife' : 'SecondLife Warehouse')}
-                  </div>
-                  <div className="text-[11px] text-slate-500 mt-0.5">
-                    {lang === 'vi' ? 'Khu vực hiển thị trên tin đăng: ' : 'Display region on listing: '}
-                    <span className="font-semibold text-emerald-700">
-                      {effectiveDisplayLocation}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
+
 
           </div>
 
@@ -5530,9 +5991,19 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           )}
 
           {submitError && (
-            <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-              <span>{submitError}</span>
+            <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fadeIn">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{submitError}</span>
+              </div>
+              <button
+                type="button"
+                onClick={handleSubmitPostFinal}
+                disabled={isSubmittingPost}
+                className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shrink-0 transition cursor-pointer shadow-xs disabled:opacity-50"
+              >
+                {isSubmittingPost ? (lang === 'vi' ? 'Đang gửi...' : 'Submitting...') : (lang === 'vi' ? 'Thử lại' : 'Retry')}
+              </button>
             </div>
           )}
 

@@ -38,7 +38,8 @@ import {
   getAssessmentStatusMeta,
 } from '../../services';
 import { SystemInspectionProposalPayload } from '../../types';
-import { formatVndInput, cleanVndInput } from '../../utils/numberToWords';
+import { formatVndInput, cleanVndInput, handleVndInputChange, handleVndInputKeyDown } from '../../utils/numberToWords';
+import { UserAvatar } from '../common/UserAvatar';
 
 // In-memory cache to instantly retrieve known ChatRoom per PostId without duplicate API calls
 const postRoomCache = new Map<string, ChatRoomDto>();
@@ -148,13 +149,10 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   }, [isSeller, activeRoom, partnerName, listing.sellerName, isNameOfCurrentUser, lang]);
 
   const resolvedPartnerAvatar = useMemo(() => {
-    const defaultBuyerAvatar = "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200";
-    const defaultSellerAvatar = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200";
-
     if (isSeller) {
-      return activeRoom?.buyerAvatar || partnerAvatar || defaultBuyerAvatar;
+      return activeRoom?.buyerAvatar || partnerAvatar || null;
     } else {
-      return activeRoom?.sellerAvatar || listing.sellerAvatar || partnerAvatar || defaultSellerAvatar;
+      return activeRoom?.sellerAvatar || listing.sellerAvatar || partnerAvatar || null;
     }
   }, [isSeller, activeRoom, partnerAvatar, listing.sellerAvatar]);
 
@@ -1178,10 +1176,11 @@ export const ChatModal: React.FC<ChatModalProps> = ({
           : 'bg-gradient-to-r from-[#fce5da] to-white border-[#24263e]/15 text-[#24263e]'
           }`}>
           <div className="flex items-center gap-3 overflow-hidden">
-            <img
+            <UserAvatar
               src={resolvedPartnerAvatar}
-              alt={resolvedPartnerName}
-              className={`w-11 h-11 rounded-xl object-cover shrink-0 ${isSeller ? 'border-2 border-white/20' : 'border border-[#24263e]/20'}`}
+              name={resolvedPartnerName}
+              className={`w-11 h-11 rounded-xl shrink-0 ${isSeller ? 'border-2 border-white/20' : 'border border-[#24263e]/20'}`}
+              role={isSeller ? 'buyer' : 'seller'}
             />
             <div className="overflow-hidden">
               <div className="flex items-center gap-1.5 flex-wrap">
@@ -1890,15 +1889,21 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                   placeholder="Ví dụ: 1.200.000"
                   value={offerInput > 0 ? formatVndInput(offerInput) : ''}
                   onChange={(e) => {
-                    const cleaned = cleanVndInput(e.target.value);
-                    setOfferInput(cleaned ? Number(cleaned) : 0);
-                    if (offerError) setOfferError(null);
+                    handleVndInputChange(e, (num) => {
+                      setOfferInput(num);
+                      if (offerError) setOfferError(null);
+                    });
                   }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
                       handleSendOffer();
+                      return;
                     }
+                    handleVndInputKeyDown(e, (num) => {
+                      setOfferInput(num);
+                      if (offerError) setOfferError(null);
+                    });
                   }}
                   className={`w-full px-3 py-1.5 pr-8 border rounded-xl text-xs font-black text-[#24263e] focus:outline-none ${isSeller
                     ? 'bg-white border-blue-200 focus:border-blue-500'

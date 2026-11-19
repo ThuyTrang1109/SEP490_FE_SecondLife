@@ -43,6 +43,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { Listing, EscrowOrder, Language, UserProfile } from '../types';
+import { UserAvatar } from '../components/common/UserAvatar';
 import { formatVND } from '../utils/translations';
 import { staffService, staffListingService, adminPostService, SellerVerificationResponseDto, staffReportService, ReportItemDto, StaffOrderConfirmationResponse } from '../services';
 import { dialogService } from '../utils/dialogService';
@@ -638,13 +639,11 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
           {/* User Block */}
           <div className="p-3.5 sm:p-4 border-b border-[#24263e]/15 flex items-center gap-3">
             <div className="relative shrink-0">
-              <div className="w-10 h-10 rounded-full bg-white p-0.5 border border-[#24263e]/20 overflow-hidden">
-                <img
-                  src={currentUser?.avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80"}
-                  alt="Staff"
-                  className="w-full h-full object-cover rounded-full"
-                />
-              </div>
+              <UserAvatar
+                src={currentUser?.avatar}
+                name={currentUser?.name}
+                className="w-10 h-10 rounded-full border border-[#24263e]/20"
+              />
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-[#fce5da] absolute bottom-0 right-0"></span>
             </div>
             {!isSidebarCollapsed && (

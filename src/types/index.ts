@@ -167,6 +167,7 @@ export interface InspectionReport {
   inspectedAt: string;
   completedAt?: string;
   verdict: 'PASS' | 'FAIL';
+  overallVerdict?: 'PASS' | 'FAIL';
   status?: 'PASSED' | 'FAILED';
   detectedGrade: ConditionGrade;
   conditionScore: number; // 0 - 100

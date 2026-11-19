@@ -74,7 +74,7 @@ export function createSellerOrderActions({
       message: lang === 'vi'
         ? (orderHasInspection
           ? (isFeeSplit
-            ? `Xác nhận đồng ý yêu cầu kiểm định! Đơn hàng áp dụng chia phí (50/50), bạn sẽ nộp phần phí ${formatVND(sellerFee)} từ Ví SecondLife vào Escrow.`
+            ? `Xác nhận đồng ý yêu cầu kiểm định! Bạn sẽ nộp phần phí ${formatVND(sellerFee)} từ Ví SecondLife vào Escrow.`
             : 'Xác nhận đồng ý yêu cầu kiểm định của người mua! Hệ thống sẽ tạo mã QR kiểm định để bạn dán lên kiện hàng gửi sang Hub (hoặc KTV quét khi đến nhà).')
           : 'Xác nhận bạn chấp nhận chuẩn bị đơn hàng này cho người mua?')
         : (orderHasInspection
@@ -141,6 +141,7 @@ export function createSellerOrderActions({
             sellerPaidAt: inspResp?.sellerPaidAt || targetOrder.sellerPaidAt,
             buyerPaidAt: inspResp?.buyerPaidAt || targetOrder.buyerPaidAt,
             feePayer: inspResp?.feePayer || targetOrder.feePayer,
+            buyerFeePercent: inspResp?.buyerFeePercent ?? targetOrder.buyerFeePercent,
             inspectorId: undefined,
             inspectorName: undefined,
           } as any as EscrowOrder) : null;
@@ -170,6 +171,7 @@ export function createSellerOrderActions({
                     status: nextBackendStatus,
                     paymentDeadline: inspResp?.paymentDeadline || o.paymentDeadline,
                     sellerFeeShare: inspResp?.sellerFeeShare !== undefined ? Number(inspResp.sellerFeeShare) : o.sellerFeeShare,
+                    buyerFeePercent: inspResp?.buyerFeePercent ?? o.buyerFeePercent,
                     buyerFeeShare: inspResp?.buyerFeeShare !== undefined ? Number(inspResp.buyerFeeShare) : o.buyerFeeShare,
                     cashShippingSimulation: inspResp?.cashShippingSimulation ?? o.cashShippingSimulation,
                     buyerCommitmentDeposit: inspResp?.buyerCommitmentDeposit ?? o.buyerCommitmentDeposit,

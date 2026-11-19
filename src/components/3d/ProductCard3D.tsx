@@ -10,6 +10,8 @@ import { reviewService } from '../../data/mockReviews';
 
 interface ProductCard3DProps {
   item: Listing;
+  conditionLabel?: string;
+  sellerAddress?: string | null;
   lang: Language;
   onSelectListing: (listing: Listing) => void;
   onOpen3DViewer?: (listing: Listing) => void;
@@ -17,6 +19,8 @@ interface ProductCard3DProps {
 
 export const ProductCard3D: React.FC<ProductCard3DProps> = ({
   item,
+  conditionLabel,
+  sellerAddress,
   lang,
   onSelectListing,
   onOpen3DViewer
@@ -35,9 +39,7 @@ export const ProductCard3D: React.FC<ProductCard3DProps> = ({
   }, [item]);
 
   const displayLocation =
-    extractWardAndCity(item.sellerAddress || item.location) ||
-    item.location ||
-    item.sellerAddress ||
+    extractWardAndCity(sellerAddress) ||
     (lang === 'vi' ? 'Chưa cập nhật địa chỉ' : 'Address not updated');
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -63,12 +65,6 @@ export const ProductCard3D: React.FC<ProductCard3DProps> = ({
     setIsHovered(false);
     setRotateX(0);
     setRotateY(0);
-  };
-
-  const getConditionLabel = () => {
-    if (item.conditionGrade === 'Like New') return lang === 'vi' ? 'Như mới (99%)' : 'Like New (99%)';
-    if (item.conditionGrade === 'Good') return lang === 'vi' ? 'Tốt (95%)' : 'Good (95%)';
-    return lang === 'vi' ? 'Khá (90%)' : 'Fair (90%)';
   };
 
   // Lấy dữ liệu đánh giá thực tế từ kho lưu trữ review thật
@@ -123,11 +119,11 @@ export const ProductCard3D: React.FC<ProductCard3DProps> = ({
 
         {/* Top Badges */}
         <div className="absolute top-2 left-2 flex items-center gap-1 z-20 flex-wrap">
-          <span
+          {conditionLabel && <span
             className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9.5px] font-bold bg-[#24263e]/85 text-white backdrop-blur-md shadow-xs"
           >
-            {getConditionLabel()}
-          </span>
+            {conditionLabel}
+          </span>}
 
           {item.isInspectionGuaranteed && (
             <span
@@ -149,7 +145,7 @@ export const ProductCard3D: React.FC<ProductCard3DProps> = ({
             <span className="font-bold text-[#24263e] uppercase tracking-wide truncate max-w-[120px]">
               {(item.brand && item.brand !== 'SecondLife' && item.brand !== 'Hãng' ? item.brand : item.itemName || 'Chính hãng')} • {item.purchaseYear}
             </span>
-            <span className="flex items-center gap-0.5 text-[#24263e]/70 font-medium shrink-0 max-w-[130px] truncate" title={item.sellerAddress || item.location || displayLocation}>
+            <span className="flex items-center gap-0.5 text-[#24263e]/70 font-medium shrink-0 max-w-[130px] truncate" title={displayLocation}>
               <MapPin className="w-2.5 h-2.5 text-[#24263e] shrink-0" />
               <span className="truncate">{displayLocation}</span>
             </span>

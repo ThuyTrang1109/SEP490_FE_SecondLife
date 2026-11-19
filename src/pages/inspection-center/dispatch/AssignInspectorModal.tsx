@@ -15,6 +15,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { formatVND } from '../../../utils/translations';
+import { isInspectorAssignmentLocked } from '../../../utils/inspectionCenterData';
 import type { CenterTab } from '../types';
 import type { useCenterAppointments } from './useCenterAppointments';
 import type { useCenterDispatchQueue } from './useCenterDispatchQueue';
@@ -30,6 +31,8 @@ interface Props {
   isOrderReceivedAtHub: ReturnType<typeof useCenterShipments>['isOrderReceivedAtHub'];
   setActiveTab: (tab: CenterTab) => void;
   staffList: ReturnType<typeof useCenterStaff>['staffList'];
+  isLoadingStaff: boolean;
+  staffLoadError: string | null;
   staffWorkloadMap: ReturnType<typeof useCenterDispatchQueue>['staffWorkloadMap'];
   assignment: Pick<ReturnType<typeof useInspectorAssignment>,
     | 'assignError'
@@ -51,6 +54,8 @@ export function AssignInspectorModal({
   isOrderReceivedAtHub,
   setActiveTab,
   staffList,
+  isLoadingStaff,
+  staffLoadError,
   staffWorkloadMap,
   assignment,
 }: Props) {
@@ -171,34 +176,6 @@ export function AssignInspectorModal({
           </div>
         )}
 
-        {/* Thông báo điều kiện nhận hàng đối với đơn tại Hub */}
-        {assignModalOrder.orderType !== 'AT_HOME' && !isOrderReceivedAtHub(assignModalOrder) && (
-          <div className="p-3.5 bg-amber-50 rounded-xl border border-amber-300 text-xs text-amber-950 flex flex-col gap-2.5 animate-fadeIn">
-            <div className="flex items-start gap-2.5">
-              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-              <div className="space-y-0.5">
-                <div className="font-bold text-amber-900">Kiện hàng chưa được tiếp nhận tại Lab Hub</div>
-                <p className="text-[11px] text-amber-800 leading-relaxed">
-                  Đơn kiểm định tại trạm Lab Hub cần nhận kiện hàng thực tế trước khi phân công KTV đo kiểm. Nếu bưu tá vừa bàn giao kiện hàng đến quầy, bạn có thể bấm xác nhận nhận hàng ngay bên dưới để mở khóa giao task.
-                </p>
-              </div>
-            </div>
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={() => {
-                  handleReceivePackageAtHub(assignModalOrder.id, assignModalOrder.postTitle);
-                  setAssignModalOrder((prev) => (prev ? { ...prev, status: 'CONFIRMED_PENDING_DISPATCH' } : null));
-                }}
-                className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 transition cursor-pointer shadow-xs"
-              >
-                <PackageCheck className="w-3.5 h-3.5" />
-                <span>Xác Nhận Đã Nhận Hàng Tại Hub Ngay</span>
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* Chi tiết lịch hẹn đối với đơn kiểm định tại nhà */}
         {assignModalOrder.orderType === 'AT_HOME' && (
           (() => {
@@ -284,7 +261,11 @@ export function AssignInspectorModal({
               </span>
             </label>
 
-            {staffList.length === 0 ? (
+            {isLoadingStaff ? (
+              <p className="text-xs text-slate-500">Đang tải danh sách kỹ thuật viên...</p>
+            ) : staffLoadError ? (
+              <p role="alert" className="text-xs text-rose-700">{staffLoadError}</p>
+            ) : staffList.length === 0 ? (
               <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-800 font-medium">
                 Trung tâm chưa có kỹ thuật viên nào. Vui lòng cấp tài khoản ở trang{' '}
                 <button
@@ -307,10 +288,10 @@ export function AssignInspectorModal({
                 >
                   <option value="">-- Chọn kỹ thuật viên --</option>
                   {staffList.map((st) => {
-                    const count = staffWorkloadMap[st.id] || 0;
+                    const count = staffWorkloadMap ? staffWorkloadMap[st.id] ?? 0 : null;
                     return (
                       <option key={st.id} value={st.id}>
-                        {st.fullName} ({st.email}) — Đang có {count} task
+                        {st.fullName} ({st.email}){count === null ? '' : ` — Đang có ${count} task`}
                       </option>
                     );
                   })}
@@ -360,6 +341,31 @@ export function AssignInspectorModal({
             return null;
           })();
           const isAtHomeMissingAppt = assignModalOrder.orderType === 'AT_HOME' && !modalApptTime;
+          const isApptConfirmed = Boolean(
+            assignModalOrder.appointmentStatus === 'CONFIRMED' ||
+            assignModalOrder.status === 'CONFIRMED_PENDING_DISPATCH' ||
+            assignModalOrder.status === 'ASSIGNED' ||
+            assignModalOrder.inspectorId ||
+            Boolean(modalApptTime && assignModalOrder.appointmentStatus !== 'REJECTED' && assignModalOrder.appointmentStatus !== 'COUNTERED_BY_CENTER' && assignModalOrder.appointmentStatus !== 'PENDING_CENTER_CONFIRMATION') ||
+            (() => {
+              if (typeof window !== 'undefined') {
+                try {
+                  const raw = localStorage.getItem(`order_appointment_${assignModalOrder.id}`);
+                  if (raw) {
+                    const parsed = JSON.parse(raw);
+                    return parsed.status === 'CONFIRMED' || Boolean(parsed.scheduledAt && parsed.status !== 'REJECTED' && parsed.status !== 'COUNTERED_BY_CENTER' && parsed.status !== 'PENDING_CENTER_CONFIRMATION');
+                  }
+                } catch { }
+              }
+              return false;
+            })()
+          );
+          const isAssignmentLocked = isInspectorAssignmentLocked(assignModalOrder);
+          const isAssignDisabled = isAssigning || isLoadingStaff || Boolean(staffLoadError)
+            || !staffList.some((staff) => staff.id === selectedInspectorId)
+            || assignModalOrder.status === 'CANCELLED' || assignModalOrder.status === 'CANCELED'
+            || isAtHomeMissingAppt
+            || isAssignmentLocked;
 
           return (
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-3 border-t border-gray-100">
@@ -368,6 +374,11 @@ export function AssignInspectorModal({
                   <span className="text-rose-600 font-semibold flex items-center gap-1">
                     <XCircle className="w-3.5 h-3.5" />
                     Đơn kiểm định đã bị hủy
+                  </span>
+                ) : isAssignmentLocked ? (
+                  <span className="text-amber-800 font-semibold flex items-center gap-1">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                    KTV đã nhận đơn / đang kiểm định • Đã khóa đổi KTV
                   </span>
                 ) : assignModalOrder.status === 'WAITING_SELLER_APPROVAL' ? (
                   <span className="text-purple-700 font-semibold flex items-center gap-1">
@@ -378,11 +389,6 @@ export function AssignInspectorModal({
                   <span className="text-amber-700 font-semibold flex items-center gap-1">
                     <Clock className="w-3.5 h-3.5 text-amber-600 animate-spin" />
                     Chờ người bán hẹn lịch
-                  </span>
-                ) : assignModalOrder.orderType !== 'AT_HOME' && !isOrderReceivedAtHub(assignModalOrder) ? (
-                  <span className="text-amber-700 font-semibold flex items-center gap-1">
-                    <Package className="w-3.5 h-3.5" />
-                    Chờ nhận hàng tại Hub
                   </span>
                 ) : !selectedInspectorId ? (
                   <span className="text-rose-600 font-semibold">
@@ -397,7 +403,8 @@ export function AssignInspectorModal({
               </div>
 
               <div className="flex items-center justify-end gap-2 flex-wrap">
-                {assignModalOrder.orderType === 'AT_HOME' && (
+                {/* Khi lịch hẹn đã chốt (isApptConfirmed), không cho phép đổi lịch hẹn nữa */}
+                {assignModalOrder.orderType === 'AT_HOME' && !isApptConfirmed && (
                   <button
                     type="button"
                     onClick={() => {
@@ -427,30 +434,18 @@ export function AssignInspectorModal({
                 <button
                   type="button"
                   onClick={handleConfirmAssign}
-                  disabled={
-                    isAssigning ||
-                    !selectedInspectorId ||
-                    assignModalOrder.status === 'CANCELLED' ||
-                    assignModalOrder.status === 'CANCELED' ||
-                    isAtHomeMissingAppt ||
-                    (assignModalOrder.orderType !== 'AT_HOME' && !isOrderReceivedAtHub(assignModalOrder))
-                  }
-                  className={`px-5 py-2.5 rounded-xl text-xs font-extrabold transition flex items-center justify-center gap-2 shadow-md ${isAssigning ||
-                    !selectedInspectorId ||
-                    assignModalOrder.status === 'CANCELLED' ||
-                    assignModalOrder.status === 'CANCELED' ||
-                    isAtHomeMissingAppt ||
-                    (assignModalOrder.orderType !== 'AT_HOME' && !isOrderReceivedAtHub(assignModalOrder))
+                  disabled={isAssignDisabled}
+                  className={`px-5 py-2.5 rounded-xl text-xs font-extrabold transition flex items-center justify-center gap-2 shadow-md ${isAssignDisabled
                     ? 'bg-gray-300 text-gray-500 cursor-not-allowed opacity-60'
                     : 'bg-[#c34c36] hover:bg-[#a63f2d] text-white cursor-pointer'
                     }`}
                   title={
                     assignModalOrder.status === 'CANCELLED' || assignModalOrder.status === 'CANCELED'
                       ? 'Đơn hàng đã bị hủy, không thể giao task'
-                      : isAtHomeMissingAppt
-                        ? 'Người bán chưa chọn lịch hẹn tại nhà. Bạn cần đợi người bán đặt lịch trước khi phân công KTV.'
-                        : assignModalOrder.orderType !== 'AT_HOME' && !isOrderReceivedAtHub(assignModalOrder)
-                          ? 'Hub chưa nhận được hàng thực tế từ người bán, vui lòng bấm "Xác Nhận Đã Nhận Hàng Tại Hub" trước khi giao task'
+                      : isAssignmentLocked
+                        ? 'Kỹ thuật viên đã xác nhận đơn hoặc đang đo kiểm thiết bị. Quyền đổi KTV đã bị khóa.'
+                        : isAtHomeMissingAppt
+                          ? 'Người bán chưa chọn lịch hẹn tại nhà. Bạn cần đợi người bán đặt lịch trước khi phân công KTV.'
                           : 'Xác nhận phân công KTV'
                   }
                 >
@@ -458,10 +453,10 @@ export function AssignInspectorModal({
                   <span>
                     {assignModalOrder.status === 'CANCELLED' || assignModalOrder.status === 'CANCELED'
                       ? 'Đã Hủy - Không Thể Giao'
-                      : isAtHomeMissingAppt
-                        ? 'Chờ Người Bán Hẹn Lịch'
-                        : assignModalOrder.orderType !== 'AT_HOME' && !isOrderReceivedAtHub(assignModalOrder)
-                          ? 'Chờ Nhận Hàng Tại Hub Để Giao Task'
+                      : isAssignmentLocked
+                        ? 'Đã Khóa Đổi KTV'
+                        : isAtHomeMissingAppt
+                          ? 'Chờ Người Bán Hẹn Lịch'
                           : assignModalOrder.orderType === 'AT_HOME'
                             ? 'Xác Nhận & Giao Task Cho KTV'
                             : 'Xác nhận phân công'}

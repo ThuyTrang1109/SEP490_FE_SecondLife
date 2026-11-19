@@ -4,6 +4,7 @@ import { ApiError, isUserIdle } from '../../services/apiClient';
 import { notificationWsClient } from '../../services/notificationWsClient';
 import { shippingService } from '../../services/shippingService';
 import { getLatestInboundShipment } from '../../utils/inspectionCenterData';
+import { getInspectionPurchaseDecision } from '../../utils/inspectionPurchase';
 import { getOrderAllShipments, isHubInboundInProgress } from '../../utils/orders/shipmentCache';
 
 interface Options {
@@ -41,6 +42,7 @@ export function useOrderInboundShipments({
     return map;
   });
   const [inboundLoadingOrders, setInboundLoadingOrders] = useState<ReadonlySet<string>>(new Set());
+  const [, setDeliveryCacheVersion] = useState(0);
 
   const saveSellerInboundShipment = React.useCallback((orderId: string, shipment: ShipmentBackend | null) => {
     if (typeof window !== 'undefined' && orderId) {
@@ -76,9 +78,16 @@ export function useOrderInboundShipments({
   const sellerInboundOrderKey = userId
     ? userOrders
       .filter((order) => order.id !== trackingOrderId && order.id !== createShipmentOrderId &&
-        isHubInboundInProgress(order))
+        order.inspectionMethod !== 'AT_HOME' && isHubInboundInProgress(order))
       .map((order) => order.id).sort().join(',')
     : '';
+  const atHomeDeliveryKey = JSON.stringify(userId ? userOrders
+    .filter((order) => order.id !== trackingOrderId && order.id !== createShipmentOrderId &&
+      order.inspectionMethod === 'AT_HOME' && !order.shippingDeliveredAt &&
+      !['COMPLETED_RELEASED', 'DELIVERED_INSPECTION_WINDOW', 'CANCELLED', 'REFUNDED_TO_BUYER'].includes(order.escrowStatus) &&
+      (getInspectionPurchaseDecision(order) === 'accepted' || order.inspectionStatus === 'DELIVERING_TO_BUYER'))
+    .map(({ id, linkedOrderId, inspectionOrderId }) => ({ id, purchaseId: linkedOrderId || id, inspectionOrderId }))
+    : []);
 
   const prevUserIdForInboundRef = React.useRef<string | null>(userId || null);
   React.useEffect(() => {
@@ -90,13 +99,15 @@ export function useOrderInboundShipments({
   }, [userId]);
 
   React.useEffect(() => {
-    if (!sellerInboundOrderKey) {
+    const inboundIds = sellerInboundOrderKey ? sellerInboundOrderKey.split(',') : [];
+    const atHomeOrders: Array<{ id: string; purchaseId: string; inspectionOrderId?: string | null }> = JSON.parse(atHomeDeliveryKey);
+    const targets = [...inboundIds.map((id) => ({ id, purchaseId: null, inspectionOrderId: null })), ...atHomeOrders];
+    if (targets.length === 0) {
       setInboundLoadingOrders(new Set());
       return;
     }
-    const orderIds = sellerInboundOrderKey.split(',');
     setInboundLoadingOrders((prev) => {
-      const pendingIds = orderIds.filter((id) => !sellerInboundShipments.has(id));
+      const pendingIds = inboundIds.filter((id) => !sellerInboundShipments.has(id));
       if (pendingIds.length === 0) return prev;
       return new Set([...prev, ...pendingIds]);
     });
@@ -108,9 +119,28 @@ export function useOrderInboundShipments({
       refreshing = true;
       let nextIndex = 0;
       const read = async () => {
-        while (!controller.signal.aborted && !document.hidden && nextIndex < orderIds.length) {
-          const orderId = orderIds[nextIndex++];
+        while (!controller.signal.aborted && !document.hidden && nextIndex < targets.length) {
+          const { id: orderId, purchaseId, inspectionOrderId } = targets[nextIndex++];
           try {
+            if (purchaseId) {
+              const shipments = await shippingService.getOrderShipments(purchaseId, {
+                signal: controller.signal,
+                isBackground: true,
+              });
+              if (controller.signal.aborted) continue;
+
+              const raw = JSON.stringify(shipments);
+              let changed = false;
+              for (const id of new Set([orderId, purchaseId, inspectionOrderId])) {
+                if (!id) continue;
+                const key = `sl_order_shipments_${id}`;
+                if (localStorage.getItem(key) === raw) continue;
+                localStorage.setItem(key, raw);
+                changed = true;
+              }
+              if (changed) setDeliveryCacheVersion((previous) => previous + 1);
+              continue;
+            }
             const shipments = await shippingService.getInspectionShipments(orderId, {
               signal: controller.signal,
               isBackground: true,
@@ -125,7 +155,7 @@ export function useOrderInboundShipments({
               saveSellerInboundShipment(orderId, getLatestInboundShipment(shipments));
             }
           } catch (error) {
-            if (!controller.signal.aborted && error instanceof ApiError && [403, 404].includes(error.status)) {
+            if (!purchaseId && !controller.signal.aborted && error instanceof ApiError && [403, 404].includes(error.status)) {
               saveSellerInboundShipment(orderId, null);
             }
           } finally {
@@ -141,7 +171,7 @@ export function useOrderInboundShipments({
         }
       };
       try {
-        await Promise.all(Array.from({ length: Math.min(3, orderIds.length) }, read));
+        await Promise.all(Array.from({ length: Math.min(3, targets.length) }, read));
       } finally {
         refreshing = false;
       }
@@ -166,7 +196,7 @@ export function useOrderInboundShipments({
       document.removeEventListener('visibilitychange', refresh);
       unsubWs();
     };
-  }, [userId, sellerInboundOrderKey, saveSellerInboundShipment]);
+  }, [userId, sellerInboundOrderKey, atHomeDeliveryKey, saveSellerInboundShipment]);
 
   const getOrderInboundShipment = React.useCallback((order: EscrowOrder | null | undefined): ShipmentBackend | null => {
     if (!order?.id) return null;

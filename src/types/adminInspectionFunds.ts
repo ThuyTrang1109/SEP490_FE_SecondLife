@@ -42,12 +42,16 @@ export interface AdminReturnReserveDTO {
 }
 
 export interface AdminSettlementDTO {
+  outcome?: string | null;
   centerPayoutAmount?: number | null;
+  sellerAdditionalCollected?: number | null;
+  sellerOutstandingAmount?: number | null;
   buyerRefundAmount?: number | null;
   sellerRefundAmount?: number | null;
   sellerCompensationAmount?: number | null;
   platformRetainedAmount?: number | null;
   settledAt?: string | null;
+  returnShippingSettledAt?: string | null;
 }
 
 export interface AdminFundShipmentDTO {
@@ -79,6 +83,7 @@ export interface AdminInspectionOrderFundsDTO {
   cashShippingSimulation?: boolean;
   outboundCashPendingAmount?: number | null;
   returnReserve?: AdminReturnReserveDTO | null;
+  buyerFeePercent?: number;
   inspectionFeeSplit?: string | null;
   feeSplit?: string | null;
   settlement?: AdminSettlementDTO | null;

@@ -62,6 +62,8 @@ import { translateSystemNotification } from '../utils/systemNotificationTranslat
 import { getInspectionRemoteMediaUrl, isInspectionProofImage } from '../utils/inspectionDecisionData';
 import { markListingInspectionPassed } from '../utils/listingInspection';
 import { getAtHomeIntakeCode } from '../components/inspection/AtHomeIntakeBarcode';
+import { getOrderSellerAddress, getOrderSellerName, getOrderSellerPhone } from './inspection-center/dispatch/orderContacts';
+import { canInspectorCheckIn, getOrderScheduledAppointmentTime } from '../utils/inspectionAppointmentTime';
 
 interface ProductInspectionStationViewProps {
   orders: EscrowOrder[];
@@ -260,6 +262,25 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
   }, [activeOrder?.id]);
 
   const [arrivedSignalTime, setArrivedSignalTime] = useState<string | null>(null);
+  const scheduledApptTime = useMemo(() => {
+    return getOrderScheduledAppointmentTime(activeOrder);
+  }, [activeOrder]);
+
+  const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTimeMs(Date.now()), 15000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const checkInEligibility = useMemo(() => {
+    if (!isAtHomeOrder || !scheduledApptTime) {
+      return { allowed: true, earliestCheckInTime: null, minutesUntilCheckIn: 0 };
+    }
+    return canInspectorCheckIn(scheduledApptTime, currentTimeMs);
+  }, [isAtHomeOrder, scheduledApptTime, currentTimeMs]);
+
+  const isCheckInTooEarly = Boolean(isAtHomeOrder && scheduledApptTime && !arrivedSignalTime && !checkInEligibility.allowed);
+
   const isInspectorArrived = activeOrder ? Boolean(
     arrivedSignalTime ||
     (typeof window !== 'undefined' && (
@@ -365,35 +386,38 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
           sellerName: parsed.sellerName,
         };
       }
-    } catch {}
+    } catch { }
     return null;
   }, [activeOrder?.id]);
 
   const resolvedSellerAddress = useMemo(() => {
     return (
+      getOrderSellerAddress(activeOrder) ||
       assignedSellerInfo?.sellerAddress ||
       (activeOrder as any)?.sellerAddress ||
       activeOrder?.listing?.location ||
       (activeOrder as any)?.listing?.sellerAddress ||
-      'Ngã tư Công Lý – Einstein, Công Lý, Phường Thủ Đức, Thành phố Hồ Chí Minh'
+      'Kho người bán (Đang cập nhật địa chỉ)'
     );
   }, [assignedSellerInfo, activeOrder]);
 
   const resolvedSellerPhone = useMemo(() => {
     return (
+      getOrderSellerPhone(activeOrder) ||
       assignedSellerInfo?.sellerPhone ||
       (activeOrder as any)?.sellerPhone ||
       (activeOrder as any)?.seller?.phone ||
-      '0918 234 567'
+      'Chưa cập nhật SĐT'
     );
   }, [assignedSellerInfo, activeOrder]);
 
   const resolvedSellerName = useMemo(() => {
     return (
+      getOrderSellerName(activeOrder) ||
       assignedSellerInfo?.sellerName ||
       (activeOrder as any)?.sellerName ||
       activeOrder?.sellerName ||
-      'Thị Thùy Trang Nguyễn'
+      'Người bán'
     );
   }, [assignedSellerInfo, activeOrder]);
   const [isDigitalSigned, setIsDigitalSigned] = useState(false);
@@ -728,7 +752,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
               }
             }
           }
-        } catch {}
+        } catch { }
       }
     }
 
@@ -769,6 +793,16 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
 
   // Tiếp nhận việc (KTV xác nhận sau khi đã tìm thấy đơn)
   const handleAcceptTask = (order: EscrowOrder, inputCode?: string) => {
+    const isAtHome = order.inspectionMethod === 'AT_HOME' || (order as any).orderType === 'AT_HOME';
+    const apptTime = getOrderScheduledAppointmentTime(order);
+    if (isAtHome && apptTime) {
+      const eligibility = canInspectorCheckIn(apptTime);
+      if (!eligibility.allowed) {
+        notify(eligibility.reason || 'Kỹ thuật viên chỉ được ấn xác nhận đơn trước giờ hẹn tối đa 30 phút!', true);
+        return;
+      }
+    }
+
     playScanBeep();
     markInspectorArrival(order.id, order);
 
@@ -778,16 +812,13 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
       checkInCode: inputCode || order.id,
     };
     inspectorService.startInspection(order.id, startPayload)
-      .then((updatedOrder) => {
-        if (updatedOrder) {
-          onResultSaved?.(updatedOrder);
-        }
+      .then(() => {
+        // Tiếp nhận và bắt đầu đo kiểm thành công, giữ KTV tại bàn kiểm tra
       })
       .catch((err) => {
         console.warn('Backend startInspection error:', err);
       });
 
-    const isAtHome = order.inspectionMethod === 'AT_HOME' || (order as any).orderType === 'AT_HOME';
     notify(
       isAtHome
         ? `[Xác Nhận Thành Công] Kỹ thuật viên đã tiếp nhận đơn #${order.id.slice(0, 8)}. Hệ thống đã đồng bộ trạng thái bên người bán!`
@@ -817,6 +848,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
         localStorage.setItem(`at_home_inspector_arrived_${id}`, arrivedAt);
         localStorage.setItem(`order_inspecting_${id}`, 'true');
         localStorage.setItem(`inspection_status_${id}`, 'INSPECTING');
+        localStorage.setItem(`order_confirmed_by_inspector_${id}`, 'true');
       });
 
       // Cập nhật recent_placed_orders
@@ -841,7 +873,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
             localStorage.setItem('recent_placed_orders', JSON.stringify(updated));
           }
         }
-      } catch {}
+      } catch { }
 
       // Cập nhật my_seller_inspection_orders
       try {
@@ -865,7 +897,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
             localStorage.setItem('my_seller_inspection_orders', JSON.stringify(updated));
           }
         }
-      } catch {}
+      } catch { }
 
       // Kích hoạt đồng bộ cross-tab realtime qua storage key chuyên dụng
       localStorage.setItem('secondlife_inspector_arrived_sync', JSON.stringify({
@@ -889,6 +921,16 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
 
   // Xác thực mã tiếp nhận tại nhà từ Người bán đưa cho KTV
   const handleVerifyAtHomeIntake = (order: EscrowOrder) => {
+    const isAtHome = order.inspectionMethod === 'AT_HOME' || (order as any).orderType === 'AT_HOME';
+    const apptTime = getOrderScheduledAppointmentTime(order);
+    if (isAtHome && apptTime) {
+      const eligibility = canInspectorCheckIn(apptTime);
+      if (!eligibility.allowed) {
+        notify(eligibility.reason || 'Kỹ thuật viên chỉ được ấn xác nhận đơn trước giờ hẹn tối đa 30 phút!', true);
+        return;
+      }
+    }
+
     const entered = (atHomeVerifyInput || '').trim().toLowerCase();
     const expectedIntake = getAtHomeIntakeCode(order.id).toLowerCase();
     const shortId = order.id.slice(0, 8).toLowerCase();
@@ -1626,12 +1668,26 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                   {!isInspectorArrived && !isCompletedOrder && (
                     <button
                       type="button"
-                      onClick={() => handleAcceptTask(activeOrder, barcodeScanInput)}
-                      className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-black rounded-xl flex items-center gap-1.5 shadow-md transition cursor-pointer"
-                      title="Xác nhận tiếp nhận đơn hàng và bắt đầu kiểm định"
+                      disabled={isCheckInTooEarly}
+                      onClick={() => {
+                        if (isCheckInTooEarly) {
+                          notify(checkInEligibility.reason || 'Kỹ thuật viên chỉ được ấn xác nhận đơn trước giờ hẹn tối đa 30 phút!', true);
+                          return;
+                        }
+                        handleAcceptTask(activeOrder, barcodeScanInput);
+                      }}
+                      className={`px-4 py-2 text-white text-xs font-black rounded-xl flex items-center gap-1.5 shadow-md transition ${isCheckInTooEarly
+                        ? 'bg-slate-400 hover:bg-slate-400 cursor-not-allowed opacity-80'
+                        : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 cursor-pointer active:scale-95'
+                        }`}
+                      title={isCheckInTooEarly ? checkInEligibility.reason : 'Xác nhận tiếp nhận đơn hàng và bắt đầu kiểm định'}
                     >
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>Xác Nhận Đơn</span>
+                      {isCheckInTooEarly ? (
+                        <Clock className="w-3.5 h-3.5 text-amber-200" />
+                      ) : (
+                        <CheckCircle2 className="w-3.5 h-3.5 stroke-[2.5]" />
+                      )}
+                      <span>{isCheckInTooEarly ? 'Chưa Đến Giờ Nhận Đơn (Mở trước 30p)' : 'Xác Nhận Đơn'}</span>
                     </button>
                   )}
                   {isInspectorArrived && (
@@ -1734,78 +1790,25 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                     💬 <strong>Ghi chú đón KTV từ người bán:</strong> {activeOrder.appointmentNote || (activeOrder as any).note}
                   </div>
                 )}
+
+                {/* Cảnh báo khi chưa đến giờ check-in (chỉ mở trước giờ hẹn 30 phút) */}
+                {isCheckInTooEarly && (
+                  <div className="p-3 bg-amber-100/90 border border-amber-300 rounded-xl text-xs text-amber-950 flex items-start gap-2.5 shadow-2xs animate-fadeIn">
+                    <Clock className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                    <div className="space-y-0.5">
+                      <div className="font-black text-amber-900 flex items-center gap-1.5">
+                        <span>Chưa Đến Giờ Nhận Đơn (Chỉ mở trước giờ hẹn tối đa 30 phút)</span>
+                      </div>
+                      <p className="text-[11px] text-amber-800 leading-relaxed font-medium">
+                        {checkInEligibility.reason}
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              {/* Xác thực tiếp nhận thiết bị tại nhà (Nhập hoặc Quét mã vạch Người Bán) */}
-              {!isInspectorArrived ? (
-                <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-50 via-orange-50/60 to-amber-50 border-2 border-amber-300 text-amber-950 space-y-3.5 shadow-xs">
-                  <div className="flex items-center justify-between gap-3 flex-wrap">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-9 h-9 rounded-xl bg-amber-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-                        <Barcode className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h4 className="font-black text-sm text-amber-950 flex items-center gap-2">
-                          <span>Đã Tìm Thấy Đơn Hàng • Sẵn Sàng Tiếp Nhận</span>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 border border-amber-300">
-                            Chờ Xác Nhận Đơn
-                          </span>
-                        </h4>
-                        <p className="text-[11px] text-amber-800 mt-0.5">
-                          Kiểm tra thông tin thiết bị và địa chỉ người bán ở trên. Bấm "Xác Nhận Đơn" để tiếp nhận và bắt đầu đo kiểm.
-                        </p>
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => handleAcceptTask(activeOrder, atHomeVerifyInput || barcodeScanInput)}
-                      className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-black rounded-xl cursor-pointer shadow-md transition flex items-center justify-center gap-2 shrink-0"
-                    >
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span>Xác Nhận Đơn &amp; Bắt Đầu Kiểm Tra</span>
-                    </button>
-                  </div>
-
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-2 border-t border-amber-200/80">
-                    <div className="relative flex-1">
-                      <input
-                        type="text"
-                        value={atHomeVerifyInput}
-                        onChange={(e) => setAtHomeVerifyInput(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            handleVerifyAtHomeIntake(activeOrder);
-                          }
-                        }}
-                        placeholder={`Mã tiếp nhận Người bán (tùy chọn: ${getAtHomeIntakeCode(activeOrder.id)})...`}
-                        className="w-full px-3.5 py-2 bg-white border border-amber-300 rounded-xl text-xs font-mono font-bold outline-none focus:ring-2 focus:ring-amber-500 shadow-2xs"
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setScannerMode('intake');
-                        setIsScannerOpen(true);
-                      }}
-                      className="px-3.5 py-2 bg-[#c34c36] hover:bg-[#a83b27] text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition shrink-0"
-                      title="Mở camera quét mã barcode của người bán"
-                    >
-                      <Camera className="w-3.5 h-3.5" />
-                      <span>Quét Camera</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleVerifyAtHomeIntake(activeOrder)}
-                      className="px-4 py-2 bg-[#24263e] hover:bg-black text-white text-xs font-bold rounded-xl cursor-pointer shadow-xs transition flex items-center justify-center gap-1.5 shrink-0"
-                    >
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>Xác Thực &amp; Nhận Đơn</span>
-                    </button>
-                  </div>
-                </div>
-              ) : (
+              {/* Trạng thái KTV đã đến và đang đo kiểm tại nhà */}
+              {isInspectorArrived && (
                 <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
                   <div className="flex items-center gap-2.5">
                     <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
@@ -1822,18 +1825,6 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                     <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
                       Đang Đo Kiểm
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAtHomeViewMode('WORKBENCH');
-                        if (currentStep === 'intake') setCurrentStep('exterior');
-                      }}
-                      className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-xs transition flex items-center gap-1 cursor-pointer"
-                    >
-                      <Wrench className="w-3.5 h-3.5" />
-                      <span>Đến Bàn Kiểm Tra</span>
-                      <ArrowRight className="w-3.5 h-3.5" />
-                    </button>
                   </div>
                 </div>
               )}
@@ -1904,7 +1895,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                     </div>
                     <div><strong>Tên sản phẩm:</strong> {activeOrder?.listing?.title}</div>
                     <div>
-                      <strong>Giá niêm yết:</strong>{' '}
+                      <strong>Giá sản phẩm:</strong>{' '}
                       <span className="font-mono text-[#c34c36] font-bold">
                         {formatVND(activeOrder?.itemPriceVnd || activeOrder?.listing?.priceVnd || 0)}
                       </span>
@@ -1947,33 +1938,6 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                   </div>
                 </div>
               </div>
-
-              {/* Card CTA: KTV sẵn sàng đo kiểm */}
-              {isInspectorArrived && (
-                <div className="p-4 bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 rounded-2xl border-2 border-emerald-300 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
-                  <div>
-                    <h4 className="font-black text-emerald-950 text-sm flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                      <span>Đã Xác Thực Mã Tiếp Nhận Thành Công</span>
-                    </h4>
-                    <p className="text-xs text-emerald-800 mt-0.5">
-                      Kỹ thuật viên đã có mặt tại nhà người bán. Nhấn "Đến Bàn Kiểm Tra" để bắt đầu quy trình đo kiểm, ngoại quan &amp; checklist kỹ thuật.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAtHomeViewMode('WORKBENCH');
-                      if (currentStep === 'intake') setCurrentStep('exterior');
-                    }}
-                    className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs sm:text-sm rounded-xl flex items-center justify-center gap-2 shadow-md transition cursor-pointer shrink-0"
-                  >
-                    <Wrench className="w-4 h-4" />
-                    <span>Đến Bàn Kiểm Tra</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
-                </div>
-              )}
             </div>
           ) : (
             <>
@@ -1995,17 +1959,6 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {isAtHomeOrder && (
-                    <button
-                      type="button"
-                      onClick={() => setAtHomeViewMode('INFO')}
-                      className="px-3 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 text-xs font-bold text-purple-700 border border-purple-200 flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
-                      title="Xem lại địa chỉ và số điện thoại người bán"
-                    >
-                      <Navigation className="w-3.5 h-3.5 text-purple-600" />
-                      <span>Xem Lịch &amp; Địa Chỉ Khách</span>
-                    </button>
-                  )}
                   {isCompletedOrder && (
                     <button
                       type="button"
@@ -2197,7 +2150,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                           onChange={(e) => setPackagingStatus(e.target.value as any)}
                           className={`w-full px-3.5 py-2.5 bg-white border border-gray-200 rounded-xl font-semibold outline-none focus:border-[#c34c36] shadow-2xs text-gray-800 transition ${isCompletedOrder ? 'bg-gray-100 cursor-not-allowed opacity-80' : ''}`}
                         >
-                          <option value="INTACT">Nguyên vẹn 100% - Đóng gói mút xốp / bọc chuẩn</option>
+                          <option value="INTACT">Nguyên vẹn - Đóng gói mút xốp / bọc chuẩn</option>
                           <option value="SLIGHT_DAMAGE">Bao bì / hộp hơi trầy xước nhưng máy an toàn</option>
                           <option value="HEAVY_DAMAGE">Bao bì rách nặng / Thùng móp méo có nguy cơ va đập</option>
                         </select>
@@ -2359,18 +2312,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                       )}
                     </div>
 
-                    {canUseChecklist && <div className="flex items-center gap-2">
-                      <div className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 shrink-0 flex items-center gap-1">
-                        <Check className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>{checklist.filter((c) => c.status === 'pass').length}/{checklist.length} tiêu chuẩn Đạt</span>
-                      </div>
-                      {checklist.length > 0 && checklist.every((c) => !c.mandatory || c.status !== 'pending') && (
-                        <div className="text-xs font-bold text-white bg-emerald-600 px-3 py-1 rounded-full shadow-xs flex items-center gap-1">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-white" />
-                          <span>Đã ổn tất cả tiêu chuẩn bắt buộc</span>
-                        </div>
-                      )}
-                    </div>}
+
                   </div>
 
                   {/* Checklist Items Table */}
@@ -2468,7 +2410,6 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                             disabled={isCompletedOrder}
                             value={item.testedValue || ''}
                             onChange={(e) => handleUpdateTestedValue(item.id, e.target.value)}
-                            placeholder="VD: Nhiệt độ -19.2°C, độ ồn 38dB, cách điện an toàn..."
                             className={`flex-1 px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs outline-none focus:border-[#c34c36] ${isCompletedOrder ? 'bg-gray-100 cursor-not-allowed text-gray-700' : ''}`}
                           />
                         </div>
@@ -2639,47 +2580,6 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                       )}
                     </div>
                   </div>
-
-                  {isAtHomeOrder && (
-                    <div className="p-4 rounded-2xl bg-[#faf8f5] border border-gray-200 space-y-3 text-xs">
-                      <span className="font-extrabold text-[#24263e] uppercase tracking-wider flex items-center gap-1.5">
-                        <Camera className="w-4 h-4 text-blue-600" />
-                        Bằng Chứng Video Thử Nghiệm Máy & Mở Thùng (Cloudinary / S3 URL):
-                      </span>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <label className="text-[11px] font-bold text-gray-600 block mb-1">
-                            Video Chẩn Đoán / Test Máy (Inspection Proof Video URL):
-                          </label>
-                          <input
-                            type="url"
-                            value={videoProofUrl}
-                            readOnly={isCompletedOrder}
-                            disabled={isCompletedOrder}
-                            onChange={(e) => setVideoProofUrl(e.target.value)}
-                            placeholder="https://res.cloudinary.com/.../inspection_test.mp4"
-                            className={`w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs outline-none focus:border-[#c34c36] ${isCompletedOrder ? 'bg-gray-100 cursor-not-allowed text-gray-700' : ''}`}
-                          />
-                        </div>
-
-                        <div>
-                          <label className="text-[11px] font-bold text-gray-600 block mb-1">
-                            Video Mở Thùng Đồng Kiểm (Unboxing Video URL):
-                          </label>
-                          <input
-                            type="url"
-                            value={unboxingVideoUrl}
-                            readOnly={isCompletedOrder}
-                            disabled={isCompletedOrder}
-                            onChange={(e) => setUnboxingVideoUrl(e.target.value)}
-                            placeholder="https://res.cloudinary.com/.../unboxing.mp4"
-                            className={`w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs outline-none focus:border-[#c34c36] ${isCompletedOrder ? 'bg-gray-100 cursor-not-allowed text-gray-700' : ''}`}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  )}
 
                   <div className="flex justify-between pt-3">
                     <button

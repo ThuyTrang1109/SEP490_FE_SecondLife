@@ -59,6 +59,11 @@ export function normalizeAdminInspectionFunds(raw: any): AdminInspectionOrderFun
       : null,
     settlement: raw.settlement
       ? {
+          outcome: raw.settlement.outcome || null,
+          sellerAdditionalCollected: raw.settlement.sellerAdditionalCollected != null
+            ? Number(raw.settlement.sellerAdditionalCollected) : null,
+          sellerOutstandingAmount: raw.settlement.sellerOutstandingAmount != null
+            ? Number(raw.settlement.sellerOutstandingAmount) : null,
           centerPayoutAmount:
             raw.settlement.centerPayoutAmount !== undefined && raw.settlement.centerPayoutAmount !== null
               ? Number(raw.settlement.centerPayoutAmount)
@@ -80,6 +85,7 @@ export function normalizeAdminInspectionFunds(raw: any): AdminInspectionOrderFun
               ? Number(raw.settlement.platformRetainedAmount)
               : null,
           settledAt: raw.settlement.settledAt || null,
+          returnShippingSettledAt: raw.settlement.returnShippingSettledAt || null,
         }
       : null,
     shipments: Array.isArray(raw.shipments)

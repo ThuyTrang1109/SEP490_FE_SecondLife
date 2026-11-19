@@ -1,4 +1,4 @@
-import { request, getAccessToken } from './apiClient';
+import { request, requestGet, getAccessToken } from './apiClient';
 import { SellerPostDetailDto } from '../types';
 
 export interface PostInitRequest {
@@ -59,6 +59,38 @@ export interface PostResponse {
     email?: string;
     fullName?: string;
   };
+}
+
+export type MarketplaceCondition = 'NEW' | 'LIKE_NEW' | 'USED_GOOD' | 'USED_FAIR' | 'USED';
+export type MarketplaceSort = 'newest' | 'priceAsc' | 'priceDesc';
+
+export interface MarketplaceSearchQuery {
+  q?: string;
+  categoryId?: string;
+  brand?: string;
+  condition?: MarketplaceCondition;
+  minPrice?: number;
+  maxPrice?: number;
+  location?: string;
+  inspected?: boolean;
+  sort: MarketplaceSort;
+  page: number;
+  size: number;
+}
+
+export interface MarketplacePost extends PostResponse {
+  postId: string;
+  brand?: string | null;
+  publishedAt?: string;
+  sellerAddress?: string | null;
+  isInspected?: boolean;
+}
+
+export interface MarketplaceSearchPage {
+  content: MarketplacePost[];
+  totalElements: number;
+  totalPages: number;
+  number: number;
 }
 
 export interface UpdateDraftRequest {
@@ -155,6 +187,22 @@ export const postService = {
       console.warn('Lỗi gọi /v1/posts:', err);
       return [];
     }
+  },
+
+  async searchPublicListings(query: MarketplaceSearchQuery, signal?: AbortSignal): Promise<MarketplaceSearchPage> {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined && value !== '' && value !== false) params.set(key, String(value));
+    }
+    const { data } = await requestGet<MarketplaceSearchPage>(`/v1/posts/search?${params}`, {
+      requiresAuth: false,
+      signal,
+    });
+    if (!data || !Array.isArray(data.content) || !Number.isInteger(data.totalElements) ||
+        !Number.isInteger(data.totalPages) || !Number.isInteger(data.number)) {
+      throw new Error('Invalid marketplace search response');
+    }
+    return data;
   },
 
   /**

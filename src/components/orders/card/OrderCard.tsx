@@ -4,6 +4,7 @@ import { Clock } from 'lucide-react';
 import type { EscrowOrder, Language, ShipmentBackend } from '../../../types';
 import type { ReactNode } from 'react';
 import { formatVND } from '../../../utils/translations';
+import type { SellerPayoutData } from '../../../utils/orders/orderFinance';
 import { OrderCardActions, type OrderCardActionsProps } from './OrderCardActions';
 import { OrderCardCancellation } from './OrderCardCancellation';
 import { OrderCardInspection } from './OrderCardInspection';
@@ -11,8 +12,7 @@ import { OrderCardSummary } from './OrderCardSummary';
 
 interface Props {
   order: EscrowOrder;
-  orderRatePercent: number;
-  sellerNetPayout: number;
+  payoutData?: SellerPayoutData;
   cardActions: Omit<OrderCardActionsProps, 'order' | 'orderIsSeller' | 'lang' | 'hasInspection' | 'savedAppointment' | 'buyerInspectionStage'>;
   orderIsSeller: boolean;
   hasInspection: boolean;
@@ -37,7 +37,7 @@ interface Props {
 }
 
 export function OrderCard({
-  orderRatePercent, sellerNetPayout, cardActions,
+  payoutData, cardActions,
   order: ord, orderIsSeller, hasInspection, lang, savedAppointment, ordShipment, buyerInspectionStage,
   state: { getStatusBadge, isOrderReceiptConfirmed, isOrderCancelledOrRefunded, isInspectorArrivedForOrder, isOrderSellerConfirmed },
   actions: { setSellerReviewsModalData, setSchedulingOrder, setSchedulingReadOnly, handleSellerAcceptCounterAppointment, setDetailModalOrder }
@@ -95,12 +95,14 @@ export function OrderCard({
             <span className="text-xs font-medium text-slate-500">
               {orderIsSeller
                 ? (lang === 'vi'
-                  ? `Thực nhận về ví (Đã trừ ${orderRatePercent}% phí sàn):`
-                  : `Net Payout (after ${orderRatePercent}% platform fee):`)
+                  ? (payoutData?.source === 'settlement' ? 'Thực nhận về ví:' : `Dự kiến thực nhận (phí sàn${payoutData?.ratePercent != null ? ` ${payoutData.ratePercent}%` : ''}):`)
+                  : (payoutData?.source === 'settlement' ? 'Net payout:' : `Estimated payout (platform fee${payoutData?.ratePercent != null ? ` ${payoutData.ratePercent}%` : ''}):`))
                 : (lang === 'vi' ? 'Thành tiền (đã bao gồm phí kiểm định & bảo lãnh):' : 'Total (incl. inspection & escrow guarantee):')}
             </span>
             <span className={`text-base sm:text-lg font-black ${orderIsSeller ? 'text-emerald-600' : 'text-[#24263e]'}`}>
-              {orderIsSeller ? `+${formatVND(sellerNetPayout)}` : formatVND(ord.totalPaidVnd)}
+              {orderIsSeller
+                ? (payoutData ? `+${formatVND(payoutData.sellerPayout)}` : (lang === 'vi' ? 'Chưa có dữ liệu' : 'Unavailable'))
+                : formatVND(ord.totalPaidVnd)}
             </span>
           </div>
         )}

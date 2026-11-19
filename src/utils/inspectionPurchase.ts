@@ -85,7 +85,14 @@ export function getInspectionPurchaseDecision(
 ): PurchaseDecision | null {
   const status = inspectionStatus(order, details);
   const payment = details ?? order;
-  if (payment?.finalPaymentPaidAt || payment?.linkedOrderId) return 'accepted';
+  if (
+    payment?.finalPaymentPaidAt ||
+    payment?.linkedOrderId ||
+    (order as any)?.finalPaymentPaidAt ||
+    (details as any)?.finalPaymentPaidAt ||
+    (order as any)?.inspectionDecision === 'accepted' ||
+    (order as any)?.buyerDecision === 'accepted'
+  ) return 'accepted';
 
   // The inspection API records an explicit rejection in the note and also uses CANCELLED for other reasons.
   const note = details?.note || order?.inspectionNote || (order as any)?.note;

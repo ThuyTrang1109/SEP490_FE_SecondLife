@@ -29,6 +29,7 @@ export const systemWalletService = {
     let p = 0;
     let s = 10;
     let type: string | undefined;
+    let fundCategory: SystemWalletTransactionFilter['fundCategory'];
     let hasShipping: boolean | undefined;
     let orderId: string | undefined;
 
@@ -36,6 +37,7 @@ export const systemWalletService = {
       p = pageOrFilter.page ?? 0;
       s = pageOrFilter.size ?? size ?? 10;
       type = pageOrFilter.type;
+      fundCategory = pageOrFilter.fundCategory;
       hasShipping = pageOrFilter.hasShipping;
       orderId = pageOrFilter.orderId;
     } else {
@@ -43,6 +45,7 @@ export const systemWalletService = {
       s = size ?? 10;
       if (filter) {
         type = filter.type;
+        fundCategory = filter.fundCategory;
         hasShipping = filter.hasShipping;
         orderId = filter.orderId;
       }
@@ -53,6 +56,9 @@ export const systemWalletService = {
     queryParams.set('size', String(s));
     if (type && type.trim() && type !== 'ALL') {
       queryParams.set('type', type.trim());
+    }
+    if (fundCategory) {
+      queryParams.set('fundCategory', fundCategory);
     }
     if (hasShipping !== undefined) {
       queryParams.set('hasShipping', String(hasShipping));

@@ -44,7 +44,7 @@ export const ShippingLabelModal: React.FC<ShippingLabelModalProps> = ({
       if (isMounted && list && list.length > 0) {
         setApiCenters(list);
       }
-    }).catch(() => {});
+    }).catch(() => { });
     return () => { isMounted = false; };
   }, []);
 
@@ -510,7 +510,7 @@ export const ShippingLabelModal: React.FC<ShippingLabelModalProps> = ({
                 <strong className="text-slate-900 font-bold">{weightKg} kg</strong>
               </div>
               <div className="flex items-center justify-between sm:justify-start sm:gap-2">
-                <span>Bảo hiểm hàng hóa:</span>
+                <span>Tiền hàng hóa:</span>
                 <strong className="text-slate-900 font-bold">{formatVND(order.itemPriceVnd)}</strong>
               </div>
               <div className="flex items-center justify-between sm:justify-start sm:gap-2">
@@ -534,8 +534,8 @@ export const ShippingLabelModal: React.FC<ShippingLabelModalProps> = ({
               {isSellerToCenter
                 ? 'Tài xế giao kiện hàng đến Trạm Kiểm Định SecondLife Hub. Kỹ thuật viên Hub sẽ kiểm tra nguyên trạng niêm phong, cấp phiếu tiếp nhận và tiến hành thẩm định kỹ thuật.'
                 : isCenterToBuyer
-                ? 'Giao hàng cho khách mua theo địa chỉ đã xác minh. Sản phẩm đã đạt chuẩn kiểm định và được Hub dán tem bảo đảm SecondLife. Không thu tiền mặt COD.'
-                : 'Cho khách xem hàng, không cho dùng thử. Sản phẩm SecondLife đã được niêm phong kỹ lưỡng. Chuyển hoàn về người gửi sau 3 lần giao không thành công.'}
+                  ? 'Giao hàng cho khách mua theo địa chỉ đã xác minh. Sản phẩm đã đạt chuẩn kiểm định và được Hub dán tem bảo đảm SecondLife. Không thu tiền mặt COD.'
+                  : 'Cho khách xem hàng, không cho dùng thử. Sản phẩm SecondLife đã được niêm phong kỹ lưỡng. Chuyển hoàn về người gửi sau 3 lần giao không thành công.'}
             </p>
           </div>
         </div>

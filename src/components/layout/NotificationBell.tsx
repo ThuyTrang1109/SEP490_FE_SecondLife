@@ -21,10 +21,13 @@ import { notificationService } from '../../services/notificationService';
 import { notificationWsClient } from '../../services/notificationWsClient';
 import { Language, UserProfile, UserRole } from '../../types';
 import {
+  compareNotificationsNewestFirst,
   getScopedLocalNotifications,
   isNotificationForUser,
   markScopedLocalNotificationRead,
 } from '../../utils/notificationStorage';
+
+const QUICK_NOTIFICATION_LIMIT = 6;
 
 interface NotificationBellProps {
   lang: Language;
@@ -52,6 +55,14 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
 
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  const addQuickNotification = useCallback((item: NotificationItem) => {
+    setNotifications((prev) =>
+      [item, ...prev.filter((notification) => notification.id !== item.id)]
+        .sort(compareNotificationsNewestFirst)
+        .slice(0, QUICK_NOTIFICATION_LIMIT)
+    );
+  }, []);
+
   // Load unread count scoped strictly to current user
   const loadUnreadCount = useCallback(async () => {
     if (!currentUser) {
@@ -76,7 +87,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
     }
     setIsLoading(true);
     try {
-      const res = await notificationService.getNotifications({ page: 0, size: 6 });
+      const res = await notificationService.getNotifications({ page: 0, size: 20 });
       const localNotifs = getScopedLocalNotifications(currentUser, currentRole);
       const combined = [...localNotifs, ...(res.content || [])];
       const seen = new Set<string>();
@@ -85,7 +96,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
         seen.add(n.id);
         return isNotificationForUser(n, currentUser, currentRole);
       });
-      setNotifications(unique.slice(0, 6));
+      setNotifications(unique.sort(compareNotificationsNewestFirst).slice(0, QUICK_NOTIFICATION_LIMIT));
     } catch (err) {
       console.warn('Failed to load quick notifications:', err);
     } finally {
@@ -111,7 +122,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
         setUnreadCount((prev) => prev + 1);
         setHasNewAnim(true);
         setTimeout(() => setHasNewAnim(false), 2000);
-        setNotifications((prev) => [item, ...prev.filter((n) => n.id !== item.id)].slice(0, 6));
+        addQuickNotification(item);
       }
     };
     const handleStorage = (e: StorageEvent) => {
@@ -129,7 +140,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
       window.removeEventListener('secondlife_notification', handleLocalNotif);
       window.removeEventListener('storage', handleStorage);
     };
-  }, [currentUser, currentRole, loadUnreadCount, loadQuickNotifications]);
+  }, [currentUser, currentRole, loadUnreadCount, loadQuickNotifications, addQuickNotification]);
 
   // Connect WebSocket STOMP
   useEffect(() => {
@@ -151,14 +162,13 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
       setHasNewAnim(true);
       setTimeout(() => setHasNewAnim(false), 2000);
 
-      // Prepend to current list if list is loaded
-      setNotifications((prev) => [item, ...prev.filter((n) => n.id !== item.id)].slice(0, 6));
+      addQuickNotification(item);
     });
 
     return () => {
       unsubscribe();
     };
-  }, [token, currentUser, currentRole]);
+  }, [token, currentUser, currentRole, addQuickNotification]);
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -319,7 +329,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
 
       {/* Dropdown Quick View Popover */}
       {isOpen && (
-        <div className="absolute right-0 mt-2.5 w-[360px] sm:w-[400px] max-w-[92vw] bg-[#24263e]/95 backdrop-blur-xl border border-white/20 rounded-3xl shadow-2xl text-white z-50 overflow-hidden animate-fadeIn">
+        <div className="absolute right-0 mt-2.5 w-[440px] sm:w-[500px] md:w-[540px] max-w-[95vw] bg-[#24263e]/95 backdrop-blur-xl border border-white/20 rounded-3xl shadow-2xl text-white z-50 overflow-hidden animate-fadeIn">
           {/* Popover Header */}
           <div className="p-4 border-b border-white/15 flex items-center justify-between bg-white/5">
             <div className="flex items-center gap-2">

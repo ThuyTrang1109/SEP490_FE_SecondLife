@@ -137,6 +137,7 @@ export interface ConfirmInspectionPurchaseRequest {
 
 export interface InspectionBuyerRespondRequest {
   action: 'ACCEPT' | 'REJECT' | 'COUNTER';
+  counterBuyerFeePercent?: number;
   counterFeePayer?: 'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50';
   buyerConsentZin?: boolean;
   note?: string;
@@ -149,7 +150,8 @@ export interface ReturnShippingPolicyResponse {
 export interface CreateInspectionRequest {
   postId: string;
   orderType: 'AT_HOME' | 'AT_CENTER';
-  feePayer: 'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50';
+  feePayer?: 'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50';
+  buyerFeePercent?: number;
   buyerConsentZinLoss?: boolean;
   buyerConsentZin?: boolean;
   buyerLatitude?: number;
@@ -171,6 +173,7 @@ export interface CreateInspectionRequest {
 export interface InspectionSellerRespondRequest {
   action: 'ACCEPT' | 'COUNTER' | 'REJECT';
   counterOrderType?: 'AT_HOME' | 'AT_CENTER';
+  counterBuyerFeePercent?: number;
   counterFeePayer?: 'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50';
   sellerConsentZinLoss?: boolean;
   sellerConsentZin?: boolean;
@@ -341,6 +344,9 @@ export interface InspectionOrderDto {
   buyerId?: string;
   buyerEmail?: string;
   buyerName?: string;
+  buyerPhone?: string;
+  buyerAddress?: string;
+  inspectionCenterAddress?: string;
 
   sellerId?: string;
   sellerEmail?: string;
@@ -348,6 +354,9 @@ export interface InspectionOrderDto {
 
   inspectorId?: string;
   inspectorName?: string;
+  inspectorConfirmed?: boolean;
+  inspectorConfirmedAt?: string;
+  assignmentLocked?: boolean;
 
   orderType?: 'AT_HOME' | 'AT_CENTER' | string;
   feePayer?: 'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50' | string;
@@ -365,6 +374,8 @@ export interface InspectionOrderDto {
   feeSettledAt?: string | null;
   linkedOrderId?: string | null;
 
+  buyerFeePercent?: number;
+  previousBuyerFeePercent?: number | null;
   buyerFeeShare?: number;
   sellerFeeShare?: number;
   cashShippingSimulation?: boolean;
@@ -374,6 +385,7 @@ export interface InspectionOrderDto {
   sellerPaidAt?: string;
 
   appointmentScheduledAt?: string;
+  appointmentShift?: 'MORNING' | 'AFTERNOON';
   appointmentNote?: string;
   appointmentStatus?: 'PENDING_CENTER_CONFIRMATION' | 'COUNTERED_BY_CENTER' | 'CONFIRMED' | 'REJECTED' | string;
   counterScheduledAt?: string;
@@ -505,6 +517,19 @@ export const inspectorService = {
       inspectionOrderInFlight.clear();
     }
   },
+
+  /**
+   * Đọc dữ liệu đơn kiểm định đang có sẵn trong cache (nếu còn hạn)
+   */
+  getCachedOrder(orderId?: string): InspectionOrderDto | null {
+    if (!orderId) return null;
+    const cleanId = orderId.toLowerCase();
+    const cached = inspectionOrderCache.get(cleanId);
+    if (cached && Date.now() - cached.timestamp < INSPECTION_ORDER_TTL_MS) {
+      return cached.data;
+    }
+    return null;
+  },
   // --------------------------------------------------------------------------
   // 1. BUYER & SELLER INSPECTION FLOW (/api/v1/inspection)
   // --------------------------------------------------------------------------
@@ -512,28 +537,29 @@ export const inspectorService = {
   /**
    * Lấy danh sách các Trung tâm kiểm định SecondLife Hubs
    */
-  async getInspectionCenters(): Promise<InspectionCenter[]> {
+  async getInspectionCenters(includeUnconfigured = false): Promise<InspectionCenter[]> {
     try {
       const res = await requestGet<any>('/inspection/centers', {
         requiresAuth: true,
       });
       const data = (res as any)?.data || res;
       if (Array.isArray(data)) {
-        const mapped = data
-          .filter((c: any) => c.shippingAddressConfigured !== false)
-          .map((c: any) => ({
-            id: c.id,
-            name: c.name || 'Trung Tâm Kiểm Định SecondLife',
-            city: c.city || (c.address ? c.address.split(',').pop()?.trim() : 'Hồ Chí Minh'),
-            address: c.address ?? null,
-            phone: c.phone ?? null,
-            latitude: typeof c.latitude === 'number' ? c.latitude : null,
-            longitude: typeof c.longitude === 'number' ? c.longitude : null,
-            shippingAddressConfigured: Boolean(c.shippingAddressConfigured),
-            status: 'ACTIVE',
-          }));
+        const filtered = includeUnconfigured
+          ? data
+          : data.filter((c: any) => c.shippingAddressConfigured !== false);
+        const mapped = filtered.map((c: any) => ({
+          id: c.id,
+          name: c.name || 'Trung Tâm Kiểm Định SecondLife',
+          city: c.city || (c.address ? c.address.split(',').pop()?.trim() : 'Hồ Chí Minh'),
+          address: c.address ?? null,
+          phone: c.phone ?? null,
+          latitude: typeof c.latitude === 'number' ? c.latitude : null,
+          longitude: typeof c.longitude === 'number' ? c.longitude : null,
+          shippingAddressConfigured: Boolean(c.shippingAddressConfigured),
+          status: c.shippingAddressConfigured ? 'ACTIVE' : 'PENDING_CONFIG',
+        }));
         try {
-          if (typeof window !== 'undefined' && mapped.length > 0) {
+          if (typeof window !== 'undefined' && mapped.length > 0 && !includeUnconfigured) {
             localStorage.setItem('sl_api_inspection_centers', JSON.stringify(mapped));
           }
         } catch { }
@@ -635,7 +661,8 @@ export const inspectorService = {
     const payload: any = {
       postId: data.postId,
       orderType: data.orderType === 'AT_HOME' ? 'AT_HOME' : 'AT_CENTER',
-      feePayer: data.feePayer || 'BUYER_PAYS',
+      feePayer: data.buyerFeePercent == null ? (data.feePayer ?? 'BUYER_PAYS') : undefined,
+      buyerFeePercent: data.buyerFeePercent,
       buyerLatitude: data.orderType === 'AT_HOME' ? buyerLat : undefined,
       buyerLongitude: data.orderType === 'AT_HOME' ? buyerLng : undefined,
       buyerDeliveryAddress: normalizedAddress,
@@ -687,6 +714,7 @@ export const inspectorService = {
     const payload = {
       action: data.action,
       counterFeePayer: data.counterFeePayer,
+      counterBuyerFeePercent: data.counterBuyerFeePercent,
       buyerConsentZin: data.action === 'ACCEPT' ? (data.buyerConsentZin ?? true) : undefined,
       note: data.note || undefined,
     };
@@ -748,6 +776,10 @@ export const inspectorService = {
       inspectionOrderInFlight.set(cleanId, fetchPromise);
     }
     return fetchPromise;
+  },
+
+  getOrderById(orderId: string, options?: Pick<RequestOptions, 'isBackground' | 'signal'> & { bypassCache?: boolean }): Promise<InspectionOrderDto> {
+    return this.getOrder(orderId, options);
   },
 
   /**
@@ -934,6 +966,45 @@ export const inspectorService = {
   },
 
   /**
+   * KTV xác nhận tiếp nhận đơn kiểm định (Áp dụng cho cả AT_HOME và AT_CENTER).
+   * Gửi tín hiệu xác nhận lên Backend để đánh dấu inspectorConfirmed và khóa đổi KTV trên toàn hệ thống.
+   */
+  async confirmTask(orderId: string, isAtHome?: boolean): Promise<InspectionOrderDto> {
+    // 1. Thử gọi POST /inspector/orders/{orderId}/confirm-task (endpoint chuẩn BE cần có)
+    try {
+      const res = await request<InspectionOrderDto>(`/inspector/orders/${orderId}/confirm-task`, {
+        method: 'POST',
+        requiresAuth: true,
+      });
+      return (res as any)?.data || res;
+    } catch {
+      // 2. Nếu là AT_HOME và BE chưa có confirm-task: thử xác nhận lịch hẹn
+      if (isAtHome) {
+        try {
+          const res = await request<InspectionOrderDto>(`/inspector/orders/${orderId}/appointment/confirm`, {
+            method: 'POST',
+            requiresAuth: true,
+          });
+          return (res as any)?.data || res;
+        } catch {
+          // fallback xuống start bên dưới
+        }
+      }
+      // 3. Fallback: gọi startInspection
+      const res = await request<InspectionOrderDto>(`/inspector/orders/${orderId}/start`, {
+        method: 'POST',
+        body: JSON.stringify({
+          orderCode: orderId,
+          barcodeInput: orderId,
+          checkInCode: orderId,
+        }),
+        requiresAuth: true,
+      });
+      return (res as any)?.data || res;
+    }
+  },
+
+  /**
    * KTV bắt đầu tiến hành kiểm định đơn hàng (chuyển trạng thái sang INSPECTING)
    */
   async startInspection(
@@ -974,6 +1045,7 @@ export const inspectorService = {
       body: JSON.stringify({ scheduledAt, note, shift }),
       requiresAuth: true,
     });
+    this.invalidateOrderCache(orderId);
     return (res as any)?.data || res;
   },
 
@@ -985,6 +1057,7 @@ export const inspectorService = {
       method: 'POST',
       requiresAuth: true,
     });
+    this.invalidateOrderCache(orderId);
     return (res as any)?.data || res;
   },
 
@@ -997,6 +1070,7 @@ export const inspectorService = {
       method: 'POST',
       requiresAuth: true,
     });
+    this.invalidateOrderCache(orderId);
     return (res as any)?.data || res;
   },
 
@@ -1014,6 +1088,21 @@ export const inspectorService = {
       body: JSON.stringify({ counterScheduledAt, counterNote, counterShift }),
       requiresAuth: true,
     });
+    this.invalidateOrderCache(orderId);
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Trung tâm kiểm định hoặc Admin từ chối lịch hẹn để người bán đặt lại
+   * POST /api/v1/inspector/orders/{orderId}/appointment/reject
+   */
+  async rejectAppointment(orderId: string, reason: string): Promise<InspectionOrderDto> {
+    const res = await request<InspectionOrderDto>(`/inspector/orders/${orderId}/appointment/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+      requiresAuth: true,
+    });
+    this.invalidateOrderCache(orderId);
     return (res as any)?.data || res;
   },
 
@@ -1185,38 +1274,11 @@ export const inspectorService = {
    * Manager xem danh sách nhân viên KTV thuộc trung tâm quản lý (giải nén an toàn)
    */
   async getStaff(): Promise<InspectionStaffDto[]> {
-    try {
-      const res = await requestGet<any>('/inspector-center/staff', {
-        requiresAuth: true,
-      });
-      let staffArray: any[] = [];
-      const anyRes = res as any;
-      if (Array.isArray(anyRes)) {
-        staffArray = anyRes;
-      } else if (Array.isArray(anyRes?.data)) {
-        staffArray = anyRes.data;
-      } else if (Array.isArray(anyRes?.data?.items)) {
-        staffArray = anyRes.data.items;
-      } else if (Array.isArray(anyRes?.items)) {
-        staffArray = anyRes.items;
-      }
-
-      return staffArray.map((s: any) => ({
-        id: String(s.id || s.userId || ''),
-        email: s.email || 'ktv@secondlife.vn',
-        fullName: s.fullName || s.name || 'Kỹ thuật viên kiểm định',
-        phone: s.phone || '0901234567',
-        avatarUrl: s.avatarUrl || undefined,
-        accountStatus: s.accountStatus || 'ACTIVE',
-        emailVerified: s.emailVerified ?? true,
-        gender: s.gender || undefined,
-        role: 'INSPECTOR',
-        assignedOrdersCount: s.assignedOrdersCount || 0,
-      }));
-    } catch (err) {
-      console.warn('Lỗi getStaff từ BE:', err);
-      return [];
-    }
+    const res = await requestGet<any>('/inspector-center/staff', {
+      requiresAuth: true,
+    });
+    const data = (res as any)?.data || res;
+    return Array.isArray(data) ? data : (data?.items || []);
   },
 
   /**

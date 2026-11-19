@@ -19,6 +19,7 @@ interface Props {
   isOrderSeller: (order: EscrowOrder) => boolean;
   setInspectionActionNotice: (message: string | null) => void;
   setCreateShipmentOrder: (order: EscrowOrder) => void;
+  isOrderSellerConfirmed?: OrderCheck;
 }
 
 export function OrderDetailDirectShipping({
@@ -34,6 +35,7 @@ export function OrderDetailDirectShipping({
   isOrderSeller,
   setInspectionActionNotice,
   setCreateShipmentOrder,
+  isOrderSellerConfirmed,
 }: Props) {
   return (
     <>
@@ -51,6 +53,14 @@ export function OrderDetailDirectShipping({
           (detailModalOrder as any).orderType === 'AT_CENTER'
         );
         if (isDetailInspection) return null;
+
+        const hasActiveShipment = isShipmentCreatedForOrder(detailModalOrder) || Boolean(detailInboundShipment);
+        const sellerConfirmed = isOrderSellerConfirmed ? isOrderSellerConfirmed(detailModalOrder) : Boolean(detailModalOrder.sellerConfirmedAt);
+
+        // Với đơn mua trực tiếp: Người bán PHẢI ấn "Xác nhận đơn hàng" trước thì mới bắt đầu điều phối / tạo vận đơn Lalamove
+        if (!hasActiveShipment && !sellerConfirmed) {
+          return null;
+        }
 
         return (
           <div className="p-4 rounded-2xl bg-gradient-to-r from-orange-50/80 via-amber-50/40 to-slate-50 border border-orange-200/90 shadow-2xs space-y-3">

@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import type { InspectionOrderDto } from '../../../services';
 import type { UserProfile } from '../../../types';
-import { canBookHubBuyerDelivery, canReadCenterInspectionShipments, getHubBuyerShipmentLabel, getInboundShipmentProgress, isPaidHubBuyerDelivery, shouldTrackInboundShipment } from '../../../utils/inspectionCenterData';
+import { canBookHubBuyerDelivery, canReadCenterInspectionShipments, getHubBuyerShipmentLabel, getInboundShipmentProgress, isPaidHubBuyerDelivery, shouldTrackInboundShipment, isOrderConfirmedByInspector } from '../../../utils/inspectionCenterData';
 import { hasLocalShipmentSignal } from './shipmentTrackingConfig';
 import type { useCenterShipments } from './useCenterShipments';
 
@@ -97,6 +97,14 @@ export function CenterOrderStatusBadge({ order, buyerShipments, currentUser, den
   }
 
   if (status === 'DELIVERING_TO_BUYER') {
+    if (order?.orderType === 'AT_HOME' || (order as any)?.inspectionMethod === 'AT_HOME') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 whitespace-nowrap shadow-2xs">
+          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+          <span>Đạt Nghiệm Thu • Người Bán Tự Giao</span>
+        </span>
+      );
+    }
     const delivery = buyerShipments.get(order?.id);
     return (
       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-teal-100 text-teal-800 border border-teal-300 whitespace-nowrap shadow-2xs">
@@ -153,7 +161,7 @@ export function CenterOrderStatusBadge({ order, buyerShipments, currentUser, den
             }
             break;
           }
-        } catch {}
+        } catch { }
       }
 
       if (apptStatus !== 'PENDING_CENTER_CONFIRMATION') {
@@ -171,7 +179,7 @@ export function CenterOrderStatusBadge({ order, buyerShipments, currentUser, den
               }
             }
           }
-        } catch {}
+        } catch { }
         try {
           const rawSeller = localStorage.getItem('my_seller_inspection_orders');
           if (rawSeller && apptStatus !== 'PENDING_CENTER_CONFIRMATION') {
@@ -185,7 +193,7 @@ export function CenterOrderStatusBadge({ order, buyerShipments, currentUser, den
               }
             }
           }
-        } catch {}
+        } catch { }
       }
     }
 
@@ -273,7 +281,7 @@ export function CenterOrderStatusBadge({ order, buyerShipments, currentUser, den
       return (
         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-cyan-100 text-cyan-800 border border-cyan-300 whitespace-nowrap shadow-2xs">
           <Truck className="w-3.5 h-3.5 text-cyan-600 shrink-0" />
-          <span>{shipment ? getInboundShipmentProgress(shipment).label : 'Đang giao hàng về Hub'}</span>
+          <span>{shipment ? getInboundShipmentProgress(shipment).label : 'Đang giao hàng đến Hub'}</span>
         </span>
       );
     }
@@ -293,6 +301,16 @@ export function CenterOrderStatusBadge({ order, buyerShipments, currentUser, den
       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-orange-100 text-orange-900 border border-orange-300 animate-pulse whitespace-nowrap shadow-2xs">
         <PackageCheck className="w-3.5 h-3.5 text-orange-700 shrink-0" />
         <span>Đã Nhận Hàng • Chờ Giao KTV</span>
+      </span>
+    );
+  }
+
+  const isConfirmed = isOrderConfirmedByInspector(order);
+  if (!isConfirmed) {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-300 whitespace-nowrap shadow-2xs">
+        <Clock className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+        <span>Đã Phân Công • Chờ KTV Nhận Đơn</span>
       </span>
     );
   }

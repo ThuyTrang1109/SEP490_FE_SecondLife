@@ -419,19 +419,26 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
     try {
       let shipList: ShipmentBackend[] = [];
       let loadedFromBackend = false;
-      if (isInspectionOrder) {
-        try {
-          shipList = await shippingService.getInspectionShipments(order.id, { isBackground });
-          loadedFromBackend = true;
-        } catch (inspShipErr) {
-          if (isHubSeller || returnOnly) throw inspShipErr;
-          console.warn('Could not load inspection shipments:', inspShipErr);
+      const targetQueryIds = [order.id, (order as any).linkedOrderId].filter(Boolean) as string[];
+
+      for (const id of targetQueryIds) {
+        if (shipList.length > 0) break;
+        if (isInspectionOrder) {
+          try {
+            shipList = await shippingService.getInspectionShipments(id, { isBackground });
+            if (shipList.length > 0) loadedFromBackend = true;
+          } catch (inspShipErr) {
+            if (isHubSeller || returnOnly) throw inspShipErr;
+            console.warn('Could not load inspection shipments:', inspShipErr);
+          }
         }
-      } else {
-        try {
-          shipList = await shippingService.getOrderShipments(order.id);
-        } catch (orderShipErr) {
-          console.warn('Could not load order shipments:', orderShipErr);
+        if (shipList.length === 0) {
+          try {
+            shipList = await shippingService.getOrderShipments(id);
+            if (shipList.length > 0) loadedFromBackend = true;
+          } catch (orderShipErr) {
+            console.warn('Could not load order shipments:', orderShipErr);
+          }
         }
       }
       if (request !== shipmentRequest.current) return;
@@ -440,13 +447,16 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
       // Nạp từ localStorage nếu backend chưa đồng bộ hoặc chưa có bản ghi
       if (shipList.length === 0 && !returnOnly) {
         try {
-          const raw = localStorage.getItem(`sl_order_shipments_${order.id}`) ||
-            localStorage.getItem(`order_shipments_${order.id}`) ||
-            localStorage.getItem(`sl_insp_shipments_${order.id}`);
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              shipList = parsed;
+          for (const id of targetQueryIds) {
+            const raw = localStorage.getItem(`sl_order_shipments_${id}`) ||
+              localStorage.getItem(`order_shipments_${id}`) ||
+              localStorage.getItem(`sl_insp_shipments_${id}`);
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                shipList = parsed;
+                break;
+              }
             }
           }
         } catch { }
@@ -460,9 +470,19 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
       if (shipList.length > 0) {
         const selected = selectedShipmentId.current;
         const returnShipment = getHubReturnState(shipList).shipment;
+        const buyerDeliveryShipment = shipList.find(
+          (s) => (s.leg === 'SELLER_TO_BUYER' || s.leg === 'CENTER_TO_BUYER' || s.leg === 'DELIVERY') && s.status !== 'CANCELLED'
+        ) || shipList.find((s) => s.leg === 'SELLER_TO_BUYER' || s.leg === 'CENTER_TO_BUYER' || s.leg === 'DELIVERY');
+
         const targetId = selected && shipList.some((s) => s.shipmentId === selected)
           ? selected
-          : (returnShipment || (isSeller && latestInbound) || shipList[0]).shipmentId;
+          : (returnShipment
+            ? returnShipment.shipmentId
+            : !isSeller && buyerDeliveryShipment
+              ? buyerDeliveryShipment.shipmentId
+              : isSeller && latestInbound
+                ? latestInbound.shipmentId
+                : shipList[0].shipmentId);
 
         if (selected !== targetId) selectShipment(targetId);
 
@@ -952,126 +972,6 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
             </div>
           </div>
 
-          {/* ======================================================== */}
-          {/* WIDGET 1: COUNTDOWN CAM KẾT BÀN GIAO HÀNG & FULFILLMENT  */}
-          {/* ======================================================== */}
-          {!returnOnly && <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-            {/* Box 1: Cam kết giao hàng của Seller (GET /orders/{id}/confirmation) */}
-            <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-50/70 to-orange-50/60 border border-amber-200/80 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 font-bold text-amber-900">
-                  <Clock className="w-4 h-4 text-orange-600" />
-                  <span>Cam Kết Bàn Giao Hàng</span>
-                </div>
-                {orderConfirmation?.sellerConfirmedAt ? (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                    Đã Xác Nhận
-                  </span>
-                ) : countdownText ? (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-orange-500 text-white animate-pulse">
-                    Còn {countdownText}
-                  </span>
-                ) : (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">
-                    {orderConfirmation?.confirmationStatus || 'Chờ xác nhận'}
-                  </span>
-                )}
-              </div>
-
-              <div className="space-y-1 text-[11px] text-slate-700">
-                {orderConfirmation?.confirmationDeadline && (
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Hạn chót người bán xác nhận:</span>
-                    <strong className="font-mono text-slate-800">
-                      {new Date(orderConfirmation.confirmationDeadline).toLocaleString('vi-VN')}
-                    </strong>
-                  </div>
-                )}
-                {orderConfirmation?.sellerConfirmedAt && (
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Người bán đã chốt lúc:</span>
-                    <strong className="font-mono text-emerald-700">
-                      {new Date(orderConfirmation.sellerConfirmedAt).toLocaleString('vi-VN')}
-                    </strong>
-                  </div>
-                )}
-                {orderFulfillment?.handoverDeadline && (
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Hạn chót tài xế nhận kiện:</span>
-                    <strong className="font-mono text-slate-800">
-                      {new Date(orderFulfillment.handoverDeadline).toLocaleString('vi-VN')}
-                    </strong>
-                  </div>
-                )}
-                {orderFulfillment?.lateHandoverCandidate && (
-                  <div className="p-1.5 rounded-lg bg-rose-100/70 border border-rose-200 text-rose-700 text-[10px] font-bold flex items-center gap-1">
-                    <AlertTriangle className="w-3 h-3 text-rose-600 shrink-0" />
-                    <span>Đơn hàng có nguy cơ trễ hạn bàn giao Lalamove</span>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Box 2: Tra cứu trạng thái thanh toán SePay (GET /orders/{id}/payment) */}
-            <div className="p-4 rounded-2xl bg-white border border-slate-200 space-y-2 shadow-2xs">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 font-bold text-slate-900">
-                  <CreditCard className="w-4 h-4 text-indigo-600" />
-                  <span>Trạng Thái Thanh Toán SePay</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleLookupPayment}
-                  disabled={isLoadingPayment}
-                  className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[11px] transition flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                  title="Tra cứu trực tiếp trạng thái thanh toán đơn qua API SePay"
-                >
-                  <RefreshCw className={`w-3 h-3 ${isLoadingPayment ? 'animate-spin' : ''}`} />
-                  <span>Tra cứu</span>
-                </button>
-              </div>
-
-              {paymentNotice && (
-                <div className="p-1.5 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-800 text-[10px] font-medium">
-                  {paymentNotice}
-                </div>
-              )}
-
-              <div className="space-y-1 text-[11px] text-slate-600">
-                <div className="flex justify-between">
-                  <span>Trạng thái thanh toán:</span>
-                  <span className="font-bold text-slate-900">
-                    {orderPayment?.status || order.escrowStatus || 'Đang xử lý'}
-                  </span>
-                </div>
-                {orderPayment?.receivedAmount !== undefined && (
-                  <div className="flex justify-between">
-                    <span>Số tiền đã nhận:</span>
-                    <strong className="text-emerald-700 font-mono">
-                      {formatVND(orderPayment.receivedAmount)}
-                    </strong>
-                  </div>
-                )}
-                {orderPayment?.transferContent && (
-                  <div className="flex justify-between">
-                    <span>Nội dung CK:</span>
-                    <span className="font-mono font-bold text-slate-800 bg-slate-100 px-1 rounded text-[10px]">
-                      {orderPayment.transferContent}
-                    </span>
-                  </div>
-                )}
-                {orderPayment?.bankName && (
-                  <div className="flex justify-between">
-                    <span>Ngân hàng thụ hưởng:</span>
-                    <span className="text-slate-800 text-[10px]">
-                      {orderPayment.bankName} - {orderPayment.bankAccountNumber}
-                    </span>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>}
-
           {/* Multiple Shipments Tabs (if order has multiple shipments) */}
           {shipments.length > 1 && (
             <div className="flex items-center gap-2 border-b border-gray-200 pb-2">
@@ -1089,7 +989,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                     : 'bg-gray-100 hover:bg-gray-200 text-slate-700'
                     }`}
                 >
-                  Kiện {idx + 1} ({s.leg === 'SELLER_TO_CENTER' ? 'Chặng 1: Hub' : s.leg === 'CENTER_TO_SELLER' ? 'Hoàn trả' : s.leg === 'CENTER_TO_BUYER' ? 'Giao khách' : s.leg || 'Lalamove'})
+                  Kiện {idx + 1} ({s.leg === 'SELLER_TO_CENTER' ? 'Chặng 1: Hub' : s.leg === 'CENTER_TO_SELLER' ? 'Hoàn trả' : s.leg === 'CENTER_TO_BUYER' ? 'Giao khách' : s.leg === 'SELLER_TO_BUYER' ? 'Giao trực tiếp' : s.leg || 'Lalamove'})
                 </button>
               ))}
             </div>
@@ -1351,17 +1251,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
 
                 {/* Driver Live GPS Map (Section 10.4) */}
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-extrabold text-[11px] uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
-                      <Navigation className="w-3.5 h-3.5 text-orange-600" />
-                      <span>Vị trí GPS thời gian thực của tài xế</span>
-                    </span>
-                    {hasValidCoords && coordinates?.updatedAt && (
-                      <span className="text-[10px] text-slate-400">
-                        Cập nhật lúc: {new Date(coordinates.updatedAt).toLocaleTimeString('vi-VN')}
-                      </span>
-                    )}
-                  </div>
+
 
                   {hasValidCoords ? (
                     <div id="lalamove-driver-map" className="w-full h-56 rounded-2xl border border-gray-200 z-0 shadow-inner" />
@@ -1377,15 +1267,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                       </p>
                     </div>
                   ) : (
-                    <div className="p-3.5 bg-slate-100/80 rounded-2xl border border-gray-200 text-center text-slate-500 text-xs space-y-1">
-                      <div className="flex items-center justify-center gap-1.5 font-semibold text-slate-700">
-                        <MapPin className="w-4 h-4 text-slate-400" />
-                        <span>Chưa có vị trí GPS trực tiếp của tài xế</span>
-                      </div>
-                      <p className="text-[11px] text-slate-400">
-                        (Tài xế đang nhận đơn hoặc chuẩn bị khởi hành. Tọa độ GPS sẽ tự động hiển thị khi tài xế di chuyển)
-                      </p>
-                    </div>
+                    <span></span>
                   )}
                 </div>
 

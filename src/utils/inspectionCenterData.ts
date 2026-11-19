@@ -95,12 +95,14 @@ export function getCenterDispatchStage(
 
   // Khi lịch hẹn tại nhà đang trong giai đoạn thương lượng (Hub đã gửi đề xuất mới, chờ Seller duyệt):
   const isCountered = order.orderType === 'AT_HOME' && Boolean(
-    apptStatus !== 'PENDING_CENTER_CONFIRMATION' &&
+    counterTime ||
     (
-      apptStatus === 'COUNTERED_BY_CENTER' ||
-      counterTime ||
-      (order.status === 'WAITING_SELLER_APPROVAL' && (apptTime || counterTime)) ||
-      ((order as any).customerStatus === 'WAITING_SELLER_APPROVAL' && (apptTime || counterTime))
+      apptStatus !== 'PENDING_CENTER_CONFIRMATION' &&
+      (
+        apptStatus === 'COUNTERED_BY_CENTER' ||
+        (order.status === 'WAITING_SELLER_APPROVAL' && (apptTime || counterTime)) ||
+        ((order as any).customerStatus === 'WAITING_SELLER_APPROVAL' && (apptTime || counterTime))
+      )
     )
   );
 
@@ -109,7 +111,6 @@ export function getCenterDispatchStage(
   }
 
   if (!dispatchStatuses.has(order.status)) return null;
-  if (order.orderType !== 'AT_HOME' && !receivedAtHub) return 'WAITING_FOR_HUB';
 
   if (order.orderType === 'AT_HOME') {
     if (!apptTime || apptStatus === 'REJECTED') {
@@ -125,6 +126,11 @@ export function getCenterDispatchStage(
 
 export function shouldTrackInboundShipment(order: { orderType?: string; status: string }) {
   return order.orderType === 'AT_CENTER' && inboundTrackingStatuses.has(order.status);
+}
+
+export function filterCenterApiOrders(orders: InspectionOrderDto[], centerId: string): InspectionOrderDto[] {
+  // The scoped API also authorizes legacy orders through the assigned inspector's manager.
+  return orders.filter((order) => order.inspectionCenterId == null || order.inspectionCenterId === centerId);
 }
 
 export function canReadCenterInspectionShipments(order: Pick<InspectionOrderDto, 'inspectionCenterId'>, centerId?: string) {
@@ -236,6 +242,41 @@ export function getHubBuyerShipmentLabel(shipment: ShipmentBackend) {
   return progress.label;
 }
 
+export function getBuyerDeliveryProgress(
+  shipment: Pick<ShipmentBackend, 'status' | 'providerStatus'>,
+  lang: Language = 'vi',
+) {
+  const progress = (step: 0 | 1 | 2 | 3 | null, vi: string, en: string) => ({
+    step,
+    label: lang === 'vi' ? vi : en,
+  });
+  switch (shipment.status.toUpperCase()) {
+    case 'DELIVERED':
+    case 'COMPLETED': return progress(3, 'Lalamove đã giao tới người mua', 'Delivered to Buyer');
+    case 'CANCELLED': return progress(null, 'Vận đơn đã hủy', 'Shipment cancelled');
+    case 'FAILED': return progress(null, 'Vận đơn thất bại', 'Shipment failed');
+    case 'RETURNED': return progress(null, 'Vận đơn đã hoàn trả', 'Shipment returned');
+    case 'CREATING': return progress(null, 'Đang tạo vận đơn', 'Creating shipment');
+    case 'CREATION_UNCERTAIN': return progress(null, 'Đang xác minh vận đơn', 'Verifying shipment');
+  }
+  switch ((shipment.providerStatus || shipment.status).toUpperCase()) {
+    case 'ASSIGNING_DRIVER':
+    case 'READY_TO_PICK': return progress(0, 'Đã tạo vận đơn · Đang tìm tài xế', 'Shipment created · Finding a driver');
+    case 'ON_GOING':
+    case 'ASSIGNED': return progress(1, 'Tài xế đang đến lấy hàng', 'Driver on the way to pickup');
+    case 'PICKED_UP':
+    case 'PICKED':
+    case 'SHIPPED':
+    case 'DELIVERING': return progress(2, 'Đang giao hàng đến người mua', 'On the way to Buyer');
+    case 'COMPLETED': return progress(3, 'Lalamove đã giao tới người mua', 'Delivered to Buyer');
+    case 'CANCELED': return progress(null, 'Vận đơn đã hủy', 'Shipment cancelled');
+    case 'REJECTED':
+    case 'EXPIRED': return progress(null, 'Vận đơn thất bại', 'Shipment failed');
+    case 'CREATING': return progress(null, 'Đang tạo vận đơn', 'Creating shipment');
+    default: return progress(null, 'Đang chờ cập nhật vận đơn', 'Awaiting shipment update');
+  }
+}
+
 export function getInboundShipmentProgress(
   shipment: Pick<ShipmentBackend, 'status' | 'providerStatus'>,
   lang: Language = 'vi',
@@ -261,7 +302,7 @@ export function getInboundShipmentProgress(
     case 'PICKED_UP':
     case 'PICKED':
     case 'SHIPPED':
-    case 'DELIVERING': return progress(2, 'Đang giao hàng về Hub', 'On the way to Hub');
+    case 'DELIVERING': return progress(2, 'Đang giao hàng đến Hub', 'On the way to Hub');
     case 'COMPLETED': return progress(3, 'Lalamove đã giao tới Hub', 'Delivered to Hub');
     case 'CANCELED': return progress(null, 'Vận đơn đã hủy', 'Shipment cancelled');
     case 'REJECTED':
@@ -269,4 +310,174 @@ export function getInboundShipmentProgress(
     case 'CREATING': return progress(null, 'Đang tạo vận đơn', 'Creating shipment');
     default: return progress(null, 'Đang chờ cập nhật vận đơn', 'Awaiting shipment update');
   }
+}
+
+/**
+ * Kiểm tra xem Kỹ thuật viên đã xác nhận đơn hay chưa.
+ * Đơn chỉ được tính là đã xác nhận khi:
+ * 1. KTV đã ấn nút "Xác Nhận Đơn" (order_confirmed_by_inspector_{id} === 'true' hoặc inspectorConfirmed === true).
+ * 2. Đơn đã hoàn tất kiểm định (PASSED, FAILED, COMPLETED).
+ */
+export function isOrderConfirmedByInspector(order: {
+  id?: string;
+  orderId?: string;
+  status?: string;
+  backendStatus?: string;
+  customerStatus?: string;
+  inspectorId?: string;
+  inspectorConfirmed?: boolean;
+  assignmentLocked?: boolean;
+  inspectorConfirmedAt?: string;
+  stage?: string;
+  note?: string;
+}): boolean {
+  if (!order || !order.inspectorId) return false;
+
+  // 1. Kiểm tra cờ xác nhận từ Backend DTO hoặc thuộc tính khóa điều phối rõ ràng
+  if (
+    order.inspectorConfirmed === true ||
+    (order as any).assignmentLocked === true ||
+    (order as any).isInspectorConfirmed === true ||
+    Boolean((order as any).inspectorConfirmedAt)
+  ) {
+    return true;
+  }
+
+  const rawStatus = (order.status || order.backendStatus || '').toUpperCase();
+
+  // 2. Nếu đơn đã xong hoặc đang giao cho người mua thì chắc chắn đã qua kiểm định
+  const trulyDoneStatuses = new Set([
+    'PASSED',
+    'FAILED',
+    'COMPLETED',
+    'DELIVERING_TO_BUYER',
+  ]);
+  if (trulyDoneStatuses.has(rawStatus)) {
+    return true;
+  }
+
+  // 3. Nếu đơn đang thực sự kiểm định tại bàn hoặc đã tiếp nhận
+  if (
+    rawStatus === 'INSPECTING' ||
+    rawStatus === 'INSPECTION_IN_PROGRESS' ||
+    rawStatus === 'CONFIRMED_BY_INSPECTOR' ||
+    rawStatus === 'ACCEPTED'
+  ) {
+    return true;
+  }
+
+  // 4. Kiểm tra cờ xác nhận cục bộ của KTV (khi KTV bấm "Xác Nhận Đơn" trên cùng browser)
+  if (typeof window !== 'undefined') {
+    const possibleIds = [
+      order.id,
+      order.orderId,
+      (order as any).linkedOrderId,
+      (order as any).inspectionOrderId,
+    ].filter(Boolean) as string[];
+
+    for (const tid of possibleIds) {
+      if (
+        localStorage.getItem(`order_confirmed_by_inspector_${tid}`) === 'true' ||
+        localStorage.getItem(`inspection_status_${tid}`) === 'INSPECTING'
+      ) {
+        return true;
+      }
+    }
+  }
+
+  // 5. Nếu trong note có đánh dấu KTV đã xác nhận
+  if (order.note && order.note.includes('[INSPECTOR_CONFIRMED]')) {
+    return true;
+  }
+
+  // 6. Nếu đơn đang ở trạng thái vừa phân công (DISPATCHED, SCHEDULED, CONFIRMED_PENDING_DISPATCH)
+  // và CHƯA có cờ xác nhận ở trên -> Chắc chắn KTV CHƯA xác nhận đơn -> KHÔNG ĐƯỢC KHÓA!
+  if (['DISPATCHED', 'SCHEDULED', 'CONFIRMED_PENDING_DISPATCH'].includes(rawStatus)) {
+    return false;
+  }
+
+  return false;
+}
+
+/**
+ * Kiểm tra xem quyền thay đổi KTV (Đổi KTV) tại Trung tâm kiểm định có bị khóa hay không.
+ * Quy tắc:
+ * - Chỉ khóa KHI Kỹ thuật viên phụ trách ĐÃ xác nhận đơn, đơn đang đo kiểm, hoặc đơn đã hoàn tất kiểm định.
+ * - Nếu KTV CHƯA ấn "Xác Nhận Đơn" (chưa tiếp nhận), Trung tâm vẫn hoàn toàn có quyền "Đổi KTV".
+ */
+export function isInspectorAssignmentLocked(order: {
+  id?: string;
+  orderId?: string;
+  status?: string;
+  backendStatus?: string;
+  customerStatus?: string;
+  inspectorId?: string;
+  inspectorConfirmed?: boolean;
+  stage?: string;
+  note?: string;
+}): boolean {
+  if (!order || !order.inspectorId) return false;
+  return isOrderConfirmedByInspector(order);
+}
+
+/**
+ * Đánh dấu đơn kiểm định đã được KTV xác nhận tiếp nhận.
+ * Đồng thời cập nhật các danh sách cục bộ và phát tín hiệu cho các bên (CenterDispatch, InspectorPortal,...).
+ */
+export function markOrderConfirmedByInspector(orderId: string, additionalIds?: string[]): void {
+  if (!orderId || typeof window === 'undefined') return;
+
+  const allIds = Array.from(new Set([orderId, ...(additionalIds || [])].filter(Boolean)));
+  allIds.forEach((id) => {
+    localStorage.setItem(`order_confirmed_by_inspector_${id}`, 'true');
+    localStorage.setItem(`order_confirmed_by_inspector_at_${id}`, new Date().toISOString());
+  });
+
+  const isMatched = (o: any) => allIds.some((id) => o.id === id || o.orderId === id || o.linkedOrderId === id || o.inspectionOrderId === id);
+
+  try {
+    const rawCenter = localStorage.getItem('center_inspection_orders');
+    if (rawCenter) {
+      const list = JSON.parse(rawCenter);
+      if (Array.isArray(list)) {
+        const updated = list.map((o: any) => {
+          if (isMatched(o)) {
+            return { ...o, inspectorConfirmed: true };
+          }
+          return o;
+        });
+        localStorage.setItem('center_inspection_orders', JSON.stringify(updated));
+      }
+    }
+  } catch {}
+
+  try {
+    const rawRecent = localStorage.getItem('recent_placed_orders');
+    if (rawRecent) {
+      const list = JSON.parse(rawRecent);
+      if (Array.isArray(list)) {
+        const updated = list.map((o: any) => {
+          if (isMatched(o)) {
+            return { ...o, inspectorConfirmed: true };
+          }
+          return o;
+        });
+        localStorage.setItem('recent_placed_orders', JSON.stringify(updated));
+      }
+    }
+  } catch {}
+
+  try {
+    if (typeof BroadcastChannel !== 'undefined') {
+      const bc = new BroadcastChannel('secondlife_inspection_channel');
+      bc.postMessage({ type: 'INSPECTOR_CONFIRMED', orderId, ids: allIds });
+      bc.close();
+    }
+  } catch {}
+
+  window.dispatchEvent(
+    new CustomEvent('secondlife_inspector_confirmed_signal', {
+      detail: { orderId, ids: allIds },
+    })
+  );
 }

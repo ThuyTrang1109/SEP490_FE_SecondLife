@@ -741,8 +741,12 @@ export const shippingService = {
    * Lấy danh sách vận đơn của đơn hàng
    * GET /api/v1/orders/{orderId}/shipments
    */
-  async getOrderShipments(orderId: string): Promise<ShipmentBackend[]> {
+  async getOrderShipments(
+    orderId: string,
+    options?: Pick<RequestOptions, 'signal' | 'isBackground'>,
+  ): Promise<ShipmentBackend[]> {
     const res = await request<ShipmentBackend[]>(`/orders/${orderId}/shipments`, {
+      ...options,
       method: 'GET',
       requiresAuth: true,
     });

@@ -25,6 +25,7 @@ import { notificationService } from '../services/notificationService';
 import { Language, UserProfile, UserRole } from '../types';
 import { dialogService } from '../utils/dialogService';
 import {
+  compareNotificationsNewestFirst,
   getScopedLocalNotifications,
   isNotificationForUser,
   markScopedLocalNotificationRead,
@@ -117,7 +118,7 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
 
       const localUnread = localNotifs.filter((n) => !n.isRead).length;
 
-      setNotifications(unique);
+      setNotifications(unique.sort(compareNotificationsNewestFirst));
       setPage(pageNum);
       setTotalPages(Math.max(1, Math.ceil(unique.length / 10), totalP));
       setTotalElements(unique.length);

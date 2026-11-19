@@ -9,6 +9,9 @@ interface Props {
   staff: Pick<ReturnType<typeof useCenterStaff>,
     | 'filteredStaff'
     | 'isLoadingStaff'
+    | 'loadStaff'
+    | 'staffLoadError'
+    | 'staffList'
     | 'setCreatedStaffSuccessData'
     | 'setCreateStaffError'
     | 'setIsCreateStaffModalOpen'
@@ -21,6 +24,9 @@ export function CenterStaff({ setActiveTab, staffWorkloadMap, staff }: Props) {
   const {
     filteredStaff,
     isLoadingStaff,
+    loadStaff,
+    staffLoadError,
+    staffList,
     setCreatedStaffSuccessData,
     setCreateStaffError,
     setIsCreateStaffModalOpen,
@@ -38,7 +44,7 @@ export function CenterStaff({ setActiveTab, staffWorkloadMap, staff }: Props) {
             DANH SÁCH KỸ THUẬT VIÊN TRỰC THUỘC TRẠM
           </h3>
           <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-slate-100 text-slate-700">
-            {filteredStaff.length} nhân sự
+            {staffList.length} nhân sự
           </span>
         </div>
 
@@ -61,7 +67,7 @@ export function CenterStaff({ setActiveTab, staffWorkloadMap, staff }: Props) {
         <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
         <div className="space-y-0.5">
           <div className="font-bold text-blue-950">
-            Phạm vi quản lý nhân sự ({filteredStaff.length} KTV trực thuộc Trung tâm)
+            Phạm vi quản lý nhân sự ({staffList.length} KTV trực thuộc Trung tâm)
           </div>
           <p className="text-[11px] text-blue-800 leading-relaxed">
             Hệ thống phân quyền hiển thị các Kỹ thuật viên do chính Trung tâm của bạn quản lý. Để thêm kỹ thuật viên mới cho trạm, vui lòng bấm nút <strong>"+ Cấp Tài Khoản KTV Mới"</strong> bên trên.
@@ -90,6 +96,21 @@ export function CenterStaff({ setActiveTab, staffWorkloadMap, staff }: Props) {
                   <span>Đang tải danh sách nhân sự trạm...</span>
                 </td>
               </tr>
+            ) : staffLoadError ? (
+              <tr>
+                <td colSpan={6} className="py-12 text-center text-rose-700">
+                  <p role="alert">{staffLoadError}</p>
+                  <button type="button" onClick={() => void loadStaff()} className="mt-2 font-bold underline">
+                    Thử lại
+                  </button>
+                </td>
+              </tr>
+            ) : staffList.length > 0 && filteredStaff.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="py-12 text-center text-slate-500">
+                  Không tìm thấy kỹ thuật viên phù hợp.
+                </td>
+              </tr>
             ) : filteredStaff.length === 0 ? (
               <tr>
                 <td colSpan={6} className="py-12 text-center text-slate-400">
@@ -110,7 +131,12 @@ export function CenterStaff({ setActiveTab, staffWorkloadMap, staff }: Props) {
               </tr>
             ) : (
               filteredStaff.map((staff, idx) => {
-                const count = staffWorkloadMap[staff.id] || 0;
+                const count = staffWorkloadMap ? staffWorkloadMap[staff.id] ?? 0 : null;
+                const active = staff.accountStatus === 'ACTIVE';
+                const label = staff.accountStatus === 'LOCKED' ? 'Đã khóa'
+                  : staff.accountStatus === 'DISABLED' ? 'Đã vô hiệu hóa'
+                    : staff.accountStatus === 'PENDING_VERIFICATION' ? 'Chờ xác minh'
+                      : active ? 'Hoạt động' : staff.accountStatus || '—';
                 return (
                   <tr key={staff.id} className="hover:bg-slate-50/60 transition">
                     <td className="py-3 px-4 font-mono text-slate-400 text-[11px]">{idx + 1}</td>
@@ -130,16 +156,17 @@ export function CenterStaff({ setActiveTab, staffWorkloadMap, staff }: Props) {
                     </td>
                     <td className="py-3 px-4">
                       <span
-                        className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-mono font-bold ${count > 0 ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-600'
+                        className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-mono font-bold ${count !== null && count > 0 ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-600'
                           }`}
                       >
-                        {count} đơn
+                        {count === null ? '—' : `${count} đơn`}
                       </span>
                     </td>
                     <td className="py-3 px-4">
-                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        Hoạt động
+                      <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full border ${active
+                        ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                        : 'text-slate-600 bg-slate-50 border-slate-200'}`}>
+                        {label}
                       </span>
                     </td>
                     <td className="py-3 px-4 text-right">

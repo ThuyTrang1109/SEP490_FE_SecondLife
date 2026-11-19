@@ -205,11 +205,14 @@ export interface EscrowOrder {
   buyerAddress: string;
   sellerId: string;
   sellerName: string;
+  sellerPhone?: string;
+  sellerAddress?: string;
   sellerAvatarUrl?: string;
   itemPriceVnd: number;
   inspectionFeeVnd: number;
   shippingFeeVnd: number;
   platformFeeVnd: number;
+  sellerCommissionPreview?: SellerCommissionPreviewDTO;
   totalPaidVnd: number;
   escrowStatus: EscrowStatus;
   hasInspectionService: boolean;
@@ -232,17 +235,22 @@ export interface EscrowOrder {
   inspectionStatus?: string;
   inspectionNote?: string;
   finalPaymentPaidAt?: string | null;
+  finalShippingFee?: number | null;
   homeCheckedInAt?: string | null;
   inspectorId?: string;
   inspectorName?: string;
   inspectorEmail?: string;
   inspectorPhone?: string;
-  feePayer?: 'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50' | string;
+  feePayer?: string;
+  buyerFeePercent?: number;
   finalPaymentDeadline?: string | null;
   inspectionFeeSplit?: 'BUYER_100' | 'SPLIT_50_50' | 'SELLER_100';
   buyerInspectionFeeVnd?: number;
   sellerInspectionFeeVnd?: number;
   inspectionReport?: InspectionReport;
+  tamperSealId?: string;
+  conditionGrade?: ConditionGrade | string;
+  conditionScore?: number;
   shippingLegs: ShippingLeg[];
   inspectionWindowEndsAt?: string;
   createdAt: string;
@@ -251,6 +259,7 @@ export interface EscrowOrder {
   isReviewed?: boolean;
   userReview?: ProductReview;
   backendStatus?: OrderBackendStatus;
+  backendEscrowStatus?: EscrowStatusBackend;
   status?: OrderBackendStatus | string | null;
   shippingQuoteId?: string;
   shippingDeliveredAt?: string;
@@ -294,6 +303,8 @@ export interface ProductReview {
   productName: string;
   sellerId: string;
   sellerName: string;
+  sellerPhone?: string;
+  sellerAddress?: string;
   sellerAvatarUrl?: string;
   buyerId: string;
   buyerName: string;
@@ -314,6 +325,8 @@ export interface ProductReview {
 export interface SellerTrustProfile {
   sellerId: string;
   sellerName: string;
+  sellerPhone?: string;
+  sellerAddress?: string;
   sellerAvatarUrl?: string;
   trustScore: number; // 0 - 100
   tier: 'Kim Cương' | 'Bạch Kim' | 'Vàng' | 'Bạc';
@@ -335,6 +348,8 @@ export interface DisputeCase {
   buyerName: string;
   sellerId: string;
   sellerName: string;
+  sellerPhone?: string;
+  sellerAddress?: string;
   sellerAvatarUrl?: string;
   reason: 'NOT_AS_DESCRIBED' | 'DAMAGE_IN_TRANSIT' | 'AUTHENTICITY_CLAIM' | 'MISSING_ACCESSORIES';
   description: string;
@@ -371,7 +386,7 @@ export interface SystemInspectionProposalPayload {
   type: 'INSPECTION_PROPOSAL';
   status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'CANCELLED' | 'COUNTERED';
   method: 'AT_CENTER' | 'AT_HOME';
-  feeSplit: 'BUYER_100' | 'SPLIT_50_50' | 'SELLER_100';
+  feeSplit?: 'BUYER_100' | 'SPLIT_50_50' | 'SELLER_100';
   estimatedFeeVnd: number;
   proposedByRole: 'buyer' | 'seller';
   proposalId?: string;
@@ -381,7 +396,9 @@ export interface SystemInspectionProposalPayload {
   // Rich metadata for AT_CENTER negotiation
   centerId?: string;
   centerName?: string;
-  feePayer?: 'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50';
+  feePayer?: string;
+  buyerFeePercent?: number;
+  previousBuyerFeePercent?: number | null;
   baseInspectionFee?: number;
   travelFeeRoundTrip?: number;
   travelDistanceKm?: number;
@@ -411,6 +428,7 @@ export interface InspectionProposalPrefillData {
   inspectionMethod?: 'AT_CENTER' | 'AT_HOME';
   feeSplit?: 'BUYER_100' | 'SPLIT_50_50' | 'SELLER_100';
   feePayer?: 'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50';
+  buyerFeePercent?: number;
   isZinLossAcknowledged?: boolean;
   quote?: any;
   baseInspectionFee?: number;
@@ -745,7 +763,7 @@ export interface Negotiation {
 // ==========================================
 export type OrderStatusBackend = 'PENDING' | 'PENDING_PAYMENT' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'COMPLETED' | 'CANCELLED' | 'WAITING_SELLER_APPROVAL';
 export type OrderBackendStatus = OrderStatusBackend | 'PASSED' | 'FAILED';
-export type EscrowStatusBackend = 'HELD' | 'RELEASED' | 'REFUNDED' | 'FROZEN';
+export type EscrowStatusBackend = 'PENDING' | 'HELD' | 'RELEASED' | 'REFUNDED' | 'FROZEN';
 
 export interface OrderRequestDTO {
   postId: string;
@@ -943,10 +961,20 @@ export interface SystemWalletData {
   inspectionHeldBalance?: number;
 }
 
+export type SystemWalletFundCategory = 'PRODUCT_ESCROW' | 'USER_SHIPPING' | 'HUB_PAYOUT' | 'COMMISSION';
+
 export interface SystemWalletTransaction {
   id: number;
-  orderId: string;
+  entryId?: string;
+  orderId: string | null;
+  inspectionOrderId?: string | null;
   type: 'OPENING_BALANCE' | 'PAYMENT_HOLD' | 'SETTLEMENT' | 'REFUND' | 'RETURN_SHIPPING_FEE' | string;
+  fundCategory?: SystemWalletFundCategory;
+  totalDelta?: number;
+  deltaAction?: 'PLUS' | 'MINUS' | 'ZERO';
+  userShippingFee?: number;
+  userShippingNote?: string | null;
+  breakdownDescription?: string | null;
   heldDelta: number;
   shippingDelta: number;
   revenueDelta: number;
@@ -958,6 +986,7 @@ export interface SystemWalletTransaction {
 
 export interface SystemWalletTransactionFilter {
   type?: string;
+  fundCategory?: SystemWalletFundCategory;
   hasShipping?: boolean;
   orderId?: string;
   page?: number;
@@ -990,12 +1019,21 @@ export interface OrderSettlementDTO {
 export interface OrderCommissionDTO {
   orderId?: string;
   commissionBase?: number;
+  rate?: number;
   ratePercent?: number;
   minFee?: number;
   maxFee?: number;
   platformCommission?: number;
+  sellerPayout?: number;
+  ruleName?: string;
   ruleCode?: string;
   status?: string;
+}
+
+export interface SellerCommissionPreviewDTO {
+  rate: number;
+  platformCommission: number;
+  sellerPayout: number;
 }
 
 export interface StaffListingItemDTO {

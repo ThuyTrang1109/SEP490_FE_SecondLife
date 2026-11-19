@@ -5,6 +5,8 @@ import { Negotiation } from '../../types';
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Listing, EscrowOrder, EscrowStatus, Language, UserWallet, ShippingQuoteResponseDto, ShippingRouteErrorDetails, ShippingLeg, InspectionCenter, UserProfile, InspectionProposalPrefillData } from '../../types';
 import { translations, formatVND } from '../../utils/translations';
+import { InspectionFeePercentSelect } from '../orders/InspectionFeePercentSelect';
+import { feePercentLabel, legacyFeeSplit, splitInspectionFee } from '../../utils/inspectionFeePercent';
 import { getBoughtListingIds, markListingAsBought, markListingAsAvailable, reconcileBoughtListingIds, safeJsonParse, resolveInspectionCenter, resolveNearestHubToSeller } from '../../utils/orderUtils';
 import {
   ArrowLeft,
@@ -519,7 +521,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [loadingCenters, setLoadingCenters] = useState<boolean>(false);
   const [selectedCenterId, setSelectedCenterId] = useState<string>('');
   const [inspectionMethod, setInspectionMethod] = useState<'AT_CENTER' | 'AT_HOME'>('AT_CENTER');
-  const [feeSplit, setFeeSplit] = useState<'BUYER_100' | 'SPLIT_50_50' | 'SELLER_100'>('BUYER_100');
+  const [buyerFeePercent, setBuyerFeePercent] = useState(100);
 
   // Auto-resolve nearest Inspection Center to SELLER based on GPS coordinates / distance and address text
   const findNearestCenterToSeller = useCallback(
@@ -1317,15 +1319,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   );
 
   const baseInspectionFee = isInspected ? (inspectionMethod === 'AT_HOME' ? atHomeFee : atCenterFee) : 0;
-  const buyerInspectionFee = isInspected
-    ? feeSplit === 'BUYER_100'
-      ? baseInspectionFee
-      : feeSplit === 'SPLIT_50_50'
-        ? ((inspectionMethod === 'AT_HOME' ? inspectionQuote?.atHomeSplitOptions : inspectionQuote?.atCenterSplitOptions)?.SPLIT_50_50
-          ?? Math.round(baseInspectionFee / 2))
-        : 0
-    : 0;
-  const sellerInspectionFee = isInspected ? baseInspectionFee - buyerInspectionFee : 0;
+  const { buyer: buyerInspectionFee, seller: sellerInspectionFee } =
+    splitInspectionFee(baseInspectionFee, buyerFeePercent);
 
   // Financial values
   const shippingFee = (isLocationConfirmed && ghnQuote && !quoteError) ? Number(ghnQuote.shippingFee) : 0;
@@ -1348,8 +1343,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       centerAddress: selectedCenter?.address || undefined,
       centerPhone: selectedCenter?.phone || undefined,
       inspectionMethod,
-      feeSplit,
-      feePayer: feeSplit === 'BUYER_100' ? 'BUYER_PAYS' : feeSplit === 'SELLER_100' ? 'SELLER_PAYS' : 'SPLIT_50_50',
+      feeSplit: legacyFeeSplit(buyerFeePercent),
+      buyerFeePercent,
       isZinLossAcknowledged: agreedZinLoss,
       quote: savedQuote && savedQuote.quote === inspectionQuote && savedQuote.centerId === selectedCenterId &&
         savedQuote.method === inspectionMethod && savedQuote.buyerLatitude === deliveryLatitude &&
@@ -1384,7 +1379,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     selectedCenterId,
     selectedCenter,
     inspectionMethod,
-    feeSplit,
+    buyerFeePercent,
     agreedZinLoss,
     inspectionQuote,
     atCenterBaseFee,
@@ -1615,7 +1610,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         }
 
         // Gửi yêu cầu mua có kiểm định tới Backend qua POST /api/v1/inspection/requests
-        const feePayerCode = feeSplit === 'BUYER_100' ? 'BUYER_PAYS' : feeSplit === 'SELLER_100' ? 'SELLER_PAYS' : 'SPLIT_50_50';
         let validPhone = (buyerPhone || currentUser?.phone || '').replace(/\D/g, '');
         if (!validPhone.startsWith('0') && !validPhone.startsWith('84')) validPhone = '0' + validPhone;
         if (validPhone.length < 10 || validPhone.length > 11) validPhone = '0912345678';
@@ -1631,7 +1625,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           const beInspectionOrder = await inspectorService.createRequest({
             postId: listing.id,
             orderType: inspectionMethod,
-            feePayer: feePayerCode,
+            buyerFeePercent,
             buyerConsentZin: agreedZinLoss ? true : undefined,
             buyerConsentZinLoss: agreedZinLoss ? true : undefined,
             buyerLatitude: buyerLat,
@@ -1860,7 +1854,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         inspectionCenterAddress: isInspected ? selectedCenter?.address : undefined,
         inspectionCenterPhone: isInspected ? selectedCenter?.phone : undefined,
         inspectionMethod: isInspected ? inspectionMethod : undefined,
-        inspectionFeeSplit: isInspected ? feeSplit : undefined,
+        inspectionFeeSplit: isInspected ? legacyFeeSplit(buyerFeePercent) : undefined,
+        buyerFeePercent: isInspected ? buyerFeePercent : undefined,
         buyerInspectionFeeVnd: isInspected ? buyerInspectionFee : 0,
         sellerInspectionFeeVnd: isInspected ? sellerInspectionFee : 0,
         shippingLegs: shippingLegsData,
@@ -1986,7 +1981,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             window.dispatchEvent(new CustomEvent('secondlife_order_placed_signal', { detail: newOrder }));
             window.dispatchEvent(new CustomEvent('secondlife_listing_status_changed', { detail: { id: listing.id, status: 'reserved' } }));
             window.dispatchEvent(new CustomEvent('secondlife_inspection_task_created', { detail: newOrder }));
-            window.dispatchEvent(new CustomEvent('secondlife_notification', { detail: sellerNotifItem }));
             localStorage.setItem('secondlife_order_placed_signal', String(Date.now()));
           } catch { }
         }
@@ -2668,7 +2662,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
                       <p className="text-[11px] text-slate-600 leading-relaxed pt-1">
                         {lang === 'vi'
-                          ? 'Kỹ sư Hub Lab kiểm định kỹ thuật 20+ chỉ tiêu, dán tem niêm phong NFC chống tráo trước khi giao đến bạn.'
+                          ? 'Kỹ sư Hub Lab kiểm định kỹ thuật sản phẩm.'
                           : 'Engineers inspect technical condition, apply tamper NFC seal before final delivery.'}
                       </p>
 
@@ -3247,87 +3241,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       })()}
                     </div>
 
-                    {/* 3. Chia Tiền Kiểm Định */}
-                    <div className="space-y-2 bg-[#faf8f5] p-3.5 rounded-2xl border border-slate-200">
-                      <div className="flex items-center justify-between">
-                        <label className="text-[11px] font-extrabold text-[#24263e] uppercase tracking-wide flex items-center gap-1.5">
-                          <Coins className="w-3.5 h-3.5 text-amber-600" />
-                          <span>{lang === 'vi' ? '3. Phân Chia Tiền Kiểm Định' : '3. Inspection Fee Split'}</span>
-                        </label>
-                        <span className="text-[10px] text-slate-500 font-semibold">
-                          Tổng phí: <strong className="text-slate-900 font-bold">{formatVND(baseInspectionFee)}</strong>
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
-                        {/* Option 1: Người mua 100% */}
-                        <div
-                          onClick={() => setFeeSplit('BUYER_100')}
-                          className={`p-2.5 rounded-xl border-2 transition cursor-pointer flex flex-col justify-between ${feeSplit === 'BUYER_100'
-                            ? 'border-[#c34c36] bg-white shadow-xs ring-2 ring-[#c34c36]/15'
-                            : 'border-slate-200 hover:border-slate-300 bg-white/70'
-                            }`}
-                        >
-                          <div>
-                            <div className="flex items-center justify-between">
-                              <span className="font-extrabold text-[11px] text-slate-900">
-                                {lang === 'vi' ? 'Người mua 100%' : 'Buyer 100%'}
-                              </span>
-                              {feeSplit === 'BUYER_100' && <Check className="w-3.5 h-3.5 text-[#c34c36]" />}
-                            </div>
-                            <span className="text-[10px] text-slate-500 block mt-0.5">Mặc định</span>
-                          </div>
-                          <div className="mt-2 pt-1 border-t border-slate-100 text-[10px] font-bold text-[#c34c36]">
-                            Bạn trả: {formatVND(baseInspectionFee)}
-                          </div>
-                        </div>
-
-                        {/* Option 2: Chia đôi 50% - 50% */}
-                        <div
-                          onClick={() => setFeeSplit('SPLIT_50_50')}
-                          className={`p-2.5 rounded-xl border-2 transition cursor-pointer flex flex-col justify-between ${feeSplit === 'SPLIT_50_50'
-                            ? 'border-emerald-600 bg-white shadow-xs ring-2 ring-emerald-600/15'
-                            : 'border-slate-200 hover:border-slate-300 bg-white/70'
-                            }`}
-                        >
-                          <div>
-                            <div className="flex items-center justify-between">
-                              <span className="font-extrabold text-[11px] text-slate-900">
-                                {lang === 'vi' ? 'Chia đôi 50% - 50%' : 'Split 50% - 50%'}
-                              </span>
-                              {feeSplit === 'SPLIT_50_50' && <Check className="w-3.5 h-3.5 text-emerald-600" />}
-                            </div>
-                            <span className="text-[10px] text-slate-500 block mt-0.5">Mỗi bên một nửa</span>
-                          </div>
-                          <div className="mt-2 pt-1 border-t border-slate-100 text-[10px] font-bold text-emerald-700">
-                            Bạn trả: {formatVND(Math.round(baseInspectionFee / 2))}
-                          </div>
-                        </div>
-
-                        {/* Option 3: Người bán 100% */}
-                        <div
-                          onClick={() => setFeeSplit('SELLER_100')}
-                          className={`p-2.5 rounded-xl border-2 transition cursor-pointer flex flex-col justify-between ${feeSplit === 'SELLER_100'
-                            ? 'border-blue-600 bg-white shadow-xs ring-2 ring-blue-600/15'
-                            : 'border-slate-200 hover:border-slate-300 bg-white/70'
-                            }`}
-                        >
-                          <div>
-                            <div className="flex items-center justify-between">
-                              <span className="font-extrabold text-[11px] text-slate-900">
-                                {lang === 'vi' ? 'Người bán 100%' : 'Seller 100%'}
-                              </span>
-                              {feeSplit === 'SELLER_100' && <Check className="w-3.5 h-3.5 text-blue-600" />}
-                            </div>
-                            <span className="text-[10px] text-slate-500 block mt-0.5">Cam kết người bán</span>
-                          </div>
-                          <div className="mt-2 pt-1 border-t border-slate-100 text-[10px] font-bold text-blue-700">
-                            Bạn trả: 0 VNĐ
-                          </div>
-                        </div>
-                      </div>
-
-
+                    <div className="bg-[#faf8f5] p-3.5 rounded-2xl border border-slate-200">
+                      <InspectionFeePercentSelect
+                        value={buyerFeePercent}
+                        onChange={setBuyerFeePercent}
+                        total={baseInspectionFee}
+                        lang={lang}
+                      />
                     </div>
                   </div>
                 )}
@@ -3924,11 +3844,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         <QrCode className="w-4 h-4 text-blue-600 shrink-0" />
                         <span>Thanh toán quét mã VietQR tự động qua SePay</span>
                       </div>
-                      <p className="text-[11px] text-slate-600 leading-relaxed">
-                        {lang === 'vi'
-                          ? 'Sau khi bấm "Đặt Hàng & Lấy Mã VietQR", hệ thống sẽ hiển thị mã QR kèm nội dung chuyển tiền định danh. Bạn mở app ngân hàng bất kỳ để quét mã và chuyển tiền. Tiền sẽ được đối soát tự động và đưa vào ký quỹ Escrow bảo vệ bạn.'
-                          : 'After clicking Place Order, a dynamic VietQR will be generated with your unique order code. Funds will be verified and held in Escrow.'}
-                      </p>
+
                       <div className="flex items-center gap-1.5 text-[10px] text-blue-700 font-bold pt-1 border-t border-blue-100">
                         <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
                         <span>Bảo lãnh Escrow 100% • Người bán chỉ nhận tiền sau khi bạn xác nhận đã nhận hàng</span>
@@ -4103,15 +4019,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                           📍 {selectedCenter?.name}
                         </span>
                         <span className="shrink-0 font-semibold">
-                          {feeSplit === 'BUYER_100'
-                            ? (lang === 'vi' ? 'Người mua chịu 100%' : 'Buyer pays 100%')
-                            : feeSplit === 'SPLIT_50_50'
-                              ? (lang === 'vi'
-                                ? `Chia đôi (Bạn: ${formatVND(buyerInspectionFee)} | Bán: ${formatVND(sellerInspectionFee)})`
-                                : `Split 50-50 (You: ${formatVND(buyerInspectionFee)} | Seller: ${formatVND(sellerInspectionFee)})`)
-                              : (lang === 'vi'
-                                ? `Người bán chịu 100% (${formatVND(sellerInspectionFee)})`
-                                : `Seller pays 100% (${formatVND(sellerInspectionFee)})`)}
+                          {feePercentLabel(buyerFeePercent, lang)}
                         </span>
                       </div>
 

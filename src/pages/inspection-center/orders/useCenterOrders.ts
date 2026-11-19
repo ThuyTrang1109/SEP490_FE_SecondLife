@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, type RefObject } from 'react';
 import { inspectorService, InspectionOrderDto } from '../../../services';
 import { Language, UserProfile, EscrowOrder } from '../../../types';
-import { shouldTrackCenterInspectionShipments, isHubReturnCase } from '../../../utils/inspectionCenterData';
+import { filterCenterApiOrders, shouldTrackCenterInspectionShipments, isHubReturnCase } from '../../../utils/inspectionCenterData';
 
 interface Options {
   currentUser: UserProfile | null | undefined;
@@ -125,6 +125,11 @@ export function useCenterOrders({ currentUser, initialOrders, lang, loadingShipm
             : ['https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=400'],
           buyerName: o.buyerName || 'Khách hàng',
           buyerEmail: o.buyerId ? `buyer_${String(o.buyerId).slice(0, 6)}@gmail.com` : 'buyer@secondlife.vn',
+          buyerAddress: o.buyerAddress || (o as any).deliveryAddress || o.shippingLegs?.[1]?.destination || o.address,
+          buyerPhone: (o as any).buyerPhone || (o as any).phone,
+          address: o.address || o.buyerAddress || (o as any).deliveryAddress || o.shippingLegs?.[1]?.destination,
+          inspectionCenterAddress: (o as any).inspectionCenterAddress,
+          inspectionCenterName: (o as any).inspectionCenterName,
           sellerName: o.sellerName || o.seller?.fullName || 'Người bán',
           sellerEmail: o.sellerId ? `seller_${String(o.sellerId).slice(0, 6)}@gmail.com` : 'seller@secondlife.vn',
           sellerPhone: o.sellerPhone || o.seller?.phone,
@@ -132,7 +137,8 @@ export function useCenterOrders({ currentUser, initialOrders, lang, loadingShipm
           inspectorId: hasValidAssign ? assignedInspectorId : undefined,
           inspectorName: hasValidAssign ? assignedInspectorName : undefined,
           orderType: (o.inspectionMethod === 'AT_HOME' || o.orderType === 'AT_HOME') ? 'AT_HOME' : 'AT_CENTER',
-          feePayer: o.inspectionFeeSplit === 'SELLER_100' ? 'SELLER_PAYS' : o.inspectionFeeSplit === 'BUYER_100' ? 'BUYER_PAYS' : 'SPLIT_50_50',
+          buyerFeePercent: o.buyerFeePercent,
+          feePayer: o.feePayer ?? (o.inspectionFeeSplit === 'SELLER_100' ? 'SELLER_PAYS' : o.inspectionFeeSplit === 'BUYER_100' ? 'BUYER_PAYS' : 'SPLIT_50_50'),
           status: resolvedStatus,
           appointmentScheduledAt,
           appointmentNote,
@@ -148,7 +154,7 @@ export function useCenterOrders({ currentUser, initialOrders, lang, loadingShipm
   }, [initialOrders]);
 
   // --- Orders State ---
-  const [orders, setOrders] = useState<InspectionOrderDto[]>(fallbackOrders);
+  const [orders, setOrders] = useState<InspectionOrderDto[]>([]);
   const [centerOrderHistory, setCenterOrderHistory] = useState<{
     centerId: string;
     items: InspectionOrderDto[];
@@ -190,42 +196,47 @@ export function useCenterOrders({ currentUser, initialOrders, lang, loadingShipm
   // --- API Fetch: Orders ---
   const loadOrders = async (background = false) => {
     const centerId = currentUser?.id;
-    if (showOrderShipments && !centerId) return;
+    if (!centerId) return;
     if (background && (loadingOrdersRef.current || loadingShipmentsRef.current)) return;
     const requestId = ++ordersRequestRef.current;
     loadingOrdersRef.current = true;
     if (!background) setIsLoadingOrders(true);
     try {
-      if (showOrderShipments && centerId) {
-        const result = await inspectorService.getCenterOrderHistory(background ? { isBackground: true } : undefined);
-        if (requestId !== ordersRequestRef.current) return;
-        if (!Array.isArray(result?.items)) throw new Error('Invalid center orders response');
-        setCenterOrderHistory({ centerId, items: result.items, total: result.totalElements });
-        setOrders(result.items);
-        setTrackedOrders(result.items.filter((order) => shouldTrackCenterInspectionShipments(order, centerId, currentUser?.role)));
+      const options = background ? { isBackground: true } : undefined;
+      const result = await inspectorService.getCenterOrderHistory(options);
+      if (requestId !== ordersRequestRef.current) return;
+      if (!Array.isArray(result?.items)) throw new Error('Invalid center orders response');
+
+      const backendItems = filterCenterApiOrders(result.items, centerId);
+      const total = backendItems.length === result.items.length ? result.totalElements : backendItems.length;
+      setCenterOrderHistory({ centerId, items: backendItems, total });
+      setTrackedOrders(backendItems.filter((order) =>
+        shouldTrackCenterInspectionShipments(order, centerId, currentUser?.role)));
+      if (showOrderShipments) {
+        const enriched = backendItems.map((item) => {
+          const apptPossibleIds = [item.id, (item as any).linkedOrderId, (item as any).orderId, (item as any).inspectionOrderId].filter(Boolean) as string[];
+          const isConfirmedLocally = typeof window !== 'undefined' && (
+            apptPossibleIds.some((pid) => localStorage.getItem(`order_confirmed_by_inspector_${pid}`) === 'true') ||
+            apptPossibleIds.some((pid) => localStorage.getItem(`inspection_status_${pid}`) === 'INSPECTING') ||
+            item.note?.includes('[INSPECTOR_CONFIRMED]') ||
+            item.status === 'INSPECTING' ||
+            (item as any).backendStatus === 'INSPECTING'
+          );
+          const savedStatus = typeof window !== 'undefined' ? localStorage.getItem(`inspection_status_${item.id}`) : null;
+          const isConfirmedByBackend = Boolean(item.inspectorConfirmed || (item as any).assignmentLocked || (item as any).inspectorConfirmedAt);
+          const resolvedInspectorConfirmed = Boolean(item.inspectorId) && (isConfirmedByBackend || isConfirmedLocally);
+          return {
+            ...item,
+            status: savedStatus || item.status,
+            inspectorConfirmed: resolvedInspectorConfirmed,
+          };
+        });
+        setOrders(enriched);
         return;
       }
 
-      let backendItems: InspectionOrderDto[] = [];
-      try {
-        const res = await inspectorService.getAllOrders(
-          undefined,
-          0,
-          100,
-          background ? { isBackground: true } : undefined,
-        );
-        const extracted = res?.items || (res as any)?.content || (Array.isArray(res) ? res : []);
-        if (extracted && extracted.length > 0) {
-          backendItems = extracted;
-        }
-      } catch (e) {
-        if (background) return;
-        console.warn('getAllOrders from backend error (falling back to storage/cache):', e);
-      }
-
-      if (requestId !== ordersRequestRef.current) return;
-
-      // Read orders from localStorage (center_inspection_orders + recent_placed_orders)
+      const backendOrderIds = new Set(backendItems.map((order) => order.id));
+      // Use cached details only for orders returned by the center API.
       let localOrders: InspectionOrderDto[] = [];
       try {
         const rawRecent = localStorage.getItem('recent_placed_orders');
@@ -240,7 +251,7 @@ export function useCenterOrders({ currentUser, initialOrders, lang, loadingShipm
         const seenOrderIds = new Set<string>();
         const dedupedList: any[] = [];
         combinedRaw.forEach((item: any) => {
-          if (item?.id && !seenOrderIds.has(item.id)) {
+          if (backendOrderIds.has(item?.id) && !seenOrderIds.has(item.id)) {
             seenOrderIds.add(item.id);
             dedupedList.push(item);
           }
@@ -406,6 +417,11 @@ export function useCenterOrders({ currentUser, initialOrders, lang, loadingShipm
               postImageUrls: resolvedImageUrls,
               buyerName: o.buyerName || 'Khách hàng',
               buyerEmail: o.buyerId ? `buyer_${String(o.buyerId).slice(0, 6)}@gmail.com` : 'buyer@secondlife.vn',
+              buyerAddress: o.buyerAddress || (o as any).deliveryAddress || o.shippingLegs?.[1]?.destination || o.address,
+              buyerPhone: (o as any).buyerPhone || (o as any).phone,
+              address: o.address || o.buyerAddress || (o as any).deliveryAddress || o.shippingLegs?.[1]?.destination,
+              inspectionCenterAddress: (o as any).inspectionCenterAddress,
+              inspectionCenterName: (o as any).inspectionCenterName,
               sellerName: o.sellerName || o.seller?.fullName || 'Người bán',
               sellerEmail: o.sellerId ? `seller_${String(o.sellerId).slice(0, 6)}@gmail.com` : 'seller@secondlife.vn',
               sellerPhone: o.sellerPhone || o.seller?.phone,
@@ -413,7 +429,8 @@ export function useCenterOrders({ currentUser, initialOrders, lang, loadingShipm
               inspectorId: hasValidAssign ? assignedInspectorId : undefined,
               inspectorName: hasValidAssign ? assignedInspectorName : undefined,
               orderType: (o.inspectionMethod === 'AT_HOME' || o.orderType === 'AT_HOME') ? 'AT_HOME' : 'AT_CENTER',
-              feePayer: o.inspectionFeeSplit === 'SELLER_100' ? 'SELLER_PAYS' : o.inspectionFeeSplit === 'BUYER_100' ? 'BUYER_PAYS' : 'SPLIT_50_50',
+              buyerFeePercent: o.buyerFeePercent,
+              feePayer: o.feePayer ?? (o.inspectionFeeSplit === 'SELLER_100' ? 'SELLER_PAYS' : o.inspectionFeeSplit === 'BUYER_100' ? 'BUYER_PAYS' : 'SPLIT_50_50'),
               status: resolvedStatus,
               appointmentScheduledAt,
               appointmentNote,
@@ -428,13 +445,18 @@ export function useCenterOrders({ currentUser, initialOrders, lang, loadingShipm
           });
       } catch { }
 
-      // Combine backendItems + localOrders + fallbackOrders
+      // Let API rows overwrite the details cached for the same order.
       const combinedMap = new Map<string, InspectionOrderDto>();
-      [...fallbackOrders, ...localOrders, ...backendItems].forEach((ord) => {
+      const waitingForAssignmentIds = new Set(backendItems
+        .filter((order) => order.status === 'CONFIRMED_PENDING_DISPATCH' && !order.inspectorId)
+        .map((order) => order.id));
+      const matchingInitialOrders = fallbackOrders.filter((order) => backendOrderIds.has(order.id));
+      [...matchingInitialOrders, ...localOrders, ...backendItems].forEach((ord) => {
         if (ord?.id) {
-          let assignedInspectorId = ord.inspectorId;
-          let assignedInspectorName = ord.inspectorName;
-          if (!assignedInspectorId) {
+          const waitingForAssignment = waitingForAssignmentIds.has(ord.id);
+          let assignedInspectorId = waitingForAssignment ? undefined : ord.inspectorId;
+          let assignedInspectorName = waitingForAssignment ? undefined : ord.inspectorName;
+          if (!waitingForAssignment && !assignedInspectorId) {
             try {
               const rawAssign = localStorage.getItem(`order_assigned_inspector_${ord.id}`);
               if (rawAssign) {
@@ -449,7 +471,9 @@ export function useCenterOrders({ currentUser, initialOrders, lang, loadingShipm
 
           const savedInspectionStatus = typeof window !== 'undefined' ? localStorage.getItem(`inspection_status_${ord.id}`) : null;
           let resolvedStatus = savedInspectionStatus || ord.status;
-          if ((ord.finalPaymentPaidAt && ord.linkedOrderId) || isHubReturnCase(ord)) {
+          if (waitingForAssignment) {
+            resolvedStatus = 'CONFIRMED_PENDING_DISPATCH';
+          } else if ((ord.finalPaymentPaidAt && ord.linkedOrderId) || isHubReturnCase(ord)) {
             resolvedStatus = ord.status;
           } else if (savedInspectionStatus === 'PASSED' || ord.status === 'PASSED' || (ord as any).backendStatus === 'PASSED' || (ord as any).escrowStatus === 'INSPECTION_PASSED') {
             resolvedStatus = 'PASSED';
@@ -565,6 +589,17 @@ export function useCenterOrders({ currentUser, initialOrders, lang, loadingShipm
           const resolvedSellerPhone = ord.sellerPhone || existing?.sellerPhone;
           const resolvedSellerName = ord.sellerName || existing?.sellerName;
 
+          const isConfirmedLocally = typeof window !== 'undefined' && (
+            apptPossibleIds.some((pid) => localStorage.getItem(`order_confirmed_by_inspector_${pid}`) === 'true') ||
+            apptPossibleIds.some((pid) => localStorage.getItem(`inspection_status_${pid}`) === 'INSPECTING') ||
+            ord.note?.includes('[INSPECTOR_CONFIRMED]') ||
+            ord.status === 'INSPECTING' ||
+            (ord as any).backendStatus === 'INSPECTING'
+          );
+
+          const isConfirmedByBackend = Boolean(ord.inspectorConfirmed || (ord as any).assignmentLocked || (ord as any).inspectorConfirmedAt);
+          const resolvedInspectorConfirmed = Boolean(hasValidAssign) && (isConfirmedByBackend || isConfirmedLocally);
+
           combinedMap.set(ord.id, {
             ...ord,
             sellerAddress: resolvedSellerAddress,
@@ -572,6 +607,7 @@ export function useCenterOrders({ currentUser, initialOrders, lang, loadingShipm
             sellerName: resolvedSellerName,
             inspectorId: hasValidAssign ? assignedInspectorId : undefined,
             inspectorName: hasValidAssign ? assignedInspectorName : undefined,
+            inspectorConfirmed: resolvedInspectorConfirmed,
             appointmentScheduledAt,
             appointmentNote,
             appointmentStatus,
@@ -587,18 +623,12 @@ export function useCenterOrders({ currentUser, initialOrders, lang, loadingShipm
       const finalOrders = Array.from(combinedMap.values());
       finalOrders.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
       setOrders(finalOrders);
-      // Only fetch shipments for actual orders returned by the center API.
-      setTrackedOrders(backendItems.filter((order) => shouldTrackCenterInspectionShipments(order, currentUser?.id, currentUser?.role)));
-    } catch (err: any) {
-      if (requestId !== ordersRequestRef.current) return;
-      if (showOrderShipments && centerId) {
-        if (!background) setCenterOrderHistory((previous) => previous?.centerId === centerId
-          ? { ...previous, refreshFailed: true }
-          : { centerId, items: [], total: 0, refreshFailed: true });
-        return;
-      }
-      console.warn('Lỗi tải danh sách đơn kiểm định từ backend, sử dụng dữ liệu trạm:', err);
-      if (!background && fallbackOrders.length > 0) setOrders(fallbackOrders);
+    } catch (err) {
+      if (requestId !== ordersRequestRef.current || background) return;
+      setCenterOrderHistory((previous) => previous?.centerId === centerId
+        ? { ...previous, refreshFailed: true }
+        : { centerId, items: [], total: 0, refreshFailed: true });
+      console.warn('Lỗi tải danh sách đơn kiểm định từ backend:', err);
     } finally {
       if (requestId === ordersRequestRef.current) {
         loadingOrdersRef.current = false;

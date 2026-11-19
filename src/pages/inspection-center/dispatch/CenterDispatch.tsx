@@ -10,10 +10,12 @@ import {
   PackageCheck,
   CalendarCheck,
   CalendarSync,
+  Lock,
 } from 'lucide-react';
-import React, { type ReactNode } from 'react';
+import React, { type ReactNode, useState, useEffect } from 'react';
 import { InspectionOrderDto } from '../../../services';
 import { formatVND } from '../../../utils/translations';
+import { isInspectorAssignmentLocked } from '../../../utils/inspectionCenterData';
 import type { DispatchFilter } from '../types';
 import type { useCenterAppointments } from './useCenterAppointments';
 import type { useCenterDispatchQueue } from './useCenterDispatchQueue';
@@ -56,6 +58,45 @@ export function CenterDispatch({
     setOrderMethodFilter,
     setSearchTerm,
   } = dispatch;
+
+  const [, setLocalUpdateSignal] = useState(0);
+
+  useEffect(() => {
+    const handleConfirmed = () => {
+      setLocalUpdateSignal((v) => v + 1);
+    };
+
+    let channel: BroadcastChannel | null = null;
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        channel = new BroadcastChannel('secondlife_inspection_channel');
+        channel.onmessage = (event) => {
+          if (event.data?.type === 'INSPECTOR_CONFIRMED' || event.data?.type === 'ORDER_ASSIGNED') {
+            handleConfirmed();
+          }
+        };
+      }
+    } catch { }
+
+    const handleStorage = (e: StorageEvent) => {
+      if (
+        e.key?.startsWith('order_confirmed_by_inspector_') ||
+        e.key === 'center_inspection_orders' ||
+        e.key === 'recent_placed_orders'
+      ) {
+        handleConfirmed();
+      }
+    };
+
+    window.addEventListener('secondlife_inspector_confirmed_signal', handleConfirmed);
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      channel?.close();
+      window.removeEventListener('secondlife_inspector_confirmed_signal', handleConfirmed);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, []);
 
   return (
     <section className="@container overflow-hidden rounded-xl border border-slate-200 border-t-4 border-t-[#c34c36] bg-white shadow-xs">
@@ -106,7 +147,6 @@ export function CenterDispatch({
           <option value="WAITING_CENTER_APPROVAL">Chờ Hub duyệt lịch hẹn (Tại nhà)</option>
           <option value="WAITING_SELLER_APPROVAL">Chờ Seller phản hồi lịch (Tại nhà)</option>
           <option value="WAITING_SELLER_APPOINTMENT">Chờ người bán hẹn lịch (Tại nhà)</option>
-          <option value="WAITING_FOR_HUB">Chờ nhận hàng tại Hub</option>
           <option value="READY_TO_ASSIGN">Sẵn sàng giao KTV (Đã chốt lịch)</option>
           <option value="ASSIGNED">Đã phân công KTV</option>
         </select>
@@ -141,29 +181,40 @@ export function CenterDispatch({
               const assigned = Boolean(order.inspectorId);
               const inspectorName = order.inspectorName && order.inspectorName !== 'Chưa phân công'
                 ? order.inspectorName : 'Kỹ thuật viên';
-              const waitingForHub = stage === 'WAITING_FOR_HUB';
+              const isInspectorLocked = assigned && (
+                isInspectorAssignmentLocked(order) ||
+                ['INSPECTING', 'INSPECTION_IN_PROGRESS', 'PASSED', 'FAILED', 'COMPLETED', 'DELIVERING_TO_BUYER'].includes(order.status || '') ||
+                (typeof window !== 'undefined' && (
+                  localStorage.getItem(`order_confirmed_by_inspector_${order.id}`) === 'true' ||
+                  localStorage.getItem(`inspection_status_${order.id}`) === 'INSPECTING'
+                ))
+              );
+              const isInspecting = isInspectorLocked && (
+                ['INSPECTING', 'INSPECTION_IN_PROGRESS'].includes(order.status || '') ||
+                (typeof window !== 'undefined' && localStorage.getItem(`inspection_status_${order.id}`) === 'INSPECTING')
+              );
               const waitingSellerAppt = stage === 'WAITING_SELLER_APPOINTMENT';
               const waitingCenterApproval = stage === 'WAITING_CENTER_APPROVAL';
               const waitingSellerCounter = stage === 'WAITING_SELLER_APPROVAL';
-              const actionLabel = waitingForHub
-                ? 'Nhận tại Hub'
-                : waitingSellerAppt
-                  ? 'Chờ hẹn lịch'
-                  : waitingCenterApproval
-                    ? 'Duyệt lịch hẹn'
-                    : waitingSellerCounter
-                      ? 'Xem phản hồi'
+              const actionLabel = waitingSellerAppt
+                ? 'Chờ hẹn lịch'
+                : waitingCenterApproval
+                  ? 'Duyệt lịch hẹn'
+                  : waitingSellerCounter
+                    ? 'Xem phản hồi'
+                    : isInspectorLocked
+                      ? (isInspecting ? 'Đang kiểm định' : 'Đã khóa đổi KTV')
                       : assigned
                         ? 'Đổi KTV'
                         : 'Giao task';
-              const ActionIcon = waitingForHub
-                ? PackageCheck
-                : waitingSellerAppt
-                  ? Clock
-                  : waitingCenterApproval
-                    ? CalendarCheck
-                    : waitingSellerCounter
-                      ? CalendarSync
+              const ActionIcon = waitingSellerAppt
+                ? Clock
+                : waitingCenterApproval
+                  ? CalendarCheck
+                  : waitingSellerCounter
+                    ? CalendarSync
+                    : isInspectorLocked
+                      ? Lock
                       : assigned
                         ? UserCheck
                         : UserPlus;
@@ -205,7 +256,7 @@ export function CenterDispatch({
                                 apptTime = parsed.scheduledAt;
                               }
                             }
-                          } catch {}
+                          } catch { }
                         }
                         try {
                           const rawCenter = localStorage.getItem('center_inspection_orders');
@@ -218,7 +269,7 @@ export function CenterDispatch({
                               }
                             }
                           }
-                        } catch {}
+                        } catch { }
                         try {
                           const rawSeller = localStorage.getItem('my_seller_inspection_orders');
                           if (rawSeller) {
@@ -230,7 +281,7 @@ export function CenterDispatch({
                               }
                             }
                           }
-                        } catch {}
+                        } catch { }
                       }
                       if (!apptTime) return null;
                       return (
@@ -272,37 +323,37 @@ export function CenterDispatch({
                   <td role="cell" className="min-w-0 text-right @[56rem]:px-4 @[56rem]:py-3 @[56rem]:text-center">
                     <button
                       type="button"
-                      disabled={waitingSellerAppt}
+                      disabled={waitingSellerAppt || isInspectorLocked}
                       onClick={() => {
-                        if (waitingForHub) {
-                          handleReceivePackageAtHub(order.id, order.postTitle);
-                        } else if (waitingCenterApproval || waitingSellerCounter) {
+                        if (isInspectorLocked) return;
+                        if (waitingCenterApproval || waitingSellerCounter) {
                           handleOpenReviewAppointment(order);
                         } else {
                           handleOpenAssign(order);
                         }
                       }}
-                      className={`inline-flex min-h-9 w-full max-w-32 items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs font-bold transition ${
-                        waitingSellerAppt
-                          ? 'border-amber-200 bg-amber-50 text-amber-800 cursor-not-allowed opacity-80'
-                          : waitingForHub
-                            ? 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 cursor-pointer'
-                            : waitingCenterApproval
-                              ? 'border-amber-500 bg-amber-600 text-white hover:bg-amber-700 cursor-pointer shadow-xs'
-                              : waitingSellerCounter
-                                ? 'border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100 cursor-pointer shadow-xs'
-                                : assigned
-                                  ? 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100 cursor-pointer'
-                                  : 'border-[#c34c36] bg-[#c34c36] text-white hover:bg-[#a63f2d] cursor-pointer'
-                      }`}
+                      className={`inline-flex min-h-9 w-full max-w-32 items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs font-bold transition ${waitingSellerAppt
+                        ? 'border-amber-200 bg-amber-50 text-amber-800 cursor-not-allowed opacity-80'
+                        : isInspectorLocked
+                          ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed opacity-90'
+                          : waitingCenterApproval
+                            ? 'border-amber-500 bg-amber-600 text-white hover:bg-amber-700 cursor-pointer shadow-xs'
+                            : waitingSellerCounter
+                              ? 'border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100 cursor-pointer shadow-xs'
+                              : assigned
+                                ? 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100 cursor-pointer'
+                                : 'border-[#c34c36] bg-[#c34c36] text-white hover:bg-[#a63f2d] cursor-pointer'
+                        }`}
                       title={
                         waitingSellerAppt
                           ? 'Người bán chưa chọn lịch hẹn tại nhà. Bạn cần đợi người bán đặt lịch trước khi duyệt và phân công KTV.'
-                          : waitingCenterApproval
-                            ? 'Người bán đã đề xuất lịch hẹn. Bấm để duyệt, gửi lại lịch hoặc từ chối.'
-                            : waitingSellerCounter
-                              ? 'Trung tâm đã gửi đề xuất lịch mới. Bấm để xem lại hoặc điều chỉnh.'
-                              : undefined
+                          : isInspectorLocked
+                            ? 'Kỹ thuật viên đã xác nhận đơn hoặc đang đo kiểm thiết bị. Quyền đổi KTV đã được khóa để tránh không nhất quán dữ liệu.'
+                            : waitingCenterApproval
+                              ? 'Người bán đã đề xuất lịch hẹn. Bấm để duyệt, gửi lại lịch hoặc từ chối.'
+                              : waitingSellerCounter
+                                ? 'Trung tâm đã gửi đề xuất lịch mới. Bấm để xem lại hoặc điều chỉnh.'
+                                : undefined
                       }
                     >
                       <ActionIcon aria-hidden="true" className="size-3.5 shrink-0" />

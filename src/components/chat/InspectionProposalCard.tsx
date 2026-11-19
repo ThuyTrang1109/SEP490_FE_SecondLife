@@ -14,7 +14,8 @@ import {
   RotateCcw,
   Wallet,
   ExternalLink,
-  Truck
+  Truck,
+  Calendar
 } from 'lucide-react';
 import {
   inspectorService,
@@ -22,13 +23,21 @@ import {
 } from '../../services/inspectorService';
 import { walletService, notifyWalletBalanceUpdated } from '../../services/walletService';
 import { shippingService } from '../../services/shippingService';
-import { Listing, Language, UserRole, EscrowOrder } from '../../types';
+import { Listing, Language, UserRole, EscrowOrder, ShipmentBackend } from '../../types';
 import { formatVND } from '../../utils/translations';
+import { InspectionFeePercentSelect } from '../orders/InspectionFeePercentSelect';
+import { buyerFeePercentFor, feePercentLabel, feePercentOptions } from '../../utils/inspectionFeePercent';
 import { getCashInspectionFeeShares } from '../../utils/inspectionCashShipping';
 import { getChatInspectionFees } from '../../utils/chatInspection';
 import { CHAT_PRODUCT_PLACEHOLDER } from '../../utils/chatProduct';
-import { getCustomerInspectionStatus, extractInspectionRejectionDetails } from '../../utils/inspectionPurchase';
+import { getCustomerInspectionStatus, extractInspectionRejectionDetails, getInspectionPurchaseDecision } from '../../utils/inspectionPurchase';
+import { getInboundShipmentProgress, getLatestInboundShipment } from '../../utils/inspectionCenterData';
+import { getOrderAllShipments } from '../../utils/orders/shipmentCache';
+import { isOrderReceivedAtHub } from '../../pages/ProductInspectionStationView';
 import { CreateShipmentModal } from '../modals/CreateShipmentModal';
+import { ScheduleAppointmentModal } from '../modals/ScheduleAppointmentModal';
+import { readOrderAppointment } from '../../utils/orders/orderAppointments';
+import { getAtHomeDeliveryStage } from '../../utils/orders/orderReceipt';
 import {
   formatInspectionDeadline,
   isInspectionPaymentExpired,
@@ -67,7 +76,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
 
   // Seller Counter Drawer State
   const [showCounterDrawer, setShowCounterDrawer] = useState(false);
-  const [counterFeePayer, setCounterFeePayer] = useState<'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50'>('BUYER_PAYS');
+  const [counterBuyerFeePercent, setCounterBuyerFeePercent] = useState(50);
 
   // Reject Modal State
   const [showRejectModal, setShowRejectModal] = useState(false);
@@ -80,28 +89,213 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
   // Payment Confirmation State
   const [showPayConfirmModal, setShowPayConfirmModal] = useState(false);
 
-  const status = order.status;
+  // Schedule Appointment Modal State (for On-Site Inspection)
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+
+  const status = (order.status || '').toUpperCase();
   const isWaitingSellerApproval = status === 'WAITING_SELLER_APPROVAL';
   const isWaitingBuyerApproval = status === 'WAITING_BUYER_APPROVAL';
   const isWaitingFeePayment = status === 'WAITING_FEE_PAYMENT';
-  const isPassed = status === 'PASSED';
+  const purchaseDecision = getInspectionPurchaseDecision(order);
+  const isPurchaseAccepted = Boolean(
+    purchaseDecision === 'accepted' ||
+    status === 'DELIVERING_TO_BUYER' ||
+    (order as any).status === 'DELIVERING_TO_BUYER' ||
+    order.finalPaymentPaidAt ||
+    order.linkedOrderId ||
+    (order as any).buyerDecision === 'accepted' ||
+    (order as any).inspectionDecision === 'accepted'
+  );
+
+  const isReceiptConfirmed = Boolean(
+    (order as any).receiptConfirmedAt ||
+    (typeof window !== 'undefined' && order.id && (
+      localStorage.getItem(`order_receipt_confirmed_${order.id}`) === 'true' ||
+      ((order as any).linkedOrderId && localStorage.getItem(`order_receipt_confirmed_${(order as any).linkedOrderId}`) === 'true')
+    ))
+  );
+
+  const isCompleted = Boolean(
+    isReceiptConfirmed ||
+    status === 'COMPLETED' ||
+    status === 'RELEASED' ||
+    status === 'COMPLETED_RELEASED' ||
+    (order as any).status === 'COMPLETED' ||
+    (order as any).escrowStatus === 'COMPLETED_RELEASED' ||
+    (order as any).escrowStatus === 'RELEASED' ||
+    (order as any).backendStatus === 'COMPLETED' ||
+    (() => {
+      if (typeof window === 'undefined' || !order.id) return false;
+      const targetIds = [order.id, (order as any).linkedOrderId].filter(Boolean);
+      for (const storageKey of ['recent_placed_orders', 'center_inspection_orders', 'my_seller_inspection_orders']) {
+        try {
+          const raw = localStorage.getItem(storageKey);
+          if (raw) {
+            const list = JSON.parse(raw);
+            if (Array.isArray(list)) {
+              const found = list.find((o: any) => targetIds.includes(o.id) || targetIds.includes(o.linkedOrderId) || targetIds.includes(o.inspectionOrderId));
+              if (found && (
+                found.escrowStatus === 'COMPLETED_RELEASED' ||
+                found.escrowStatus === 'RELEASED' ||
+                found.status === 'COMPLETED' ||
+                found.backendStatus === 'COMPLETED' ||
+                found.receiptConfirmedAt ||
+                localStorage.getItem(`order_receipt_confirmed_${found.id}`) === 'true'
+              )) {
+                return true;
+              }
+            }
+          }
+        } catch { }
+      }
+      return false;
+    })()
+  );
+
+  const isPassed = status === 'PASSED' || isPurchaseAccepted || isCompleted;
   const isFailed = status === 'FAILED';
   const isLocalCancelled = typeof window !== 'undefined' && localStorage.getItem(`order_cancelled_${order.id}`) === 'true';
   const isRejected = status === 'REJECTED';
   const isCancelled = status === 'CANCELLED' || isLocalCancelled;
   const rejectionDetails = extractInspectionRejectionDetails(order.note || (order as any).rejectionReason || (order as any).rejectReason);
   const isBuyerPurchaseRejected = isCancelled && rejectionDetails.isBuyerPurchaseRejected;
+  const isAtHome = Boolean(
+    String(order.orderType || '').toUpperCase() === 'AT_HOME' ||
+    String((order as any).inspectionMethod || '').toUpperCase() === 'AT_HOME' ||
+    String((order as any).inspectionScope || '').toUpperCase() === 'AT_HOME' ||
+    String((order as any).inspectionOrder?.orderType || '').toUpperCase() === 'AT_HOME' ||
+    String((order as any).inspectionOrder?.inspectionMethod || '').toUpperCase() === 'AT_HOME' ||
+    (order as any).isAtHome ||
+    Boolean(
+      typeof window !== 'undefined' && order.id && (
+        localStorage.getItem(`inspection_type_${order.id}`) === 'AT_HOME' ||
+        localStorage.getItem(`order_type_${order.id}`) === 'AT_HOME'
+      )
+    )
+  );
+  const isAtCenter = !isAtHome;
+
+  const [allShipments, setAllShipments] = useState<ShipmentBackend[]>(() => {
+    if (typeof window === 'undefined' || !order.id) return [];
+    const targetIds = [...new Set([order.id, (order as any).linkedOrderId, (order as any).inspectionOrderId])].filter(Boolean);
+    return targetIds.flatMap((id) => getOrderAllShipments(id));
+  });
+  const buyerShipment = allShipments.find((s) => (s.leg === 'SELLER_TO_BUYER' || s.leg === 'CENTER_TO_BUYER' || s.leg === 'DELIVERY') && s.status !== 'CANCELLED')
+    || allShipments.find((s) => s.leg === 'SELLER_TO_BUYER' || s.leg === 'CENTER_TO_BUYER' || s.leg === 'DELIVERY');
+
+  const atHomeDeliveryStage = isAtHome ? getAtHomeDeliveryStage(order as any, allShipments) : null;
+
+  const isDelivered = Boolean(
+    !isCompleted && (
+      (order as any).shippingDeliveredAt ||
+      (order as any).escrowStatus === 'DELIVERED_INSPECTION_WINDOW' ||
+      (order as any).backendStatus === 'DELIVERED' ||
+      (isAtHome && atHomeDeliveryStage === 'delivered') ||
+      (buyerShipment && (
+        buyerShipment.status === 'DELIVERED' ||
+        buyerShipment.status === 'COMPLETED' ||
+        buyerShipment.providerStatus === 'COMPLETED'
+      )) ||
+      (() => {
+        if (typeof window === 'undefined' || !order.id) return false;
+        const targetIds = [order.id, (order as any).linkedOrderId, (order as any).inspectionOrderId].filter(Boolean);
+        for (const storageKey of ['recent_placed_orders', 'center_inspection_orders', 'my_seller_inspection_orders']) {
+          try {
+            const raw = localStorage.getItem(storageKey);
+            if (raw) {
+              const list = JSON.parse(raw);
+              if (Array.isArray(list)) {
+                const found = list.find((o: any) => targetIds.includes(o.id) || targetIds.includes(o.linkedOrderId) || targetIds.includes(o.inspectionOrderId));
+                if (found && (found.shippingDeliveredAt || found.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' || found.backendStatus === 'DELIVERED')) {
+                  return true;
+                }
+              }
+            }
+          } catch { }
+        }
+        return false;
+      })()
+    )
+  );
+
+  const isAwaitingPickup = Boolean(
+    !isCompleted && !isDelivered && isPurchaseAccepted && (
+      (isAtHome && atHomeDeliveryStage === 'awaiting_pickup') ||
+      (!isAtHome && buyerShipment && Boolean(buyerShipment.orderCode) &&
+        !['DELIVERING', 'SHIPPED', 'PICKED_UP', 'IN_TRANSIT', 'ON_GOING'].includes(buyerShipment.status?.toUpperCase() || '') &&
+        !['DELIVERING', 'PICKED_UP', 'ON_GOING'].includes(buyerShipment.providerStatus?.toUpperCase() || ''))
+    )
+  );
+
+  const isDelivering = Boolean(
+    !isCompleted && !isDelivered && !isAwaitingPickup && isPurchaseAccepted && (
+      (isAtHome && atHomeDeliveryStage === 'in_transit') ||
+      (!isAtHome && (
+        Boolean((order as any).carrierPickedUpAt) ||
+        (buyerShipment && (
+          ['DELIVERING', 'SHIPPED', 'ON_GOING', 'IN_TRANSIT', 'PICKED_UP'].includes(buyerShipment.status?.toUpperCase() || '') ||
+          ['DELIVERING', 'PICKED_UP', 'ON_GOING'].includes(buyerShipment.providerStatus?.toUpperCase() || '')
+        ))
+      ))
+    )
+  );
+
+  const [inboundShipment, setInboundShipment] = useState<ShipmentBackend | null>(() => {
+    if (typeof window === 'undefined' || !order.id) return null;
+    const all = getOrderAllShipments(order.id, (order as any).linkedOrderId);
+    return getLatestInboundShipment(all);
+  });
+
+  const isInboundDelivered = Boolean(
+    isAtCenter && !isPassed && !isFailed && !isCancelled && !isPurchaseAccepted && !isCompleted && !isDelivered && (
+      isOrderReceivedAtHub(order) ||
+      (typeof window !== 'undefined' && localStorage.getItem(`hub_package_received_${order.id}`) === 'true') ||
+      (inboundShipment && (
+        inboundShipment.status === 'DELIVERED' ||
+        inboundShipment.status === 'COMPLETED' ||
+        inboundShipment.providerStatus === 'COMPLETED' ||
+        getInboundShipmentProgress(inboundShipment).step === 3
+      ))
+    )
+  );
+
+  const isInboundShipping = Boolean(
+    isAtCenter && !isInboundDelivered && !isPassed && !isFailed && !isCancelled && !isPurchaseAccepted && !isCompleted && !isDelivered && (
+      status === 'SHIPPING_TO_CENTER' ||
+      (inboundShipment && inboundShipment.status !== 'CANCELLED' && getInboundShipmentProgress(inboundShipment).step !== null) ||
+      (typeof window !== 'undefined' && (
+        localStorage.getItem(`order_shipment_created_${order.id}`) === 'true' ||
+        localStorage.getItem(`seller_shipped_to_hub_${order.id}`) === 'true'
+      ))
+    )
+  );
+
   const customerStatus = getCustomerInspectionStatus(status, order.customerStatus, order.inspectorId);
-  const badgeStatus = isBuyerPurchaseRejected
-    ? 'BUYER_REJECTED_PURCHASE'
-    : isCancelled
-      ? 'CANCELLED'
-      : customerStatus === 'INSPECTION_IN_PROGRESS'
-        ? 'INSPECTING'
-        : customerStatus;
-  const isConfirmedPendingDispatch = status === 'CONFIRMED_PENDING_DISPATCH' && badgeStatus === 'CONFIRMED_PENDING_DISPATCH';
-  const isAtHome = order.orderType === 'AT_HOME';
-  const isAtCenter = order.orderType === 'AT_CENTER';
+  const badgeStatus = isCompleted
+    ? 'COMPLETED'
+    : isBuyerPurchaseRejected
+      ? 'BUYER_REJECTED_PURCHASE'
+      : isCancelled
+        ? 'CANCELLED'
+        : isPurchaseAccepted
+          ? 'DELIVERING_TO_BUYER'
+          : isPassed
+            ? 'PASSED'
+            : isFailed
+              ? 'FAILED'
+              : customerStatus === 'INSPECTION_IN_PROGRESS' || customerStatus === 'INSPECTING'
+                ? 'INSPECTING'
+                : isInboundDelivered
+                  ? 'RECEIVED_AT_CENTER'
+                  : isInboundShipping
+                    ? 'SHIPPING_TO_CENTER'
+                    : customerStatus;
+  const isConfirmedPendingDispatch = status === 'CONFIRMED_PENDING_DISPATCH' && (
+    badgeStatus === 'CONFIRMED_PENDING_DISPATCH' ||
+    badgeStatus === 'SHIPPING_TO_CENTER' ||
+    badgeStatus === 'RECEIVED_AT_CENTER'
+  );
+  const isInspecting = badgeStatus === 'INSPECTING' || customerStatus === 'INSPECTING' || customerStatus === 'INSPECTION_IN_PROGRESS';
 
   // Kiểm tra xem đây có phải là lần gửi đề xuất ĐẦU TIÊN của người mua hay không.
   // Từ lần thương lượng thứ 2 (đối phương hoặc chính mình đã gửi đề xuất lại) thì không cho hủy.
@@ -138,9 +332,18 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
   const buyerCommitmentDeposit = order.buyerCommitmentDeposit ?? 0;
   const buyerAmount = buyerFeeShare == null ? undefined : buyerFeeShare + buyerCommitmentDeposit;
   const itemPrice = order.finalItemPrice ?? order.postPrice;
-  const feePayerLabel = order.feePayer === 'BUYER_PAYS' ? 'Người mua chịu 100%'
-    : order.feePayer === 'SELLER_PAYS' ? 'Người bán chịu 100%'
-      : order.feePayer === 'SPLIT_50_50' ? 'Chia đôi 50% - 50%' : null;
+  const buyerFeePercent = order.buyerFeePercent ?? buyerFeePercentFor(order.feePayer);
+  const feePayerLabel = buyerFeePercent == null ? null : feePercentLabel(buyerFeePercent, lang);
+  const counterOptions = feePercentOptions(buyerFeePercent, order.previousBuyerFeePercent);
+  const canCounter = counterOptions.length > 0;
+  const toggleCounterDrawer = () => {
+    if (!canCounter) return;
+    const nextOpen = !showCounterDrawer;
+    setShowCounterDrawer(nextOpen);
+    if (nextOpen) setCounterBuyerFeePercent(counterOptions[0]);
+    setShowRejectModal(false);
+    setActionError(null);
+  };
 
   const myFeeToPay = isSeller ? sellerFeeShare : buyerAmount;
   const otherFeeToPay = isSeller ? buyerAmount : sellerFeeShare;
@@ -149,20 +352,82 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
   const isOtherPartyPaid = otherFeeToPay === 0 || Boolean(isSeller ? order.buyerPaidAt : order.sellerPaidAt);
 
   const [showShipmentModal, setShowShipmentModal] = useState(false);
-  const [shipmentState, setShipmentState] = useState<'checking' | 'created' | 'none' | 'unavailable'>('checking');
+  const [shipmentState, setShipmentState] = useState<'checking' | 'created' | 'none' | 'unavailable'>(() => {
+    if (typeof window !== 'undefined' && order.id) {
+      const all = getOrderAllShipments(order.id);
+      const latest = getLatestInboundShipment(all);
+      if (latest && latest.status !== 'CANCELLED') return 'created';
+      if (localStorage.getItem(`order_shipment_created_${order.id}`) === 'true') return 'created';
+    }
+    return 'checking';
+  });
   const [shipmentRetry, setShipmentRetry] = useState(0);
+
   useEffect(() => {
-    if (!isSeller || !isAtCenter || !isConfirmedPendingDispatch) return;
+    if (!order.id || isFailed || isCancelled) return;
+    if (!isAtCenter && !isPurchaseAccepted) return;
     let active = true;
-    setShipmentState('checking');
+    setShipmentState((prev) => (prev === 'created' ? 'created' : 'checking'));
     void shippingService.getInspectionShipments(order.id, { isBackground: true }).then((shipments) => {
-      if (active) setShipmentState(shipments.some((shipment) => shipment.leg === 'SELLER_TO_CENTER'
-        && shipment.status !== 'CANCELLED') ? 'created' : 'none');
+      if (!active) return;
+      setAllShipments(shipments);
+      const latest = getLatestInboundShipment(shipments);
+      if (latest) {
+        setInboundShipment(latest);
+        if (latest.status === 'DELIVERED' || latest.status === 'COMPLETED' || latest.providerStatus === 'COMPLETED' || getInboundShipmentProgress(latest).step === 3) {
+          try {
+            localStorage.setItem(`hub_package_received_${order.id}`, 'true');
+          } catch { }
+        }
+      }
+      setShipmentState(shipments.some((shipment) => shipment.leg === 'SELLER_TO_CENTER' && shipment.status !== 'CANCELLED') ? 'created' : 'none');
+      try {
+        localStorage.setItem(`sl_order_shipments_${order.id}`, JSON.stringify(shipments));
+        localStorage.setItem(`order_shipments_${order.id}`, JSON.stringify(shipments));
+      } catch { }
     }).catch(() => {
-      if (active) setShipmentState('unavailable');
+      if (active) setShipmentState((prev) => (prev === 'created' ? 'created' : 'unavailable'));
     });
+
+    if (isAtHome && isPurchaseAccepted) {
+      const purchaseId = (order as any).linkedOrderId || order.id;
+      void shippingService.getOrderShipments(purchaseId, { isBackground: true }).then((shipments) => {
+        if (!active || !shipments?.length) return;
+        setAllShipments((prev) => {
+          const ids = new Set(prev.map((s) => s.shipmentId || s.orderCode));
+          const additions = shipments.filter((s) => !ids.has(s.shipmentId || s.orderCode));
+          return [...prev, ...additions];
+        });
+      }).catch(() => { });
+    }
+
+    const targetOrderId = (order as any).linkedOrderId;
+    if (targetOrderId && targetOrderId !== order.id) {
+      void shippingService.getInspectionShipments(targetOrderId, { isBackground: true }).then((shipments) => {
+        if (!active || !shipments.length) return;
+        setAllShipments((prev) => {
+          const ids = new Set(prev.map((s) => s.shipmentId || s.orderCode));
+          const additions = shipments.filter((s) => !ids.has(s.shipmentId || s.orderCode));
+          return [...prev, ...additions];
+        });
+      }).catch(() => { });
+    }
+
     return () => { active = false; };
-  }, [order.id, order.updatedAt, isSeller, isAtCenter, isConfirmedPendingDispatch, shipmentRetry]);
+  }, [order.id, (order as any).updatedAt, (order as any).linkedOrderId, isAtCenter, isPurchaseAccepted, isFailed, isCancelled, shipmentRetry]);
+
+  useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key && (e.key.startsWith('sl_order_shipments_') || e.key.startsWith('order_shipments_'))) {
+        const targetIds = [...new Set([order.id, (order as any).linkedOrderId, (order as any).inspectionOrderId])].filter(Boolean);
+        if (targetIds.some((id) => e.key === `sl_order_shipments_${id}` || e.key === `order_shipments_${id}`)) {
+          setAllShipments(targetIds.flatMap((id) => getOrderAllShipments(id)));
+        }
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, [order.id, (order as any).linkedOrderId, (order as any).inspectionOrderId]);
 
   const escrowOrderForShipment = useMemo<EscrowOrder>(() => {
     return {
@@ -189,6 +454,49 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
       updatedAt: order.updatedAt || new Date().toISOString(),
     } as unknown as EscrowOrder;
   }, [order, listing, isAtHome, totalFee, itemPrice, centerName]);
+
+  const currentAppt = useMemo(() => {
+    return readOrderAppointment(escrowOrderForShipment, order);
+  }, [escrowOrderForShipment, order]);
+
+  const hasValidApptDate = Boolean(
+    (currentAppt?.scheduledAt && currentAppt.scheduledAt !== 'null' && currentAppt.scheduledAt !== 'undefined' && !isNaN(new Date(currentAppt.scheduledAt).getTime())) ||
+    (order.appointmentScheduledAt && (order.appointmentScheduledAt as any) !== 'null' && (order.appointmentScheduledAt as any) !== 'undefined' && !isNaN(new Date(order.appointmentScheduledAt).getTime()))
+  );
+
+  const isApptCountered = Boolean(
+    (currentAppt?.status === 'COUNTERED_BY_CENTER' && Boolean(currentAppt?.counterScheduledAt)) ||
+    Boolean(currentAppt?.counterScheduledAt) ||
+    Boolean((order as any).counterScheduledAt) ||
+    (order as any).appointmentStatus === 'COUNTERED_BY_CENTER'
+  );
+  let hasInsp = Boolean(order.inspectorId || (order as any).inspectorName);
+  if (!hasInsp && order.id && typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(`order_assigned_inspector_${order.id}`);
+      if (raw && JSON.parse(raw).inspectorName) hasInsp = true;
+    } catch { }
+  }
+
+  const hasApptConfirmed = Boolean(
+    !isApptCountered &&
+    hasValidApptDate && (
+      currentAppt?.status === 'CONFIRMED' ||
+      (order as any).appointmentStatus === 'CONFIRMED' ||
+      hasInsp
+    )
+  );
+
+  const isApptPendingApproval = Boolean(
+    !isApptCountered &&
+    !hasApptConfirmed &&
+    hasValidApptDate && (
+      currentAppt?.status === 'PENDING_CENTER_CONFIRMATION' ||
+      currentAppt?.status === 'PENDING_CONFIRMATION' ||
+      (order as any).appointmentStatus === 'PENDING_CENTER_CONFIRMATION'
+    )
+  );
+  const hasNoAppt = isAtHome && !isApptCountered && !hasValidApptDate;
 
   // Dynamic countdown timer based on paymentDeadline
   const [timeLeft, setTimeLeft] = useState(() => calculateDeadlineTimeLeft(order.paymentDeadline, Date.now(), lang));
@@ -253,7 +561,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
     try {
       const res = await inspectorService.respondRequest(order.id, {
         action: 'COUNTER',
-        counterFeePayer: counterFeePayer,
+        counterBuyerFeePercent,
       });
       setShowCounterDrawer(false);
       onOrderUpdated(res);
@@ -375,7 +683,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
     try {
       const res = await inspectorService.buyerRespondRequest(order.id, {
         action: 'COUNTER',
-        counterFeePayer: counterFeePayer,
+        counterBuyerFeePercent,
       });
       setShowCounterDrawer(false);
       onOrderUpdated(res);
@@ -428,16 +736,6 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
     }
   };
 
-  // Preview numbers for Seller Counter option - chia chuẩn theo tỷ lệ Escrow qua Sàn
-  const preview = totalFee != null
-    ? (counterFeePayer === 'BUYER_PAYS' ? { buyer: totalFee, seller: 0 }
-      : counterFeePayer === 'SELLER_PAYS' ? { buyer: 0, seller: totalFee }
-        : { buyer: Math.round(totalFee / 2), seller: totalFee - Math.round(totalFee / 2) })
-    : null;
-  const previewHalf = totalFee != null
-    ? { buyer: Math.round(totalFee / 2), seller: totalFee - Math.round(totalFee / 2) }
-    : null;
-  const sellerOnlyPreview = totalFee;
   const vi = lang === 'vi';
   const badgeLabels: Record<string, string> = {
     WAITING_SELLER_APPROVAL: isSeller
@@ -447,8 +745,19 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
       ? (vi ? 'Chờ bạn phản hồi đề xuất' : 'Awaiting your response')
       : (vi ? 'Chờ người mua duyệt lại' : 'Waiting for buyer approval'),
     WAITING_FEE_PAYMENT: vi ? 'Chờ nộp phí kiểm định' : 'Waiting for payment',
-    CONFIRMED_PENDING_DISPATCH: vi ? 'Đã thu đủ phí' : 'Fees collected',
-    SHIPPING_TO_CENTER: vi ? 'Đang gửi hàng đến Hub' : 'Shipping to Hub',
+    CONFIRMED_PENDING_DISPATCH: isAtHome
+      ? (isApptCountered
+        ? (isSeller ? (vi ? 'Hub đề xuất lịch mới' : 'Hub proposed reschedule') : (vi ? 'Chờ hẹn lại lịch' : 'Awaiting reschedule'))
+        : isApptPendingApproval
+          ? (isSeller ? (vi ? 'Đã đề xuất lịch • Chờ Hub duyệt' : 'Visit proposed • Awaiting Hub') : (vi ? 'Chờ Hub duyệt lịch' : 'Awaiting Hub approval'))
+          : hasApptConfirmed
+            ? (hasInsp
+              ? (vi ? (isSeller ? 'Đã phân công KTV' : 'Đã Phân Công KTV • Chờ Khảo Sát') : 'Inspector Assigned')
+              : (vi ? 'Đã Chốt Lịch • Chờ Giao KTV' : 'Visit Confirmed • Awaiting Dispatch'))
+            : (isSeller ? (vi ? 'Chờ bạn hẹn lịch đón KTV' : 'Awaiting your schedule') : (vi ? 'Chờ người bán hẹn lịch đón KTV' : 'Awaiting seller schedule')))
+      : (vi ? 'Đã thu đủ phí' : 'Fees collected'),
+    SHIPPING_TO_CENTER: vi ? 'Đang giao đến Hub' : 'Shipping to Hub',
+    RECEIVED_AT_CENTER: vi ? 'Đã đến Hub kiểm định' : 'Delivered to Hub',
     INSPECTING: vi ? 'Đang kiểm định' : 'Inspection in progress',
     PASSED: vi ? 'Kiểm định đạt chuẩn' : 'Passed',
     FAILED: vi ? 'Không đạt chuẩn' : 'Failed',
@@ -458,14 +767,16 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
       ? (vi ? 'Người mua từ chối mua' : 'Buyer declined purchase')
       : (vi ? 'Bạn đã từ chối mua' : 'Purchase declined'),
     PAYMENT_EXPIRED: vi ? 'Hết hạn nộp phí' : 'Payment expired',
-    DELIVERING_TO_BUYER: vi ? 'Đã thanh toán tiền hàng' : 'Product payment received',
-    COMPLETED: vi ? 'Đã hoàn thành' : 'Completed',
+    DELIVERING_TO_BUYER: isSeller
+      ? (vi ? 'Người mua đã mua tiếp' : 'Purchase confirmed')
+      : (vi ? 'Người mua đã mua tiếp' : 'Purchase confirmed'),
+    COMPLETED: vi ? 'Giao dịch hoàn tất' : 'Completed',
   };
 
   return (
     <div className="flex justify-center my-3 animate-fadeIn w-full">
       <div
-        className={`max-w-lg w-full rounded-2xl border p-4 shadow-sm text-left transition-all relative overflow-hidden ${isPassed || isConfirmedPendingDispatch
+        className={`max-w-lg w-full rounded-2xl border p-4 shadow-sm text-left transition-all relative overflow-hidden ${isPassed || isConfirmedPendingDispatch || badgeStatus === 'RECEIVED_AT_CENTER'
           ? 'bg-gradient-to-b from-emerald-50/70 to-white border-emerald-300'
           : isRejected || isCancelled
             ? 'bg-gradient-to-b from-rose-50/70 to-white border-rose-200'
@@ -496,16 +807,30 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                 ? 'bg-purple-100 text-purple-800 border-purple-300'
                 : badgeStatus === 'WAITING_FEE_PAYMENT'
                   ? 'bg-amber-100 text-amber-900 border-amber-300 animate-pulse'
-                  : badgeStatus === 'CONFIRMED_PENDING_DISPATCH' || badgeStatus === 'INSPECTING'
-                    ? 'bg-teal-100 text-teal-900 border-teal-300'
-                    : badgeStatus === 'PASSED'
-                      ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                      : ['FAILED', 'REJECTED', 'CANCELLED', 'BUYER_REJECTED_PURCHASE'].includes(badgeStatus)
-                        ? 'bg-rose-100 text-rose-800 border-rose-300'
-                        : 'bg-slate-100 text-slate-800 border-slate-300'
+                  : badgeStatus === 'RECEIVED_AT_CENTER'
+                    ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                    : badgeStatus === 'SHIPPING_TO_CENTER'
+                      ? 'bg-cyan-100 text-cyan-800 border-cyan-300'
+                      : badgeStatus === 'CONFIRMED_PENDING_DISPATCH'
+                        ? (isAtHome
+                          ? (hasNoAppt
+                            ? 'bg-amber-100 text-amber-900 border-amber-300 font-bold'
+                            : isApptPendingApproval
+                              ? 'bg-blue-100 text-blue-800 border-blue-300 font-bold'
+                              : isApptCountered
+                                ? 'bg-orange-100 text-orange-900 border-orange-300 font-bold'
+                                : 'bg-emerald-100 text-emerald-800 border-emerald-300 font-bold')
+                          : 'bg-blue-100 text-blue-800 border-blue-300 font-bold')
+                        : badgeStatus === 'INSPECTING'
+                          ? 'bg-teal-100 text-teal-900 border-teal-300'
+                          : badgeStatus === 'PASSED' || badgeStatus === 'DELIVERING_TO_BUYER' || badgeStatus === 'COMPLETED'
+                            ? 'bg-emerald-100 text-emerald-800 border-emerald-300 font-bold'
+                            : ['FAILED', 'REJECTED', 'CANCELLED', 'BUYER_REJECTED_PURCHASE'].includes(badgeStatus)
+                              ? 'bg-rose-100 text-rose-800 border-rose-300'
+                              : 'bg-slate-100 text-slate-800 border-slate-300'
               }`}
           >
-            {badgeLabels[badgeStatus]}
+            {badgeLabels[badgeStatus] || badgeStatus}
           </span>
         </div>
 
@@ -662,29 +987,16 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                     {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <span>{lang === 'vi' ? 'Đồng ý' : 'Accept'}</span>}
                   </button>
 
-                  {/* Đề xuất lại */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const nextOpen = !showCounterDrawer;
-                      setShowCounterDrawer(nextOpen);
-                      if (nextOpen) {
-                        if (order.feePayer === 'SPLIT_50_50') {
-                          setCounterFeePayer('BUYER_PAYS');
-                        } else if (order.feePayer === 'BUYER_PAYS') {
-                          setCounterFeePayer('SPLIT_50_50');
-                        } else {
-                          setCounterFeePayer('SPLIT_50_50');
-                        }
-                      }
-                      setShowRejectModal(false);
-                      setActionError(null);
-                    }}
-                    disabled={actionLoading}
-                    className="flex-1 min-w-[110px] py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition flex items-center justify-center shadow-xs cursor-pointer disabled:opacity-50"
-                  >
-                    <span>{lang === 'vi' ? 'Đề xuất lại' : 'Counter'}</span>
-                  </button>
+                  {canCounter && (
+                    <button
+                      type="button"
+                      onClick={toggleCounterDrawer}
+                      disabled={actionLoading}
+                      className="flex-1 min-w-[110px] py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition flex items-center justify-center shadow-xs cursor-pointer disabled:opacity-50"
+                    >
+                      <span>{lang === 'vi' ? 'Đề xuất lại' : 'Counter'}</span>
+                    </button>
+                  )}
 
                   {/* Từ chối */}
                   <button
@@ -701,8 +1013,13 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                   </button>
                 </div>
 
+                {!canCounter && (
+                  <p className="text-xs text-slate-600">
+                    {vi ? 'Không còn tỷ lệ trung gian để đề xuất lại.' : 'No intermediate fee split remains.'}
+                  </p>
+                )}
                 {/* Seller Counter Drawer */}
-                {showCounterDrawer && (
+                {canCounter && showCounterDrawer && (
                   <div className="mt-2.5 p-3 bg-indigo-50/70 border border-indigo-200 rounded-xl space-y-2.5 animate-fadeIn">
                     <div className="flex items-center justify-between">
                       <span className="font-extrabold text-xs text-indigo-950">
@@ -717,48 +1034,13 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-1.5 text-center">
-                      <button
-                        type="button"
-                        onClick={() => setCounterFeePayer('BUYER_PAYS')}
-                        className={`p-2 rounded-lg border text-[11px] font-bold transition cursor-pointer ${counterFeePayer === 'BUYER_PAYS'
-                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                          : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300'
-                          }`}
-                      >
-                        <div>Buyer 100%</div>
-                        <div className="text-[9px] opacity-80 mt-0.5">0 đ</div>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setCounterFeePayer('SPLIT_50_50')}
-                        className={`p-2 rounded-lg border text-[11px] font-bold transition cursor-pointer ${counterFeePayer === 'SPLIT_50_50'
-                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                          : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300'
-                          }`}
-                      >
-                        <div>Chia 50/50</div>
-                        <div className="text-[9px] opacity-80 mt-0.5">{formatFee(previewHalf?.seller)}</div>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setCounterFeePayer('SELLER_PAYS')}
-                        className={`p-2 rounded-lg border text-[11px] font-bold transition cursor-pointer ${counterFeePayer === 'SELLER_PAYS'
-                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                          : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300'
-                          }`}
-                      >
-                        <div>Seller 100%</div>
-                        <div className="text-[9px] opacity-80 mt-0.5">{formatFee(sellerOnlyPreview)}</div>
-                      </button>
-                    </div>
-
-                    <div className="text-[11px] text-slate-600 flex justify-between bg-white p-2 rounded-lg border border-slate-200">
-                      <span>Người bán (Bạn) chịu: <strong>{formatFee(preview?.seller)}</strong></span>
-                      <span>Người mua chịu: <strong>{formatFee(preview?.buyer)}</strong></span>
-                    </div>
+                    <InspectionFeePercentSelect
+                      value={counterBuyerFeePercent}
+                      onChange={setCounterBuyerFeePercent}
+                      options={counterOptions}
+                      total={totalFee}
+                      lang={lang}
+                    />
 
                     <div className="flex justify-end gap-2 pt-1">
                       <button
@@ -771,7 +1053,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                       <button
                         type="button"
                         onClick={handleSellerCounter}
-                        disabled={actionLoading}
+                        disabled={actionLoading || !counterOptions.includes(counterBuyerFeePercent)}
                         className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shadow-xs cursor-pointer flex items-center gap-1 disabled:opacity-50"
                       >
                         {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
@@ -833,29 +1115,16 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                     {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <span>{lang === 'vi' ? 'Đồng ý ' : 'Accept Counter'}</span>}
                   </button>
 
-                  {/* Đề xuất lại */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const nextOpen = !showCounterDrawer;
-                      setShowCounterDrawer(nextOpen);
-                      if (nextOpen) {
-                        if (order.feePayer === 'SPLIT_50_50') {
-                          setCounterFeePayer('BUYER_PAYS');
-                        } else if (order.feePayer === 'BUYER_PAYS') {
-                          setCounterFeePayer('SPLIT_50_50');
-                        } else {
-                          setCounterFeePayer('SPLIT_50_50');
-                        }
-                      }
-                      setShowRejectModal(false);
-                      setActionError(null);
-                    }}
-                    disabled={actionLoading}
-                    className="flex-1 min-w-[100px] py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition flex items-center justify-center shadow-xs cursor-pointer disabled:opacity-50"
-                  >
-                    <span>{lang === 'vi' ? 'Đề xuất lại' : 'Counter'}</span>
-                  </button>
+                  {canCounter && (
+                    <button
+                      type="button"
+                      onClick={toggleCounterDrawer}
+                      disabled={actionLoading}
+                      className="flex-1 min-w-[100px] py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition flex items-center justify-center shadow-xs cursor-pointer disabled:opacity-50"
+                    >
+                      <span>{lang === 'vi' ? 'Đề xuất lại' : 'Counter'}</span>
+                    </button>
+                  )}
 
                   {/* Từ chối */}
                   <button
@@ -872,8 +1141,13 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                   </button>
                 </div>
 
+                {!canCounter && (
+                  <p className="text-xs text-slate-600">
+                    {vi ? 'Không còn tỷ lệ trung gian để đề xuất lại.' : 'No intermediate fee split remains.'}
+                  </p>
+                )}
                 {/* Buyer Counter Drawer */}
-                {showCounterDrawer && (
+                {canCounter && showCounterDrawer && (
                   <div className="mt-2.5 p-3 bg-indigo-50/70 border border-indigo-200 rounded-xl space-y-2.5 animate-fadeIn">
                     <div className="flex items-center justify-between">
                       <span className="font-extrabold text-xs text-indigo-950">
@@ -888,48 +1162,13 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-1.5 text-center">
-                      <button
-                        type="button"
-                        onClick={() => setCounterFeePayer('BUYER_PAYS')}
-                        className={`p-2 rounded-lg border text-[11px] font-bold transition cursor-pointer ${counterFeePayer === 'BUYER_PAYS'
-                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                          : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300'
-                          }`}
-                      >
-                        <div>Buyer 100%</div>
-                        <div className="text-[9px] opacity-80 mt-0.5">{formatFee(totalFee)}</div>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setCounterFeePayer('SPLIT_50_50')}
-                        className={`p-2 rounded-lg border text-[11px] font-bold transition cursor-pointer ${counterFeePayer === 'SPLIT_50_50'
-                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                          : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300'
-                          }`}
-                      >
-                        <div>Chia 50/50</div>
-                        <div className="text-[9px] opacity-80 mt-0.5">{formatFee(previewHalf?.buyer)}</div>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setCounterFeePayer('SELLER_PAYS')}
-                        className={`p-2 rounded-lg border text-[11px] font-bold transition cursor-pointer ${counterFeePayer === 'SELLER_PAYS'
-                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                          : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300'
-                          }`}
-                      >
-                        <div>Seller 100%</div>
-                        <div className="text-[9px] opacity-80 mt-0.5">0 đ</div>
-                      </button>
-                    </div>
-
-                    <div className="text-[11px] text-slate-600 flex justify-between bg-white p-2 rounded-lg border border-slate-200">
-                      <span>{lang === 'vi' ? 'Người mua (Bạn) trả:' : 'Buyer pays:'} <strong>{formatFee(preview?.buyer)}</strong></span>
-                      <span>{lang === 'vi' ? 'Người bán chịu:' : 'Seller share:'} <strong>{formatFee(preview?.seller)}</strong></span>
-                    </div>
+                    <InspectionFeePercentSelect
+                      value={counterBuyerFeePercent}
+                      onChange={setCounterBuyerFeePercent}
+                      options={counterOptions}
+                      total={totalFee}
+                      lang={lang}
+                    />
 
                     <div className="flex justify-end gap-2 pt-1">
                       <button
@@ -942,7 +1181,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                       <button
                         type="button"
                         onClick={handleBuyerCounter}
-                        disabled={actionLoading}
+                        disabled={actionLoading || !counterOptions.includes(counterBuyerFeePercent)}
                         className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shadow-xs cursor-pointer flex items-center gap-1 disabled:opacity-50"
                       >
                         {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
@@ -1076,78 +1315,394 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
           </div>
         )}
 
-        {/* 4. STATUS: CONFIRMED_PENDING_DISPATCH */}
-        {isConfirmedPendingDispatch && (
-          <div className="p-3 bg-teal-50 border border-teal-200 rounded-xl text-xs text-teal-900 space-y-1.5">
-            <div className="font-bold flex items-center gap-1.5">
-              <Truck className="w-4 h-4 text-teal-700" />
-              <span>{lang === 'vi' ? 'Đã thu đủ phí kiểm định' : 'Fees collected'}</span>
-            </div>
-            <p className="text-[11px] text-teal-800 leading-relaxed">
-              {isAtHome
-                ? (lang === 'vi' ? 'Chờ trung tâm điều phối kỹ thuật viên.' : 'Waiting for technician dispatch.')
-                : (lang === 'vi' ? 'Chờ điều phối vận chuyển đến trung tâm kiểm định.' : 'Waiting for shipment to the inspection center.')}
-            </p>
-
-            {/* Nút Tạo Vận Đơn Lalamove dành cho Người bán */}
-            {isSeller && isAtCenter && (
-              shipmentState === 'created' ? (
-                <div className="mt-2 py-2 px-3 bg-emerald-100/90 border border-emerald-300 rounded-xl text-emerald-800 font-bold text-xs flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>{lang === 'vi' ? 'Đã tạo vận đơn Lalamove' : 'Lalamove shipment created'}</span>
-                  </div>
-                  <span className="text-[10px] text-emerald-700 bg-white/70 px-2 py-0.5 rounded-md border border-emerald-200">
-                    {lang === 'vi' ? 'Chặng 1' : 'Leg 1'}
-                  </span>
+        {/* 4. STATUS: CONFIRMED_PENDING_DISPATCH / SHIPPING_TO_CENTER / RECEIVED_AT_CENTER */}
+        {(isConfirmedPendingDispatch || badgeStatus === 'SHIPPING_TO_CENTER' || badgeStatus === 'RECEIVED_AT_CENTER') && !isInspecting && !isPassed && !isFailed && !isCancelled && !isPurchaseAccepted && !isCompleted && (
+          isInboundDelivered ? (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-950 space-y-1.5">
+              <div className="font-bold flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{lang === 'vi' ? 'Đã đến Hub kiểm định' : 'Delivered to Hub'}</span>
                 </div>
-              ) : shipmentState === 'none' ? (
-                <button
-                  type="button"
-                  onClick={() => setShowShipmentModal(true)}
-                  className="w-full mt-2 py-2.5 px-4 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white rounded-xl font-bold text-xs shadow-md transition flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99]"
-                >
-                  <Truck className="w-4 h-4" />
-                  <span>{lang === 'vi' ? 'Đã gói hàng • Tạo đơn vận chuyển' : 'Packed • Create Lalamove Shipment'}</span>
-                </button>
-              ) : (
-                <p role="status" className="mt-2 text-[11px] text-slate-600">
-                  {shipmentState === 'checking'
-                    ? (lang === 'vi' ? 'Đang tải vận đơn…' : 'Loading shipment…')
-                    : (lang === 'vi' ? 'Chưa tải được vận đơn' : 'Shipment unavailable')}
-                  {shipmentState === 'unavailable' && (
-                    <button type="button" className="ml-2 font-semibold underline" onClick={() => setShipmentRetry((previous) => previous + 1)}>
-                      {lang === 'vi' ? 'Thử lại' : 'Retry'}
+                {inboundShipment?.orderCode && (
+                  <span className="text-[10px] font-mono text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded-md border border-emerald-300">
+                    #{inboundShipment.orderCode}
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-emerald-800 leading-relaxed">
+                {lang === 'vi'
+                  ? 'Thiết bị đã được giao tới Trung tâm kiểm định. Kỹ thuật viên chuẩn bị tiếp nhận và tiến hành thẩm định.'
+                  : 'The item has arrived at the inspection center. Technicians are preparing to inspect.'}
+              </p>
+            </div>
+          ) : isInboundShipping ? (
+            <div className="p-3 bg-cyan-50 border border-cyan-200 rounded-xl text-xs text-cyan-950 space-y-1.5">
+              <div className="font-bold flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Truck className="w-4 h-4 text-cyan-600 shrink-0" />
+                  <span>{lang === 'vi' ? 'Đang vận chuyển đến Hub kiểm định' : 'Shipping to Hub'}</span>
+                </div>
+                {inboundShipment?.orderCode && (
+                  <span className="text-[10px] font-mono text-cyan-800 bg-cyan-100/80 px-2 py-0.5 rounded-md border border-cyan-300">
+                    #{inboundShipment.orderCode}
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-cyan-800 leading-relaxed">
+                {lang === 'vi'
+                  ? 'Tài xế Lalamove đang giao kiện hàng đến Hub. Kỹ thuật viên sẽ tiếp nhận khi máy tới nơi.'
+                  : 'Lalamove driver is delivering the parcel to the Hub.'}
+              </p>
+            </div>
+          ) : isAtHome ? (
+            <div className="space-y-2">
+              {hasNoAppt ? (
+                <div className="p-3.5 bg-amber-50/90 border border-amber-200 rounded-xl text-xs text-amber-950 space-y-2.5">
+                  <div className="font-bold flex items-center gap-1.5 text-amber-900">
+                    <Calendar className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>
+                      {isSeller
+                        ? (lang === 'vi' ? 'Chờ Bạn Hẹn Lịch Đón KTV' : 'Awaiting Your Schedule')
+                        : (lang === 'vi' ? 'Chờ Người Bán Hẹn Lịch Đón KTV' : 'Awaiting Seller Schedule')}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-amber-800 leading-relaxed">
+                    {isSeller
+                      ? (lang === 'vi'
+                        ? 'Khách mua đã đăng ký gói kiểm định tận nơi. Vui lòng bấm nút "Hẹn Lịch Đón KTV" bên dưới để chọn ngày giờ làm việc trong khung giờ hành chính (08:00 - 12:00 hoặc 13:00 - 17:00). Trung tâm SecondLife sẽ nhận thông tin để điều phối Kỹ thuật viên phù hợp.'
+                        : 'Buyer requested on-site inspection. Please click "Schedule Visit" below to choose an appointment slot.')
+                      : (lang === 'vi'
+                        ? 'Hai bên đã nộp đủ phí kiểm định GĐ 1. Đang chờ người bán chọn ngày giờ làm việc để Kỹ thuật viên SecondLife đến tận nhà kiểm định thiết bị.'
+                        : 'Inspection fees collected. Waiting for the seller to choose a visit appointment.')}
+                  </p>
+
+                  {/* Nút Hẹn Lịch Đón KTV dành cho Người bán */}
+                  {isSeller && (
+                    <button
+                      type="button"
+                      onClick={() => setShowScheduleModal(true)}
+                      className="w-full py-2.5 px-4 bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 hover:from-amber-700 hover:to-orange-700 text-white rounded-xl font-bold text-xs shadow-md transition flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99]"
+                    >
+                      <Calendar className="w-4 h-4" />
+                      <span>{lang === 'vi' ? 'Hẹn Lịch Đón KTV' : 'Schedule Inspector Visit'}</span>
                     </button>
                   )}
-                </p>
-              )
-            )}
-          </div>
+                </div>
+              ) : isApptPendingApproval ? (
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-950 space-y-1.5">
+                  <div className="font-bold flex items-center gap-1.5 text-blue-900">
+                    <Clock className="w-4 h-4 text-blue-600 shrink-0" />
+                    <span>{lang === 'vi' ? 'Đã đề xuất lịch • Chờ Hub duyệt' : 'Visit proposed • Awaiting Hub approval'}</span>
+                  </div>
+                  <p className="text-[11px] text-blue-800 leading-relaxed">
+                    {lang === 'vi'
+                      ? `Đã gửi đề xuất lịch đón KTV${currentAppt?.scheduledAt || order.appointmentScheduledAt ? `: ${new Date(currentAppt?.scheduledAt || order.appointmentScheduledAt!).toLocaleString('vi-VN')}` : ''}. Đang chờ Trung tâm kiểm định duyệt lịch.`
+                      : 'Inspection appointment has been proposed. Awaiting Hub confirmation.'}
+                  </p>
+                </div>
+              ) : isApptCountered ? (
+                <div className="p-3 bg-amber-50 border-2 border-amber-300 rounded-xl text-xs text-amber-950 space-y-2">
+                  <div className="font-bold flex items-center justify-between">
+                    <span className="text-amber-900 font-extrabold flex items-center gap-1.5">
+                      <Calendar className="w-4 h-4 text-amber-600" />
+                      {lang === 'vi' ? 'Trung tâm đề xuất lịch hẹn mới:' : 'Hub proposed a new appointment:'}
+                    </span>
+                  </div>
+                  {(currentAppt?.counterScheduledAt || (order as any).counterScheduledAt) && (
+                    <div className="p-2 rounded-lg bg-white border border-amber-200 font-bold text-amber-900">
+                      📅 {new Date(currentAppt?.counterScheduledAt || (order as any).counterScheduledAt).toLocaleString('vi-VN')}
+                    </div>
+                  )}
+                  {isSeller && (
+                    <button
+                      type="button"
+                      onClick={() => setShowScheduleModal(true)}
+                      className="w-full py-2 px-3 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-xs shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Calendar className="w-3.5 h-3.5" />
+                      <span>{lang === 'vi' ? 'Hẹn Lại Lịch Khác' : 'Reschedule'}</span>
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-950 space-y-1.5">
+                  <div className="font-bold flex items-center gap-1.5 text-emerald-900">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>
+                      {hasInsp
+                        ? (lang === 'vi' ? (isSeller ? 'Đã phân công KTV • KTV sẽ đến kiểm định tận nhà' : 'Đã phân công KTV • Chờ khảo sát') : 'Inspector Assigned')
+                        : (lang === 'vi' ? 'Đã Chốt Lịch • Chờ Giao KTV' : 'Visit Confirmed • Awaiting Dispatch')}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-emerald-800 leading-relaxed">
+                    {lang === 'vi'
+                      ? `Kỹ thuật viên sẽ có mặt tại nhà${currentAppt?.scheduledAt || order.appointmentScheduledAt ? ` vào lúc: ${new Date(currentAppt?.scheduledAt || order.appointmentScheduledAt!).toLocaleString('vi-VN')}` : ''}. Vui lòng chuẩn bị sẵn thiết bị để KTV kiểm định.`
+                      : 'Technician visit has been confirmed.'}
+                  </p>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="p-3 bg-teal-50 border border-teal-200 rounded-xl text-xs text-teal-900 space-y-1.5">
+              <div className="font-bold flex items-center gap-1.5">
+                <Truck className="w-4 h-4 text-teal-700" />
+                <span>
+                  {isSeller
+                    ? (lang === 'vi' ? 'Chờ bạn gửi hàng đến Hub' : 'Awaiting shipment to Hub')
+                    : (lang === 'vi' ? 'Chờ người bán gửi hàng đến Hub' : 'Awaiting seller shipment to Hub')}
+                </span>
+              </div>
+              <p className="text-[11px] text-teal-800 leading-relaxed">
+                {isSeller
+                  ? (lang === 'vi' ? 'Hai bên đã hoàn tất nộp phí. Vui lòng đóng gói và tạo đơn vận chuyển Lalamove để giao máy đến Hub kiểm định.' : 'Waiting for shipment to the inspection center.')
+                  : (lang === 'vi' ? 'Đang chờ người bán đóng gói và tạo đơn vận chuyển đến Hub.' : 'Waiting for seller to pack and create shipment to Hub.')}
+              </p>
+
+              {/* Nút Tạo Vận Đơn Lalamove dành cho Người bán */}
+              {isSeller && isAtCenter && (
+                shipmentState === 'created' ? (
+                  <div className="mt-2 py-2 px-3 bg-emerald-100/90 border border-emerald-300 rounded-xl text-emerald-800 font-bold text-xs flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>{lang === 'vi' ? 'Đã tạo vận đơn Lalamove' : 'Lalamove shipment created'}</span>
+                    </div>
+                    <span className="text-[10px] text-emerald-700 bg-white/70 px-2 py-0.5 rounded-md border border-emerald-200">
+                      {lang === 'vi' ? 'Chặng 1' : 'Leg 1'}
+                    </span>
+                  </div>
+                ) : shipmentState === 'none' ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowShipmentModal(true)}
+                    className="w-full mt-2 py-2.5 px-4 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white rounded-xl font-bold text-xs shadow-md transition flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99]"
+                  >
+                    <Truck className="w-4 h-4" />
+                    <span>{lang === 'vi' ? 'Đã gói hàng • Tạo đơn vận chuyển' : 'Packed • Create Lalamove Shipment'}</span>
+                  </button>
+                ) : (
+                  <p role="status" className="mt-2 text-[11px] text-slate-600">
+                    {shipmentState === 'checking'
+                      ? (lang === 'vi' ? 'Đang tải vận đơn…' : 'Loading shipment…')
+                      : (lang === 'vi' ? 'Chưa tải được vận đơn' : 'Shipment unavailable')}
+                    {shipmentState === 'unavailable' && (
+                      <button type="button" className="ml-2 font-semibold underline" onClick={() => setShipmentRetry((previous) => previous + 1)}>
+                        {lang === 'vi' ? 'Thử lại' : 'Retry'}
+                      </button>
+                    )}
+                  </p>
+                )
+              )}
+            </div>
+          )
         )}
 
-        {/* 5. STATUS: PASSED / FAILED / REJECTED */}
+        {/* 5. STATUS: PASSED / DELIVERING_TO_BUYER / COMPLETED */}
         {isPassed && (
-          <p className="text-xs text-emerald-800 font-bold bg-emerald-50 p-2.5 rounded-xl border border-emerald-200 flex items-center gap-1.5">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>
-              {isSeller
-                ? (lang === 'vi'
-                  ? (order.finalPaymentPaidAt || (order as any).linkedOrderId
-                    ? 'Sản phẩm đã kiểm định ĐẠT CHUẨN. Người mua đã xác nhận mua hàng.'
-                    : 'Sản phẩm đã kiểm định ĐẠT CHUẨN. Đang chờ người mua xác nhận mua hàng.')
-                  : (order.finalPaymentPaidAt || (order as any).linkedOrderId
-                    ? 'Product passed inspection. Buyer confirmed purchase.'
-                    : 'Product passed inspection. Awaiting buyer confirmation.'))
-                : (lang === 'vi'
-                  ? (order.finalPaymentPaidAt || (order as any).linkedOrderId
-                    ? 'Sản phẩm đã kiểm định ĐẠT CHUẨN. Bạn đã xác nhận mua hàng thành công.'
-                    : 'Sản phẩm đã kiểm định ĐẠT CHUẨN. Bạn có thể mua tiếp.')
-                  : (order.finalPaymentPaidAt || (order as any).linkedOrderId
-                    ? 'Product passed inspection. You have completed purchase.'
-                    : 'Product passed inspection. You can proceed with the purchase.'))}
-            </span>
-          </p>
+          <div className="space-y-2">
+            <p className="text-xs text-emerald-800 font-bold bg-emerald-50 p-2.5 rounded-xl border border-emerald-200 flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>
+                {isCompleted
+                  ? (isSeller
+                    ? (lang === 'vi' ? 'Giao dịch hoàn tất • Tiền hàng đã chuyển về ví' : 'Transaction completed • Payout credited to wallet')
+                    : (lang === 'vi' ? 'Giao dịch hoàn tất • Đã nhận hàng thành công' : 'Transaction completed • Order successfully delivered'))
+                  : isDelivered
+                    ? (isSeller
+                      ? (lang === 'vi' ? 'Đã giao hàng thành công • Chờ đối soát (48h)' : 'Delivered successfully • Review window (48h)')
+                      : (lang === 'vi' ? 'Đã nhận hàng • 48h kiểm tra đối soát' : 'Package delivered • 48h inspection window'))
+                    : isPurchaseAccepted
+                      ? (isSeller
+                        ? (lang === 'vi'
+                          ? 'Sản phẩm đã kiểm định ĐẠT CHUẨN. Người mua đã xác nhận mua hàng.'
+                          : 'Product passed inspection. Buyer confirmed purchase.')
+                        : (lang === 'vi'
+                          ? 'Sản phẩm đã kiểm định ĐẠT CHUẨN. Bạn đã xác nhận mua hàng thành công.'
+                          : 'Product passed inspection. You have completed purchase.'))
+                      : isDelivering
+                        ? (isSeller
+                          ? (lang === 'vi' ? 'Đang giao hàng đến người mua • Lalamove' : 'Delivering to buyer • Lalamove')
+                          : (lang === 'vi' ? 'Đang giao hàng tới bạn • Lalamove' : 'Delivering to you • Lalamove'))
+                        : isSeller
+                          ? (lang === 'vi'
+                            ? 'Sản phẩm đã kiểm định ĐẠT CHUẨN. Đang chờ người mua xác nhận mua hàng.'
+                            : 'Product passed inspection. Awaiting buyer confirmation.')
+                          : (lang === 'vi'
+                            ? 'Sản phẩm đã kiểm định ĐẠT CHUẨN. Bạn có thể mua tiếp.'
+                            : 'Product passed inspection. You can proceed with the purchase.')}
+              </span>
+            </p>
+            {isCompleted ? (
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-950 space-y-1.5 animate-fadeIn">
+                <div className="font-bold flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-emerald-800">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>
+                      {isSeller
+                        ? (lang === 'vi' ? 'Hoàn tất giao dịch • Đã nhận tiền vào ví' : 'Transaction Completed • Funds Released')
+                        : (lang === 'vi' ? 'Giao dịch hoàn tất • Đã giải ngân' : 'Transaction Completed • Escrow Released')}
+                    </span>
+                  </div>
+                  {buyerShipment?.orderCode && (
+                    <span className="text-[10px] font-mono text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-md border border-emerald-300">
+                      #{buyerShipment.orderCode}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-emerald-800 leading-relaxed">
+                  {isSeller
+                    ? (lang === 'vi'
+                      ? 'Đơn hàng đã được giao thành công tới người mua và tiền bán hàng đã được tự động giải ngân vào ví SecondLife của bạn.'
+                      : 'Order has been delivered to buyer and funds have been released to your SecondLife wallet.')
+                    : (lang === 'vi'
+                      ? 'Đơn hàng đã được giao thành công và hoàn tất đối soát. Cảm ơn bạn đã tin tưởng mua sắm trên SecondLife!'
+                      : 'Order delivered and verified successfully. Thank you for shopping on SecondLife!')}
+                </p>
+              </div>
+            ) : isDelivered ? (
+              <div className="p-3 bg-emerald-50/90 border border-emerald-200 rounded-xl text-xs text-emerald-950 space-y-1.5 animate-fadeIn">
+                <div className="font-bold flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-emerald-800">
+                    <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>
+                      {isSeller
+                        ? (lang === 'vi' ? 'Đã giao hàng • Chờ đối soát (48h)' : 'Delivered • Review Window (48h)')
+                        : (lang === 'vi' ? 'Đã nhận hàng • 48h kiểm tra đối soát' : 'Package Delivered • 48h Inspection Window')}
+                    </span>
+                  </div>
+                  {buyerShipment?.orderCode && (
+                    <span className="text-[10px] font-mono text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-md border border-emerald-300">
+                      #{buyerShipment.orderCode}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-emerald-800 leading-relaxed">
+                  {isSeller
+                    ? (lang === 'vi'
+                      ? 'Tài xế đã giao kiện hàng thành công tới người mua. Khách mua có 48 giờ để kiểm tra đối soát trước khi hệ thống tự động giải ngân vào ví của bạn.'
+                      : 'Driver has delivered package to buyer. Buyer has 48 hours inspection window before escrow is released to your wallet.')
+                    : (lang === 'vi'
+                      ? 'Kiện hàng đã được giao thành công đến bạn. Bạn có 48 giờ để dùng thử và kiểm tra đối soát trước khi hệ thống tự động giải ngân cho người bán.'
+                      : 'Package has been delivered to you. You have 48 hours to inspect before funds are released to seller.')}
+                </p>
+              </div>
+            ) : isDelivering ? (
+              <div className="p-3 bg-blue-50/90 border border-blue-200 rounded-xl text-xs text-blue-950 space-y-1.5 animate-fadeIn">
+                <div className="font-bold flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-blue-800">
+                    <Truck className="w-4 h-4 text-blue-600 shrink-0" />
+                    <span>
+                      {isSeller
+                        ? (lang === 'vi' ? 'Đang giao hàng đến người mua • Lalamove' : 'Delivering to Buyer • Lalamove')
+                        : (lang === 'vi' ? 'Đang giao hàng tới bạn • Lalamove' : 'Delivering to You • Lalamove')}
+                    </span>
+                  </div>
+                  {buyerShipment?.orderCode && (
+                    <span className="text-[10px] font-mono text-blue-800 bg-blue-100 px-2 py-0.5 rounded-md border border-blue-300">
+                      #{buyerShipment.orderCode}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-blue-800 leading-relaxed">
+                  {isSeller
+                    ? (lang === 'vi'
+                      ? 'Kiện hàng đã được bàn giao cho tài xế Lalamove vận chuyển giao đến người mua.'
+                      : 'Parcel is sealed with tamper-proof seal and handed to Lalamove driver for delivery to buyer.')
+                    : (lang === 'vi'
+                      ? 'Tài xế Lalamove đang vận chuyển kiện hàng đến địa chỉ nhận hàng của bạn.'
+                      : 'Lalamove driver is delivering the sealed parcel to your address.')}
+                </p>
+              </div>
+            ) : isAwaitingPickup ? (
+              <div className="p-3 bg-teal-50/90 border border-teal-200 rounded-xl text-xs text-teal-950 space-y-1.5 animate-fadeIn">
+                <div className="font-bold flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-teal-800">
+                    <Truck className="w-4 h-4 text-teal-600 shrink-0" />
+                    <span>
+                      {isSeller
+                        ? (lang === 'vi' ? 'Đã tạo vận đơn • Chờ tài xế lấy hàng' : 'Shipment Created • Awaiting Driver')
+                        : (lang === 'vi' ? 'Người bán đã tạo vận đơn • Chờ tài xế lấy hàng' : 'Shipment Created • Awaiting Driver Pickup')}
+                    </span>
+                  </div>
+                  {buyerShipment?.orderCode && (
+                    <span className="text-[10px] font-mono text-teal-800 bg-teal-100 px-2 py-0.5 rounded-md border border-teal-300">
+                      #{buyerShipment.orderCode}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-teal-800 leading-relaxed">
+                  {isSeller
+                    ? (lang === 'vi'
+                      ? 'Đã tạo vận đơn Lalamove thành công. Vui lòng giữ nguyên tem niêm phong và bàn giao kiện hàng cho tài xế khi đến lấy.'
+                      : 'Lalamove shipment created successfully. Keep tamper seal intact and hand over parcel to driver upon arrival.')
+                    : (lang === 'vi'
+                      ? 'Người bán đã tạo vận đơn Lalamove thành công. Tài xế sẽ đến nhận kiện hàng nguyên tem niêm phong để phát đến bạn.'
+                      : 'Lalamove shipment created. Driver will pick up sealed package from seller.')}
+                </p>
+              </div>
+            ) : isPurchaseAccepted ? (
+              <div className="p-3 bg-emerald-50/80 border border-emerald-200 rounded-xl text-xs text-emerald-950 space-y-1.5 animate-fadeIn">
+                <div className="font-bold flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-emerald-800">
+                    <Truck className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>
+                      {isAtHome
+                        ? (isSeller
+                          ? (lang === 'vi' ? 'Đã Xác Nhận Mua • Chờ bạn gửi hàng' : 'Purchase Confirmed • Awaiting Your Shipment')
+                          : (lang === 'vi' ? 'Đã Duyệt Mua • Chờ người bán gửi hàng' : 'Purchase Confirmed • Awaiting Seller Shipment'))
+                        : (isSeller
+                          ? (lang === 'vi' ? 'Chặng 2: Hub Giao Người Mua (Đã Duyệt Mua)' : 'Leg 2: Hub to Buyer (Purchase Confirmed)')
+                          : (lang === 'vi' ? 'Chặng 2: Đã Duyệt Mua • Chờ Hub Giao Hàng' : 'Leg 2: Purchase Confirmed • Hub Delivering'))}
+                    </span>
+                  </div>
+                  {buyerShipment?.orderCode && (
+                    <span className="text-[10px] font-mono text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-md border border-emerald-300">
+                      #{buyerShipment.orderCode}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-emerald-800 leading-relaxed">
+                  {isAtHome
+                    ? (isSeller
+                      ? (lang === 'vi'
+                        ? 'Thiết bị đã kiểm định ĐẠT CHUẨN tại nhà và Người mua đã đồng ý mua tiếp. Vui lòng đóng gói và bấm "Đã gói hàng • Tạo đơn vận chuyển" để bàn giao hàng cho tài xế giao đến người mua.'
+                        : 'Product passed inspection and buyer confirmed purchase. Please pack and create shipment to deliver to buyer.')
+                      : (lang === 'vi'
+                        ? 'Thiết bị đã kiểm định ĐẠT CHUẨN tại nhà và bạn đã xác nhận mua tiếp. Người bán đang chuẩn bị kiện hàng (nguyên vẹn tem niêm phong) để bàn giao cho tài xế giao đến bạn.'
+                        : 'Product passed inspection and you confirmed purchase. Seller is preparing the sealed package for dispatch to your address.'))
+                    : (isSeller
+                      ? (lang === 'vi'
+                        ? 'Thiết bị đã kiểm định ĐẠT CHUẨN và Người mua đã đồng ý mua tiếp. Hub đang xử lý giao hàng đến người mua; tiền hàng sẽ được giải ngân về ví của bạn khi người mua nhận hàng.'
+                        : 'Product passed inspection and buyer confirmed purchase. Hub is dispatching to buyer; funds will be released upon delivery.')
+                      : (lang === 'vi'
+                        ? 'Thiết bị đã kiểm định ĐẠT CHUẨN và bạn đã xác nhận mua tiếp. Hub đang đóng gói và chuẩn bị bàn giao đơn vị vận chuyển phát đến bạn.'
+                        : 'Product passed inspection and you confirmed purchase. Hub is preparing dispatch to your address.'))}
+                </p>
+              </div>
+            ) : (
+              <div className="p-3 bg-amber-50/90 border border-amber-200 rounded-xl text-xs text-amber-950 space-y-1.5 animate-fadeIn">
+                <div className="font-bold flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-amber-900">
+                    <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>
+                      {isSeller
+                        ? (lang === 'vi' ? 'Kiểm định ĐẠT • Chờ người mua quyết định' : 'Inspection Passed • Awaiting Buyer Decision')
+                        : (lang === 'vi' ? 'Kiểm định ĐẠT • Vui lòng quyết định mua hàng' : 'Inspection Passed • Please make purchase decision')}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[11px] text-amber-800 leading-relaxed">
+                  {isSeller
+                    ? (lang === 'vi'
+                      ? 'Kỹ thuật viên Hub đã kiểm định ĐẠT chuẩn và dán tem niêm phong. Đang chờ người mua xem kết quả và quyết định tiếp tục mua hàng.'
+                      : 'Hub inspector confirmed the item PASSED quality standards with tamper seal. Awaiting buyer to review report and decide on purchase.')
+                    : (lang === 'vi'
+                      ? 'Thiết bị đã được KTV kiểm định ĐẠT chuẩn và dán tem niêm phong. Bạn hãy xem biên bản thẩm định và đưa ra quyết định mua hàng tiếp tục.'
+                      : 'Item PASSED inspection standards with tamper seal. Please review report and decide on purchase.')}
+                </p>
+              </div>
+            )}
+          </div>
         )}
         {isFailed && (
           <p className="text-xs text-rose-800 font-bold bg-rose-50 p-2.5 rounded-xl border border-rose-200 flex items-center gap-1.5">
@@ -1170,8 +1725,8 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
               <span>
                 {isBuyerPurchaseRejected
                   ? (isSeller
-                      ? (lang === 'vi' ? 'Người mua từ chối mua tiếp sau kiểm định' : 'Buyer declined purchase after inspection')
-                      : (lang === 'vi' ? 'Bạn đã từ chối mua tiếp sau kiểm định' : 'You declined purchase after inspection'))
+                    ? (lang === 'vi' ? 'Người mua từ chối mua tiếp sau kiểm định' : 'Buyer declined purchase after inspection')
+                    : (lang === 'vi' ? 'Bạn đã từ chối mua tiếp sau kiểm định' : 'You declined purchase after inspection'))
                   : isCancelled
                     ? (lang === 'vi' ? 'Đề xuất kiểm định đã bị hủy' : 'Inspection proposal cancelled')
                     : (lang === 'vi' ? 'Đề xuất kiểm định đã bị từ chối' : 'Inspection proposal rejected')}
@@ -1355,6 +1910,26 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
               void onRefreshOrder(order.id);
             }}
             lang={lang}
+          />
+        )}
+
+        {/* Modal Hẹn Lịch Đón KTV (dành cho Người bán khi kiểm định tại nhà) */}
+        {showScheduleModal && (
+          <ScheduleAppointmentModal
+            orderId={order.id}
+            orderCode={order.id}
+            linkedOrderId={(order as any).linkedOrderId || order.id}
+            inspectionOrderId={order.id}
+            isOpen={showScheduleModal}
+            onClose={() => setShowScheduleModal(false)}
+            onSuccess={() => {
+              setShowScheduleModal(false);
+              void onRefreshOrder(order.id);
+            }}
+            lang={lang}
+            readOnly={!isSeller}
+            initialScheduledAt={order.appointmentScheduledAt || currentAppt?.scheduledAt || undefined}
+            initialNote={(order as any).appointmentNote || currentAppt?.note || undefined}
           />
         )}
       </div>

@@ -59,20 +59,12 @@ import { OrderActionDialog } from '../components/orders/OrderActionDialog';
 import { OrderStatusBadge } from '../components/orders/OrderStatusBadge';
 import type { ConfirmDialogState } from '../types/orders/orderTypes';
 import { getOrderAllShipments, isHubInboundInProgress } from '../utils/orders/shipmentCache';
+import { getAtHomeDeliveryStage } from '../utils/orders/orderReceipt';
 import { readOrderAppointment } from '../utils/orders/orderAppointments';
+import { getCommissionPayout, getInspectionPayoutPreview, getOrderFinanceLookup, getSettlementPayout, type SellerPayoutData } from '../utils/orders/orderFinance';
+import { isOrderWithInspection } from '../utils/orders/orderReceipt';
 
 export { getOrderAllShipments } from '../utils/orders/shipmentCache';
-const getInitialCommissionRate = (): number => {
-  try {
-    const saved = localStorage.getItem('platform_commission_rate');
-    if (saved) {
-      const parsed = parseFloat(saved);
-      if (!isNaN(parsed) && parsed > 0) return parsed;
-    }
-  } catch { }
-  return 5.0;
-};
-
 interface EscrowOrdersViewProps {
   orders: EscrowOrder[];
   overviewOrders: EscrowOrder[];
@@ -353,21 +345,15 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     });
   }, [userOrders]);
   const [activePhotoStage, setActivePhotoStage] = useState<'listing' | 'inspector' | 'handover'>('listing');
-  const [orderSettlement, setOrderSettlement] = useState<OrderSettlementDTO | null>(null);
-  const [orderCommission, setOrderCommission] = useState<OrderCommissionDTO | null>(null);
-  const [isLoadingSettlement, setIsLoadingSettlement] = useState(false);
-  const [settlementNotSettled, setSettlementNotSettled] = useState(false);
+  const [orderFinancialData, setOrderFinancialData] = useState<{
+    orderId: string;
+    resource: 'settlement' | 'commission';
+    settlement?: OrderSettlementDTO;
+    commission?: OrderCommissionDTO;
+  } | null>(null);
 
   // Map of payout and commission data fetched from backend API per order
-  const [payoutDataMap, setPayoutDataMap] = useState<Record<string, {
-    sellerPayout: number;
-    platformCommission: number;
-    ratePercent?: number;
-    source: 'settlement' | 'commission' | 'order' | 'fallback';
-  }>>({});
-
-  // Global platform commission rate initialized from cache / standard 5%
-  const [platformCommissionRate, setPlatformCommissionRate] = useState<number>(getInitialCommissionRate);
+  const [payoutDataMap, setPayoutDataMap] = useState<Record<string, SellerPayoutData>>({});
 
   // Force update when appointment status changes realtime
   const [, setApptTick] = useState<number>(0);
@@ -437,8 +423,8 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     window.addEventListener('storage', handler);
 
     const handleApptSignal = (e?: any) => {
-      if (e?.detail?.orderId && e?.detail?.counterScheduledAt) {
-        const d = e.detail;
+      const d = e?.detail;
+      if (d?.orderId && d?.counterScheduledAt) {
         const targetIds = [d.orderId, d.linkedOrderId].filter(Boolean);
         targetIds.forEach((tid) => {
           try {
@@ -452,6 +438,38 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
               counterNote: d.counterNote,
             }));
           } catch { }
+        });
+        setDetailModalOrder((prev) => {
+          if (!prev) return null;
+          const ids = [prev.id, (prev as any).linkedOrderId, (prev as any).inspectionOrderId].filter(Boolean);
+          if (ids.includes(d.orderId) || (d.linkedOrderId && ids.includes(d.linkedOrderId))) {
+            return {
+              ...prev,
+              appointmentStatus: 'COUNTERED_BY_CENTER',
+              counterScheduledAt: d.counterScheduledAt,
+              counterShift: d.counterShift,
+              counterNote: d.counterNote,
+            };
+          }
+          return prev;
+        });
+      } else if (d?.orderId && d?.scheduledAt) {
+        setDetailModalOrder((prev) => {
+          if (!prev) return null;
+          const ids = [prev.id, (prev as any).linkedOrderId, (prev as any).inspectionOrderId].filter(Boolean);
+          if (ids.includes(d.orderId) || (d.linkedOrderId && ids.includes(d.linkedOrderId)) || (d.inspectionOrderId && ids.includes(d.inspectionOrderId))) {
+            return {
+              ...prev,
+              appointmentScheduledAt: d.scheduledAt,
+              appointmentShift: d.shift || 'MORNING',
+              appointmentNote: d.note || '',
+              appointmentStatus: d.status || 'PENDING_CENTER_CONFIRMATION',
+              counterScheduledAt: null,
+              counterShift: null,
+              counterNote: null,
+            };
+          }
+          return prev;
         });
       }
       setApptTick((t) => t + 1);
@@ -475,6 +493,15 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   }, []);
 
   const isInspectorArrivedForOrder = (orderId: string, ord?: any): boolean => {
+    const isCompleted =
+      ord?.status === 'PASSED' || ord?.status === 'FAILED' ||
+      ord?.backendStatus === 'PASSED' || ord?.backendStatus === 'FAILED' ||
+      ord?.escrowStatus === 'INSPECTION_PASSED' || ord?.escrowStatus === 'INSPECTION_FAILED' ||
+      ord?.escrowStatus === 'COMPLETED_RELEASED' || ord?.escrowStatus === 'REFUNDED_TO_BUYER' ||
+      (ord as any)?.inspectionOrder?.status === 'PASSED' || (ord as any)?.inspectionOrder?.status === 'FAILED' ||
+      Boolean(ord?.finalPaymentPaidAt) || Boolean(ord?.tamperSealId);
+    if (isCompleted) return false;
+
     const ids = [
       orderId,
       ord?.id,
@@ -507,137 +534,109 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   };
 
   React.useEffect(() => {
-    if (detailModalOrder?.id) {
-      const hasInsp = Boolean(
-        detailModalOrder.hasInspectionService ||
-        (detailModalOrder.inspectionFeeVnd && detailModalOrder.inspectionFeeVnd > 0) ||
-        detailModalOrder.inspectionCenterId ||
-        detailModalOrder.inspectionMethod ||
-        (detailModalOrder as any).inspectionStatus
-      );
-      if (!hasInsp && activePhotoStage === 'inspector') {
-        setActivePhotoStage('listing');
-      }
-
-      const isInsp = Boolean(
-        detailModalOrder.hasInspectionService ||
-        detailModalOrder.inspectionMethod ||
-        (detailModalOrder as any).inspectionStatus
-      );
-      const isPhase2Paid = Boolean(
-        detailModalOrder.finalPaymentPaidAt ||
-        (detailModalOrder.linkedOrderId && (detailModalOrder as any).backendStatus !== 'PASSED' && detailModalOrder.escrowStatus !== 'INSPECTION_PASSED') ||
-        detailModalOrder.escrowStatus === 'SHIPPED_TO_BUYER' ||
-        detailModalOrder.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' ||
-        (detailModalOrder.escrowStatus === 'COMPLETED_RELEASED' && (detailModalOrder as any).backendStatus !== 'CANCELLED')
-      );
-      if (isInsp && !isPhase2Paid) {
-        setOrderSettlement(null);
-        setOrderCommission(null);
-        setSettlementNotSettled(false);
-        setIsLoadingSettlement(false);
-      } else {
-        setIsLoadingSettlement(true);
-        setSettlementNotSettled(false);
-        const targetOrderId = detailModalOrder.linkedOrderId || detailModalOrder.id;
-        orderService.getOrderSettlement(targetOrderId)
-          .then((data) => {
-            setOrderSettlement(data);
-            setSettlementNotSettled(false);
-            if (data?.sellerPayout !== undefined) {
-              const rate = data.commissionBase > 0
-                ? Math.round((data.platformCommission / data.commissionBase) * 1000) / 10
-                : undefined;
-              setPayoutDataMap((prev) => ({
-                ...prev,
-                [detailModalOrder.id]: {
-                  sellerPayout: data.sellerPayout,
-                  platformCommission: data.platformCommission,
-                  ratePercent: rate,
-                  source: 'settlement',
-                },
-              }));
-            }
-          })
-          .catch(async () => {
-            setOrderSettlement(null);
-            setSettlementNotSettled(true);
-            try {
-              const comm = await orderService.getOrderCommission(targetOrderId);
-              if (comm) {
-                setOrderCommission(comm);
-                if (comm.platformCommission !== undefined) {
-                  const base = comm.commissionBase ?? detailModalOrder.itemPriceVnd;
-                  setPayoutDataMap((prev) => ({
-                    ...prev,
-                    [detailModalOrder.id]: {
-                      sellerPayout: base - comm.platformCommission!,
-                      platformCommission: comm.platformCommission!,
-                      ratePercent: comm.ratePercent,
-                      source: 'commission',
-                    },
-                  }));
-                }
-              } else {
-                setOrderCommission(null);
-              }
-            } catch {
-              setOrderCommission(null);
-            }
-          })
-          .finally(() => {
-            setIsLoadingSettlement(false);
-          });
-      }
-    } else {
-      setOrderSettlement(null);
-      setOrderCommission(null);
-      setSettlementNotSettled(false);
+    if (activePhotoStage === 'handover') {
+      setActivePhotoStage('listing');
+    } else if (detailModalOrder && !isOrderWithInspection(detailModalOrder) && activePhotoStage === 'inspector') {
+      setActivePhotoStage('listing');
     }
-  }, [detailModalOrder]);
+  }, [detailModalOrder, activePhotoStage]);
 
-  // Fetch platform commission rate from backend API exactly ONCE for all orders
-  const hasFetchedCommissionRateRef = React.useRef(false);
   React.useEffect(() => {
-    if (hasFetchedCommissionRateRef.current || !currentUser) return;
+    if (!detailModalOrder) return;
+    const freshOrder = orders.find(
+      (order) => order.id === detailModalOrder.id || (order as any).linkedOrderId === detailModalOrder.id
+    );
+    if (freshOrder) {
+      setDetailModalOrder((prev) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          ...freshOrder,
+          ...((prev as any).appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !(freshOrder as any).counterScheduledAt ? {
+            appointmentStatus: 'PENDING_CENTER_CONFIRMATION',
+            appointmentScheduledAt: prev.appointmentScheduledAt,
+            appointmentShift: (prev as any).appointmentShift,
+            appointmentNote: prev.appointmentNote,
+            counterScheduledAt: null,
+            counterShift: null,
+            counterNote: null,
+          } : {})
+        };
+      });
+    }
+  }, [orders]);
 
-    const firstSellerOrder = userOrders.find((o) => isOrderSeller(o));
-    if (!firstSellerOrder) return;
+  const detailFinance = detailModalOrder && isOrderSeller(detailModalOrder) ? getOrderFinanceLookup(detailModalOrder) : null;
+  const financeOrderId = detailFinance?.orderId;
+  const financeResource = detailFinance?.resource;
+  const financeRowId = detailModalOrder?.id;
+  const displayedFinancialData = orderFinancialData?.orderId === financeOrderId &&
+    orderFinancialData?.resource === financeResource ? orderFinancialData : null;
 
-    hasFetchedCommissionRateRef.current = true;
+  React.useEffect(() => {
+    setOrderFinancialData(null);
+    if (!financeOrderId || !financeResource || !financeRowId) return;
+    let active = true;
+    const target = { orderId: financeOrderId, resource: financeResource };
 
-    const fetchRateOnce = async () => {
+    const load = async () => {
       try {
-        const targetId = firstSellerOrder.linkedOrderId || firstSellerOrder.id;
-        const comm = await orderService.getOrderCommission(targetId).catch(() => null);
-        if (comm?.ratePercent !== undefined && comm.ratePercent > 0) {
-          setPlatformCommissionRate(comm.ratePercent);
-          try {
-            localStorage.setItem('platform_commission_rate', String(comm.ratePercent));
-          } catch { }
-          return;
-        }
-
-        const settlement = await orderService.getOrderSettlement(targetId).catch(() => null);
-        if (settlement && settlement.commissionBase > 0) {
-          const rate = Math.round((settlement.platformCommission / settlement.commissionBase) * 1000) / 10;
-          if (rate > 0) {
-            setPlatformCommissionRate(rate);
-            try {
-              localStorage.setItem('platform_commission_rate', String(rate));
-            } catch { }
+        if (financeResource === 'settlement') {
+          const settlement = await orderService.getOrderSettlement(financeOrderId);
+          if (!active) return;
+          setOrderFinancialData({ ...target, settlement });
+          const payout = getSettlementPayout(settlement);
+          if (payout) {
+            setPayoutDataMap((previous) => ({
+              ...previous,
+              [financeRowId]: payout,
+            }));
+          }
+        } else {
+          const commission = await orderService.getOrderCommission(financeOrderId);
+          if (!active) return;
+          setOrderFinancialData({ ...target, commission });
+          const payout = getCommissionPayout(commission);
+          if (payout) {
+            setPayoutDataMap((previous) => ({
+              ...previous,
+              [financeRowId]: payout,
+            }));
           }
         }
       } catch {
-        // keep initial default 5.0%
+        if (active) setOrderFinancialData(target);
       }
     };
 
-    fetchRateOnce();
-  }, [userOrders, currentUser]);
+    void load();
+    return () => { active = false; };
+  }, [financeOrderId, financeResource, financeRowId]);
+
+  // Each order has its own commission snapshot; one order's rate cannot be applied to another.
+  const sellerFinanceRequests = JSON.stringify(orders.flatMap((order) => {
+    if (!isOrderSeller(order)) return [];
+    const lookup = getOrderFinanceLookup(order);
+    return lookup ? [{ rowId: order.id, ...lookup }] : [];
+  }));
+  React.useEffect(() => {
+    let active = true;
+    const requests: Array<{ rowId: string; orderId: string; resource: 'settlement' | 'commission' }> = JSON.parse(sellerFinanceRequests);
+    setPayoutDataMap({});
+    for (const target of requests) {
+      const load = target.resource === 'settlement'
+        ? orderService.getOrderSettlement(target.orderId).then(getSettlementPayout)
+        : orderService.getOrderCommission(target.orderId).then(getCommissionPayout);
+      void load.then((payout) => {
+        if (active && payout) setPayoutDataMap((previous) => ({ ...previous, [target.rowId]: payout }));
+      }).catch(() => {});
+    }
+    return () => { active = false; };
+  }, [sellerFinanceRequests, currentUser?.id]);
 
   // Real Backend Shipments for Detail Modal
   const detailOrderId = detailModalOrder?.id;
+  const detailLinkedOrderId = (detailModalOrder as any)?.linkedOrderId || (detailModalOrder as any)?.inspectionOrderId;
   const detailIsInspection = Boolean(detailModalOrder?.inspectionStatus || detailModalOrder?.hasInspectionService);
   const detailHasInspection = detailIsInspection || Boolean(
     detailModalOrder?.inspectionMethod ||
@@ -648,7 +647,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     detailShipments, setDetailShipments, isLoadingDetailShipments,
     detailInspectionDto, setDetailInspectionDto,
     expandedDetailLeg1, setExpandedDetailLeg1, expandedDetailLeg2, setExpandedDetailLeg2,
-  } = useOrderDetailData(detailOrderId, detailIsInspection, setApptTick);
+  } = useOrderDetailData(detailOrderId, detailIsInspection, setApptTick, detailLinkedOrderId);
   const [trackingShipmentId, setTrackingShipmentId] = useState<string | undefined>(undefined);
 
   // Lalamove Shipping Modals state
@@ -676,7 +675,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     const shipment = getOrderInboundShipment(order);
     if (shipment) return getInboundShipmentProgress(shipment, lang).label;
     const status = order.inspectionStatus || order.backendStatus;
-    if (status === 'SHIPPING_TO_CENTER') return lang === 'vi' ? 'Đang giao hàng về Hub' : 'On the way to Hub';
+    if (status === 'SHIPPING_TO_CENTER') return lang === 'vi' ? 'Đang giao hàng đến Hub' : 'On the way to Hub';
     if (['RECEIVED_AT_CENTER', 'INSPECTING', 'PASSED', 'FAILED', 'DELIVERING_TO_BUYER', 'COMPLETED'].includes(status || '')) {
       return lang === 'vi' ? 'Hub đã tiếp nhận hàng' : 'Received at Hub';
     }
@@ -930,20 +929,53 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
 
   const isShipmentCreatedForOrder = (ord: EscrowOrder | null | undefined): boolean => {
     if (!ord?.id) return false;
+
+    // Đơn hàng kiểm định đang ở giai đoạn chờ phê duyệt hoặc chờ hai bên nộp phí thì chưa thể có vận đơn đóng gói
+    const rawInspStatus = String(
+      (ord as any)?.backendStatus ||
+      (ord as any)?.inspectionStatus ||
+      (ord as any)?.inspectionOrder?.status ||
+      ((ord as any).status !== 'AWAITING_INSPECTION' && (ord as any).status !== 'AWAITING_PAYMENT' && (ord as any).status !== 'HELD_IN_ESCROW' ? (ord as any).status : '') ||
+      ''
+    ).toUpperCase();
+    if (['WAITING_SELLER_APPROVAL', 'WAITING_BUYER_APPROVAL', 'WAITING_FEE_PAYMENT', 'PENDING'].includes(rawInspStatus)) {
+      return false;
+    }
+
+    if (ord.inspectionMethod === 'AT_HOME') return getAtHomeDeliveryStage(ord) !== 'awaiting_shipment';
+
     if (sellerInboundShipments.has(ord.id) && isHubInboundInProgress(ord)) {
       return Boolean(sellerInboundShipments.get(ord.id));
     }
-    if (ord.carrierPickedUpAt || (ord.backendStatus as any) === 'SHIPPED' || (ord.backendStatus as any) === 'DELIVERED') return true;
+    const bStatus = String((ord as any).backendStatus || (ord as any).status || ord.escrowStatus || '').toUpperCase();
+    if (
+      ord.carrierPickedUpAt ||
+      (ord as any).orderShipmentCode ||
+      (ord as any).trackingCode ||
+      (ord as any).waybillCode ||
+      bStatus === 'SHIPPED' ||
+      bStatus === 'DELIVERED' ||
+      bStatus === 'DELIVERING_TO_BUYER' ||
+      bStatus === 'SHIPPED_TO_BUYER'
+    ) return true;
     if (ord.shippingLegs?.some((leg) => leg.status === 'IN_TRANSIT' || leg.status === 'COMPLETED' || Boolean((leg as any).trackingCode))) return true;
-    if (detailModalOrder?.id === ord.id && detailShipments.some((s) => s.status !== 'CANCELLED')) {
+    const linkedId = (ord as any).linkedOrderId || (ord as any).inspectionOrderId;
+    if (
+      (detailModalOrder?.id === ord.id || (linkedId && detailModalOrder?.id === linkedId) || (detailModalOrder?.linkedOrderId && detailModalOrder.linkedOrderId === ord.id)) &&
+      detailShipments.some((s) => s.status !== 'CANCELLED')
+    ) {
       return true;
     }
     try {
       if (typeof window !== 'undefined') {
-        if (localStorage.getItem(`order_shipment_created_${ord.id}`) === 'true') return true;
-        if (localStorage.getItem(`order_shipments_${ord.id}`)) return true;
-        if (localStorage.getItem(`sl_order_shipments_${ord.id}`)) return true;
-        if (localStorage.getItem(`sl_insp_shipments_${ord.id}`)) return true;
+        const ids = [ord.id, linkedId].filter(Boolean) as string[];
+        for (const id of ids) {
+          if (localStorage.getItem(`order_shipment_created_${id}`) === 'true') return true;
+          if (localStorage.getItem(`order_packed_${id}`) === 'true') return true;
+          if (localStorage.getItem(`order_shipments_${id}`)) return true;
+          if (localStorage.getItem(`sl_order_shipments_${id}`)) return true;
+          if (localStorage.getItem(`sl_insp_shipments_${id}`)) return true;
+        }
       }
     } catch { }
     return false;
@@ -1039,6 +1071,14 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     const failed = order.inspectionStatus === 'FAILED' || order.escrowStatus === 'INSPECTION_FAILED';
     const expired = isExpiredInspectionPurchase(order.inspectionStatus, order.inspectionNote);
     if (!decision && !failed && !expired) return null;
+    // Khi người mua đã xác nhận mua tiếp: Trạng thái đã hiển thị đầy đủ ở huy hiệu trên đầu thẻ đơn (OrderStatusBadge).
+    // Ngoài danh sách thẻ đơn không hiển thị lặp lại nhãn tĩnh ở thanh thao tác.
+    if (decision === 'accepted' && !isInsideDetailModal) return null;
+    // Khi đơn kiểm định không đạt (failed) hoặc người mua từ chối mua tiếp (rejected):
+    // Trạng thái chi tiết (chờ hoàn / đang hoàn / đã hoàn trả)
+    // đã hiển thị đầy đủ ở huy hiệu trên đầu thẻ (OrderStatusBadge) và trong khối hành trình Chặng 2.
+    // Bỏ nhãn tĩnh ở góc dưới thanh thao tác để đồng bộ và gọn gàng.
+    if ((failed || decision === 'rejected') && !isInsideDetailModal) return null;
     const isSeller = isOrderSeller(order);
     const canDecide = decision === 'pending' && !isSeller && !isOrderCancelledOrRefunded(order);
     const returnShipment = detailOrderId === order.id && close
@@ -1051,9 +1091,20 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       ? Boolean(onOpenInspectionDecision || canDecide)
       : canDecide;
 
+    // Khi người mua đang chờ quyết định (decision === 'pending' && !isSeller):
+    // Huy hiệu trạng thái trên đầu thẻ (OrderStatusBadge) đã nêu rõ "Kiểm định ĐẠT • Chờ bạn quyết định mua",
+    // đồng thời nút hành động "Xem kết quả & quyết định mua" đã hiển thị đầy đủ,
+    // nên nhãn tĩnh "Chờ quyết định từ bạn" ở góc dưới cạnh nút bị trùng lặp, cần loại bỏ.
+    // Tương tự khi failed, không hiển thị nhãn trạng thái ở góc dưới.
+    const shouldShowDecisionBadge = !isInsideDetailModal && !failed && !(decision === 'pending' && !isSeller);
+
+    if (!shouldShowDecisionBadge && !returnShipment && !shouldShowButton) {
+      return null;
+    }
+
     return (
       <div className="flex flex-wrap items-center gap-2">
-        {!isInsideDetailModal && (
+        {shouldShowDecisionBadge && (
           <span className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-bold ${failed ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'
             }`}>
             {failed ? buyerInspectionStageLabel('failed', lang, isSeller) : expired
@@ -1116,24 +1167,16 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   const [shippingLabelOrder, setShippingLabelOrder] = useState<EscrowOrder | null>(null);
 
   const handleConfirmCourierPickup = (orderId: string) => {
-    setPickupConfirmedNotice(`Đã lên lịch thành công! Tài xế Lalamove sẽ đến địa chỉ kho lấy máy #${orderId} giao về Hub trong hôm nay.`);
+    setPickupConfirmedNotice(`Đã lên lịch thành công! Tài xế Lalamove sẽ đến địa chỉ kho lấy máy #${orderId} giao đến Hub trong hôm nay.`);
     setTimeout(() => setPickupConfirmedNotice(null), 5000);
   };
 
   // Seller metrics
   const pendingEscrowTotal = useMemo(() => {
-    return userOrders
-      .filter((o) => o.escrowStatus !== 'COMPLETED_RELEASED' && o.escrowStatus !== 'REFUNDED_TO_BUYER')
-      .reduce((sum, o) => {
-        const payout = payoutDataMap[o.id]?.sellerPayout ?? (
-          (o as any).sellerPayout ??
-          (o.platformFeeVnd && o.platformFeeVnd > 0
-            ? (o.itemPriceVnd - o.platformFeeVnd)
-            : Math.round(o.itemPriceVnd * (1 - platformCommissionRate / 100)))
-        );
-        return sum + payout;
-      }, 0);
-  }, [userOrders, payoutDataMap, platformCommissionRate]);
+    const pending = userOrders.filter((o) => isOrderSeller(o) && o.escrowStatus !== 'COMPLETED_RELEASED' && o.escrowStatus !== 'REFUNDED_TO_BUYER');
+    if (pending.some((o) => payoutDataMap[o.id] === undefined)) return null;
+    return pending.reduce((sum, o) => sum + payoutDataMap[o.id].sellerPayout, 0);
+  }, [userOrders, payoutDataMap, orderPerspective, currentUser?.id]);
 
   const awaitingPickupCount = userOrders.filter((o) => o.escrowStatus === 'AWAITING_PAYMENT').length;
   const inHubInspectionCount = userOrders.filter(
@@ -1226,7 +1269,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                 </h1>
                 <p className="text-xs sm:text-sm text-[#24263e]/80 mt-1 font-semibold">
                   {lang === 'vi'
-                    ? 'Theo dõi lịch bưu tá đến kho lấy hàng chuyển về Hub, kết quả kiểm định kỹ thuật và đối soát tiền giải ngân vào ví người bán.'
+                    ? 'Theo dõi lịch bưu tá đến kho lấy hàng chuyển đến Hub, kết quả kiểm định kỹ thuật và đối soát tiền giải ngân vào ví người bán.'
                     : 'Track courier pickup schedules to Hub, technical inspection results, and automated escrow payouts to seller wallet.'}
                 </p>
               </div>
@@ -1246,7 +1289,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                   {lang === 'vi' ? 'Tiền Chờ Giải Ngân (Escrow)' : 'Pending Escrow Payout'}
                 </div>
                 <div className="text-lg sm:text-xl font-black text-[#24263e] mt-0.5">
-                  {formatVND(pendingEscrowTotal)}
+                  {pendingEscrowTotal === null ? (lang === 'vi' ? 'Chưa có dữ liệu' : 'Unavailable') : formatVND(pendingEscrowTotal)}
                 </div>
                 <div className="text-[10px] text-slate-400 mt-0.5">
                   {lang === 'vi' ? 'Tự động giải ngân sau giao' : 'Auto-released after delivery'}
@@ -1350,8 +1393,8 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
               </div>
               <p className="text-[11px] text-orange-900 font-medium mt-0.5">
                 {lang === 'vi'
-                  ? 'Đơn hàng mua kèm kiểm định theo phương án chia đôi phí (50/50). Vui lòng nộp phần phí kiểm định của người bán vào Escrow từ Ví SecondLife để điều phối kiểm định.'
-                  : 'Inspection fee is split 50/50. Please pay your seller fee share into Escrow to proceed with inspection dispatch.'}
+                  ? 'Đơn hàng đang chờ thanh toán phí kiểm định theo tỷ lệ đã chốt. Vui lòng nộp phần phí kiểm định của người bán vào Escrow từ Ví SecondLife để điều phối kiểm định.'
+                  : 'The inspection fee is due at the agreed split. Please pay your seller fee share into Escrow to proceed with inspection dispatch.'}
               </p>
             </div>
           </div>
@@ -1478,20 +1521,9 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         <div className="space-y-4" aria-busy={isLoading}>
           {orders.map((ord) => {
             const orderIsSeller = isOrderSeller(ord);
-            const payoutData = payoutDataMap[ord.id];
-            const orderRatePercent = payoutData?.ratePercent ?? (
-              ord.platformFeeVnd && ord.platformFeeVnd > 0 && ord.itemPriceVnd > 0
-                ? Math.round((ord.platformFeeVnd / ord.itemPriceVnd) * 1000) / 10
-                : platformCommissionRate
-            );
-            const sellerCommissionFee = payoutData?.platformCommission ?? (
-              ord.platformFeeVnd && ord.platformFeeVnd > 0
-                ? ord.platformFeeVnd
-                : Math.round(ord.itemPriceVnd * (orderRatePercent / 100))
-            );
-            const sellerNetPayout = payoutData?.sellerPayout ?? (
-              (ord as any).sellerPayout ?? (ord.itemPriceVnd - sellerCommissionFee)
-            );
+            const payoutData = getOrderFinanceLookup(ord)
+              ? payoutDataMap[ord.id]
+              : getInspectionPayoutPreview(ord);
             const hasInspection = Boolean(
               ord.hasInspectionService ||
               (ord.inspectionFeeVnd && ord.inspectionFeeVnd > 0) ||
@@ -1503,7 +1535,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
               ord.escrowStatus === 'INSPECTION_PASSED'
             );
             const buyerInspectionStage = orderIsSeller ? null : getBuyerInspectionStage(ord);
-            const ordShipment = getOrderInboundShipment(ord);
+            const ordShipment = ord.inspectionMethod === 'AT_HOME' ? null : getOrderInboundShipment(ord);
             const inboundProgress = ordShipment ? getInboundShipmentProgress(ordShipment, lang) : null;
             const inboundLabel = inboundProgress?.label || getSellerInboundLabel(ord);
             const hasActiveShipment = isShipmentCreatedForOrder(ord) || Boolean(ordShipment);
@@ -1512,8 +1544,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
             return (
               <OrderCard
                 key={ord.id}
-                orderRatePercent={orderRatePercent}
-                sellerNetPayout={sellerNetPayout}
+                payoutData={payoutData}
                 order={ord}
                 orderIsSeller={orderIsSeller}
                 hasInspection={hasInspection}
@@ -1670,6 +1701,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
             isOrderSeller={isOrderSeller}
             setInspectionActionNotice={setInspectionActionNotice}
             setCreateShipmentOrder={setCreateShipmentOrder}
+            isOrderSellerConfirmed={isOrderSellerConfirmed}
           />
 
           <OrderDeliveryJourney
@@ -1721,16 +1753,18 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
             lang={lang}
           />
 
-          <OrderSettlement
-            order={detailModalOrder}
-            detailInspectionDto={detailInspectionDto}
-            detailBuyerInspectionStage={detailBuyerInspectionStage}
-            isOrderReceiptConfirmed={isOrderReceiptConfirmed}
-            orderSettlement={orderSettlement}
-            settlementNotSettled={settlementNotSettled}
-            isLoadingSettlement={isLoadingSettlement}
-            orderCommission={orderCommission}
-          />
+          {financeResource && isOrderSeller(detailModalOrder) && (
+            <OrderSettlement
+              order={detailModalOrder}
+              detailBuyerInspectionStage={detailBuyerInspectionStage}
+              isOrderReceiptConfirmed={isOrderReceiptConfirmed}
+              orderSettlement={displayedFinancialData?.settlement ?? null}
+              isEscrowReleased={financeResource === 'settlement'}
+              isLoadingSettlement={!displayedFinancialData}
+              orderCommission={displayedFinancialData?.commission ?? null}
+              isSeller={isOrderSeller(detailModalOrder)}
+            />
+          )}
         </OrderDetailModal>
       )}
 
@@ -1830,6 +1864,15 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
           isOpen={!!schedulingOrder}
           onClose={() => setSchedulingOrder(null)}
           onSuccess={() => {
+            if (detailModalOrder && (detailModalOrder.id === schedulingOrder.id || (detailModalOrder as any).linkedOrderId === schedulingOrder.id || (detailModalOrder as any).inspectionOrderId === schedulingOrder.id)) {
+              setDetailModalOrder((prev) => prev ? {
+                ...prev,
+                appointmentStatus: 'PENDING_CENTER_CONFIRMATION',
+                counterScheduledAt: null,
+                counterShift: null,
+                counterNote: null,
+              } : null);
+            }
             onRefreshOrders?.();
           }}
           lang={lang}

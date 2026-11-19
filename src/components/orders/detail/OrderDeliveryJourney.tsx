@@ -1,18 +1,18 @@
 import { AlertCircle, Calendar, CalendarSync, Check, ChevronDown, Clock, Package, ShieldCheck, Truck } from 'lucide-react';
 import { AtHomeIntakeBarcode } from '../../inspection/AtHomeIntakeBarcode';
-import type { Dispatch, SetStateAction } from 'react';
+import { useState, type Dispatch, type SetStateAction } from 'react';
 import type { EscrowOrder, Language, ShipmentBackend } from '../../../types';
 import { InspectionCashShipmentStatus } from '../../inspection/InspectionCashShipmentStatus';
 import type { InspectionOrderDto } from '../../../services/inspectorService';
-import { LalamoveProgress } from '../../common/LalamoveProgress';
 import { getOrderAppointmentRejection } from '../../../utils/orders/orderAppointments';
 import type { OrderAppointment } from '../../../utils/orders/orderAppointments';
 import type { OrderCheck } from '../../../types/orders/orderTypes';
-import { getHubReturnProgress, getInboundShipmentProgress } from '../../../utils/inspectionCenterData';
+import { getBuyerDeliveryProgress, getHubReturnProgress, getInboundShipmentProgress } from '../../../utils/inspectionCenterData';
 import { getInspectionPurchaseDecision } from '../../../utils/inspectionPurchase';
 import { getOrderAllShipments } from '../../../utils/orders/shipmentCache';
 import { resolveInspectionCenter } from '../../../utils/orderUtils';
 import { translations } from '../../../utils/translations';
+import { getOrderSellerAddress, getOrderBuyerAddress } from '../../../pages/inspection-center/dispatch/orderContacts';
 
 interface Props {
   order: EscrowOrder;
@@ -110,7 +110,7 @@ export function OrderDeliveryJourney({
                         }`}>
                         {isOrderSellerConfirmed(detailModalOrder)
                           ? (lang === 'vi' ? 'Đang chuẩn bị điều phối vận chuyển' : 'Preparing dispatch')
-                          : (lang === 'vi' ? 'Chưa tạo vận đơn Lalamove' : 'Pending courier')}
+                          : (lang === 'vi' ? 'Chờ người bán xác nhận đơn' : 'Awaiting confirmation')}
                       </span>
                     )}
                   </span>
@@ -127,9 +127,11 @@ export function OrderDeliveryJourney({
                       ? 'Đã giao hàng thành công đến người mua'
                       : detailShipments[0]?.status === 'IN_TRANSIT' || detailModalOrder.backendStatus === 'SHIPPED'
                         ? 'Tài xế Lalamove đang trên đường giao hàng'
-                        : detailModalOrder.shippingLegs[0]?.timeline[detailModalOrder.shippingLegs[0].timeline.length - 1]?.description || 'Đang chờ người bán đóng gói và điều phối bưu tá'}
+                        : !isOrderSellerConfirmed(detailModalOrder)
+                          ? (lang === 'vi' ? 'Đang chờ người bán xác nhận đơn hàng trước khi tạo vận đơn' : 'Awaiting seller order confirmation')
+                          : detailModalOrder.shippingLegs[0]?.timeline[detailModalOrder.shippingLegs[0].timeline.length - 1]?.description || 'Đang chờ người bán đóng gói và điều phối bưu tá'}
                   </span>
-                  {!isOrderCancelledOrRefunded(detailModalOrder) && isOrderSeller(detailModalOrder) && !detailShipments.some((s) => s.status !== 'CANCELLED') && (
+                  {!isOrderCancelledOrRefunded(detailModalOrder) && isOrderSellerConfirmed(detailModalOrder) && isOrderSeller(detailModalOrder) && !detailShipments.some((s) => s.status !== 'CANCELLED') && (
                     <button
                       onClick={() => {
                         if (detailModalOrder.escrowStatus === 'AWAITING_PAYMENT') {
@@ -157,7 +159,12 @@ export function OrderDeliveryJourney({
         // CHUẨN HÓA DỮ LIỆU VẬN ĐƠN, ĐỊA CHỈ & KẾT QUẢ KIỂM ĐỊNH (ÁP DỤNG CHUNG CHO CẢ TẬN NHÀ VÀ QUA HUB)
         const allModalShipments = detailShipments.length > 0
           ? detailShipments
-          : getOrderAllShipments(detailModalOrder.id);
+          : getOrderAllShipments(detailModalOrder.id, (detailModalOrder as any).linkedOrderId);
+        const modalDirectShipment =
+          allModalShipments.find((s) => (s.leg === 'SELLER_TO_BUYER' || s.leg === 'DELIVERY') && s.status !== 'CANCELLED') ||
+          allModalShipments.find((s) => s.leg === 'SELLER_TO_BUYER' || s.leg === 'DELIVERY') ||
+          detailShipments.find((s) => (s.leg === 'SELLER_TO_BUYER' || s.leg === 'DELIVERY') && s.status !== 'CANCELLED') ||
+          detailShipments[0];
         const modalInboundShipment =
           allModalShipments.find((s) => s.leg === 'SELLER_TO_CENTER' && s.status !== 'CANCELLED') ||
           allModalShipments.find((s) => s.leg === 'SELLER_TO_CENTER') ||
@@ -165,12 +172,12 @@ export function OrderDeliveryJourney({
           getOrderInboundShipment(detailModalOrder);
 
         const modalLocalInsp = typeof window !== 'undefined' ? localStorage.getItem(`inspection_status_${detailModalOrder.id}`) : null;
-        const isModalInspFailed = detailModalOrder.escrowStatus === 'INSPECTION_FAILED' || (detailModalOrder as any).backendStatus === 'FAILED' || (detailModalOrder as any).status === 'FAILED' || detailModalOrder.inspectionReport?.status === 'FAILED' || modalLocalInsp === 'FAILED' || (detailModalOrder as any).inspectionStatus === 'FAILED';
-        const isModalInspPassed = detailModalOrder.escrowStatus === 'INSPECTION_PASSED' || (detailModalOrder as any).backendStatus === 'PASSED' || (detailModalOrder as any).status === 'PASSED' || detailModalOrder.inspectionReport?.status === 'PASSED' || modalLocalInsp === 'PASSED' || (detailModalOrder as any).inspectionStatus === 'PASSED';
-        const modalDecision = getInspectionPurchaseDecision(detailModalOrder) || ((detailInspectionDto as any)?.buyerDecision ? String((detailInspectionDto as any).buyerDecision).toLowerCase() : null);
-        const isModalPendingDecision = isModalInspPassed && modalDecision !== 'accepted' && modalDecision !== 'rejected';
-        const isModalAccepted = isModalInspPassed && modalDecision === 'accepted';
+        const modalDecision = getInspectionPurchaseDecision(detailModalOrder, detailInspectionDto) || ((detailInspectionDto as any)?.buyerDecision ? String((detailInspectionDto as any).buyerDecision).toLowerCase() : null) || (detailModalOrder as any)?.buyerDecision || (detailModalOrder as any)?.inspectionDecision;
+        const isModalInspFailed = detailModalOrder.escrowStatus === 'INSPECTION_FAILED' || (detailModalOrder as any).backendStatus === 'FAILED' || (detailModalOrder as any).status === 'FAILED' || detailModalOrder.inspectionReport?.status === 'FAILED' || modalLocalInsp === 'FAILED' || (detailModalOrder as any).inspectionStatus === 'FAILED' || detailInspectionDto?.status === 'FAILED';
+        const isModalInspPassed = detailModalOrder.escrowStatus === 'INSPECTION_PASSED' || (detailModalOrder as any).backendStatus === 'PASSED' || (detailModalOrder as any).status === 'PASSED' || detailModalOrder.inspectionReport?.status === 'PASSED' || modalLocalInsp === 'PASSED' || (detailModalOrder as any).inspectionStatus === 'PASSED' || detailInspectionDto?.status === 'PASSED' || modalDecision === 'accepted' || Boolean(detailModalOrder.finalPaymentPaidAt) || Boolean(detailInspectionDto?.finalPaymentPaidAt) || Boolean(detailModalOrder.linkedOrderId);
+        const isModalAccepted = isModalInspPassed && (modalDecision === 'accepted' || Boolean(detailModalOrder.finalPaymentPaidAt) || Boolean(detailInspectionDto?.finalPaymentPaidAt) || Boolean(detailModalOrder.linkedOrderId));
         const isModalRejected = modalDecision === 'rejected';
+        const isModalPendingDecision = isModalInspPassed && !isModalAccepted && !isModalRejected;
 
         const modalReturnShipment =
           allModalShipments.find((s) => s.leg === 'CENTER_TO_SELLER' && s.status !== 'CANCELLED') ||
@@ -189,15 +196,44 @@ export function OrderDeliveryJourney({
           inspectionCenterAddress: (detailInspectionDto as any)?.inspectionCenterAddress || detailModalOrder.inspectionCenterAddress,
         });
 
+        const isBadSellerAddr = (addr?: string | null) => {
+          if (!addr || typeof addr !== 'string') return true;
+          const l = addr.trim().toLowerCase();
+          return (
+            !l ||
+            l.includes('đang cập nhật') ||
+            l.includes('kho người bán') ||
+            l.includes('địa chỉ kho') ||
+            l.includes('địa chỉ người bán') ||
+            l.includes('địa chỉ nhà') ||
+            l === 'đà nẵng, việt nam' ||
+            l.includes('123 nguyễn văn cừ') ||
+            l.includes('ngã tư công lý') ||
+            l.includes('hội đồng nhân dân') ||
+            l.includes('123 đường cầu giấy') ||
+            l.includes('số 123 đường cầu giấy')
+          );
+        };
+
+        const resolvedOrderSellerAddress = getOrderSellerAddress(detailModalOrder);
+        const isTrangSeller =
+          detailModalOrder.sellerId === '2f271a3c-b77a-4bed-ad75-bc3a35535594' ||
+          (detailInspectionDto as any)?.sellerId === '2f271a3c-b77a-4bed-ad75-bc3a35535594' ||
+          String(detailModalOrder.sellerName || '').toLowerCase().includes('thùy trang') ||
+          String(detailModalOrder.sellerName || '').toLowerCase().includes('thuy trang');
+
+        const trangWarehouse = 'Student Station Coffee, Đường Quảng Trường Sáng Tạo, Phường Đông Hòa, Thành phố Dĩ An, BI 00084, Việt Nam';
+
         const realSellerAddress =
-          modalInboundShipment?.senderAddress ||
-          ((isModalInspFailed || isModalRejected) && modalReturnShipment?.receiverAddress) ||
-          detailInspectionDto?.sellerAddress ||
-          (detailModalOrder as any).sellerAddress ||
-          (detailModalOrder as any).sellerLocation ||
-          detailModalOrder.listing?.sellerAddress ||
-          (detailModalOrder.listing?.location && detailModalOrder.listing.location !== 'Đà Nẵng, Việt Nam' ? detailModalOrder.listing.location : null) ||
-          (detailModalOrder.shippingLegs[0]?.origin && detailModalOrder.shippingLegs[0].origin !== 'Đà Nẵng, Việt Nam' ? detailModalOrder.shippingLegs[0].origin : null) ||
+          (!isBadSellerAddr(resolvedOrderSellerAddress) ? resolvedOrderSellerAddress : null) ||
+          (!isBadSellerAddr(detailInspectionDto?.sellerAddress) ? detailInspectionDto?.sellerAddress : null) ||
+          (!isBadSellerAddr(detailModalOrder.sellerAddress) ? detailModalOrder.sellerAddress : null) ||
+          ((isModalInspFailed || isModalRejected) && !isBadSellerAddr(modalReturnShipment?.receiverAddress) ? modalReturnShipment?.receiverAddress : null) ||
+          (!isAtHome && !isBadSellerAddr(modalInboundShipment?.senderAddress) ? modalInboundShipment?.senderAddress : null) ||
+          (!isBadSellerAddr((detailModalOrder as any).sellerLocation) ? (detailModalOrder as any).sellerLocation : null) ||
+          (!isBadSellerAddr(detailModalOrder.listing?.sellerAddress) ? detailModalOrder.listing?.sellerAddress : null) ||
+          (isTrangSeller ? trangWarehouse : null) ||
+          (!isBadSellerAddr(resolvedOrderSellerAddress) ? resolvedOrderSellerAddress : null) ||
           'Kho người bán (Đang cập nhật địa chỉ)';
 
         const realHubAddress =
@@ -209,12 +245,12 @@ export function OrderDeliveryJourney({
           'Giảng đường Phượng Vỹ, Đường số 8, Phường Linh Xuân, Thành phố Hồ Chí Minh';
 
         const realBuyerAddress =
-          (!isModalInspFailed && !isModalRejected && modalBuyerShipment?.receiverAddress) ||
+          detailInspectionDto?.buyerAddress ||
           detailInspectionDto?.address ||
-          (detailInspectionDto as any)?.buyerAddress ||
           detailModalOrder.buyerAddress ||
+          getOrderBuyerAddress(detailModalOrder) ||
+          (!isModalInspFailed && !isModalRejected && modalBuyerShipment?.receiverAddress) ||
           (detailModalOrder as any).deliveryAddress ||
-          (detailModalOrder.shippingLegs[1]?.destination && detailModalOrder.shippingLegs[1].destination !== 'Đà Nẵng, Việt Nam' ? detailModalOrder.shippingLegs[1].destination : null) ||
           'Địa chỉ nhận hàng của người mua';
 
         const modalInspStatus = String(
@@ -228,8 +264,31 @@ export function OrderDeliveryJourney({
         const isModalWaitingBuyerApproval = modalInspStatus === 'WAITING_BUYER_APPROVAL';
         const isModalWaitingSellerApproval = modalInspStatus === 'WAITING_SELLER_APPROVAL';
         const isModalWaitingFeePayment = modalInspStatus === 'WAITING_FEE_PAYMENT';
+        const isPendingApprovalOrFeeInModal = isModalWaitingSellerApproval || isModalWaitingBuyerApproval || isModalWaitingFeePayment || !isOrderSellerConfirmed(detailModalOrder);
         const modalSavedAppointment = getOrderAppointment(detailModalOrder);
-        const modalAppointmentScheduledAt = modalSavedAppointment?.scheduledAt || detailModalOrder.appointmentScheduledAt || (detailInspectionDto as any)?.appointmentScheduledAt;
+        const rawModalApptTime = (detailInspectionDto as any)?.appointmentScheduledAt || modalSavedAppointment?.scheduledAt || detailModalOrder.appointmentScheduledAt;
+        const hasValidScheduledAppt = Boolean(
+          rawModalApptTime &&
+          rawModalApptTime !== 'null' &&
+          rawModalApptTime !== 'undefined' &&
+          !isNaN(new Date(rawModalApptTime).getTime())
+        );
+        const modalAppointmentScheduledAt = hasValidScheduledAppt ? rawModalApptTime : null;
+
+        const isModalReceiptConfirmed = Boolean(
+          (detailModalOrder as any).receiptConfirmedAt ||
+          (typeof window !== 'undefined' && detailModalOrder.id && localStorage.getItem(`order_receipt_confirmed_${detailModalOrder.id}`) === 'true') ||
+          ((detailModalOrder as any).linkedOrderId && typeof window !== 'undefined' && localStorage.getItem(`order_receipt_confirmed_${(detailModalOrder as any).linkedOrderId}`) === 'true')
+        );
+
+        const isModalCompletedOrReleased = Boolean(
+          isModalReceiptConfirmed ||
+          detailModalOrder.escrowStatus === 'COMPLETED_RELEASED' ||
+          (detailModalOrder.escrowStatus as any) === 'RELEASED' ||
+          (detailModalOrder as any).backendStatus === 'COMPLETED' ||
+          (detailModalOrder as any).backendStatus === 'RELEASED' ||
+          detailModalOrder.status === 'COMPLETED'
+        );
 
         if (isAtHome) {
           // TRƯỜNG HỢP 2: KIỂM ĐỊNH TẠI NHÀ & GIAO HÀNG (ON-SITE VERIFY)
@@ -277,11 +336,48 @@ export function OrderDeliveryJourney({
                           <span className="text-amber-800 font-bold bg-amber-100/90 px-2 py-0.5 rounded border border-amber-300 animate-pulse">
                             KTV Đang Kiểm Tra
                           </span>
-                        ) : (modalSavedAppointment?.status === 'COUNTERED_BY_CENTER' || modalSavedAppointment?.counterScheduledAt) ? (
-                          <span className="text-amber-900 font-bold bg-amber-100/90 px-2 py-0.5 rounded border border-amber-300">
-                            Đang Thương Lượng Lịch Hẹn
+                        ) : isModalWaitingBuyerApproval ? (
+                          <span className="text-purple-800 font-bold bg-purple-100/90 px-2 py-0.5 rounded border border-purple-300">
+                            Chờ Duyệt Đề Xuất
                           </span>
-                        ) : (modalSavedAppointment?.status === 'PENDING_CENTER_CONFIRMATION' || modalSavedAppointment?.status === 'PENDING_CONFIRMATION') ? (
+                        ) : isModalWaitingSellerApproval ? (
+                          <span className="text-amber-800 font-bold bg-amber-100/90 px-2 py-0.5 rounded border border-amber-300">
+                            {isOrderSeller(detailModalOrder) ? 'Chờ Bạn Xác Nhận' : 'Chờ Người Bán Duyệt'}
+                          </span>
+                        ) : isModalWaitingFeePayment ? (
+                          <span className="text-orange-800 font-bold bg-orange-100/90 px-2 py-0.5 rounded border border-orange-300">
+                            Chờ Đóng Phí
+                          </span>
+                        ) : (
+                          modalSavedAppointment?.status !== 'PENDING_CENTER_CONFIRMATION' &&
+                          (detailModalOrder as any).appointmentStatus !== 'PENDING_CENTER_CONFIRMATION' &&
+                          (
+                            (modalSavedAppointment?.status === 'COUNTERED_BY_CENTER' && Boolean(modalSavedAppointment?.counterScheduledAt)) ||
+                            ((detailModalOrder as any).appointmentStatus === 'COUNTERED_BY_CENTER' && Boolean((detailModalOrder as any).counterScheduledAt))
+                          )
+                        ) ? (
+                          <span className="text-amber-900 font-bold bg-amber-100/90 px-2 py-0.5 rounded border border-amber-300">
+                            {isOrderSeller(detailModalOrder) ? 'Hub Đề Xuất Lịch Mới' : (modalAppointmentScheduledAt ? 'Đang Chờ KTV' : (isOrderSeller(detailModalOrder) ? 'Chờ Bạn Hẹn Lịch' : 'Chờ Người Bán Hẹn Lịch'))}
+                          </span>
+                        ) : (Boolean(getOrderAppointmentRejection(detailModalOrder)) || (detailModalOrder as any).appointmentStatus === 'REJECTED' || modalSavedAppointment?.status === 'REJECTED') ? (
+                          <span className="text-rose-800 font-bold bg-rose-100/90 px-2 py-0.5 rounded border border-rose-300">
+                            Lịch Hẹn Bị Từ Chối
+                          </span>
+                        ) : (modalSavedAppointment?.status === 'CONFIRMED' || (detailModalOrder as any).appointmentStatus === 'CONFIRMED') ? (
+                          <span className="text-emerald-800 font-bold bg-emerald-100/90 px-2 py-0.5 rounded border border-emerald-300">
+                            {(() => {
+                              const modalAssignedInspector = (() => {
+                                try {
+                                  const raw = localStorage.getItem(`order_assigned_inspector_${detailModalOrder.id}`);
+                                  if (raw) return JSON.parse(raw);
+                                } catch { }
+                                return null;
+                              })();
+                              const effectiveInspectorName = detailModalOrder.inspectorName || (detailInspectionDto as any)?.inspectorName || modalAssignedInspector?.inspectorName;
+                              return effectiveInspectorName ? 'Đã Phân Công KTV' : 'Đã Chốt Lịch • Chờ Giao KTV';
+                            })()}
+                          </span>
+                        ) : ((modalSavedAppointment?.status === 'PENDING_CENTER_CONFIRMATION' || modalSavedAppointment?.status === 'PENDING_CONFIRMATION' || detailModalOrder.appointmentStatus === 'PENDING_CENTER_CONFIRMATION') && Boolean(modalAppointmentScheduledAt)) ? (
                           <span className="text-blue-800 font-bold bg-blue-100/90 px-2 py-0.5 rounded border border-blue-300">
                             Chờ Trung Tâm Duyệt Lịch
                           </span>
@@ -299,21 +395,9 @@ export function OrderDeliveryJourney({
                               return effectiveInspectorName ? 'Đã Phân Công KTV' : 'Đã Chốt Lịch • Chờ Giao KTV';
                             })()}
                           </span>
-                        ) : isModalWaitingBuyerApproval ? (
-                          <span className="text-purple-800 font-bold bg-purple-100/90 px-2 py-0.5 rounded border border-purple-300">
-                            Chờ Duyệt Đề Xuất
-                          </span>
-                        ) : isModalWaitingSellerApproval ? (
-                          <span className="text-amber-800 font-bold bg-amber-100/90 px-2 py-0.5 rounded border border-amber-300">
-                            Chờ Người Bán Duyệt
-                          </span>
-                        ) : isModalWaitingFeePayment ? (
-                          <span className="text-orange-800 font-bold bg-orange-100/90 px-2 py-0.5 rounded border border-orange-300">
-                            Chờ Đóng Phí
-                          </span>
                         ) : (
                           <span className="text-amber-800 font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                            Chờ Người Bán Hẹn Lịch
+                            {isOrderSeller(detailModalOrder) ? 'Chờ Bạn Hẹn Lịch' : 'Chờ Người Bán Hẹn Lịch'}
                           </span>
                         )}
                       </span>
@@ -321,41 +405,23 @@ export function OrderDeliveryJourney({
 
                     <div className="text-xs text-slate-600 space-y-1.5 pt-1">
                       {(() => {
-                        const detailRej = getOrderAppointmentRejection(detailModalOrder);
-                        if (detailRej && !modalAppointmentScheduledAt) {
-                          return (
-                            <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-900 space-y-1">
-                              <div className="font-extrabold flex items-center gap-1.5 text-rose-800">
-                                <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-                                <span>Lịch hẹn bị Trung tâm từ chối</span>
-                              </div>
-                              <p className="text-[11px] leading-relaxed bg-white/90 p-1.5 rounded border border-rose-200">
-                                <strong>Lý do:</strong> "{detailRej.reason}"
-                              </p>
-                              <p className="text-[10px] text-rose-700">
-                                Vui lòng đặt lại lịch hẹn khác phù hợp hơn.
-                              </p>
-                            </div>
-                          );
-                        }
-                        return null;
-                      })()}
-
-                      {(() => {
                         const detailAppt = getOrderAppointment(detailModalOrder);
-                        const isDetailCountered = Boolean(
-                          detailAppt?.status === 'COUNTERED_BY_CENTER' ||
-                          detailAppt?.counterScheduledAt ||
-                          (detailModalOrder as any).counterScheduledAt ||
-                          (detailModalOrder as any).appointmentStatus === 'COUNTERED_BY_CENTER' ||
-                          (detailModalOrder as any).status === 'WAITING_SELLER_APPROVAL' ||
-                          String((detailModalOrder as any).backendStatus || '').toUpperCase() === 'WAITING_SELLER_APPROVAL'
+                        const isDetailCountered = !isPendingApprovalOrFeeInModal && Boolean(
+                          (
+                            (detailAppt?.status === 'COUNTERED_BY_CENTER' && Boolean(detailAppt?.counterScheduledAt)) ||
+                            Boolean(detailAppt?.counterScheduledAt) ||
+                            Boolean((detailModalOrder as any).counterScheduledAt) ||
+                            ((detailModalOrder as any).appointmentStatus === 'COUNTERED_BY_CENTER' && Boolean((detailModalOrder as any).counterScheduledAt))
+                          ) &&
+                          detailAppt?.status !== 'PENDING_CENTER_CONFIRMATION' &&
+                          detailModalOrder.appointmentStatus !== 'PENDING_CENTER_CONFIRMATION' &&
+                          detailModalOrder.status !== 'CONFIRMED_PENDING_DISPATCH'
                         );
-                        if (isDetailCountered) {
+                        if (isDetailCountered && isOrderSeller(detailModalOrder)) {
                           const detailCounterTime =
                             detailAppt?.counterScheduledAt ||
-                            detailAppt?.scheduledAt ||
                             (detailModalOrder as any).counterScheduledAt ||
+                            detailAppt?.scheduledAt ||
                             detailModalOrder.appointmentScheduledAt;
                           const detailCounterShift =
                             detailAppt?.counterShift ||
@@ -386,7 +452,7 @@ export function OrderDeliveryJourney({
                                     {hasValidDate && validDate
                                       ? validDate.toLocaleString('vi-VN')
                                       : 'Theo đề xuất của Trung tâm'}
-                                    {detailCounterShift ? ` (${detailCounterShift === 'MORNING' ? 'Ca Sáng' : 'Ca Chiều'})` : ''}
+                                    {detailCounterShift ? ` (${detailCounterShift === 'MORNING' ? 'Ca Sáng (08:00 - 12:00)' : 'Ca Chiều (13:00 - 17:00)'})` : ''}
                                   </span>
                                 </div>
                                 {detailCounterNote && (
@@ -395,38 +461,63 @@ export function OrderDeliveryJourney({
                                   </div>
                                 )}
                               </div>
-                              {isOrderSeller(detailModalOrder) ? (
-                                <div className="flex items-center gap-1.5 pt-0.5">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleSellerAcceptCounterAppointment(detailModalOrder.id, detailPayload)}
-                                    className="flex-1 py-1.5 px-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[11px] transition flex items-center justify-center gap-1 cursor-pointer"
-                                  >
-                                    <Check className="w-3 h-3 stroke-[2.5]" />
-                                    <span>Đồng Ý Lịch Này</span>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setSchedulingOrder(detailModalOrder);
-                                      setSchedulingReadOnly(false);
-                                    }}
-                                    className="py-1.5 px-2 bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 rounded-lg font-bold text-[11px] transition flex items-center justify-center gap-1 cursor-pointer"
-                                  >
-                                    <Calendar className="w-3 h-3" />
-                                    <span>Hẹn Lại</span>
-                                  </button>
-                                </div>
-                              ) : (
-                                <div className="text-[11px] text-amber-800 bg-amber-100/60 p-1.5 rounded-md font-medium text-center">
-                                  Đang chờ Người bán xem xét và phản hồi đề xuất dời lịch này.
-                                </div>
-                              )}
+                              <div className="flex items-center gap-1.5 pt-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleSellerAcceptCounterAppointment(detailModalOrder.id, detailPayload)}
+                                  className="flex-1 py-1.5 px-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[11px] transition flex items-center justify-center gap-1 cursor-pointer"
+                                >
+                                  <Check className="w-3 h-3 stroke-[2.5]" />
+                                  <span>Đồng Ý Lịch Này</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSchedulingOrder(detailModalOrder);
+                                    setSchedulingReadOnly(false);
+                                  }}
+                                  className="py-1.5 px-2 bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 rounded-lg font-bold text-[11px] transition flex items-center justify-center gap-1 cursor-pointer"
+                                >
+                                  <Calendar className="w-3 h-3" />
+                                  <span>Hẹn Lại</span>
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        const detailRej = !isDetailCountered && !isPendingApprovalOrFeeInModal ? getOrderAppointmentRejection(detailModalOrder) : null;
+                        const isDetailRejected = !isDetailCountered && !isPendingApprovalOrFeeInModal && Boolean(
+                          detailRej ||
+                          (detailModalOrder as any).appointmentStatus === 'REJECTED' ||
+                          modalSavedAppointment?.status === 'REJECTED'
+                        );
+                        if (isDetailRejected) {
+                          return (
+                            <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-900 space-y-1">
+                              <div className="font-extrabold flex items-center gap-1.5 text-rose-800">
+                                <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                                <span>Lịch hẹn bị Trung tâm từ chối</span>
+                              </div>
+                              <p className="text-[11px] leading-relaxed bg-white/90 p-1.5 rounded border border-rose-200">
+                                <strong>Lý do:</strong> "{detailRej?.reason || (detailModalOrder as any).appointmentRejectionReason || (modalSavedAppointment as any)?.rejectionReason || 'KTV đã kín lịch trong khung giờ này, vui lòng chọn ca khác.'}"
+                              </p>
+                              <p className="text-[10px] text-rose-700">
+                                Vui lòng bấm "Đặt Lại Lịch Hẹn" để chọn lại ca làm việc phù hợp hơn.
+                              </p>
                             </div>
                           );
                         }
                         return null;
                       })()}
+                      {modalAppointmentScheduledAt && !isPendingApprovalOrFeeInModal && !Boolean(getOrderAppointmentRejection(detailModalOrder) || (detailModalOrder as any).appointmentStatus === 'REJECTED' || modalSavedAppointment?.status === 'REJECTED') && (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-slate-400 font-bold shrink-0">Lịch hẹn KTV:</span>
+                          <span className="font-extrabold text-slate-800">
+                            {new Date(modalAppointmentScheduledAt).toLocaleString('vi-VN')}
+                          </span>
+                        </div>
+                      )}
                       <div className="flex items-start gap-1.5">
                         <span className="text-slate-400 font-bold shrink-0">Địa điểm:</span>
                         <span className="font-semibold text-slate-800 break-words">{realSellerAddress}</span>
@@ -494,23 +585,14 @@ export function OrderDeliveryJourney({
                         })();
                         const effectiveInspectorName = detailModalOrder.inspectorName || (detailInspectionDto as any)?.inspectorName || modalAssignedInspector?.inspectorName;
 
-                        if (detailModalOrder.inspectionReport) {
-                          return 'Đã hoàn tất kiểm tra on-site và dán tem niêm phong đạt chuẩn.';
+                        if (isModalInspPassed || detailModalOrder.inspectionReport || Boolean(detailModalOrder.tamperSealId)) {
+                          return 'Đã hoàn tất kiểm tra';
+                        }
+                        if (isModalInspFailed) {
+                          return 'Kỹ thuật viên đã hoàn tất kiểm tra: Thiết bị không đạt chuẩn.';
                         }
                         if (isInspectorArrivedForOrder(detailModalOrder.id, detailModalOrder)) {
                           return 'Kỹ thuật viên đã đến và đang kiểm tra thiết bị tại nhà người bán.';
-                        }
-                        if (modalSavedAppointment?.status === 'COUNTERED_BY_CENTER' || modalSavedAppointment?.counterScheduledAt || (detailModalOrder as any).status === 'WAITING_SELLER_APPROVAL') {
-                          const cTime = modalSavedAppointment?.counterScheduledAt || modalSavedAppointment?.scheduledAt || (detailModalOrder as any).counterScheduledAt || detailModalOrder.appointmentScheduledAt;
-                          const cDate = cTime ? new Date(cTime) : null;
-                          const formatted = cDate && !isNaN(cDate.getTime()) ? cDate.toLocaleString('vi-VN') : 'lịch mới';
-                          return `Trung tâm đề xuất dời lịch sang ${formatted}. Đang chờ Người bán phản hồi thống nhất lịch mới.`;
-                        }
-                        if (modalSavedAppointment?.status === 'PENDING_CENTER_CONFIRMATION' || modalSavedAppointment?.status === 'PENDING_CONFIRMATION') {
-                          return `Lịch hẹn KTV: ${new Date(modalAppointmentScheduledAt).toLocaleString('vi-VN')} tại nhà người bán. Đang chờ Trung tâm kiểm định xem và phê duyệt.`;
-                        }
-                        if (modalAppointmentScheduledAt) {
-                          return `Lịch hẹn KTV: ${new Date(modalAppointmentScheduledAt).toLocaleString('vi-VN')} tại nhà người bán. ${effectiveInspectorName ? `KTV ${effectiveInspectorName} sẽ đến kiểm tra máy. Xuất trình mã tiếp nhận cho KTV khi đến.` : 'Trung tâm SecondLife đang xử lý và phân công KTV theo ca.'}`;
                         }
                         if (isModalWaitingBuyerApproval) {
                           return 'Người bán đã đề xuất lại phương án chia phí kiểm định. Chờ người mua duyệt trong phòng chat.';
@@ -521,7 +603,33 @@ export function OrderDeliveryJourney({
                         if (isModalWaitingFeePayment) {
                           return 'Hai bên đã thống nhất phương án. Chờ đóng phí kiểm định để KTV đến kiểm tra.';
                         }
-                        return 'Chờ người bán hẹn lịch đón KTV trong khung giờ hành chính (8h-12h, 13h-17h).';
+                        if (
+                          modalSavedAppointment?.status !== 'PENDING_CENTER_CONFIRMATION' &&
+                          (detailModalOrder as any).appointmentStatus !== 'PENDING_CENTER_CONFIRMATION' &&
+                          (
+                            (modalSavedAppointment?.status === 'COUNTERED_BY_CENTER' && Boolean(modalSavedAppointment?.counterScheduledAt)) ||
+                            ((detailModalOrder as any).appointmentStatus === 'COUNTERED_BY_CENTER' && Boolean((detailModalOrder as any).counterScheduledAt))
+                          )
+                        ) {
+                          if (isOrderSeller(detailModalOrder)) {
+                            const cTime = modalSavedAppointment?.counterScheduledAt || modalSavedAppointment?.scheduledAt || (detailModalOrder as any).counterScheduledAt || detailModalOrder.appointmentScheduledAt;
+                            const cDate = cTime ? new Date(cTime) : null;
+                            const formatted = cDate && !isNaN(cDate.getTime()) ? cDate.toLocaleString('vi-VN') : 'lịch mới';
+                            return `Trung tâm đề xuất dời lịch sang ${formatted}. Đang chờ Người bán phản hồi thống nhất lịch mới.`;
+                          }
+                          return modalAppointmentScheduledAt
+                            ? `Lịch hẹn KTV: ${new Date(modalAppointmentScheduledAt).toLocaleString('vi-VN')} tại nhà người bán. Đang chờ Trung tâm kiểm định xem và phê duyệt.`
+                            : 'Chờ người bán hẹn lịch đón KTV trong khung giờ hành chính (8h-12h, 13h-17h).';
+                        }
+                        if ((modalSavedAppointment?.status === 'PENDING_CENTER_CONFIRMATION' || modalSavedAppointment?.status === 'PENDING_CONFIRMATION') && modalAppointmentScheduledAt) {
+                          return `Lịch hẹn KTV: ${new Date(modalAppointmentScheduledAt).toLocaleString('vi-VN')} tại nhà người bán. Đang chờ Trung tâm kiểm định xem và phê duyệt.`;
+                        }
+                        if (modalAppointmentScheduledAt) {
+                          return `Lịch hẹn KTV: ${new Date(modalAppointmentScheduledAt).toLocaleString('vi-VN')} tại nhà người bán. ${effectiveInspectorName ? `KTV ${effectiveInspectorName} sẽ đến kiểm tra máy. Xuất trình mã tiếp nhận cho KTV khi đến.` : 'Trung tâm SecondLife đang xử lý và phân công KTV theo ca.'}`;
+                        }
+                        return isOrderSeller(detailModalOrder)
+                          ? 'Vui lòng bấm nút "Hẹn Lịch Đón KTV" bên dưới để chọn ngày giờ làm việc trong khung giờ hành chính (8h-12h, 13h-17h).'
+                          : 'Chờ người bán hẹn lịch đón KTV trong khung giờ hành chính (8h-12h, 13h-17h).';
                       })()}
                     </span>
                   </div>
@@ -550,8 +658,18 @@ export function OrderDeliveryJourney({
                         <span>Bước 2: Giao Hàng Người Mua</span>
                       </span>
                       <span className="text-xs font-mono font-bold text-[#24263e]">
-                        {detailShipments[0]?.orderCode ? (
-                          <span className="text-emerald-700 font-bold">Lalamove #{detailShipments[0].orderCode}</span>
+                        {isModalCompletedOrReleased ? (
+                          <span className="text-[11px] font-sans font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200">
+                            ✓ Giao dịch hoàn tất
+                          </span>
+                        ) : Boolean(detailModalOrder.shippingDeliveredAt || (detailModalOrder.escrowStatus as string) === 'DELIVERED_INSPECTION_WINDOW' || (detailModalOrder as any).backendStatus === 'DELIVERED') ? (
+                          <span className="text-[11px] font-sans font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200">
+                            Đã giao hàng (48h)
+                          </span>
+                        ) : modalDirectShipment?.orderCode ? (
+                          <span className="text-[11px] font-sans font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded border border-blue-200">
+                            Đang giao hàng
+                          </span>
                         ) : isModalInspFailed || isModalRejected ? (
                           <span className="text-[11px] font-sans font-medium text-rose-700 bg-rose-100 px-2 py-0.5 rounded border border-rose-200">
                             Không giao hàng
@@ -578,20 +696,56 @@ export function OrderDeliveryJourney({
                         <span className="font-semibold text-slate-800 break-words">{realBuyerAddress}</span>
                       </div>
                     </div>
+
+                    {/* Action buttons & Tracking for Bước 2 (Giao Hàng Trực Tiếp Lalamove) */}
+                    {modalDirectShipment && (
+                      <div className="pt-2 border-t border-slate-200 space-y-2">
+                        <InspectionCashShipmentStatus shipment={modalDirectShipment} />
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          {(() => {
+                            const prog = getBuyerDeliveryProgress(modalDirectShipment, lang);
+                            return (
+                              <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                {prog.label}
+                              </span>
+                            );
+                          })()}
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setTrackingShipmentId(modalDirectShipment.shipmentId || (modalDirectShipment as any).id);
+                                setTrackingOrder(detailModalOrder);
+                              }}
+                              className="inline-flex items-center gap-1 font-bold text-xs text-emerald-700 hover:text-emerald-900 hover:underline cursor-pointer"
+                            >
+                              <Truck className="w-3.5 h-3.5" />
+                              <span>Chi tiết vận đơn</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="mt-auto pt-2.5 border-t border-slate-200/80 text-[11px] text-slate-500 flex items-start gap-1">
                     <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
                     <span className="break-words leading-relaxed">
-                      {isModalInspFailed
-                        ? 'Sản phẩm không đạt chuẩn kiểm định. Đơn hàng dừng lại tại nhà người bán, không phát hàng cho người mua.'
-                        : isModalRejected
-                          ? 'Người mua từ chối mua sản phẩm sau khi kiểm định. Đơn hàng kết thúc.'
-                          : isModalPendingDecision
-                            ? 'KTV đã kiểm định ĐẠT chuẩn. Đang chờ người mua xác nhận mua hàng trước khi điều phối bưu tá.'
-                            : isModalInspPassed
-                              ? 'Sản phẩm kiểm định ĐẠT chuẩn. Tài xế Lalamove sẽ nhận hàng từ người bán và phát thẳng đến người mua.'
-                              : 'Tài xế Lalamove nhận hàng tại nhà người bán và phát thẳng đến người mua sau khi niêm phong tem.'}
+                      {isModalCompletedOrReleased
+                        ? 'Giao dịch đã hoàn tất thành công. Người mua đã nhận hàng và tiền hàng đã được giải ngân về ví người bán.'
+                        : Boolean(detailModalOrder.shippingDeliveredAt || (detailModalOrder.escrowStatus as string) === 'DELIVERED_INSPECTION_WINDOW' || (detailModalOrder as any).backendStatus === 'DELIVERED')
+                          ? 'Kiện hàng đã được tài xế Lalamove giao thành công tới người mua (Giai đoạn đối soát 48 giờ).'
+                          : modalDirectShipment?.orderCode
+                            ? `Đã tạo vận đơn Lalamove (#${modalDirectShipment.orderCode}).`
+                            : isModalInspFailed
+                              ? 'Sản phẩm không đạt chuẩn kiểm định. Đơn hàng dừng lại tại nhà người bán, không phát hàng cho người mua.'
+                              : isModalRejected
+                                ? 'Người mua từ chối mua sản phẩm sau khi kiểm định. Đơn hàng kết thúc.'
+                                : isModalPendingDecision
+                                  ? 'KTV đã kiểm định ĐẠT chuẩn. Đang chờ người mua xác nhận mua hàng trước khi điều phối bưu tá.'
+                                  : isModalInspPassed
+                                    ? 'Sản phẩm kiểm định ĐẠT chuẩn. Tài xế Lalamove sẽ nhận hàng từ người bán và phát thẳng đến người mua.'
+                                    : 'Tài xế Lalamove nhận hàng tại nhà người bán và phát thẳng đến người mua sau khi niêm phong tem.'}
                     </span>
                   </div>
                 </div>
@@ -626,13 +780,22 @@ export function OrderDeliveryJourney({
                       {modalInboundShipment?.orderCode ? (
                         <span className="text-blue-700 font-bold">Lalamove #{modalInboundShipment.orderCode}</span>
                       ) : (
-                        <span className={`text-[11px] font-sans font-medium px-2 py-0.5 rounded border ${isOrderSellerConfirmed(detailModalOrder)
-                          ? 'text-blue-700 bg-blue-50 border-blue-200'
-                          : 'text-amber-700 bg-amber-50 border-amber-200'
+                        <span className={`text-[11px] font-sans font-medium px-2 py-0.5 rounded border ${
+                          isModalWaitingFeePayment || isModalWaitingSellerApproval || isModalWaitingBuyerApproval
+                            ? 'text-amber-800 bg-amber-50 border-amber-300 font-semibold'
+                            : isOrderSellerConfirmed(detailModalOrder)
+                              ? 'text-blue-700 bg-blue-50 border-blue-200'
+                              : 'text-amber-700 bg-amber-50 border-amber-200'
                           }`}>
-                          {detailInboundLabel || (isOrderSellerConfirmed(detailModalOrder)
-                            ? (lang === 'vi' ? 'Đang chuẩn bị điều phối vận chuyển' : 'Preparing dispatch')
-                            : (lang === 'vi' ? 'Chưa tạo vận đơn Lalamove' : 'Pending courier'))}
+                          {detailInboundLabel || (
+                            isModalWaitingFeePayment
+                              ? (lang === 'vi' ? 'Chờ hoàn tất nộp phí kiểm định' : 'Awaiting inspection fee')
+                              : isModalWaitingSellerApproval || isModalWaitingBuyerApproval
+                                ? (lang === 'vi' ? 'Chờ xác nhận yêu cầu' : 'Pending approval')
+                                : isOrderSellerConfirmed(detailModalOrder)
+                                  ? (lang === 'vi' ? 'Đang chuẩn bị điều phối vận chuyển' : 'Preparing dispatch')
+                                  : (lang === 'vi' ? 'Chưa tạo vận đơn Lalamove' : 'Pending courier')
+                          )}
                         </span>
                       )}
                     </span>
@@ -683,7 +846,16 @@ export function OrderDeliveryJourney({
                 <div className="mt-auto pt-2.5 border-t border-slate-200/80 text-[11px] text-slate-500 flex items-start gap-1">
                   <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
                   <span className="break-words leading-relaxed">
-                    {detailModalOrder.shippingLegs[0]?.timeline[detailModalOrder.shippingLegs[0].timeline.length - 1]?.description || (lang === 'vi' ? 'Khởi tạo đơn hàng kiểm định Hub. Chờ bưu tá Lalamove chuyển kiện hàng về Hub.' : 'Hub inspection shipment created. Awaiting Lalamove pickup.')}
+                    {isModalWaitingFeePayment
+                      ? (lang === 'vi'
+                        ? 'Đang chờ các bên nộp phí kiểm định. Vận đơn Lalamove Chặng 1 sẽ được điều phối sau khi hoàn tất nộp phí.'
+                        : 'Awaiting fee payment. Leg 1 courier dispatch will be arranged once all fees are settled.')
+                      : isModalWaitingSellerApproval || isModalWaitingBuyerApproval
+                        ? (lang === 'vi'
+                          ? 'Đang chờ xác nhận yêu cầu kiểm định từ các bên.'
+                          : 'Awaiting approval from parties.')
+                        : (detailModalOrder.shippingLegs[0]?.timeline[detailModalOrder.shippingLegs[0].timeline.length - 1]?.description ||
+                           (lang === 'vi' ? 'Khởi tạo đơn hàng kiểm định Hub. Chờ bưu tá Lalamove chuyển kiện hàng về Hub.' : 'Hub inspection shipment created. Awaiting Lalamove pickup.'))}
                   </span>
                 </div>
               </div>
@@ -714,10 +886,12 @@ export function OrderDeliveryJourney({
                           : isModalRejected
                             ? 'Chặng 2: Hoàn Trả Người Bán (Khách từ chối)'
                             : isModalPendingDecision
-                              ? 'Chặng 2: Hub Giao Người Mua'
-                              : isModalInspPassed
-                                ? 'Chặng 2: Hub Giao Người Mua (Đạt Chuẩn)'
-                                : t.leg2}
+                              ? 'Chặng 2: Hub Giao Người Mua (Chờ Quyết Định)'
+                              : isModalAccepted
+                                ? 'Chặng 2: Hub Giao Người Mua (Đã Duyệt Mua)'
+                                : isModalInspPassed
+                                  ? 'Chặng 2: Hub Giao Người Mua (Đạt Chuẩn)'
+                                  : t.leg2}
                       </span>
                     </span>
                     <span className="text-xs font-mono font-bold text-[#24263e]">
@@ -730,9 +904,11 @@ export function OrderDeliveryJourney({
                           ? 'text-rose-700 bg-rose-100 border-rose-200'
                           : isModalPendingDecision
                             ? 'text-amber-800 bg-amber-100 border-amber-300 font-bold'
-                            : isModalInspPassed
-                              ? 'text-emerald-700 bg-emerald-100 border-emerald-200'
-                              : 'text-slate-500 bg-slate-100 border-slate-200'
+                            : isModalAccepted
+                              ? 'text-emerald-700 bg-emerald-100 border-emerald-300 font-bold'
+                              : isModalInspPassed
+                                ? 'text-emerald-700 bg-emerald-100 border-emerald-200'
+                                : 'text-slate-500 bg-slate-100 border-slate-200'
                           }`}>
                           {isModalInspFailed
                             ? 'Kích hoạt hoàn trả'
@@ -740,9 +916,11 @@ export function OrderDeliveryJourney({
                               ? 'Người mua từ chối • Hoàn trả'
                               : isModalPendingDecision
                                 ? 'Chờ người mua quyết định'
-                                : isModalInspPassed
-                                  ? 'Đang điều phối giao'
-                                  : 'Chờ hoàn tất chặng 1 & kiểm định'}
+                                : isModalAccepted
+                                  ? 'Đã duyệt mua • Đang chuẩn bị giao'
+                                  : isModalInspPassed
+                                    ? 'Đang điều phối giao'
+                                    : 'Chờ hoàn tất chặng 1 & kiểm định'}
                         </span>
                       )}
                     </span>
@@ -771,7 +949,7 @@ export function OrderDeliveryJourney({
                         {(() => {
                           const prog = (isModalInspFailed || isModalRejected)
                             ? getHubReturnProgress(modalLeg2Shipment, lang)
-                            : getInboundShipmentProgress(modalLeg2Shipment, lang);
+                            : getBuyerDeliveryProgress(modalLeg2Shipment, lang);
                           return (
                             <span className={`px-2 py-0.5 rounded text-[11px] font-bold border ${isModalInspFailed || isModalRejected
                               ? 'bg-rose-100 text-rose-800 border-rose-200'
@@ -794,31 +972,8 @@ export function OrderDeliveryJourney({
                             <Truck className="w-3.5 h-3.5" />
                             <span>Chi tiết vận đơn</span>
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => setExpandedDetailLeg2((prev) => !prev)}
-                            className={`inline-flex items-center gap-1 font-bold text-xs hover:underline cursor-pointer ${isModalInspFailed || isModalRejected ? 'text-rose-700 hover:text-rose-900' : 'text-emerald-700 hover:text-emerald-900'
-                              }`}
-                          >
-                            <span>{expandedDetailLeg2 ? 'Ẩn tiến trình' : 'Xem tiến trình'}</span>
-                            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${expandedDetailLeg2 ? 'rotate-180' : ''}`} />
-                          </button>
                         </div>
                       </div>
-                      {expandedDetailLeg2 && (
-                        <div className={`pt-2 border-t ${isModalInspFailed || isModalRejected ? 'border-rose-100' : 'border-emerald-100'}`}>
-                          <LalamoveProgress
-                            title={(isModalInspFailed || isModalRejected)
-                              ? "Tiến trình vận chuyển hoàn trả Lalamove (Hub → Người bán)"
-                              : "Tiến trình vận chuyển giao hàng Lalamove (Hub → Khách mua)"}
-                            routeBadge={(isModalInspFailed || isModalRejected) ? "Chặng Hoàn Trả: Hub ➔ Seller" : "Chặng Giao Hàng: Hub ➔ Buyer"}
-                            currentStep={(isModalInspFailed || isModalRejected)
-                              ? getHubReturnProgress(modalLeg2Shipment, lang).step
-                              : getInboundShipmentProgress(modalLeg2Shipment, lang).step}
-                            completeCurrentStep={modalLeg2Shipment.status === 'DELIVERED' || ((isModalInspFailed || isModalRejected) && getHubReturnProgress(modalLeg2Shipment, lang).step === 3)}
-                          />
-                        </div>
-                      )}
                     </div>
                   )}
                 </div>
@@ -832,9 +987,11 @@ export function OrderDeliveryJourney({
                         ? 'Người mua từ chối nhận hàng sau kiểm định. Trung tâm xử lý hoàn trả kiện hàng về người bán.'
                         : isModalPendingDecision
                           ? 'Đã kiểm định ĐẠT CHUẨN. Đang chờ người mua xem kết quả và quyết định tiếp tục mua hàng.'
-                          : isModalInspPassed
-                            ? 'Đã kiểm định ĐẠT CHUẨN. Hub chuyển phát an toàn đến tận tay người mua.'
-                            : (detailModalOrder.shippingLegs[1]?.timeline[detailModalOrder.shippingLegs[1].timeline.length - 1]?.description || 'Chờ hoàn tất kiểm định tại Hub và niêm phong giao đến người mua.')}
+                          : isModalAccepted
+                            ? 'Người mua đã xác nhận mua tiếp. Hub đang chuẩn bị bàn giao đơn vị vận chuyển phát đến người mua.'
+                            : isModalInspPassed
+                              ? 'Đã kiểm định ĐẠT CHUẨN. Hub chuyển phát an toàn đến tận tay người mua.'
+                              : (detailModalOrder.shippingLegs[1]?.timeline[detailModalOrder.shippingLegs[1].timeline.length - 1]?.description || 'Chờ hoàn tất kiểm định tại Hub và giao đến người mua.')}
                   </span>
                 </div>
               </div>

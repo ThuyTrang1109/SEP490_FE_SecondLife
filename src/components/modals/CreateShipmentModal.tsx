@@ -17,12 +17,21 @@ import {
   Store,
   Info
 } from 'lucide-react';
-import { shippingService } from '../../services/shippingService';
+import { shippingService, type ShippingAddressDto } from '../../services/shippingService';
 import { inspectorService } from '../../services/inspectorService';
 import { translateApiError } from '../../services/apiClient';
 import { translateSystemNotification } from '../../utils/systemNotificationTranslator';
 import { resolveOrderListing } from '../../utils/catalogCache';
 import { resolveInspectionCenter } from '../../utils/orderUtils';
+import {
+  getOrderSellerAddress,
+  getOrderSellerName,
+  getOrderSellerPhone,
+  getOrderBuyerAddress,
+  getOrderBuyerName,
+  getOrderBuyerPhone,
+  extractAddressText,
+} from '../../pages/inspection-center/dispatch/orderContacts';
 
 interface CreateShipmentModalProps {
   order: EscrowOrder;
@@ -44,7 +53,9 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
 
   const isAtHome = Boolean(
     order.inspectionMethod === 'AT_HOME' ||
-    (order as any).orderType === 'AT_HOME'
+    (order as any).orderType === 'AT_HOME' ||
+    (order as any).inspectionOrder?.orderType === 'AT_HOME' ||
+    (order as any).inspectionOrder?.inspectionMethod === 'AT_HOME'
   );
   const isHubInspection = Boolean(
     (order.hasInspectionService ||
@@ -58,7 +69,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
   // Load Trung tâm kiểm định thực tế từ API và chi tiết đơn kiểm định
   const [apiCenters, setApiCenters] = useState<any[]>([]);
   const [inspectionOrderInfo, setInspectionOrderInfo] = useState<any | null>(null);
-  const cashShipping = false;
+  const [sellerPickup, setSellerPickup] = useState<ShippingAddressDto | null>(null);
 
   React.useEffect(() => {
     let isMounted = true;
@@ -68,9 +79,52 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
       }
     }).catch(() => { });
 
-    // Nếu đơn hàng có id, lấy chi tiết đơn kiểm định để nhận diện chính xác trung tâm đã gắn với đơn
-    if (order.id) {
-      inspectorService.getOrder(order.id).then((dto) => {
+    shippingService.getPickupAddress().then((pa) => {
+      if (isMounted && pa) {
+        setSellerPickup(pa);
+      }
+    }).catch(() => { });
+
+    // Lấy chi tiết đơn kiểm định gắn với đơn hàng để nhận diện chính xác trung tâm / địa chỉ
+    const findInspId = () => {
+      if ((order as any).inspectionOrderId) return (order as any).inspectionOrderId;
+      if ((order as any).inspectionOrder?.id) return (order as any).inspectionOrder.id;
+      try {
+        const rawSeller = localStorage.getItem('my_seller_inspection_orders');
+        if (rawSeller) {
+          const list = JSON.parse(rawSeller);
+          if (Array.isArray(list)) {
+            const found = list.find((o: any) => o.linkedOrderId === order.id || o.id === order.id || (order as any).orderId === o.id);
+            if (found?.id) return found.id;
+          }
+        }
+      } catch { }
+      try {
+        const rawCenter = localStorage.getItem('center_inspection_orders');
+        if (rawCenter) {
+          const list = JSON.parse(rawCenter);
+          if (Array.isArray(list)) {
+            const found = list.find((o: any) => o.linkedOrderId === order.id || o.id === order.id || (order as any).orderId === o.id);
+            if (found?.id) return found.id;
+          }
+        }
+      } catch { }
+      try {
+        const rawRecent = localStorage.getItem('recent_placed_orders');
+        if (rawRecent) {
+          const list = JSON.parse(rawRecent);
+          if (Array.isArray(list)) {
+            const found = list.find((o: any) => o.linkedOrderId === order.id || o.id === order.id);
+            if (found?.inspectionOrderId) return found.inspectionOrderId;
+          }
+        }
+      } catch { }
+      return order.id;
+    };
+
+    const inspTargetId = findInspId();
+    if (inspTargetId) {
+      inspectorService.getOrder(inspTargetId, { bypassCache: true }).then((dto) => {
         if (isMounted && dto) {
           setInspectionOrderInfo(dto);
         }
@@ -78,7 +132,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
     }
 
     return () => { isMounted = false; };
-  }, [order.id]);
+  }, [order.id, (order as any).inspectionOrderId]);
 
   // Lấy chính xác địa chỉ và thông tin Trung tâm Kiểm định của đơn hàng từ API (không dùng mock)
   const hubCenter = React.useMemo(() => {
@@ -121,16 +175,156 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
     return def;
   };
 
+  // Parse buyer delivery info if stored as JSON or object
+  const parsedBuyerDelivery = React.useMemo(() => {
+    const rawCandidates = [
+      (order as any).deliveryAddress,
+      (order as any).buyerDeliveryAddressJson,
+      inspectionOrderInfo?.buyerDeliveryAddressJson,
+      inspectionOrderInfo?.deliveryAddress,
+      (order as any).buyerAddress,
+    ];
+
+    for (const raw of rawCandidates) {
+      if (!raw) continue;
+      if (typeof raw === 'object' && (raw.address || raw.fullAddress || raw.name)) {
+        return raw;
+      }
+      if (typeof raw === 'string' && raw.trim().startsWith('{')) {
+        try {
+          const parsed = JSON.parse(raw.trim());
+          if (parsed && typeof parsed === 'object') return parsed;
+        } catch { }
+      }
+    }
+    return null;
+  }, [order, inspectionOrderInfo]);
+
+  const sellerFullAddress = React.useMemo(() => {
+    const candidate =
+      sellerPickup?.address ||
+      extractAddressText((order as any).sellerAddress) ||
+      extractAddressText((order as any).pickupAddress) ||
+      extractAddressText((order as any).sellerContact?.address) ||
+      extractAddressText((order as any).sellerPickupAddressJson) ||
+      extractAddressText(inspectionOrderInfo?.sellerAddress) ||
+      extractAddressText(inspectionOrderInfo?.sellerContact?.address) ||
+      extractAddressText(inspectionOrderInfo?.sellerPickupAddressJson) ||
+      getOrderSellerAddress(order);
+
+    if (candidate && candidate !== 'Kho người bán (Đang cập nhật địa chỉ)') {
+      return candidate;
+    }
+    return order.listing?.location || candidate || 'Địa chỉ kho đã lưu trong hồ sơ người bán';
+  }, [sellerPickup, order, inspectionOrderInfo]);
+
+  const sellerContactName = React.useMemo(() => {
+    return (
+      sellerPickup?.name ||
+      (order as any).sellerContact?.name ||
+      order.sellerName ||
+      order.listing?.seller?.name ||
+      inspectionOrderInfo?.sellerContact?.name ||
+      inspectionOrderInfo?.sellerName ||
+      getOrderSellerName(order) ||
+      'Gian Hàng Verified Seller'
+    ).slice(0, 50);
+  }, [sellerPickup, order, inspectionOrderInfo]);
+
+  const sellerContactPhone = React.useMemo(() => {
+    return cleanPhone(
+      sellerPickup?.phone ||
+      (order as any).sellerContact?.phone ||
+      order.sellerPhone ||
+      (order.listing?.seller as any)?.phoneNumber ||
+      order.listing?.seller?.phone ||
+      inspectionOrderInfo?.sellerContact?.phone ||
+      inspectionOrderInfo?.sellerPhone ||
+      getOrderSellerPhone(order),
+      '0969768917'
+    );
+  }, [sellerPickup, order, inspectionOrderInfo]);
+
+  const buyerFullAddress = React.useMemo(() => {
+    const candidate =
+      parsedBuyerDelivery?.address ||
+      parsedBuyerDelivery?.fullAddress ||
+      extractAddressText(inspectionOrderInfo?.buyerAddress) ||
+      extractAddressText(inspectionOrderInfo?.buyerDeliveryAddressJson) ||
+      extractAddressText((order as any).deliveryAddress) ||
+      extractAddressText((order as any).buyerDeliveryAddressJson) ||
+      extractAddressText((order as any).buyerAddress) ||
+      extractAddressText((order as any).buyerContact?.address) ||
+      extractAddressText(inspectionOrderInfo?.deliveryAddress) ||
+      getOrderBuyerAddress(order);
+
+    if (candidate && candidate !== 'Địa chỉ nhận hàng của người mua') {
+      return candidate;
+    }
+    return candidate || 'Địa chỉ nhận hàng của người mua';
+  }, [parsedBuyerDelivery, order, inspectionOrderInfo]);
+
+  const buyerContactName = React.useMemo(() => {
+    return (
+      parsedBuyerDelivery?.name ||
+      (order as any).buyerContact?.name ||
+      order.buyerName ||
+      (order as any).buyer?.fullName ||
+      (order as any).buyer?.name ||
+      inspectionOrderInfo?.buyerContact?.name ||
+      inspectionOrderInfo?.buyerName ||
+      getOrderBuyerName(order) ||
+      'Khách mua'
+    ).slice(0, 50);
+  }, [parsedBuyerDelivery, order, inspectionOrderInfo]);
+
+  const buyerContactPhone = React.useMemo(() => {
+    return cleanPhone(
+      parsedBuyerDelivery?.phone ||
+      (order as any).buyerContact?.phone ||
+      order.buyerPhone ||
+      (order as any).buyer?.phone ||
+      inspectionOrderInfo?.buyerContact?.phone ||
+      inspectionOrderInfo?.buyerPhone ||
+      getOrderBuyerPhone(order),
+      '0987654321'
+    );
+  }, [parsedBuyerDelivery, order, inspectionOrderInfo]);
+
+  const sellerLat = typeof sellerPickup?.latitude === 'number' && sellerPickup.latitude !== 0
+    ? sellerPickup.latitude
+    : (typeof (order as any).sellerLatitude === 'number' && (order as any).sellerLatitude !== 0)
+      ? (order as any).sellerLatitude
+      : 21.0333;
+
+  const sellerLng = typeof sellerPickup?.longitude === 'number' && sellerPickup.longitude !== 0
+    ? sellerPickup.longitude
+    : (typeof (order as any).sellerLongitude === 'number' && (order as any).sellerLongitude !== 0)
+      ? (order as any).sellerLongitude
+      : 105.7937;
+
+  const buyerLat = typeof parsedBuyerDelivery?.latitude === 'number' && parsedBuyerDelivery.latitude !== 0
+    ? parsedBuyerDelivery.latitude
+    : (typeof (order as any).buyerLatitude === 'number' && (order as any).buyerLatitude !== 0)
+      ? (order as any).buyerLatitude
+      : 10.8698;
+
+  const buyerLng = typeof parsedBuyerDelivery?.longitude === 'number' && parsedBuyerDelivery.longitude !== 0
+    ? parsedBuyerDelivery.longitude
+    : (typeof (order as any).buyerLongitude === 'number' && (order as any).buyerLongitude !== 0)
+      ? (order as any).buyerLongitude
+      : 106.6844;
+
   const handleCreateShipment = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     setErrorMsg(null);
 
     const payloadLeg = isHubInspection ? 'SELLER_TO_CENTER' : 'SELLER_TO_BUYER';
-    const sName = (order.listing?.seller?.name || order.sellerName || 'Người bán').slice(0, 50);
-    const sPhone = cleanPhone(order.listing?.seller?.phone || (order as any).sellerPhone, '0912345678');
-    const rName = (order.buyerName || 'Người mua').slice(0, 50);
-    const rPhone = cleanPhone(order.buyerPhone, '0987654321');
+    const sName = sellerContactName;
+    const sPhone = sellerContactPhone;
+    const rName = isHubInspection ? (hubCenter?.name || 'Trung tâm kiểm định') : buyerContactName;
+    const rPhone = isHubInspection ? cleanPhone(hubCenter?.phone, '0987654321') : buyerContactPhone;
 
     try {
       let shipment: ShipmentBackend | null = null;
@@ -146,22 +340,26 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
         leg: payloadLeg as any,
         reason: isHubInspection
           ? `Bàn giao kiện hàng đến ${hubCenter?.name || 'Trung tâm kiểm định'} thẩm định`
-          : 'Giao hàng cho người mua qua Lalamove',
+          : isAtHome
+            ? `Giao hàng đã qua kiểm định tại nhà Đạt chuẩn cho người mua ${rName}`
+            : 'Giao hàng cho người mua qua Lalamove',
       };
 
-      // Chỉ gửi địa chỉ nếu là giao thẳng thông thường không qua kiểm định
+      // Chỉ gửi địa chỉ nếu là giao thẳng thông thường không qua Hub kiểm định (e.g. SELLER_TO_BUYER hoặc AT_HOME sau kiểm định)
       if (!isHubInspection) {
         shipmentPayload.fromAddress = {
           name: sName,
           phone: sPhone,
-          latitude: 10.7769,
-          longitude: 106.7009,
+          address: sellerFullAddress,
+          latitude: sellerLat,
+          longitude: sellerLng,
         };
         shipmentPayload.toAddress = {
           name: rName,
           phone: rPhone,
-          latitude: 10.8012,
-          longitude: 106.7123,
+          address: buyerFullAddress,
+          latitude: buyerLat,
+          longitude: buyerLng,
         };
       }
 
@@ -188,22 +386,26 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
       // Lưu trạng thái đã tạo vận đơn và sẵn sàng
       try {
         const nowIso = new Date().toISOString();
-        localStorage.setItem(`order_shipment_created_${order.id}`, 'true');
-        localStorage.setItem(`seller_ready_${order.id}`, nowIso);
-        localStorage.setItem(`order_packed_${order.id}`, 'true');
-        if (isHubInspection) {
-          localStorage.setItem(`seller_shipped_to_hub_${order.id}`, 'true');
-        }
+        const targetId = (order as any).orderId || (order as any).linkedOrderId || order.id;
+        const idsToUpdate = Array.from(new Set([order.id, targetId, inspectionOrderInfo?.id, (inspectionOrderInfo as any)?.orderId].filter(Boolean))) as string[];
+        for (const oid of idsToUpdate) {
+          localStorage.setItem(`order_shipment_created_${oid}`, 'true');
+          localStorage.setItem(`seller_ready_${oid}`, nowIso);
+          localStorage.setItem(`order_packed_${oid}`, 'true');
+          if (isHubInspection) {
+            localStorage.setItem(`seller_shipped_to_hub_${oid}`, 'true');
+          }
 
-        const shipmentsKey = `sl_order_shipments_${order.id}`;
-        const existingRaw = localStorage.getItem(shipmentsKey) || localStorage.getItem(`order_shipments_${order.id}`);
-        let existingList: ShipmentBackend[] = [];
-        if (existingRaw) {
-          try { existingList = JSON.parse(existingRaw); } catch { }
+          const shipmentsKey = `sl_order_shipments_${oid}`;
+          const existingRaw = localStorage.getItem(shipmentsKey) || localStorage.getItem(`order_shipments_${oid}`);
+          let existingList: ShipmentBackend[] = [];
+          if (existingRaw) {
+            try { existingList = JSON.parse(existingRaw); } catch { }
+          }
+          const updatedShipments = [shipment, ...existingList.filter((s) => s.shipmentId !== shipment.shipmentId)];
+          localStorage.setItem(shipmentsKey, JSON.stringify(updatedShipments));
+          localStorage.setItem(`order_shipments_${oid}`, JSON.stringify(updatedShipments));
         }
-        const updatedShipments = [shipment, ...existingList.filter((s) => s.shipmentId !== shipment.shipmentId)];
-        localStorage.setItem(shipmentsKey, JSON.stringify(updatedShipments));
-        localStorage.setItem(`order_shipments_${order.id}`, JSON.stringify(updatedShipments));
 
         // Cập nhật recent_placed_orders
         const rawRecent = localStorage.getItem('recent_placed_orders');
@@ -261,15 +463,19 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-sm sm:text-base font-black text-slate-900 tracking-tight">
-                  Tạo Vận Đơn Giao Hàng Lalamove
+                  Tạo vận đơn • Lalamove
                 </h3>
                 <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
-                  {isHubInspection ? 'Chặng 1: Gửi Hub' : 'Giao Thẳng'}
+                  {isHubInspection ? 'Chặng 1: Gửi Hub' : isAtHome ? 'Giao Trực Tiếp (Kiểm Định Tại Nhà Đạt)' : 'Giao Thẳng'}
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-1">
                 Mã đơn hàng: <strong className="font-mono text-slate-700">#{order.id.slice(0, 12).toUpperCase()}</strong> •{' '}
-                {isHubInspection ? 'Lộ trình chuyển kiện hàng đến Trạm Kiểm Định SecondLife Hub (Cước Sàn thanh toán)' : 'Vận chuyển trực tiếp từ Người Bán đến Người Mua'}
+                {isHubInspection
+                  ? 'Lộ trình chuyển kiện hàng đến Trạm Kiểm Định SecondLife Hub (Cước Sàn thanh toán)'
+                  : isAtHome
+                    ? 'Đơn kiểm định tại nhà đã Đạt chuẩn & Khách đã xác nhận mua. Vận chuyển trực tiếp từ Người Bán đến Người Mua qua Lalamove'
+                    : 'Vận chuyển trực tiếp từ Người Bán đến Người Mua'}
               </p>
             </div>
           </div>
@@ -332,17 +538,19 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
             </div>
           </div>
 
-          {/* MỤC 2: LỘ TRÌNH VẬN CHUYỂN CHẶNG 1 */}
+          {/* MỤC 2: LỘ TRÌNH VẬN CHUYỂN */}
           <div className="space-y-2 bg-[#faf8f5] p-3 sm:p-3.5 rounded-2xl border border-gray-200 shadow-2xs">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <span className="font-extrabold uppercase text-[10px] sm:text-[11px] text-slate-500 tracking-wider flex items-center gap-1.5">
                 <Truck className="w-3.5 h-3.5 text-blue-600" />
                 {isHubInspection
                   ? 'Lộ trình Chặng 1: Kho người bán ➔ Trạm Kiểm Định SecondLife Hub'
-                  : 'Lộ trình nhận & giao hàng Lalamove'}
+                  : isAtHome
+                    ? 'Lộ trình giao hàng trực tiếp: Kho người bán ➔ Khách mua hàng'
+                    : 'Lộ trình nhận & giao hàng Lalamove'}
               </span>
               <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
-                {isHubInspection ? 'Lalamove Chặng 1' : 'Lalamove Direct'}
+                {isHubInspection ? 'Lalamove Chặng 1' : isAtHome ? 'Lalamove Giao Trực Tiếp' : 'Lalamove Direct'}
               </span>
             </div>
 
@@ -351,18 +559,27 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
               <div className="w-5 h-5 rounded-md bg-amber-500/20 text-amber-700 flex items-center justify-center shrink-0 mt-0.5 font-bold text-[11px]">
                 1
               </div>
-              <div className="space-y-0.5 min-w-0 flex-1">
+              <div className="space-y-1 min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-bold text-slate-900 text-xs">Kho lấy hàng (Người bán)</span>
                   <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-semibold border border-emerald-200">
-                    GPS Sẵn Sàng
+                    {sellerPickup?.address ? 'Kho lấy hàng xác minh' : 'GPS Sẵn Sàng'}
                   </span>
                 </div>
-                <span className="text-slate-700 text-xs block leading-tight font-medium truncate">
-                  {order.listing.location || 'Địa chỉ kho đã lưu trong hồ sơ người bán'}
+                <div className="text-[11px] font-bold text-slate-800 flex items-center gap-1.5 flex-wrap">
+                  <User className="w-3 h-3 text-slate-500 inline shrink-0" />
+                  <span>{sellerContactName}</span>
+                  <span className="text-slate-400">•</span>
+                  <Phone className="w-3 h-3 text-slate-500 inline shrink-0" />
+                  <span className="font-mono text-slate-700">{sellerContactPhone}</span>
+                </div>
+                <span className="text-slate-700 text-xs block leading-tight font-medium">
+                  📍 {sellerFullAddress}
                 </span>
                 <span className="text-[10px] text-amber-700 italic block">
-                  Tài xế Lalamove sẽ đến địa chỉ này lấy kiện hàng
+                  {isAtHome
+                    ? 'Tài xế Lalamove sẽ đến địa chỉ kho này để nhận kiện hàng đã dán tem niêm phong đạt chuẩn'
+                    : 'Tài xế Lalamove sẽ đến địa chỉ này lấy kiện hàng'}
                 </span>
               </div>
             </div>
@@ -376,35 +593,46 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
                 }`}>
                 2
               </div>
-              <div className="space-y-0.5 min-w-0 flex-1">
+              <div className="space-y-1 min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-bold text-slate-900 text-xs">
                     {isHubInspection
                       ? `Điểm đến: ${hubCenter.name}`
-                      : `Người nhận: ${order.buyerName} (${order.buyerPhone})`}
+                      : 'Điểm giao hàng (Người mua)'}
                   </span>
                   <span className={`text-[9px] px-1.5 py-0.2 rounded font-semibold border ${isHubInspection
                     ? 'bg-blue-100 text-blue-800 border-blue-200'
                     : 'bg-emerald-100 text-emerald-800 border-emerald-200'
                     }`}>
-                    {isHubInspection ? 'Trạm ISO/IEC 17025' : 'GPS Sẵn Sàng'}
+                    {isHubInspection ? 'Trạm ISO/IEC 17025' : 'GPS Người Nhận'}
                   </span>
                 </div>
-                <span className="text-slate-700 text-xs block leading-tight font-medium truncate">
-                  {isHubInspection
-                    ? hubCenter.address
-                    : order.buyerAddress}
+                {!isHubInspection && (
+                  <div className="text-[11px] font-bold text-slate-800 flex items-center gap-1.5 flex-wrap">
+                    <User className="w-3 h-3 text-slate-500 inline shrink-0" />
+                    <span>{buyerContactName}</span>
+                    <span className="text-slate-400">•</span>
+                    <Phone className="w-3 h-3 text-slate-500 inline shrink-0" />
+                    <span className="font-mono text-slate-700">{buyerContactPhone}</span>
+                  </div>
+                )}
+                <span className="text-slate-700 text-xs block leading-tight font-medium">
+                  📍 {isHubInspection ? hubCenter.address : buyerFullAddress}
                 </span>
-                {isHubInspection && (
+                {isHubInspection ? (
                   <span className="text-[10px] text-blue-700 italic block">
-                    Hotline: {hubCenter.phone} • KTV tiếp nhận thẩm định 48 bước và cấp chứng thư
+                    Hotline: {hubCenter.phone} • Kĩ thuật viên tiếp nhận thẩm định và cấp chứng thư
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-emerald-700 italic block">
+                    Tài xế Lalamove sẽ giao trực tiếp đến tận tay người mua
                   </span>
                 )}
               </div>
             </div>
           </div>
 
-          {/* MỤC 3: QUY TRÌNH GIAO NHẬN 2 CHẶNG (VERIFY THEN SHIP) */}
+          {/* MỤC 3: QUY TRÌNH GIAO NHẬN */}
           {isHubInspection ? (
             <div className="bg-gradient-to-br from-blue-50/90 via-indigo-50/60 to-blue-50/90 p-3 rounded-2xl border border-blue-200 space-y-2 shadow-2xs">
               <div className="flex items-center justify-between">
@@ -430,15 +658,48 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
                   <div className="flex items-start gap-1.5 text-emerald-800 leading-snug">
                     <span className="font-bold shrink-0">✅ Nếu ĐẠT:</span>
                     <span>
-                      Hub kích hoạt Chặng 2 giao tận tay khách mua: <strong>{order.buyerName}</strong> ({order.buyerPhone || 'Đã xác minh'}).
+                      Hub kích hoạt Chặng 2 giao tận tay khách mua: <strong>{buyerContactName}</strong> ({buyerContactPhone || 'Đã xác minh'}).
                     </span>
                   </div>
                   <div className="flex items-start gap-1.5 text-rose-800 leading-snug pt-1 border-t border-slate-100">
                     <span className="font-bold shrink-0">❌ Nếu KHÔNG ĐẠT:</span>
                     <span>
-                      Hub hoàn trả hàng về kho <strong>Người bán</strong>, Quỹ Escrow hoàn tiền 100% cho <strong>Người mua</strong>.
+                      Hub hoàn trả hàng về kho <strong>Người bán</strong>. Phần dư dự phòng cước trả hàng được hoàn cho hai bên theo tỷ lệ đã thống nhất sau khi trừ cước thực tế.
                     </span>
                   </div>
+                </div>
+              </div>
+            </div>
+          ) : isAtHome ? (
+            <div className="bg-gradient-to-br from-emerald-50/90 via-teal-50/60 to-emerald-50/90 p-3 rounded-2xl border border-emerald-200 space-y-2 shadow-2xs">
+              <div className="flex items-center justify-between">
+                <span className="font-extrabold uppercase text-[10px] sm:text-[11px] text-emerald-900 tracking-wider flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                  Kiểm định tại nhà Đạt chuẩn & Khách đã xác nhận mua
+                </span>
+                <span className="text-[9px] font-black px-2 py-0.2 rounded-full bg-emerald-200 text-emerald-800 border border-emerald-300">
+                  Giao Thẳng
+                </span>
+              </div>
+
+              <div className="space-y-1.5 text-xs text-slate-700">
+                <div className="flex items-start gap-2 bg-white/90 p-2 sm:p-2.5 rounded-xl border border-emerald-100 shadow-2xs text-[11px]">
+                  <span className="font-bold text-emerald-700 shrink-0">✅ Kỹ thuật viên:</span>
+                  <span className="leading-snug">
+                    Đã hoàn tất đo kiểm 5 bước tại nhà người bán và dán tem niêm phong đạt chuẩn SecondLife.
+                  </span>
+                </div>
+                <div className="flex items-start gap-2 bg-white/90 p-2 sm:p-2.5 rounded-xl border border-emerald-100 shadow-2xs text-[11px]">
+                  <span className="font-bold text-blue-700 shrink-0">✅ Khách mua ({buyerContactName}):</span>
+                  <span className="leading-snug">
+                    Đã xem biên bản kiểm định, đồng ý nhận máy và thanh toán tiền bảo đảm Escrow.
+                  </span>
+                </div>
+                <div className="flex items-start gap-2 bg-white/90 p-2 sm:p-2.5 rounded-xl border border-amber-200 shadow-2xs text-[11px] text-amber-900">
+                  <span className="font-bold shrink-0">📦 Bàn giao tài xế:</span>
+                  <span className="leading-snug">
+                    Vui lòng bàn giao kiện hàng nguyên vẹn tem niêm phong cho tài xế Lalamove để giao thẳng tới địa chỉ người mua: <strong>{buyerFullAddress}</strong>.
+                  </span>
                 </div>
               </div>
             </div>
@@ -446,18 +707,12 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
             <div className="bg-slate-50 p-3 rounded-2xl border border-gray-200 space-y-1 text-xs text-slate-600 shadow-2xs">
               <span className="font-bold text-slate-900 text-xs block">Cam kết giao hàng Lalamove On-Demand</span>
               <p className="leading-relaxed text-[11px]">
-                Tài xế Lalamove sẽ đến lấy kiện hàng trực tiếp tại kho của bạn và giao thẳng tới người mua: <strong>{order.buyerName}</strong> ({order.buyerPhone}).
+                Tài xế Lalamove sẽ đến lấy kiện hàng trực tiếp tại kho của bạn và giao thẳng tới người mua: <strong>{buyerContactName}</strong> ({buyerContactPhone}).
               </p>
             </div>
           )}
 
-          {/* MỤC 4: THÔNG BÁO LƯU Ý */}
-          <div className="p-2.5 bg-blue-50/80 border border-blue-200 rounded-xl flex items-center gap-2 text-[11px] text-blue-900 shadow-2xs">
-            <CheckCircle2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-            <span className="leading-normal">
-              Sau khi tạo vận đơn, hệ thống sẽ cấp mã vận đơn Lalamove chính thức. Vui lòng đóng gói sẵn sàng để bàn giao cho tài xế.
-            </span>
-          </div>
+
 
           {/* FOOTER ACTIONS - DƯỚI CÙNG */}
           <div className="pt-2.5 border-t border-gray-200 flex items-center justify-end gap-2.5 shrink-0">
@@ -480,7 +735,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
               {isSubmitting ? (
                 <>
                   <Loader2 className="w-3.5 h-3.5 text-white animate-spin" />
-                  <span>Đang kết nối Lalamove...</span>
+                  <span>Đang kết nối...</span>
                 </>
               ) : order.escrowStatus === 'AWAITING_PAYMENT' ? (
                 <>
@@ -490,7 +745,13 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
               ) : (
                 <>
                   <Truck className="w-3.5 h-3.5 text-white" />
-                  <span>{isHubInspection ? 'Xác nhận tạo vận đơn gửi đến Hub (Chặng 1)' : 'Xác nhận tạo đơn vận chuyển'}</span>
+                  <span>
+                    {isHubInspection
+                      ? 'Xác nhận tạo vận đơn gửi đến Hub (Chặng 1)'
+                      : isAtHome
+                        ? 'Xác nhận tạo vận đơn giao cho khách mua'
+                        : 'Xác nhận tạo đơn vận chuyển'}
+                  </span>
                 </>
               )}
             </button>

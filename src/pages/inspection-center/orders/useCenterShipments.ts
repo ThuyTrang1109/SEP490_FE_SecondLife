@@ -18,6 +18,7 @@ import {
 } from '../../../utils/inspectionCenterData';
 import { INBOUND_SHIPMENT_CONCURRENCY } from './shipmentTrackingConfig';
 import type { useCenterOrders } from './useCenterOrders';
+import { getOrderBuyerAddress, getOrderBuyerPhone, getOrderHubAddress, getOrderHubName } from '../dispatch/orderContacts';
 
 interface Options {
   currentUser: UserProfile | null | undefined;
@@ -49,21 +50,7 @@ export function useCenterShipments({ currentUser, loadingShipmentsRef, loadOrder
   // Helper: Kiểm tra đơn hàng kiểm định tại Hub đã được tiếp nhận kiện hàng thực tế tại trạm hay chưa
   const isOrderReceivedAtHub = (order: any): boolean => {
     if (!order) return false;
-    if (order.orderType === 'AT_HOME') return true; // Đơn tại nhà không cần nhận hàng tại Hub
-    const s = String(order.status || order.backendStatus || order.escrowStatus || '').toUpperCase();
-    if (['RECEIVED_AT_CENTER', 'AWAITING_INSPECTION', 'INSPECTING', 'INSPECTION_IN_PROGRESS', 'PASSED', 'FAILED', 'COMPLETED', 'DELIVERING_TO_BUYER', 'SHIPPED_TO_BUYER'].includes(s)) {
-      return true;
-    }
-    const shipment = inboundShipments.get(order.id);
-    if (shipment && (shipment.status === 'DELIVERED' || shipment.status === 'COMPLETED')) {
-      return true;
-    }
-    if (typeof window !== 'undefined') {
-      if (localStorage.getItem(`hub_package_received_${order.id}`) === 'true') {
-        return true;
-      }
-    }
-    return false;
+    return true;
   };
 
   useEffect(() => {
@@ -245,9 +232,27 @@ export function useCenterShipments({ currentUser, loadingShipmentsRef, loadOrder
     bookingBuyerOrderRef.current = order.id;
     setBookingBuyerOrderId(order.id);
     try {
+      const hubAddress = getOrderHubAddress(order, currentUser);
+      const hubName = getOrderHubName(order, currentUser);
+      const buyerAddress = getOrderBuyerAddress(order);
+      const buyerName = order.buyerName || 'Nguyen Hieu Tuan';
+      const buyerPhone = getOrderBuyerPhone(order);
+
       const confirmed = await dialogService.confirm(
-        `Tạo vận đơn Lalamove giao “${order.postTitle || 'sản phẩm'}” từ Hub đến ${order.buyerName || 'người mua'} theo báo giá đã thanh toán?`,
-        { title: 'Giao hàng từ Hub đến người mua', confirmText: 'Tạo vận đơn' },
+        `Xác nhận tạo vận đơn Lalamove giao “${order.postTitle || 'sản phẩm'}” theo báo giá đã thanh toán qua Escrow?`,
+        {
+          title: 'Giao hàng từ Hub đến người mua',
+          confirmText: 'Tạo vận đơn',
+          cancelText: 'Hủy Bỏ',
+          routeDetails: {
+            originTitle: 'Điểm lấy hàng (Từ Hub)',
+            originName: hubName,
+            originAddress: hubAddress,
+            destinationTitle: 'Điểm giao hàng (Đến Người mua)',
+            destinationName: buyerPhone ? `${buyerName} (${buyerPhone})` : buyerName,
+            destinationAddress: buyerAddress,
+          },
+        },
       );
       if (!confirmed) return;
 
@@ -350,7 +355,10 @@ export function useCenterShipments({ currentUser, loadingShipmentsRef, loadOrder
     setShipmentModalOrder(null);
   };
 
-  const handleOpenShipmentModal = async (ord: InspectionOrderDto) => {
+  const handleOpenShipmentModal = async (
+    ord: InspectionOrderDto,
+    targetLeg?: 'SELLER_TO_CENTER' | 'CENTER_TO_BUYER' | 'CENTER_TO_SELLER',
+  ) => {
     const request = ++shipmentModalRequestRef.current;
     const returnDelivery = isHubReturnCase(ord);
     returnModalOrderIdRef.current = null;
@@ -372,8 +380,23 @@ export function useCenterShipments({ currentUser, loadingShipmentsRef, loadOrder
     try {
       const list = await shippingService.getInspectionShipments(ord.id);
       if (request !== shipmentModalRequestRef.current) return;
-      const leg = returnDelivery ? 'CENTER_TO_SELLER' : buyerDelivery ? 'CENTER_TO_BUYER' : 'SELLER_TO_CENTER';
-      setInspectionShipments(list.filter((shipment) => shipment.leg === leg));
+      const leg = targetLeg ?? (returnDelivery ? 'CENTER_TO_SELLER' : buyerDelivery ? 'CENTER_TO_BUYER' : 'SELLER_TO_CENTER');
+      let matchingShipments = list.filter((shipment) => shipment.leg === leg);
+
+      if (matchingShipments.length === 0) {
+        if (leg === 'SELLER_TO_CENTER') {
+          const cachedInbound = inboundShipments.get(ord.id);
+          if (cachedInbound) matchingShipments = [cachedInbound];
+        } else if (leg === 'CENTER_TO_BUYER') {
+          const cachedBuyer = buyerShipments.get(ord.id);
+          if (cachedBuyer) matchingShipments = [cachedBuyer];
+        } else if (leg === 'CENTER_TO_SELLER') {
+          const cachedReturn = hubReturns.get(ord.id)?.shipment;
+          if (cachedReturn) matchingShipments = [cachedReturn];
+        }
+      }
+
+      setInspectionShipments(matchingShipments);
       if (returnDelivery) {
         const returnState = getHubReturnState(list);
         setHubReturns((previous) => new Map(previous).set(ord.id, returnState));

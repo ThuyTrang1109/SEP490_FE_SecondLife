@@ -205,6 +205,29 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
     }
   }, [initialPhone]);
 
+  useEffect(() => {
+    if (
+      typeof initialLatitude === 'number' &&
+      typeof initialLongitude === 'number' &&
+      Number.isFinite(initialLatitude) &&
+      Number.isFinite(initialLongitude)
+    ) {
+      setLatitude(initialLatitude);
+      setLongitude(initialLongitude);
+      if (leafletMapRef.current && leafletMarkerRef.current) {
+        leafletMapRef.current.setView([initialLatitude, initialLongitude], 15);
+        leafletMarkerRef.current.setLatLng([initialLatitude, initialLongitude]);
+      }
+    }
+  }, [initialLatitude, initialLongitude]);
+
+  useEffect(() => {
+    if (initialAddress && initialAddress.trim() && initialAddress !== resolvedAddress) {
+      setResolvedAddress(initialAddress);
+      setIsLocationResolved(true);
+    }
+  }, [initialAddress]);
+
   // Address search with coordinate validation state
   const [searchAddressText, setSearchAddressText] = useState('');
   const [isSearchingAddress, setIsSearchingAddress] = useState(false);
@@ -380,8 +403,12 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
         leafletMapRef.current = map;
         leafletMarkerRef.current = marker;
 
-        // Perform initial reverse-geocode if not already provided
-        if (!latestSelectionRef.current.resolved) {
+        // Perform initial reverse-geocode ONLY IF explicit valid coordinates were provided by parent but no initial address.
+        // NEVER auto-reverse-geocode fallback coordinates to prevent overwriting user address with default Hanoi location.
+        const hasExplicitCoords = typeof initialLatitude === 'number' && typeof initialLongitude === 'number' &&
+          Number.isFinite(initialLatitude) && Number.isFinite(initialLongitude);
+        const isDefaultHanoi = Math.abs(initialLat - 21.0285) < 0.005 && Math.abs(initialLng - 105.8542) < 0.005;
+        if (hasExplicitCoords && !isDefaultHanoi && !initialAddress?.trim()) {
           executeLookup(initialLat, initialLng);
         }
       } else {

@@ -208,14 +208,19 @@ export default function App() {
             profile.province
           );
 
-          // Ưu tiên địa chỉ người dùng đã cập nhật trong session/localStorage nếu có
+          // Ưu tiên địa chỉ kho lấy hàng chính thức từ BE (fullPickup)
+          const resolvedPickup = cleanFullAddress(
+            fullPickup ||
+            (isSeller ? (stored?.pickupAddress && stored.pickupAddress !== profileFullAddress ? stored.pickupAddress : '') : (stored?.pickupAddress || profileFullAddress || '')) ||
+            savedAddr?.address ||
+            ''
+          );
           const resolvedAddress = cleanFullAddress(stored?.address || profileFullAddress || savedAddr?.address || '');
-          const resolvedPickup = cleanFullAddress(stored?.pickupAddress || fullPickup || profileFullAddress || savedAddr?.address || '');
-          const resolvedWard = stored?.wardName || profile.ward || pickupAddr?.wardName || savedAddr?.wardName || '';
-          const resolvedProv = stored?.provinceName || profile.province || pickupAddr?.provinceName || savedAddr?.provinceName || '';
+          const resolvedWard = stored?.wardName || pickupAddr?.wardName || profile.ward || savedAddr?.wardName || '';
+          const resolvedProv = stored?.provinceName || pickupAddr?.provinceName || profile.province || savedAddr?.provinceName || '';
 
-          if (isSeller && (resolvedPickup || resolvedAddress)) {
-            saveSellerAddress(resolvedPickup || resolvedAddress, resolvedWard, resolvedProv);
+          if (isSeller && (fullPickup || resolvedPickup)) {
+            saveSellerAddress(fullPickup || resolvedPickup, resolvedWard, resolvedProv);
           }
 
           const syncedUser: UserProfile = {
@@ -375,7 +380,7 @@ export default function App() {
       }
     }
     const query = `?postId=${encodeURIComponent(listing.id)}${action ? `&action=${encodeURIComponent(action)}` : ''}${prefill?.centerId ? `&centerId=${encodeURIComponent(prefill.centerId)}` : ''
-      }${prefill?.inspectionMethod ? `&method=${encodeURIComponent(prefill.inspectionMethod)}` : ''}${prefill?.feeSplit ? `&feeSplit=${encodeURIComponent(prefill.feeSplit)}` : ''
+      }${prefill?.inspectionMethod ? `&method=${encodeURIComponent(prefill.inspectionMethod)}` : ''}${prefill?.buyerFeePercent != null ? `&buyerFeePercent=${prefill.buyerFeePercent}` : ''}${prefill?.feeSplit ? `&feeSplit=${encodeURIComponent(prefill.feeSplit)}` : ''
       }`;
     navigatePath(paths.chat(navigationRole) + query);
   };
@@ -654,6 +659,7 @@ export default function App() {
 
   // Core Data State
   const [listings, setListings] = useState<Listing[]>([]);
+  const [marketplaceRefreshVersion, setMarketplaceRefreshVersion] = useState(0);
   const [orders, setOrders] = useState<EscrowOrder[]>(() => {
     // Only use local stored orders if NO access token (guest/unauthenticated)
     // Authenticated users must load real orders from server to prevent status jumping and bleed
@@ -914,8 +920,19 @@ export default function App() {
     if (target.origin !== window.location.origin) return;
     if (target.pathname.includes('/wallet')) { setIsTopUpModalOpen(true); return; }
     const match = resolveAppRoute(`${target.pathname}${target.search}${target.hash}`, currentRole);
+    const access = getRouteAccess(match, currentUser);
+    if (access === 'unauthorized') {
+      if (match.tab === 'orders') {
+        const orderId = match.params.orderId;
+        const fallbackUrl = orderId ? paths.orders(currentRole, orderId) : pathForTab('orders', currentRole);
+        navigatePath(fallbackUrl);
+        return;
+      }
+      navigatePath(pathForTab('notifications', currentRole));
+      return;
+    }
     navigatePath(match.url);
-  }, [currentRole]);
+  }, [currentRole, currentUser]);
 
 
 
@@ -1033,12 +1050,12 @@ export default function App() {
 
     // 2. Nhận diện tình trạng máy (Condition Grade)
     let detectedGrade: ConditionGrade = 'Like New';
-    const conditionStr = (post.itemCondition || descLower).toLowerCase();
-    if (conditionStr.includes('99%') || conditionStr.includes('như mới') || conditionStr.includes('like new') || conditionStr.includes('brand new')) {
+    const conditionStr = (post.itemCondition || descLower).toLowerCase().replaceAll('_', ' ');
+    if (conditionStr === 'new' || conditionStr.includes('99%') || conditionStr.includes('như mới') || conditionStr.includes('like new') || conditionStr.includes('brand new')) {
       detectedGrade = 'Like New';
     } else if (conditionStr.includes('95%') || conditionStr.includes('tốt') || conditionStr.includes('good') || conditionStr.includes('chắc chắn')) {
       detectedGrade = 'Good';
-    } else if (conditionStr.includes('90%') || conditionStr.includes('khá') || conditionStr.includes('fair')) {
+    } else if (conditionStr === 'used' || conditionStr.includes('90%') || conditionStr.includes('khá') || conditionStr.includes('fair')) {
       detectedGrade = 'Fair';
     }
 
@@ -1243,6 +1260,7 @@ export default function App() {
 
   // Synchronize listings directly with Backend
   const loadListingsFromBackend = React.useCallback(async (force = false) => {
+    if (force) setMarketplaceRefreshVersion((version) => version + 1);
     const now = Date.now();
     if (!force && isFetchingListingsRef.current) return;
     if (!force && now - lastListingsFetchRef.current < 20000 && listingsRef.current.length > 0) {
@@ -1526,40 +1544,24 @@ export default function App() {
         // Đồng bộ realtime appointment từ BE vào localStorage
         if (insp.counterScheduledAt || insp.appointmentScheduledAt) {
           const targetIds = [insp.id, insp.linkedOrderId].filter(Boolean);
-          // Không ghi đè nếu ở local Seller đã đề xuất lịch mới đang chờ trung tâm duyệt
-          const isLocallyRescheduled = targetIds.some((tid) => {
+          const isCounter = Boolean(insp.counterScheduledAt || insp.appointmentStatus === 'COUNTERED_BY_CENTER');
+          const apptStatus = isCounter
+            ? 'COUNTERED_BY_CENTER'
+            : (insp.appointmentStatus || (insp.inspectorId ? 'CONFIRMED' : 'PENDING_CENTER_CONFIRMATION'));
+          const apptRecord = {
+            scheduledAt: insp.appointmentScheduledAt,
+            note: insp.appointmentNote || '',
+            shift: insp.counterShift || 'MORNING',
+            status: apptStatus,
+            counterScheduledAt: insp.counterScheduledAt,
+            counterShift: insp.counterShift,
+            counterNote: insp.counterNote,
+          };
+          targetIds.forEach((tid) => {
             try {
-              const raw = localStorage.getItem(`order_appointment_${tid}`);
-              if (raw) {
-                const parsed = JSON.parse(raw);
-                if (parsed.status === 'PENDING_CENTER_CONFIRMATION' && !parsed.counterScheduledAt) {
-                  return true;
-                }
-              }
+              localStorage.setItem(`order_appointment_${tid}`, JSON.stringify(apptRecord));
             } catch { }
-            return false;
           });
-
-          if (!isLocallyRescheduled) {
-            const isCounter = Boolean(insp.counterScheduledAt || insp.appointmentStatus === 'COUNTERED_BY_CENTER' || insp.status === 'WAITING_SELLER_APPROVAL');
-            const apptStatus = isCounter
-              ? 'COUNTERED_BY_CENTER'
-              : (insp.appointmentStatus || (insp.inspectorId ? 'CONFIRMED' : 'PENDING_CENTER_CONFIRMATION'));
-            const apptRecord = {
-              scheduledAt: insp.appointmentScheduledAt,
-              note: insp.appointmentNote || '',
-              shift: insp.counterShift || 'MORNING',
-              status: apptStatus,
-              counterScheduledAt: insp.counterScheduledAt,
-              counterShift: insp.counterShift,
-              counterNote: insp.counterNote,
-            };
-            targetIds.forEach((tid) => {
-              try {
-                localStorage.setItem(`order_appointment_${tid}`, JSON.stringify(apptRecord));
-              } catch { }
-            });
-          }
         }
       });
 
@@ -1585,6 +1587,7 @@ export default function App() {
           ...matchedInsp,
           id: item.id,
           inspectionOrderId: matchedInsp.id,
+          purchaseShippingFee: item.shippingFee,
           orderType: matchedInsp.orderType || item.orderType,
           inspectionMethod: matchedInsp.orderType || item.inspectionMethod || 'AT_HOME',
           inspectionStatus: matchedInsp.status || item.inspectionStatus,
@@ -1624,6 +1627,7 @@ export default function App() {
           ...matchedInsp,
           id: item.id,
           inspectionOrderId: matchedInsp.id,
+          purchaseShippingFee: item.shippingFee,
           orderType: matchedInsp.orderType || item.orderType,
           inspectionMethod: matchedInsp.orderType || item.inspectionMethod || 'AT_HOME',
           inspectionStatus: matchedInsp.status || item.inspectionStatus,
@@ -1909,11 +1913,9 @@ export default function App() {
   // Refresh listings on mount or when switching to listing-centric tabs
   React.useEffect(() => {
     if (routeAccess !== 'allowed' || isRestoringSession) return;
-    const listingTabs = ['home', 'marketplace', 'seller-dashboard', 'create-listing', 'admin-dashboard'];
-    if (listingTabs.includes(activeTab)) {
-      initCatalogCache();
-      loadListingsFromBackend();
-    }
+    const listingTabs = ['home', 'seller-dashboard', 'create-listing', 'admin-dashboard'];
+    if (activeTab === 'marketplace' || listingTabs.includes(activeTab)) initCatalogCache();
+    if (listingTabs.includes(activeTab)) loadListingsFromBackend();
   }, [loadListingsFromBackend, activeTab, routeAccess, isRestoringSession]);
 
   // Orders are only refreshed when user accesses order-sensitive tabs or on auth change
@@ -2014,12 +2016,18 @@ export default function App() {
     window.addEventListener('secondlife_order_placed_signal', triggerDebouncedFetch);
     window.addEventListener('secondlife_inspection_task_created', triggerDebouncedFetch);
     window.addEventListener('secondlife_order_assigned_signal', triggerDebouncedFetch);
+    window.addEventListener('secondlife_appointment_countered', triggerDebouncedFetch);
+    window.addEventListener('secondlife_appointment_scheduled', triggerDebouncedFetch);
+    window.addEventListener('secondlife_appointment_confirmed', triggerDebouncedFetch);
+    window.addEventListener('secondlife_appointment_rejected', triggerDebouncedFetch);
     const handleStorage = (e: StorageEvent) => {
       if (
         e.key === 'secondlife_order_placed_signal' ||
         e.key === 'recent_placed_orders' ||
         e.key === 'center_inspection_orders' ||
-        e.key?.startsWith('order_assigned_inspector_')
+        e.key === 'my_seller_inspection_orders' ||
+        e.key?.startsWith('order_assigned_inspector_') ||
+        e.key?.startsWith('order_appointment_')
       ) {
         triggerDebouncedFetch();
       }
@@ -2030,6 +2038,10 @@ export default function App() {
       window.removeEventListener('secondlife_order_placed_signal', triggerDebouncedFetch);
       window.removeEventListener('secondlife_inspection_task_created', triggerDebouncedFetch);
       window.removeEventListener('secondlife_order_assigned_signal', triggerDebouncedFetch);
+      window.removeEventListener('secondlife_appointment_countered', triggerDebouncedFetch);
+      window.removeEventListener('secondlife_appointment_scheduled', triggerDebouncedFetch);
+      window.removeEventListener('secondlife_appointment_confirmed', triggerDebouncedFetch);
+      window.removeEventListener('secondlife_appointment_rejected', triggerDebouncedFetch);
       window.removeEventListener('storage', handleStorage);
     };
   }, [loadUserOrders]);
@@ -2545,7 +2557,7 @@ export default function App() {
       const buyerNotif: NotificationItem = {
         id: `notif-insp-buyer-fail-${orderId}-${Date.now()}`,
         title: `Kết quả kiểm định: KHÔNG ĐẠT TIÊU CHUẨN`,
-        message: `Sản phẩm "${productTitle}" (Đơn #${shortOrderId}) KHÔNG ĐẠT tiêu chuẩn chất lượng tại Hub. Lý do: ${meta?.inspectorNotes || summary || 'Không đúng mô tả kỹ thuật'}. Tiền ký quỹ 100% đang được tự động hoàn trả vào ví của bạn.`,
+        message: `Sản phẩm "${productTitle}" (Đơn #${shortOrderId}) KHÔNG ĐẠT tiêu chuẩn chất lượng tại Hub. Lý do: ${meta?.inspectorNotes || summary || 'Không đúng mô tả kỹ thuật'}. Phí kiểm định và vận chuyển được chia theo tỷ lệ đã thống nhất. Nếu có khoản dự phòng cước trả hàng, phần dư sẽ được hoàn theo tỷ lệ này sau khi trừ cước thực tế.`,
         type: 'INSPECTION',
         referenceId: orderId,
         referenceType: 'INSPECTION_ORDER',
@@ -2891,19 +2903,10 @@ export default function App() {
 
               {activeTab === 'marketplace' && (
                 <MarketplaceView
-                  listings={listings.filter((l) => {
-                    const boughtIds = getBoughtListingIds();
-                    if (boughtIds.has(String(l.id))) return false;
-                    if (l.status === 'reserved' || l.status === 'sold') return false;
-                    if (l.backendStatus === 'RESERVED' || l.backendStatus === 'SOLD') return false;
-                    return l.status === 'active' || l.backendStatus === 'ACTIVE';
-                  })}
+                  mapListing={mapBackendPostToListing}
+                  refreshVersion={marketplaceRefreshVersion}
                   onSelectListing={(listing) => openProduct(listing)}
                   lang={lang}
-                  onPostClick={() => {
-                    setEditingDraft(null);
-                    handleTabChange('create-listing');
-                  }}
                 />
               )}
 

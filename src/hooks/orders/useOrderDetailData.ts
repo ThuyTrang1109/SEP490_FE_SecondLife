@@ -8,9 +8,10 @@ export function useOrderDetailData(
   detailOrderId: string | undefined,
   detailIsInspection: boolean,
   setApptTick: Dispatch<SetStateAction<number>>,
+  linkedOrderId?: string,
 ) {
   const [detailShipments, setDetailShipments] = useState<ShipmentBackend[]>(() =>
-    detailOrderId ? getOrderAllShipments(detailOrderId) : []
+    detailOrderId ? getOrderAllShipments(detailOrderId, linkedOrderId) : []
   );
   const [isLoadingDetailShipments, setIsLoadingDetailShipments] = useState(false);
   const [detailInspectionDto, setDetailInspectionDto] = useState<InspectionOrderDto | null>(null);
@@ -27,54 +28,48 @@ export function useOrderDetailData(
       return;
     }
 
-    const cachedShipments = getOrderAllShipments(detailOrderId);
+    const cachedShipments = getOrderAllShipments(detailOrderId, linkedOrderId);
     if (cachedShipments.length > 0) {
       setDetailShipments(cachedShipments);
     } else {
       setDetailShipments([]);
     }
-    setDetailInspectionDto(null);
+    const existingCachedDto = inspectorService.getCachedOrder(detailOrderId) ||
+      (linkedOrderId ? inspectorService.getCachedOrder(linkedOrderId) : null);
+    if (existingCachedDto) {
+      setDetailInspectionDto(existingCachedDto);
+    } else {
+      setDetailInspectionDto(null);
+    }
     let active = true;
     setIsLoadingDetailShipments(true);
 
+    const ids = [detailOrderId, linkedOrderId].filter(Boolean) as string[];
+
     if (detailIsInspection) {
       inspectorService.getOrder(detailOrderId)
+        .catch(() => linkedOrderId ? inspectorService.getOrder(linkedOrderId) : null)
         .then((dto) => {
           if (active && dto) {
             setDetailInspectionDto(dto);
             if (dto.counterScheduledAt || dto.appointmentScheduledAt) {
-              const ids = [dto.id, dto.linkedOrderId, detailOrderId].filter(Boolean) as string[];
-              const isLocallyRescheduled = ids.some((id) => {
+              const allIds = [dto.id, dto.linkedOrderId, detailOrderId, linkedOrderId].filter(Boolean) as string[];
+              const isCounter = Boolean(dto.counterScheduledAt || dto.appointmentStatus === 'COUNTERED_BY_CENTER');
+              const apptRecord = {
+                scheduledAt: dto.appointmentScheduledAt,
+                note: dto.appointmentNote || '',
+                shift: dto.counterShift || 'MORNING',
+                status: isCounter ? 'COUNTERED_BY_CENTER' : (dto.appointmentStatus || (dto.inspectorId ? 'CONFIRMED' : 'PENDING_CENTER_CONFIRMATION')),
+                counterScheduledAt: dto.counterScheduledAt,
+                counterShift: dto.counterShift,
+                counterNote: dto.counterNote,
+              };
+              allIds.forEach(id => {
                 try {
-                  const raw = localStorage.getItem(`order_appointment_${id}`);
-                  if (raw) {
-                    const parsed = JSON.parse(raw);
-                    if (parsed.status === 'PENDING_CENTER_CONFIRMATION' && !parsed.counterScheduledAt) {
-                      return true;
-                    }
-                  }
+                  localStorage.setItem(`order_appointment_${id}`, JSON.stringify(apptRecord));
                 } catch { }
-                return false;
               });
-
-              if (!isLocallyRescheduled) {
-                const isCounter = Boolean(dto.counterScheduledAt || dto.appointmentStatus === 'COUNTERED_BY_CENTER' || dto.status === 'WAITING_SELLER_APPROVAL');
-                const apptRecord = {
-                  scheduledAt: dto.appointmentScheduledAt,
-                  note: dto.appointmentNote || '',
-                  shift: dto.counterShift || 'MORNING',
-                  status: isCounter ? 'COUNTERED_BY_CENTER' : (dto.appointmentStatus || (dto.inspectorId ? 'CONFIRMED' : 'PENDING_CENTER_CONFIRMATION')),
-                  counterScheduledAt: dto.counterScheduledAt,
-                  counterShift: dto.counterShift,
-                  counterNote: dto.counterNote,
-                };
-                ids.forEach(id => {
-                  try {
-                    localStorage.setItem(`order_appointment_${id}`, JSON.stringify(apptRecord));
-                  } catch { }
-                });
-                setApptTick(t => t + 1);
-              }
+              setApptTick(t => t + 1);
             }
           }
         })
@@ -83,24 +78,35 @@ export function useOrderDetailData(
         });
     }
 
-    const read = detailIsInspection
-      ? shippingService.getInspectionShipments(detailOrderId)
-      : shippingService.getOrderShipments(detailOrderId);
-    read
+    const fetchAllShipments = async (): Promise<ShipmentBackend[]> => {
+      for (const id of ids) {
+        try {
+          const res = detailIsInspection
+            ? await shippingService.getInspectionShipments(id).catch(() => shippingService.getOrderShipments(id))
+            : await shippingService.getOrderShipments(id).catch(() => shippingService.getInspectionShipments(id));
+          if (Array.isArray(res) && res.length > 0) {
+            return res;
+          }
+        } catch { }
+      }
+      return [];
+    };
+
+    fetchAllShipments()
       .then((data) => {
         if (!active) return;
         const list = Array.isArray(data) ? data : [];
-        setDetailShipments(list);
         if (list.length > 0) {
-          try {
-            localStorage.setItem(`sl_order_shipments_${detailOrderId}`, JSON.stringify(list));
-            localStorage.setItem(`order_shipments_${detailOrderId}`, JSON.stringify(list));
-          } catch { }
-        }
-        if (list.some((s) => s.status !== 'CANCELLED')) {
-          try {
-            localStorage.setItem(`order_shipment_created_${detailOrderId}`, 'true');
-          } catch { }
+          setDetailShipments(list);
+          ids.forEach((id) => {
+            try {
+              localStorage.setItem(`sl_order_shipments_${id}`, JSON.stringify(list));
+              localStorage.setItem(`order_shipments_${id}`, JSON.stringify(list));
+              if (list.some((s) => s.status !== 'CANCELLED')) {
+                localStorage.setItem(`order_shipment_created_${id}`, 'true');
+              }
+            } catch { }
+          });
         }
       })
       .catch(() => {
@@ -110,7 +116,58 @@ export function useOrderDetailData(
         if (active) setIsLoadingDetailShipments(false);
       });
     return () => { active = false; };
-  }, [detailOrderId, detailIsInspection]);
+  }, [detailOrderId, detailIsInspection, linkedOrderId]);
+
+  // Real-time synchronization for appointment lifecycle events
+  React.useEffect(() => {
+    if (!detailOrderId) return;
+    const targetIds = [detailOrderId, linkedOrderId].filter(Boolean) as string[];
+
+    const handleScheduled = (e: any) => {
+      const d = e?.detail;
+      if (!d) return;
+      if (targetIds.includes(d.orderId) || (d.linkedOrderId && targetIds.includes(d.linkedOrderId)) || (d.inspectionOrderId && targetIds.includes(d.inspectionOrderId))) {
+        setDetailInspectionDto((prev) => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            appointmentScheduledAt: d.scheduledAt,
+            appointmentShift: d.shift || 'MORNING',
+            appointmentNote: d.note || '',
+            appointmentStatus: d.status || 'PENDING_CENTER_CONFIRMATION',
+            counterScheduledAt: null,
+            counterShift: null,
+            counterNote: null,
+          };
+        });
+      }
+    };
+
+    const handleRefresh = (e: any) => {
+      const d = e?.detail;
+      if (d?.orderId && !targetIds.includes(d.orderId) && !targetIds.includes(d.linkedOrderId)) return;
+      if (detailIsInspection) {
+        inspectorService.getOrder(detailOrderId, { bypassCache: true })
+          .catch(() => linkedOrderId ? inspectorService.getOrder(linkedOrderId, { bypassCache: true }) : null)
+          .then((dto) => {
+            if (dto) setDetailInspectionDto(dto);
+          })
+          .catch(() => {});
+      }
+    };
+
+    window.addEventListener('secondlife_appointment_scheduled', handleScheduled);
+    window.addEventListener('secondlife_appointment_confirmed', handleRefresh);
+    window.addEventListener('secondlife_appointment_countered', handleRefresh);
+    window.addEventListener('secondlife_appointment_rejected', handleRefresh);
+
+    return () => {
+      window.removeEventListener('secondlife_appointment_scheduled', handleScheduled);
+      window.removeEventListener('secondlife_appointment_confirmed', handleRefresh);
+      window.removeEventListener('secondlife_appointment_countered', handleRefresh);
+      window.removeEventListener('secondlife_appointment_rejected', handleRefresh);
+    };
+  }, [detailOrderId, linkedOrderId, detailIsInspection]);
   return {
     detailShipments, setDetailShipments, isLoadingDetailShipments,
     detailInspectionDto, setDetailInspectionDto,

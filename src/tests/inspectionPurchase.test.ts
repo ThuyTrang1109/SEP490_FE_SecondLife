@@ -116,3 +116,17 @@ test('formatOrderCancellationReason cleans composite notes for outer order cards
   const standardRejection = 'Người mua từ chối mua tiếp sau kiểm định. Lý do: Tìm được máy khác giá tốt hơn';
   assert.equal(formatOrderCancellationReason(standardRejection, 'vi'), 'Tìm được máy khác giá tốt hơn');
 });
+
+test('buyer-rejected inspection order continues tracking return shipment from Hub', () => {
+  const rejectedOrder: any = {
+    id: 'ord-rejected-123',
+    status: 'CANCELLED',
+    backendStatus: 'CANCELLED',
+    inspectionMethod: 'AT_CENTER',
+    hasInspectionService: true,
+    inspectionStatus: 'CANCELLED',
+    inspectionNote: 'Đạt chuẩn | Người mua từ chối mua tiếp sau kiểm định. Lý do: Chán rồi nhé',
+  };
+
+  assert.equal(getInspectionPurchaseDecision(rejectedOrder), 'rejected');
+});

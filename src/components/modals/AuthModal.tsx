@@ -121,7 +121,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false);
   const [resetOtpCountdown, setResetOtpCountdown] = useState(0);
-  const [generatedResetOtp, setGeneratedResetOtp] = useState<string | null>(null);
 
   // Validation & Feedback States
   const [touched, setTouched] = useState<Record<string, boolean>>({});
@@ -590,12 +589,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     try {
       await authService.forgotPassword(resetEmail.trim());
       soundFx.playChime();
-      setGeneratedResetOtp('889922');
       setResetOtpCountdown(60);
       setSuccessMsg(
         lang === 'vi'
-          ? `Mã xác thực OTP đã được gửi tới email ${resetEmail.trim()}! (Mã thử nghiệm: 889922)`
-          : `OTP verification code sent to ${resetEmail.trim()}! (Test code: 889922)`
+          ? `Mã xác thực OTP đã được gửi tới email ${resetEmail.trim()}!`
+          : `OTP verification code sent to ${resetEmail.trim()}!`
       );
     } catch (err: any) {
       soundFx.playCancel();
@@ -1500,7 +1498,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       value={otpCode}
                       onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
                       onBlur={() => markTouched('otpCode')}
-                      placeholder="889922"
+                      placeholder={lang === 'vi' ? 'Nhập mã 6 chữ số' : 'Enter 6 digits'}
                       className={`w-full pl-10 pr-3 py-2 rounded-xl border text-xs sm:text-sm font-mono font-bold tracking-widest transition ${
                         (touched.otpCode || submitted) && getOtpCodeError()
                           ? 'bg-rose-50/40 border-rose-500 text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-500'

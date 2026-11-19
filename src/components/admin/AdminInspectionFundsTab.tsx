@@ -155,6 +155,7 @@ export const AdminInspectionFundsTab: React.FC<AdminInspectionFundsTabProps> = (
             buyerCommitmentDeposit: Number(item.buyerCommitmentDeposit || 0),
             travelFee: Number(item.travelFee || item.travelFeeRoundTrip || 0),
             feePayer: item.feePayer || 'SELLER_PAYS',
+            buyerFeePercent: item.buyerFeePercent,
             sellerFeeShare: Number(item.sellerFeeShare ?? 948000),
             buyerFeeShare: Number(item.buyerFeeShare ?? 0),
             sellerPaidAt: item.sellerPaidAt || null,

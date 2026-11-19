@@ -1,3 +1,4 @@
+import { buyerFeePercentFor, feePercentLabel } from '../utils/inspectionFeePercent';
 import { paths } from '../app/router/paths';
 import { navigatePath } from '../app/router/browser';
 import { chatService } from '../services/chatService';
@@ -36,6 +37,8 @@ import {
   Package
 } from 'lucide-react';
 import { CreateShipmentModal } from '../components/modals/CreateShipmentModal';
+import { ScheduleAppointmentModal } from '../components/modals/ScheduleAppointmentModal';
+import { readOrderAppointment } from '../utils/orders/orderAppointments';
 import { DigitalInspectionCertificateModal, buildInspectionReportFromDto } from '../components/modals/DigitalInspectionCertificateModal';
 import { inspectorService, InspectionOrderDto } from '../services/inspectorService';
 import { getOrderFeed } from '../services/orderFeedService';
@@ -47,7 +50,9 @@ import { markListingInspectionPassed } from '../utils/listingInspection';
 import { getCustomerInspectionStatus, getInspectionPurchaseDecision, inspectionPurchaseDecisionLabel, isExpiredInspectionPurchase, extractInspectionRejectionDetails } from '../utils/inspectionPurchase';
 import { notificationWsClient } from '../services/notificationWsClient';
 import { getInspectionReportMedia, getInspectionStageOne, getInspectionStageTwo } from '../utils/inspectionDecisionData';
-import { canAppealInspection, getHubReturnProgress, getHubReturnState, getReturnReserveMessage, isHubReturnCase } from '../utils/inspectionCenterData';
+import { canAppealInspection, getHubReturnProgress, getHubReturnState, getReturnReserveMessage, isHubReturnCase, getInboundShipmentProgress, getLatestInboundShipment } from '../utils/inspectionCenterData';
+import { getOrderAllShipments } from '../utils/orders/shipmentCache';
+import { isOrderReceivedAtHub } from './ProductInspectionStationView';
 import { InspectionAppealModal } from '../components/inspection/InspectionAppealModal';
 import { LalamoveProgress } from '../components/common/LalamoveProgress';
 import { resolveInspectionCenter } from '../utils/orderUtils';
@@ -110,6 +115,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
   const [showRejectModal, setShowRejectModal] = useState<boolean>(false);
   const [showShipmentModal, setShowShipmentModal] = useState<boolean>(false);
   const [showCertificateModal, setShowCertificateModal] = useState<boolean>(false);
+  const [showScheduleModal, setShowScheduleModal] = useState<boolean>(false);
   const [selectedRejectReason, setSelectedRejectReason] = useState<string>('Sản phẩm có vết trầy xước và hao mòn nhiều hơn kỳ vọng');
   const [customRejectNote, setCustomRejectNote] = useState<string>('');
 
@@ -163,6 +169,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                 inspectionFee: ord.inspectionFeeVnd || 0,
                 shippingFee: ord.shippingFeeVnd || 0,
                 returnShippingReserveFee: ord.returnShippingReserveFee || 0,
+                buyerFeePercent: ord.buyerFeePercent,
                 buyerFeeShare: ord.buyerFeeShare,
                 sellerFeeShare: ord.sellerFeeShare,
                 feePayer: ord.feePayer || 'SPLIT_50_50',
@@ -206,6 +213,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
         inspectionFee: ord.inspectionFeeVnd || ord.inspectionFee,
         shippingFee: ord.shippingFeeVnd || ord.shippingFee,
         returnShippingReserveFee: ord.returnShippingReserveFee,
+        buyerFeePercent: ord.buyerFeePercent,
         buyerFeeShare: ord.buyerFeeShare,
         sellerFeeShare: ord.sellerFeeShare,
         feePayer: ord.feePayer,
@@ -230,6 +238,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
   const purchaseDecision = getInspectionPurchaseDecision(order, inspectionDto);
   const purchaseExpired = isExpiredInspectionPurchase(inspectionDto?.status, inspectionDto?.note);
   const isBuyerPurchaseRejected = purchaseDecision === 'rejected' || rejectionDetails.isBuyerPurchaseRejected;
+  const decisionSettled = purchaseDecision === 'accepted' || purchaseDecision === 'rejected' || purchaseExpired || isBuyerPurchaseRejected;
 
   const isCancelled =
     !isBuyerPurchaseRejected && (
@@ -262,10 +271,103 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
     backendStatus === 'FAILED' ||
     backendStatus === 'COMPLETED'
   );
-  const isShippingToCenter = !isPassed && !isFailed && !isInspecting && !isCancelled && (
+  const isAtHome = inspectionDto?.orderType === 'AT_HOME' ||
+    (inspectionDto as any)?.inspectionMethod === 'AT_HOME' ||
+    (order as any)?.inspectionMethod === 'AT_HOME' ||
+    (order as any)?.orderType === 'AT_HOME';
+
+  const isReceiptConfirmed = Boolean(
+    (order as any)?.receiptConfirmedAt ||
+    (inspectionDto as any)?.receiptConfirmedAt ||
+    (typeof window !== 'undefined' && effectiveOrderId && (
+      localStorage.getItem(`order_receipt_confirmed_${effectiveOrderId}`) === 'true' ||
+      ((order as any)?.linkedOrderId && localStorage.getItem(`order_receipt_confirmed_${(order as any).linkedOrderId}`) === 'true') ||
+      (inspectionDto?.linkedOrderId && localStorage.getItem(`order_receipt_confirmed_${inspectionDto.linkedOrderId}`) === 'true')
+    ))
+  );
+
+  const isOrderCompleted = Boolean(
+    isReceiptConfirmed ||
+    backendStatus === 'COMPLETED' ||
+    backendStatus === 'RELEASED' ||
+    backendStatus === 'COMPLETED_RELEASED' ||
+    escrowStatus === 'COMPLETED_RELEASED' ||
+    escrowStatus === 'RELEASED' ||
+    (inspectionDto as any)?.status === 'COMPLETED' ||
+    (() => {
+      if (typeof window === 'undefined' || !effectiveOrderId) return false;
+      const targetIds = [effectiveOrderId, (order as any)?.linkedOrderId, inspectionDto?.linkedOrderId].filter(Boolean);
+      for (const storageKey of ['recent_placed_orders', 'center_inspection_orders', 'my_seller_inspection_orders']) {
+        try {
+          const raw = localStorage.getItem(storageKey);
+          if (raw) {
+            const list = JSON.parse(raw);
+            if (Array.isArray(list)) {
+              const found = list.find((o: any) => targetIds.includes(o.id) || targetIds.includes(o.linkedOrderId) || targetIds.includes(o.inspectionOrderId));
+              if (found && (found.escrowStatus === 'COMPLETED_RELEASED' || found.escrowStatus === 'RELEASED' || found.status === 'COMPLETED' || found.receiptConfirmedAt)) {
+                return true;
+              }
+            }
+          }
+        } catch { }
+      }
+      return false;
+    })()
+  );
+
+  const isOrderDelivered = Boolean(
+    !isOrderCompleted && (
+      (order as any)?.shippingDeliveredAt ||
+      (inspectionDto as any)?.shippingDeliveredAt ||
+      escrowStatus === 'DELIVERED_INSPECTION_WINDOW' ||
+      backendStatus === 'DELIVERED' ||
+      (() => {
+        if (typeof window === 'undefined' || !effectiveOrderId) return false;
+        const targetIds = [effectiveOrderId, (order as any)?.linkedOrderId, inspectionDto?.linkedOrderId].filter(Boolean);
+        for (const storageKey of ['recent_placed_orders', 'center_inspection_orders', 'my_seller_inspection_orders']) {
+          try {
+            const raw = localStorage.getItem(storageKey);
+            if (raw) {
+              const list = JSON.parse(raw);
+              if (Array.isArray(list)) {
+                const found = list.find((o: any) => targetIds.includes(o.id) || targetIds.includes(o.linkedOrderId) || targetIds.includes(o.inspectionOrderId));
+                if (found && (found.shippingDeliveredAt || found.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' || found.backendStatus === 'DELIVERED')) {
+                  return true;
+                }
+              }
+            }
+          } catch { }
+        }
+        return false;
+      })()
+    )
+  );
+
+  const [inboundShipment, setInboundShipment] = useState<ShipmentBackend | null>(() => {
+    if (typeof window === 'undefined' || !effectiveOrderId) return null;
+    const all = getOrderAllShipments(effectiveOrderId);
+    return getLatestInboundShipment(all);
+  });
+
+  const isInboundDelivered = Boolean(
+    !isAtHome && !isPassed && !isFailed && !isCancelled && !isBuyerPurchaseRejected && !decisionSettled && !isOrderCompleted && !isOrderDelivered && (
+      isOrderReceivedAtHub(inspectionDto) ||
+      isOrderReceivedAtHub(order) ||
+      (typeof window !== 'undefined' && localStorage.getItem(`hub_package_received_${effectiveOrderId}`) === 'true') ||
+      (inboundShipment && (
+        inboundShipment.status === 'DELIVERED' ||
+        inboundShipment.status === 'COMPLETED' ||
+        inboundShipment.providerStatus === 'COMPLETED' ||
+        getInboundShipmentProgress(inboundShipment).step === 3
+      ))
+    )
+  );
+
+  const isShippingToCenter = !isPassed && !isFailed && !isInspecting && !isCancelled && !isInboundDelivered && (
     backendStatus === 'SHIPPING_TO_CENTER' ||
     Boolean((order as any)?.shippingTrackingCode) ||
     Boolean((order as any)?.inboundTrackingCode) ||
+    (inboundShipment && inboundShipment.status !== 'CANCELLED' && getInboundShipmentProgress(inboundShipment).step !== null) ||
     (typeof window !== 'undefined' && (
       localStorage.getItem(`order_shipment_created_${effectiveOrderId}`) === 'true' ||
       localStorage.getItem(`seller_shipped_to_hub_${effectiveOrderId}`) === 'true'
@@ -315,6 +417,60 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
     } as unknown as EscrowOrder;
   }, [order, inspectionDto, effectiveOrderId]);
 
+  const currentAppt = useMemo(() => {
+    return readOrderAppointment(escrowOrderForShipment || (order as any), inspectionDto);
+  }, [escrowOrderForShipment, order, inspectionDto]);
+
+  const hasValidApptDate = Boolean(
+    (currentAppt?.scheduledAt && currentAppt.scheduledAt !== 'null' && currentAppt.scheduledAt !== 'undefined' && !isNaN(new Date(currentAppt.scheduledAt).getTime())) ||
+    (inspectionDto?.appointmentScheduledAt && (inspectionDto.appointmentScheduledAt as any) !== 'null' && (inspectionDto.appointmentScheduledAt as any) !== 'undefined' && !isNaN(new Date(inspectionDto.appointmentScheduledAt).getTime())) ||
+    (order?.appointmentScheduledAt && (order.appointmentScheduledAt as any) !== 'null' && (order.appointmentScheduledAt as any) !== 'undefined' && !isNaN(new Date(order.appointmentScheduledAt).getTime()))
+  );
+
+  let hasInsp = Boolean(
+    order?.inspectorId ||
+    (order as any)?.inspectorName ||
+    inspectionDto?.inspectorId ||
+    (inspectionDto as any)?.inspectorName
+  );
+  if (!hasInsp && (effectiveOrderId || order?.id) && typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(`order_assigned_inspector_${effectiveOrderId || order?.id}`);
+      if (raw && JSON.parse(raw).inspectorName) hasInsp = true;
+    } catch { }
+  }
+
+  const isApptCountered = Boolean(
+    (currentAppt?.status === 'COUNTERED_BY_CENTER' && Boolean(currentAppt?.counterScheduledAt)) ||
+    Boolean(currentAppt?.counterScheduledAt) ||
+    Boolean((inspectionDto as any)?.counterScheduledAt) ||
+    Boolean((order as any)?.counterScheduledAt) ||
+    (inspectionDto as any)?.appointmentStatus === 'COUNTERED_BY_CENTER'
+  );
+
+  const hasApptConfirmed = Boolean(
+    !isApptCountered &&
+    hasValidApptDate && (
+      currentAppt?.status === 'CONFIRMED' ||
+      (inspectionDto as any)?.appointmentStatus === 'CONFIRMED' ||
+      (order as any)?.appointmentStatus === 'CONFIRMED' ||
+      hasInsp
+    )
+  );
+
+  const isApptPendingApproval = Boolean(
+    !isApptCountered &&
+    !hasApptConfirmed &&
+    hasValidApptDate && (
+      currentAppt?.status === 'PENDING_CENTER_CONFIRMATION' ||
+      currentAppt?.status === 'PENDING_CONFIRMATION' ||
+      (inspectionDto as any)?.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' ||
+      (order as any)?.appointmentStatus === 'PENDING_CENTER_CONFIRMATION'
+    )
+  );
+
+  const hasNoAppt = isAtHome && !isApptCountered && !hasValidApptDate;
+
   const currentUserId = String(currentUser?.id || '').trim().toLowerCase();
   const currentUserName = String(currentUser?.name || (currentUser as any)?.fullName || '').trim().toLowerCase();
   const currentUserEmail = String(currentUser?.email || '').trim().toLowerCase();
@@ -340,7 +496,6 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
     ))
   );
   const canDecide = purchaseDecision === 'pending' && !isUserSeller;
-  const decisionSettled = purchaseDecision === 'accepted' || purchaseDecision === 'rejected' || purchaseExpired || isBuyerPurchaseRejected;
   const canAppeal = Boolean(isUserSeller && inspectionDto && canAppealInspection(inspectionDto, currentUser?.id));
   const [, refreshAppealDeadline] = useState(0);
 
@@ -400,15 +555,11 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
   const centerName = resolvedCenter?.name || fallbackCenter.name;
   const centerAddress = resolvedCenter?.address || fallbackCenter.address;
   const centerPhone = resolvedCenter?.phone || fallbackCenter.phone;
-  const inspectorName = inspectionDto?.inspectorName || 'Chưa có thông tin kỹ thuật viên';
+  const inspectorName = inspectionDto?.inspectorName || (isInboundDelivered ? 'Hub đang phân công KTV' : 'Chưa có thông tin kỹ thuật viên');
   const tamperSealId = inspectionDto?.tamperSealId;
   const conditionGrade = inspectionDto?.conditionGrade || 'Chưa có đánh giá';
   const conditionScore = inspectionDto?.conditionScore;
-  const isAtHome = inspectionDto?.orderType === 'AT_HOME' ||
-    (inspectionDto as any)?.inspectionMethod === 'AT_HOME' ||
-    (order as any)?.inspectionMethod === 'AT_HOME' ||
-    (order as any)?.orderType === 'AT_HOME';
-  const feePayer = inspectionDto?.feePayer;
+  const buyerFeePercent = inspectionDto?.buyerFeePercent ?? buyerFeePercentFor(inspectionDto?.feePayer);
   const { base: baseInspectionFee, transport: inspectionTransportFee, reserve: returnReserveFee,
     buyerShare: buyerFeeShare, sellerShare: sellerFeeShare, total: totalInspectionFee } = getInspectionStageOne(inspectionDto);
   const resolvedBuyerAddress = useMemo(() => {
@@ -500,8 +651,44 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
   const feePaymentLabel = isCancelled ? 'ĐÃ HỦY / TỪ CHỐI'
     : inspectionDto?.feeSettledAt ? 'ĐÃ HẠCH TOÁN PHÍ KIỂM ĐỊNH'
       : isWaitingSellerApproval || isWaitingBuyerApproval ? 'CHỜ DUYỆT'
-        : feesPaid ? 'ĐÃ NỘP PHÍ'
-          : isWaitingFeePayment ? 'CHỜ NỘP PHÍ' : 'CHƯA XÁC NHẬN NỘP PHÍ';
+        : isInspecting ? 'ĐANG KIỂM ĐỊNH'
+          : isInboundDelivered ? 'ĐÃ ĐẾN HUB KIỂM ĐỊNH'
+            : isShippingToCenter ? 'ĐANG GIAO ĐẾN HUB'
+              : feesPaid ? 'ĐÃ NỘP PHÍ'
+                : isWaitingFeePayment ? 'CHỜ NỘP PHÍ' : 'CHƯA XÁC NHẬN NỘP PHÍ';
+
+  // Tự động tải và đồng bộ thông tin vận chuyển Chặng 1 (Seller -> Hub)
+  useEffect(() => {
+    if (!effectiveOrderId || isAtHome || isPassed || isFailed || isCancelled) return;
+    const controller = new AbortController();
+    let timer: number;
+    const fetchInbound = async () => {
+      try {
+        const list = await shippingService.getInspectionShipments(effectiveOrderId, { signal: controller.signal, isBackground: true });
+        if (!controller.signal.aborted) {
+          const latest = getLatestInboundShipment(list);
+          if (latest) {
+            setInboundShipment(latest);
+            if (latest.status === 'DELIVERED' || latest.status === 'COMPLETED' || latest.providerStatus === 'COMPLETED' || getInboundShipmentProgress(latest).step === 3) {
+              try {
+                localStorage.setItem(`hub_package_received_${effectiveOrderId}`, 'true');
+              } catch { }
+            }
+          }
+          try {
+            localStorage.setItem(`sl_order_shipments_${effectiveOrderId}`, JSON.stringify(list));
+            localStorage.setItem(`order_shipments_${effectiveOrderId}`, JSON.stringify(list));
+          } catch { }
+        }
+      } catch { } finally {
+        if (!controller.signal.aborted && !isPassed && !isFailed && !isCancelled) {
+          timer = window.setTimeout(fetchInbound, 30_000);
+        }
+      }
+    };
+    void fetchInbound();
+    return () => { controller.abort(); window.clearTimeout(timer); };
+  }, [effectiveOrderId, isAtHome, isPassed, isFailed, isCancelled]);
 
   const hasHubReturn = isHubReturnCase(inspectionDto);
   useEffect(() => {
@@ -758,17 +945,17 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
           const updated = list.map((o) =>
             o.id === effectiveOrderId
               ? {
-                  ...o,
-                  escrowStatus: 'CANCELLED' as const,
-                  backendStatus: 'CANCELLED' as any,
-                  inspectionStatus: 'CANCELLED',
-                  inspectionNote: rejectedOrder?.note || fullReason,
-                  tamperSealId: targetTamperSealId || (o as any).tamperSealId,
-                  conditionGrade: targetConditionGrade || (o as any).conditionGrade,
-                  conditionScore: targetConditionScore ?? (o as any).conditionScore,
-                  settlementOutcome: 'PASSED_BUYER_DEFAULTED',
-                  cancellationReasonCode: 'PASSED_BUYER_DEFAULTED',
-                }
+                ...o,
+                escrowStatus: 'CANCELLED' as const,
+                backendStatus: 'CANCELLED' as any,
+                inspectionStatus: 'CANCELLED',
+                inspectionNote: rejectedOrder?.note || fullReason,
+                tamperSealId: targetTamperSealId || (o as any).tamperSealId,
+                conditionGrade: targetConditionGrade || (o as any).conditionGrade,
+                conditionScore: targetConditionScore ?? (o as any).conditionScore,
+                settlementOutcome: 'PASSED_BUYER_DEFAULTED',
+                cancellationReasonCode: 'PASSED_BUYER_DEFAULTED',
+              }
               : o
           );
           localStorage.setItem('recent_placed_orders', JSON.stringify(updated));
@@ -783,17 +970,17 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
           const updated = list.map((o) =>
             o.id === effectiveOrderId
               ? {
-                  ...o,
-                  escrowStatus: 'CANCELLED',
-                  backendStatus: 'CANCELLED',
-                  inspectionStatus: 'CANCELLED',
-                  inspectionNote: rejectedOrder?.note || fullReason,
-                  tamperSealId: targetTamperSealId || (o as any).tamperSealId,
-                  conditionGrade: targetConditionGrade || o.conditionGrade,
-                  conditionScore: targetConditionScore ?? o.conditionScore,
-                  settlementOutcome: 'PASSED_BUYER_DEFAULTED',
-                  cancellationReasonCode: 'PASSED_BUYER_DEFAULTED',
-                }
+                ...o,
+                escrowStatus: 'CANCELLED',
+                backendStatus: 'CANCELLED',
+                inspectionStatus: 'CANCELLED',
+                inspectionNote: rejectedOrder?.note || fullReason,
+                tamperSealId: targetTamperSealId || (o as any).tamperSealId,
+                conditionGrade: targetConditionGrade || o.conditionGrade,
+                conditionScore: targetConditionScore ?? o.conditionScore,
+                settlementOutcome: 'PASSED_BUYER_DEFAULTED',
+                cancellationReasonCode: 'PASSED_BUYER_DEFAULTED',
+              }
               : o
           );
           localStorage.setItem('all_orders_cache', JSON.stringify(updated));
@@ -1038,11 +1225,21 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                     <span>KẾT QUẢ: ĐẠT CHUẨN (PASSED)</span>
                   </span>
                 )}
-                {purchaseDecision && (
+                {isOrderCompleted ? (
+                  <span className="rounded-full px-2.5 py-0.5 text-[10px] font-extrabold bg-emerald-100 text-emerald-800 flex items-center gap-1 border border-emerald-300">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                    <span>{isUserSeller ? 'ĐÃ NHẬN TIỀN VÀO VÍ' : 'HOÀN TẤT • ĐÃ GIẢI NGÂN'}</span>
+                  </span>
+                ) : isOrderDelivered ? (
+                  <span className="rounded-full px-2.5 py-0.5 text-[10px] font-extrabold bg-emerald-100 text-emerald-800 flex items-center gap-1 border border-emerald-300">
+                    <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                    <span>{isUserSeller ? 'ĐÃ GIAO HÀNG (48H)' : 'ĐÃ GIAO • ĐỐI SOÁT 48H'}</span>
+                  </span>
+                ) : purchaseDecision ? (
                   <span className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${purchaseDecision === 'rejected' ? 'bg-rose-100 text-rose-800' : 'bg-slate-100 text-slate-700'}`}>
                     {inspectionPurchaseDecisionLabel(purchaseDecision, lang, isUserSeller)}
                   </span>
-                )}
+                ) : null}
                 {purchaseExpired && (
                   <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-extrabold text-slate-700">
                     Đã hủy do hết hạn thanh toán
@@ -1084,16 +1281,32 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                     <span>CHỜ NỘP PHÍ KIỂM ĐỊNH</span>
                   </span>
                 )}
-                {isShippingToCenter && (
+                {isInboundDelivered && !isInspecting && (
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold flex items-center gap-1">
+                    <Building2 className="w-3 h-3 text-emerald-600" />
+                    <span>ĐÃ ĐẾN HUB KIỂM ĐỊNH</span>
+                  </span>
+                )}
+                {isShippingToCenter && !isInboundDelivered && (
                   <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[10px] font-extrabold flex items-center gap-1">
                     <Truck className="w-3 h-3 text-indigo-600" />
                     <span>ĐANG GIAO ĐẾN HUB</span>
                   </span>
                 )}
-                {isPending && !isWaitingSellerApproval && !isWaitingBuyerApproval && !isWaitingFeePayment && !isShippingToCenter && (
+                {isPending && !isWaitingSellerApproval && !isWaitingBuyerApproval && !isWaitingFeePayment && !isShippingToCenter && !isInboundDelivered && (
                   <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-extrabold flex items-center gap-1">
                     <Clock className="w-3 h-3 text-amber-600" />
-                    <span>{isAtHome ? 'CHỜ KTV ĐẾN NHÀ KIỂM ĐỊNH' : 'CHƯA KIỂM ĐỊNH • CHỜ TIẾP NHẬN'}</span>
+                    <span>{isAtHome ? (
+                      hasNoAppt
+                        ? (isUserSeller ? 'CHỜ BẠN HẸN LỊCH ĐÓN KTV' : 'CHỜ NGƯỜI BÁN HẸN LỊCH ĐÓN KTV')
+                        : isApptCountered
+                          ? 'HUB ĐỀ XUẤT LỊCH MỚI'
+                          : isApptPendingApproval
+                            ? 'CHỜ TRUNG TÂM DUYỆT LỊCH'
+                            : hasApptConfirmed
+                              ? (hasInsp ? 'ĐÃ PHÂN CÔNG KTV • CHỜ KHẢO SÁT' : 'ĐÃ CHỐT LỊCH • CHỜ GIAO KTV')
+                              : (isUserSeller ? 'CHỜ BẠN HẸN LỊCH ĐÓN KTV' : 'CHỜ NGƯỜI BÁN HẸN LỊCH ĐÓN KTV')
+                    ) : 'CHƯA KIỂM ĐỊNH • CHỜ TIẾP NHẬN'}</span>
                   </span>
                 )}
               </div>
@@ -1266,7 +1479,10 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                 <p className="text-xs text-rose-50/90 leading-relaxed max-w-3xl">
                   {isUserSeller
                     ? 'Đơn hàng kiểm định không đạt chuẩn chất lượng. Thiết bị sẽ được Hub thu xếp đóng gói hoàn trả về địa chỉ kho của bạn.'
-                    : 'Kỹ thuật viên đã kiểm tra và ghi nhận sản phẩm không vượt qua các tiêu chí kỹ thuật quy định. Đơn hàng đã dừng lại ở bước kiểm định và thiết bị sẽ được hoàn trả cho người bán. Quỹ Escrow bảo lãnh hoàn tiền an toàn cho bạn.'}
+                    : 'Kỹ thuật viên đã kiểm tra và ghi nhận sản phẩm không vượt qua các tiêu chí kỹ thuật quy định. Đơn hàng đã dừng lại ở bước kiểm định và thiết bị sẽ được hoàn trả cho người bán.'}
+                </p>
+                <p className="text-xs text-rose-50/90 leading-relaxed max-w-3xl">
+                  Phí kiểm định và vận chuyển được chia theo tỷ lệ đã thống nhất. Nếu có khoản dự phòng cước trả hàng, phần dư sẽ được hoàn theo tỷ lệ này sau khi trừ cước thực tế.
                 </p>
               </div>
 
@@ -1380,13 +1596,45 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                 <div className="space-y-1">
                   <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/20 backdrop-blur-md text-white text-[11px] font-bold border border-white/30">
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" />
-                    <span>Đã Xác Nhận Mua Hàng</span>
+                    <span>
+                      {isOrderCompleted
+                        ? (isUserSeller ? 'Đã Nhận Tiền Vào Ví • Giao Dịch Hoàn Tất' : 'Giao Dịch Hoàn Tất • Đã Giải Ngân')
+                        : isOrderDelivered
+                          ? (isUserSeller ? 'Đã Giao Hàng • Chờ Đối Soát (48h)' : 'Đã Giao Hàng • 48h Kiểm Tra Đối Soát')
+                          : isUserSeller
+                            ? 'Người Mua Đã Mua Tiếp'
+                            : 'Đã Xác Nhận Mua Hàng'}
+                    </span>
                   </div>
                   <h2 className="text-base sm:text-lg font-bold tracking-tight">
-                    Bạn đã thanh toán GĐ 2 và xác nhận mua sản phẩm
+                    {isOrderCompleted
+                      ? (isUserSeller
+                        ? 'Đơn hàng đã hoàn tất — Tiền bán hàng đã chuyển vào ví'
+                        : 'Đơn hàng đã hoàn tất — Cảm ơn bạn đã mua sắm')
+                      : isOrderDelivered
+                        ? (isUserSeller
+                          ? 'Tài xế đã giao kiện hàng thành công tới người mua'
+                          : 'Kiện hàng đã được giao thành công tới bạn')
+                        : isUserSeller
+                          ? 'Người mua đã thanh toán GĐ 2 và xác nhận mua sản phẩm'
+                          : 'Bạn đã thanh toán GĐ 2 và xác nhận mua sản phẩm'}
                   </h2>
                   <p className="text-xs text-emerald-50/90 leading-relaxed max-w-2xl">
-                    Đơn hàng đang trong quy trình đóng gói và giao từ Hub đến bạn. Bạn có thể xem Giấy chứng nhận kiểm định chất lượng bất kỳ lúc nào.
+                    {isOrderCompleted
+                      ? (isUserSeller
+                        ? 'Khách mua đã nhận hàng và đối soát thành công. Số tiền thực nhận đã được cộng vào ví của bạn.'
+                        : 'Bạn đã hoàn tất nhận hàng và đối soát. Tiền hàng đã được giải ngân cho người bán.')
+                      : isOrderDelivered
+                        ? (isUserSeller
+                          ? 'Khách mua có 48 giờ để kiểm tra đối soát trước khi hệ thống tự động giải ngân vào ví của bạn.'
+                          : 'Bạn có 48 giờ để kiểm tra và đối soát thiết bị trước khi hệ thống tự động giải ngân cho người bán.')
+                        : isAtHome
+                          ? (isUserSeller
+                            ? 'Vui lòng đóng gói cẩn thận (giữ nguyên tem niêm phong) và bàn giao cho tài xế Lalamove giao tới người mua.'
+                            : 'Người bán đang đóng gói kiện hàng nguyên tem niêm phong để bàn giao tài xế giao thẳng đến bạn.')
+                          : (isUserSeller
+                            ? 'Trung tâm Hub đang chuẩn bị đóng gói và bàn giao bưu tá để phát đến người mua.'
+                            : 'Đơn hàng đang trong quy trình đóng gói và giao từ Hub đến bạn.')}
                   </p>
                 </div>
                 {(escrowOrderForShipment || order) && (
@@ -1404,81 +1652,144 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
           ) : null
         ) : isUserSeller ? (
           /* Banner thông báo dành riêng cho Người bán khi đơn ĐANG XỬ LÝ */
-          <div className="py-3.5 px-4 sm:py-4 sm:px-5 rounded-2xl bg-gradient-to-r from-slate-800 via-indigo-900 to-[#24263e] text-white shadow-md relative overflow-hidden">
+          <div className={`py-3.5 px-4 sm:py-4 sm:px-5 rounded-2xl text-white shadow-md relative overflow-hidden ${isInspecting || isInboundDelivered
+            ? 'bg-gradient-to-r from-emerald-800 via-teal-900 to-[#24263e]'
+            : 'bg-gradient-to-r from-slate-800 via-indigo-900 to-[#24263e]'
+            }`}>
             <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="space-y-1 sm:space-y-1.5">
                 <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/20 backdrop-blur-md text-white text-[11px] font-bold border border-white/30">
-                  <Store className="w-3.5 h-3.5 text-indigo-300" />
-                  <span>
-                    {isWaitingSellerApproval
-                      ? 'Chờ Bạn Phê Duyệt Đề Xuất'
-                      : isWaitingBuyerApproval
-                        ? 'Chờ Người Mua Duyệt Lại'
-                        : isWaitingFeePayment
-                          ? 'Chờ Nộp Phí Kiểm Định'
-                          : 'Kênh Người Bán • Theo Dõi Đơn Kiểm Định'}
-                  </span>
+                  {isInspecting ? (
+                    <>
+                      <Clock className="w-3.5 h-3.5 text-amber-200" />
+                      <span>Đang Kiểm Định Kỹ Thuật</span>
+                    </>
+                  ) : isInboundDelivered ? (
+                    <>
+                      <Building2 className="w-3.5 h-3.5 text-emerald-300" />
+                      <span>ĐÃ ĐẾN HUB KIỂM ĐỊNH</span>
+                    </>
+                  ) : (
+                    <>
+                      <Store className="w-3.5 h-3.5 text-indigo-300" />
+                      <span>
+                        {isWaitingSellerApproval
+                          ? 'Chờ Bạn Phê Duyệt Đề Xuất'
+                          : isWaitingBuyerApproval
+                            ? 'Chờ Người Mua Duyệt Lại'
+                            : isWaitingFeePayment
+                              ? 'Chờ Nộp Phí Kiểm Định'
+                              : isShippingToCenter
+                                ? 'Đang Giao Đến Hub'
+                                : (feesPaid || backendStatus === 'CONFIRMED_PENDING_DISPATCH')
+                                  ? (isAtHome
+                                    ? (isApptCountered
+                                      ? 'Hub Đề Xuất Lịch Mới'
+                                      : isApptPendingApproval
+                                        ? 'Đã Đề Xuất Lịch • Chờ Hub Duyệt'
+                                        : hasApptConfirmed
+                                          ? (hasInsp ? 'Đã Phân Công KTV' : 'Đã Chốt Lịch • Chờ Giao KTV')
+                                          : 'Chờ Bạn Hẹn Lịch Đón KTV')
+                                    : 'Chờ Bạn Gửi Hàng Đến Hub')
+                                  : 'Kênh Người Bán • Theo Dõi Đơn Kiểm Định'}
+                      </span>
+                    </>
+                  )}
                 </div>
                 <h2 className="text-base sm:text-lg font-bold tracking-tight">
                   {isPassed
                     ? 'Sản phẩm đã được KTV kiểm định ĐẠT CHUẨN!'
-                    : isShippingToCenter
-                      ? 'Thiết bị đang được vận chuyển đến Hub kiểm định'
-                      : isInspecting
-                        ? (isAtHome
-                          ? 'Kỹ thuật viên đang có mặt tại nhà bạn và kiểm định thiết bị thực tế'
-                          : 'Kỹ thuật viên đang kiểm định thiết bị thực tế tại Hub')
-                        : isWaitingSellerApproval
-                          ? (isAtHome
-                            ? 'Đang chờ bạn phản hồi yêu cầu kiểm định tại nhà'
-                            : 'Đang chờ bạn phản hồi yêu cầu kiểm định qua Hub')
-                          : isWaitingBuyerApproval
-                            ? 'Đang chờ người mua phản hồi lại đề xuất kiểm định'
-                            : isWaitingFeePayment
-                              ? 'Chờ thanh toán phí kiểm định Giai đoạn 1'
-                              : feesPaid || backendStatus === 'CONFIRMED_PENDING_DISPATCH'
-                                ? (isAtHome
-                                  ? 'Đã thu đủ phí kiểm định • Chờ KTV xếp lịch đến kiểm định tại nhà'
-                                  : 'Đã thu đủ phí kiểm định • Vui lòng gửi máy về Hub')
-                                : (isAtHome
-                                  ? 'Đang chờ xếp lịch kỹ thuật viên đến kiểm định tại nhà'
-                                  : 'Đơn kiểm định đang chờ tiếp nhận')}
+                    : isInspecting
+                      ? (isAtHome
+                        ? 'Kỹ thuật viên đang có mặt tại nhà bạn và kiểm định thiết bị thực tế'
+                        : 'Kỹ thuật viên đang kiểm định thiết bị thực tế tại Hub')
+                      : isInboundDelivered
+                        ? 'Thiết bị đã đến Hub kiểm định • Trung tâm đã tiếp nhận máy'
+                        : isShippingToCenter
+                          ? 'Thiết bị đang được vận chuyển đến Hub kiểm định'
+                          : isWaitingSellerApproval
+                            ? (isAtHome
+                              ? 'Đang chờ bạn phản hồi yêu cầu kiểm định tại nhà'
+                              : 'Đang chờ bạn phản hồi yêu cầu kiểm định qua Hub')
+                            : isWaitingBuyerApproval
+                              ? 'Đang chờ người mua phản hồi lại đề xuất kiểm định'
+                              : isWaitingFeePayment
+                                ? 'Chờ thanh toán phí kiểm định Giai đoạn 1'
+                                : feesPaid || backendStatus === 'CONFIRMED_PENDING_DISPATCH'
+                                  ? (isAtHome
+                                    ? (hasNoAppt
+                                      ? 'Hai bên đã nộp đủ phí • Chờ bạn hẹn lịch đón KTV'
+                                      : isApptPendingApproval
+                                        ? 'Đã gửi lịch hẹn • Chờ Trung tâm duyệt lịch'
+                                        : isApptCountered
+                                          ? 'Trung tâm đề xuất lịch hẹn mới • Cần bạn phản hồi'
+                                          : hasApptConfirmed
+                                            ? (hasInsp ? 'Đã phân công KTV • KTV sẽ đến kiểm định tận nhà' : 'Đã chốt lịch hẹn • KTV sẽ đến kiểm định tận nhà')
+                                            : 'Đang chờ xếp lịch kỹ thuật viên đến kiểm định tại nhà')
+                                    : 'Đã thu đủ phí kiểm định • Vui lòng gửi máy đến Hub')
+                                  : (isAtHome
+                                    ? 'Đang chờ xếp lịch kỹ thuật viên đến kiểm định tại nhà'
+                                    : 'Đơn kiểm định đang chờ tiếp nhận')}
                 </h2>
                 <p className="text-xs text-slate-200/90 leading-relaxed max-w-3xl">
                   {isPassed
                     ? `Đang chờ người mua quyết định.${inspectionDto?.finalPaymentDeadline ? ` Hạn quyết định: ${new Date(inspectionDto.finalPaymentDeadline).toLocaleString('vi-VN')}.` : ''}`
-                    : isShippingToCenter
-                      ? 'Tài xế đang vận chuyển máy đến Trung tâm. KTV sẽ tiếp nhận ngay khi máy tới nơi.'
-                      : isInspecting
-                        ? (isAtHome
-                          ? 'Kỹ thuật viên SecondLife đang kiểm tra thiết bị trực tiếp tại địa chỉ của bạn.'
-                          : 'Kỹ thuật viên đang kiểm tra chất lượng thực tế máy tại Trung tâm.')
-                        : isWaitingSellerApproval
-                          ? (isAtHome
-                            ? 'Người mua đã đề xuất cử KTV đến tận nhà bạn để kiểm định máy trước khi mua. Vui lòng xem phương án phân chia phí và bấm Đồng ý hoặc Từ chối bên dưới.'
-                            : 'Người mua đã đề xuất kiểm định sản phẩm qua Hub trước khi mua. Vui lòng xem phương án phân chia phí và bấm Đồng ý hoặc Từ chối bên dưới.')
-                          : isWaitingBuyerApproval
-                            ? 'Bạn đã gửi lại đề xuất thay đổi phương án. Vui lòng chờ người mua xem và phản hồi trong phòng chat.'
-                            : isWaitingFeePayment
-                              ? (sellerFeeShare > 0 && !inspectionDto?.sellerPaidAt
-                                ? 'Phương án kiểm định đã được duyệt. Vui lòng nộp phần phí kiểm định của bạn để hệ thống xếp lịch kiểm định.'
-                                : 'Bạn đã hoàn tất nộp phí kiểm định. Đang chờ người mua thanh toán phần phí còn lại.')
-                              : feesPaid || backendStatus === 'CONFIRMED_PENDING_DISPATCH'
-                                ? (isAtHome
-                                  ? 'Hai bên đã nộp đủ phí kiểm định GĐ 1. Kỹ thuật viên SecondLife sẽ liên hệ và mang thiết bị đến tận nhà bạn để thực hiện kiểm định.'
-                                  : (buyerFeeShare === 0
-                                    ? 'Bạn (Người bán) đã nộp đủ 100% phí kiểm định. Vui lòng đóng gói và tạo đơn Lalamove để giao máy về Hub.'
-                                    : sellerFeeShare === 0
-                                      ? 'Người mua đã nộp đủ 100% phí kiểm định. Vui lòng đóng gói và tạo đơn Lalamove để giao máy về Hub.'
-                                      : 'Hai bên đã nộp đủ phí kiểm định (chia phí). Vui lòng đóng gói và tạo đơn Lalamove để giao máy về Hub.'))
-                                : (isAtHome
-                                  ? 'Hệ thống đang chuẩn bị xếp lịch kỹ thuật viên đến tận nhà bạn để kiểm định máy.'
-                                  : 'Kỹ thuật viên đang chuẩn bị tiếp nhận đơn kiểm định trên hệ thống.')}
+                    : isInspecting
+                      ? (isAtHome
+                        ? 'Kỹ thuật viên SecondLife đang kiểm tra thiết bị trực tiếp tại địa chỉ của bạn.'
+                        : 'Kỹ thuật viên đang kiểm tra chất lượng thực tế máy tại Trung tâm.')
+                      : isInboundDelivered
+                        ? 'Trung tâm kiểm định đã nhận kiện hàng từ đơn vị vận chuyển. Kỹ thuật viên sẽ tiếp nhận máy lên bàn đo kiểm và tiến hành thẩm định.'
+                        : isShippingToCenter
+                          ? 'Tài xế đang vận chuyển máy đến Trung tâm. KTV sẽ tiếp nhận ngay khi máy tới nơi.'
+                          : isInspecting
+                            ? (isAtHome
+                              ? 'Kỹ thuật viên SecondLife đang kiểm tra thiết bị trực tiếp tại địa chỉ của bạn.'
+                              : 'Kỹ thuật viên đang kiểm tra chất lượng thực tế máy tại Trung tâm.')
+                            : isWaitingSellerApproval
+                              ? (isAtHome
+                                ? 'Người mua đã đề xuất cử KTV đến tận nhà bạn để kiểm định máy trước khi mua. Vui lòng xem phương án phân chia phí và bấm Đồng ý hoặc Từ chối bên dưới.'
+                                : 'Người mua đã đề xuất kiểm định sản phẩm qua Hub trước khi mua. Vui lòng xem phương án phân chia phí và bấm Đồng ý hoặc Từ chối bên dưới.')
+                              : isWaitingBuyerApproval
+                                ? 'Bạn đã gửi lại đề xuất thay đổi phương án. Vui lòng chờ người mua xem và phản hồi trong phòng chat.'
+                                : isWaitingFeePayment
+                                  ? (sellerFeeShare > 0 && !inspectionDto?.sellerPaidAt
+                                    ? 'Phương án kiểm định đã được duyệt. Vui lòng nộp phần phí kiểm định của bạn để hệ thống xếp lịch kiểm định.'
+                                    : 'Bạn đã hoàn tất nộp phí kiểm định. Đang chờ người mua thanh toán phần phí còn lại.')
+                                  : feesPaid || backendStatus === 'CONFIRMED_PENDING_DISPATCH'
+                                    ? (isAtHome
+                                      ? (hasNoAppt
+                                        ? 'Khách mua đã đăng ký gói kiểm định tận nơi. Vui lòng bấm nút "Hẹn Lịch Đón KTV" bên dưới để chọn ngày giờ làm việc trong khung giờ hành chính (08:00 - 12:00 hoặc 13:00 - 17:00).'
+                                        : isApptPendingApproval
+                                          ? `Đã gửi đề xuất lịch đón KTV${currentAppt?.scheduledAt || inspectionDto?.appointmentScheduledAt ? `: ${new Date(currentAppt?.scheduledAt || inspectionDto?.appointmentScheduledAt!).toLocaleString('vi-VN')}` : ''}. Đang chờ Hub xác nhận điều phối.`
+                                          : isApptCountered
+                                            ? `Trung tâm kiểm định đã đề xuất thời gian mới: ${new Date(currentAppt?.counterScheduledAt || (inspectionDto as any)?.counterScheduledAt).toLocaleString('vi-VN')}. Vui lòng bấm Hẹn lại lịch khác nếu không phù hợp.`
+                                            : `Kỹ thuật viên SecondLife sẽ có mặt tại nhà bạn vào lúc ${new Date(currentAppt?.scheduledAt || inspectionDto?.appointmentScheduledAt!).toLocaleString('vi-VN')} để kiểm định thiết bị.`)
+                                      : (buyerFeeShare === 0
+                                        ? 'Bạn (Người bán) đã nộp đủ 100% phí kiểm định. Vui lòng đóng gói và tạo đơn Lalamove để giao máy đến Hub.'
+                                        : sellerFeeShare === 0
+                                          ? 'Người mua đã nộp đủ 100% phí kiểm định. Vui lòng đóng gói và tạo đơn Lalamove để giao máy đến Hub.'
+                                          : 'Hai bên đã nộp đủ phí kiểm định (chia phí). Vui lòng đóng gói và tạo đơn Lalamove để giao máy đến Hub.'))
+                                    : (isAtHome
+                                      ? 'Hệ thống đang chuẩn bị xếp lịch kỹ thuật viên đến tận nhà bạn để kiểm định máy.'
+                                      : 'Kỹ thuật viên đang chuẩn bị tiếp nhận đơn kiểm định trên hệ thống.')}
                 </p>
               </div>
 
+              {/* Nút Hẹn Lịch Đón KTV cho Seller khi kiểm định tại nhà */}
+              {isUserSeller && isAtHome && (feesPaid || backendStatus === 'CONFIRMED_PENDING_DISPATCH') && !isInspecting && !isPassed && !isFailed && !hasApptConfirmed && (
+                <button
+                  type="button"
+                  onClick={() => setShowScheduleModal(true)}
+                  className="px-4 py-2 bg-gradient-to-r from-amber-500 via-orange-600 to-amber-600 hover:from-amber-600 hover:to-orange-700 text-white rounded-xl font-bold text-xs shadow-md transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer active:scale-95"
+                >
+                  <Calendar className="w-3.5 h-3.5" />
+                  <span>{hasNoAppt ? 'Hẹn Lịch Đón KTV' : isApptCountered ? 'Hẹn Lại Lịch Khác' : 'Xem / Đổi Lịch Hẹn'}</span>
+                </button>
+              )}
+
               {/* Nút Tạo Vận Đơn cho Seller nếu chưa ship (chỉ áp dụng kiểm định tại Hub) */}
-              {isUserSeller && !isAtHome && (feesPaid || backendStatus === 'CONFIRMED_PENDING_DISPATCH') && !isShippingToCenter && !isInspecting && !isPassed && !isFailed && (
+              {isUserSeller && !isAtHome && (feesPaid || backendStatus === 'CONFIRMED_PENDING_DISPATCH') && !isShippingToCenter && !isInboundDelivered && !isInspecting && !isPassed && !isFailed && (
                 <button
                   type="button"
                   onClick={() => setShowShipmentModal(true)}
@@ -1492,13 +1803,23 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
           </div>
         ) : (
           /* Banner thông báo dành cho Người mua khi CHƯA CÓ KẾT QUẢ ĐẠT */
-          <div className="py-3.5 px-4 sm:py-4 sm:px-5 rounded-2xl bg-gradient-to-r from-amber-600 via-orange-600 to-[#24263e] text-white shadow-md relative overflow-hidden">
+          <div className={`py-3.5 px-4 sm:py-4 sm:px-5 rounded-2xl text-white shadow-md relative overflow-hidden ${isInboundDelivered
+            ? 'bg-gradient-to-r from-emerald-700 via-teal-800 to-[#24263e]'
+            : isShippingToCenter
+              ? 'bg-gradient-to-r from-amber-600 via-orange-600 to-[#24263e]'
+              : 'bg-gradient-to-r from-slate-800 via-indigo-900 to-[#24263e]'
+            }`}>
             <div className="relative z-10 space-y-1 sm:space-y-1.5">
               <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/20 backdrop-blur-md text-white text-[11px] font-bold border border-white/30">
                 {isInspecting ? (
                   <>
                     <Clock className="w-3 h-3 text-amber-200" />
                     <span>Đang Kiểm Định Kỹ Thuật</span>
+                  </>
+                ) : isInboundDelivered ? (
+                  <>
+                    <Building2 className="w-3 h-3 text-emerald-200" />
+                    <span>ĐÃ ĐẾN HUB KIỂM ĐỊNH</span>
                   </>
                 ) : isShippingToCenter ? (
                   <>
@@ -1523,12 +1844,24 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                 ) : feesPaid || backendStatus === 'CONFIRMED_PENDING_DISPATCH' ? (
                   <>
                     <Package className="w-3 h-3 text-amber-200" />
-                    <span>{isAtHome ? 'Chờ KTV Đến Nhà Kiểm Định' : 'Chờ Người Bán Gửi Hàng Đến Hub'}</span>
+                    <span>
+                      {isAtHome
+                        ? (hasNoAppt
+                          ? 'Chờ Người Bán Hẹn Lịch Đón KTV'
+                          : isApptPendingApproval
+                            ? 'Chờ Hub Duyệt Lịch'
+                            : isApptCountered
+                              ? 'Chờ Hẹn Lại Lịch'
+                              : hasApptConfirmed
+                                ? (hasInsp ? 'Đã Phân Công KTV • Chờ Khảo Sát' : 'Đã Chốt Lịch • Chờ Giao KTV')
+                                : 'Chờ Người Bán Hẹn Lịch Đón KTV')
+                        : 'Chờ Người Bán Gửi Hàng Đến Hub'}
+                    </span>
                   </>
                 ) : (
                   <>
                     <Clock className="w-3 h-3 text-amber-200" />
-                    <span>{isAtHome ? 'Chờ Xác Nhận Lịch Hẹn' : 'Chờ Tiếp Nhận Thẩm Định'}</span>
+                    <span>{isAtHome ? (hasApptConfirmed ? (hasInsp ? 'Đã Phân Công KTV • Chờ Khảo Sát' : 'Đã Chốt Lịch • Chờ Giao KTV') : 'Chờ Xác Nhận Lịch Hẹn') : 'Chờ Tiếp Nhận Thẩm Định'}</span>
                   </>
                 )}
               </div>
@@ -1537,50 +1870,70 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                   ? (isAtHome
                     ? 'Kỹ thuật viên đang có mặt tại nhà người bán để kiểm định thiết bị'
                     : 'Kỹ thuật viên đang kiểm định thiết bị thực tế tại Hub')
-                  : isShippingToCenter
-                    ? 'Thiết bị đang được vận chuyển đến Trung tâm kiểm định'
-                    : isWaitingSellerApproval
-                      ? (isAtHome
-                        ? 'Đang chờ người bán phản hồi đề xuất kiểm định tại nhà'
-                        : 'Đang chờ người bán phản hồi đề xuất kiểm định qua Hub')
-                      : isWaitingBuyerApproval
-                        ? 'Người bán đã đề xuất phương án mới • Vui lòng kiểm tra'
-                        : isWaitingFeePayment
-                          ? 'Chờ thanh toán phí kiểm định Giai đoạn 1'
-                          : feesPaid || backendStatus === 'CONFIRMED_PENDING_DISPATCH'
-                            ? (isAtHome
-                              ? 'Đã thu đủ phí kiểm định • KTV sẽ đến kiểm định tận nhà người bán'
-                              : 'Đang chờ Người bán đóng gói & gửi sản phẩm đến trung tâm kiểm định')
-                            : (isAtHome
-                              ? 'Đang chờ điều phối kỹ thuật viên đến kiểm định tại nhà'
-                              : 'Đang chờ Người bán gửi máy & kỹ thuật viên tiếp nhận')}
+                  : isInboundDelivered
+                    ? 'Thiết bị đã đến Trung tâm kiểm định • Đang chờ KTV kiểm tra'
+                    : isShippingToCenter
+                      ? 'Thiết bị đang được vận chuyển đến Trung tâm kiểm định'
+                      : isWaitingSellerApproval
+                        ? (isAtHome
+                          ? 'Đang chờ người bán phản hồi đề xuất kiểm định tại nhà'
+                          : 'Đang chờ người bán phản hồi đề xuất kiểm định qua Hub')
+                        : isWaitingBuyerApproval
+                          ? 'Người bán đã đề xuất phương án mới • Vui lòng kiểm tra'
+                          : isWaitingFeePayment
+                            ? 'Chờ thanh toán phí kiểm định Giai đoạn 1'
+                            : feesPaid || backendStatus === 'CONFIRMED_PENDING_DISPATCH'
+                              ? (isAtHome
+                                ? (hasNoAppt
+                                  ? 'Đã thu đủ phí kiểm định • Đang chờ người bán hẹn lịch đón KTV'
+                                  : isApptPendingApproval
+                                    ? 'Đã đề xuất lịch hẹn • Chờ Trung tâm duyệt lịch'
+                                    : isApptCountered
+                                      ? 'Đang chờ điều chỉnh lại lịch hẹn kiểm định'
+                                      : hasApptConfirmed
+                                        ? (hasInsp
+                                          ? 'Đã phân công KTV • KTV sẽ đến kiểm định tận nhà người bán'
+                                          : 'Đã chốt lịch hẹn • Chờ người bán giao máy cho KTV')
+                                        : 'Đang chờ xếp lịch kỹ thuật viên đến kiểm định tại nhà người bán')
+                                : 'Đang chờ Người bán đóng gói & gửi sản phẩm đến trung tâm kiểm định')
+                              : (isAtHome
+                                ? 'Đang chờ điều phối kỹ thuật viên đến kiểm định tại nhà'
+                                : 'Đang chờ Người bán gửi máy & kỹ thuật viên tiếp nhận')}
               </h2>
               <p className="text-xs text-amber-50/90 leading-relaxed max-w-3xl">
                 {isInspecting
                   ? (isAtHome
                     ? 'Kỹ thuật viên đang có mặt tại nhà người bán để kiểm tra thực tế máy. Bạn có thể theo dõi và quyết định mua tiếp sau khi có biên bản đạt chuẩn.'
                     : 'Kỹ thuật viên đang kiểm tra chất lượng thực tế. Bạn có thể quyết định mua tiếp sau khi có biên bản đạt chuẩn.')
-                  : isShippingToCenter
-                    ? 'Tài xế đang giao kiện hàng đến Hub. Kỹ thuật viên sẽ tiếp nhận và tiến hành thẩm định khi nhận máy.'
-                    : isWaitingSellerApproval
-                      ? (isAtHome
-                        ? 'Bạn đã gửi yêu cầu cử kỹ thuật viên đến tận nhà người bán kiểm định máy. Vui lòng chờ người bán xem và đồng ý phương án phân chia phí.'
-                        : 'Bạn đã gửi đề xuất kiểm định qua trung tâm Hub. Vui lòng chờ người bán xem và đồng ý phương án phân chia phí.')
-                      : isWaitingBuyerApproval
-                        ? 'Người bán đã đề xuất điều chỉnh phương án kiểm định. Bạn vui lòng vào phòng chat để xem và phản hồi.'
-                        : isWaitingFeePayment
-                          ? (buyerFeeShare > 0 && !inspectionDto?.buyerPaidAt
-                            ? 'Phương án kiểm định đã được thống nhất. Vui lòng nộp phần phí kiểm định của bạn để hệ thống xếp lịch kiểm định.'
-                            : 'Đã nộp phí kiểm định phần bạn. Đang chờ người bán hoàn tất thanh toán phần phí còn lại.')
-                          : feesPaid || backendStatus === 'CONFIRMED_PENDING_DISPATCH'
-                            ? (isAtHome
-                              ? 'Hai bên đã nộp đủ phí kiểm định GĐ 1. Kỹ thuật viên SecondLife sẽ liên hệ người bán và mang thiết bị đến tận nhà để kiểm định máy.'
-                              : (buyerFeeShare === 0
-                                ? 'Người bán đã nộp đủ 100% phí kiểm định. Người bán đang chuẩn bị đóng gói và lên đơn gửi sản phẩm về Hub để KTV kiểm định.'
-                                : sellerFeeShare === 0
-                                  ? 'Bạn đã nộp đủ 100% phí kiểm định. Người bán đang chuẩn bị đóng gói và lên đơn gửi sản phẩm về Hub để KTV kiểm định.'
-                                  : 'Hai bên đã nộp đủ phí kiểm định (chia phí). Người bán đang chuẩn bị đóng gói và lên đơn gửi sản phẩm về Hub để KTV kiểm định.'))
-                            : `${feesPaid ? 'Đã nộp phí kiểm định. ' : ''}Bạn có thể theo dõi tiến trình và quyết định mua tiếp sau khi kỹ thuật viên hoàn tất thẩm định.`}
+                  : isInboundDelivered
+                    ? 'Kiện hàng đã được giao thành công tới Trung tâm kiểm định. Kỹ thuật viên sẽ tiến hành thẩm định kỹ thuật và xuất biên bản nghiệm thu.'
+                    : isShippingToCenter
+                      ? 'Tài xế đang giao kiện hàng đến Hub. Kỹ thuật viên sẽ tiếp nhận và tiến hành thẩm định khi nhận máy.'
+                      : isWaitingSellerApproval
+                        ? (isAtHome
+                          ? 'Bạn đã gửi yêu cầu cử kỹ thuật viên đến tận nhà người bán kiểm định máy. Vui lòng chờ người bán xem và đồng ý phương án phân chia phí.'
+                          : 'Bạn đã gửi đề xuất kiểm định qua trung tâm Hub. Vui lòng chờ người bán xem và đồng ý phương án phân chia phí.')
+                        : isWaitingBuyerApproval
+                          ? 'Người bán đã đề xuất điều chỉnh phương án kiểm định. Bạn vui lòng vào phòng chat để xem và phản hồi.'
+                          : isWaitingFeePayment
+                            ? (buyerFeeShare > 0 && !inspectionDto?.buyerPaidAt
+                              ? 'Phương án kiểm định đã được thống nhất. Vui lòng nộp phần phí kiểm định của bạn để hệ thống xếp lịch kiểm định.'
+                              : 'Đã nộp phí kiểm định phần bạn. Đang chờ người bán hoàn tất thanh toán phần phí còn lại.')
+                            : feesPaid || backendStatus === 'CONFIRMED_PENDING_DISPATCH'
+                              ? (isAtHome
+                                ? (hasNoAppt
+                                  ? 'Hai bên đã nộp đủ phí kiểm định GĐ 1. Đang chờ người bán chọn ngày giờ để Kỹ thuật viên SecondLife đến tận nhà kiểm định thiết bị.'
+                                  : isApptPendingApproval
+                                    ? `Lịch hẹn đón KTV đã được gửi${currentAppt?.scheduledAt || inspectionDto?.appointmentScheduledAt ? `: ${new Date(currentAppt?.scheduledAt || inspectionDto?.appointmentScheduledAt!).toLocaleString('vi-VN')}` : ''}. Trung tâm đang xem xét điều phối KTV.`
+                                    : isApptCountered
+                                      ? 'Trung tâm kiểm định và người bán đang thu xếp lại lịch hẹn phù hợp.'
+                                      : `Kỹ thuật viên sẽ có mặt tại nhà người bán vào lúc ${new Date(currentAppt?.scheduledAt || inspectionDto?.appointmentScheduledAt!).toLocaleString('vi-VN')} để kiểm định thiết bị. Bạn có thể theo dõi tiến trình trực tuyến.`)
+                                : (buyerFeeShare === 0
+                                  ? 'Người bán đã nộp đủ 100% phí kiểm định. Người bán đang chuẩn bị đóng gói và lên đơn gửi sản phẩm đến Hub để KTV kiểm định.'
+                                  : sellerFeeShare === 0
+                                    ? 'Bạn đã nộp đủ 100% phí kiểm định. Người bán đang chuẩn bị đóng gói và lên đơn gửi sản phẩm đến Hub để KTV kiểm định.'
+                                    : 'Hai bên đã nộp đủ phí kiểm định (chia phí). Người bán đang chuẩn bị đóng gói và lên đơn gửi sản phẩm đến Hub để KTV kiểm định.'))
+                              : `${feesPaid ? 'Đã nộp phí kiểm định. ' : ''}Bạn có thể theo dõi tiến trình và quyết định mua tiếp sau khi kỹ thuật viên hoàn tất thẩm định.`}
               </p>
             </div>
           </div>
@@ -1636,17 +1989,6 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                   </div>
                 </div>
 
-                {(!isAtHome && !tamperSealId) ? null : (
-                  <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100 flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-xs shrink-0">
-                      <QrCode className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <span className="text-[10px] text-slate-400 block font-semibold">Tem niêm phong QR</span>
-                      <span className="font-mono font-bold text-slate-900 block truncate">{tamperSealId || 'Chưa có mã tem'}</span>
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
 
@@ -1677,7 +2019,13 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                               ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
                               : isFailed
                                 ? 'bg-rose-100 text-rose-800 border-rose-300'
-                                : 'bg-teal-100 text-teal-900 border-teal-300'
+                                : isInspecting
+                                  ? 'bg-blue-100 text-blue-800 border-blue-300'
+                                  : isInboundDelivered
+                                    ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                    : isShippingToCenter
+                                      ? 'bg-cyan-100 text-cyan-800 border-cyan-300'
+                                      : 'bg-teal-100 text-teal-900 border-teal-300'
                     }`}
                 >
                   {isBuyerPurchaseRejected
@@ -1694,7 +2042,13 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                               ? '✅ Đã Đạt Chuẩn'
                               : isFailed
                                 ? '❌ Không Đạt'
-                                : feePaymentLabel}
+                                : isInspecting
+                                  ? '🔬 Đang Kiểm Định'
+                                  : isInboundDelivered
+                                    ? '🏢 Đã Đến Hub Kiểm Định'
+                                    : isShippingToCenter
+                                      ? '🚚 Đang Giao Đến Hub'
+                                      : feePaymentLabel}
                 </span>
               </div>
 
@@ -1724,11 +2078,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                 <div className="flex justify-between items-center text-slate-700 font-bold border-b border-slate-100 pb-2">
                   <span>Chi tiết các khoản phí kiểm định:</span>
                   <span className="text-[10px] text-blue-800 font-extrabold bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                    {feePayer === 'BUYER_PAYS'
-                      ? 'Người mua chịu 100%'
-                      : feePayer === 'SELLER_PAYS'
-                        ? 'Người bán chịu 100%'
-                        : feePayer === 'SPLIT_50_50' ? 'Chia đôi 50% - 50%' : 'Chưa có dữ liệu'}
+                    {buyerFeePercent == null ? 'Chưa có dữ liệu' : feePercentLabel(buyerFeePercent, lang)}
                   </span>
                 </div>
 
@@ -2101,32 +2451,38 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
 
               {/* Stage 2: Final Payment to Buy Product */}
               <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-50/70 via-orange-50/50 to-white border border-amber-200 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-black text-amber-950 flex items-center gap-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-black text-amber-950 flex items-center gap-1.5 shrink-0">
                     <Sparkles className="w-3.5 h-3.5 text-amber-600" />
                     <span>Giai đoạn 2 (Tiền sản phẩm):</span>
                   </span>
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${isBuyerPurchaseRejected
-                    ? 'bg-rose-100 text-rose-800 border border-rose-300'
-                    : isCancelled
-                      ? 'bg-rose-100 text-rose-800'
-                      : canDecide
-                        ? 'bg-amber-100 text-amber-900 animate-pulse'
-                        : isFailed
-                          ? 'bg-rose-100 text-rose-800'
-                          : isUserSeller
-                            ? 'bg-indigo-100 text-indigo-900'
-                            : 'bg-slate-100 text-slate-600'
-                    }`}>
-                    {purchaseDecision
-                      ? inspectionPurchaseDecisionLabel(purchaseDecision, lang, isUserSeller)
+                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold shrink-0 text-right ${isOrderCompleted
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : isOrderDelivered
+                      ? 'bg-emerald-100 text-emerald-800'
                       : isBuyerPurchaseRejected
-                        ? (isUserSeller ? 'Người mua từ chối mua' : 'Bạn đã từ chối mua')
+                        ? 'bg-rose-100 text-rose-800 border border-rose-300'
                         : isCancelled
-                          ? 'ĐÃ HỦY'
-                          : isFailed
-                            ? 'KHÔNG MỞ THANH TOÁN (LỖI)'
-                            : (isUserSeller ? 'CHỜ KTV KIỂM ĐỊNH' : 'CHƯA MỞ THANH TOÁN')}
+                          ? 'bg-rose-100 text-rose-800'
+                          : canDecide
+                            ? 'bg-amber-100 text-amber-900 animate-pulse'
+                            : isFailed
+                              ? 'bg-rose-100 text-rose-800'
+                              : 'bg-slate-100 text-slate-600'
+                    }`}>
+                    {isOrderCompleted
+                      ? (isUserSeller ? 'ĐÃ NHẬN TIỀN VÀO VÍ' : 'HOÀN TẤT • ĐÃ GIẢI NGÂN')
+                      : isOrderDelivered
+                        ? (isUserSeller ? 'ĐÃ GIAO HÀNG (48H)' : 'ĐÃ GIAO • ĐỐI SOÁT 48H')
+                        : purchaseDecision
+                          ? inspectionPurchaseDecisionLabel(purchaseDecision, lang, isUserSeller)
+                          : isBuyerPurchaseRejected
+                            ? (isUserSeller ? 'Người mua từ chối mua' : 'Bạn đã từ chối mua')
+                            : isCancelled
+                              ? 'ĐÃ HỦY'
+                              : isFailed
+                                ? 'KHÔNG MỞ THANH TOÁN (LỖI)'
+                                : 'CHƯA MỞ THANH TOÁN'}
                   </span>
                 </div>
                 <div className="space-y-1.5 text-xs text-slate-700 pl-5">
@@ -2199,7 +2555,52 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
 
               {/* Action Buttons: Phân quyền rành mạch giữa Người bán và Người mua */}
               <div className="space-y-3 pt-2">
-                {decisionSettled ? null : isUserSeller ? (
+                {decisionSettled ? (
+                  purchaseDecision === 'accepted' ? (
+                    <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-950 space-y-3">
+                      <div className="flex items-center gap-2 font-bold text-emerald-900 text-sm">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                        <span>
+                          {isOrderCompleted
+                            ? (isUserSeller ? 'Đã Nhận Tiền Vào Ví' : 'Giao Dịch Hoàn Tất')
+                            : isOrderDelivered
+                              ? (isUserSeller ? 'Đã Giao Hàng (48h Đối Soát)' : 'Đã Giao • 48h Kiểm Tra')
+                              : (isUserSeller ? 'Người Mua Đã Mua Tiếp' : 'Đã Xác Nhận Mua Hàng')}
+                        </span>
+                      </div>
+                      <p className="text-xs text-emerald-800 leading-relaxed">
+                        {isOrderCompleted
+                          ? (isUserSeller
+                            ? 'Đơn hàng đã được xác nhận hoàn tất thành công. Tiền bán hàng đã được tự động giải ngân về ví của bạn.'
+                            : 'Đơn hàng đã hoàn tất thành công. Bạn đã nhận hàng và tiền hàng đã được giải ngân cho người bán.')
+                          : isOrderDelivered
+                            ? (isUserSeller
+                              ? 'Kiện hàng đã được tài xế Lalamove giao tới người mua. Khách mua có 48 giờ để dùng thử và kiểm tra đối soát.'
+                              : 'Kiện hàng đã được giao tới bạn. Bạn có 48 giờ để kiểm tra sản phẩm trước khi hệ thống tự động giải ngân.')
+                            : (isUserSeller
+                              ? (isAtHome
+                                ? 'Người mua đã thanh toán tiền mua sản phẩm. Vui lòng đóng gói cẩn thận và bàn giao cho tài xế Lalamove khi tài xế đến lấy hàng.'
+                                : 'Người mua đã thanh toán tiền mua sản phẩm. Trung tâm Hub đang chuẩn bị giao hàng đến người mua.')
+                              : 'Bạn đã hoàn tất thanh toán tiền sản phẩm (GĐ 2). Đơn hàng đang được điều phối vận chuyển đến bạn.')}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setShowCertificateModal(true)}
+                        className="w-full py-3 px-4 rounded-2xl bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 font-bold text-xs sm:text-sm transition cursor-pointer flex items-center justify-center gap-2 shadow-xs"
+                      >
+                        <Award className="w-4 h-4 text-amber-600" />
+                        <span>Xem Chứng Nhận Kiểm Định</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={onBack}
+                        className="w-full py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition cursor-pointer text-center"
+                      >
+                        Quay Lại Danh Sách Đơn Hàng
+                      </button>
+                    </div>
+                  ) : null
+                ) : isUserSeller ? (
                   isWaitingSellerApproval ? (
                     <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-200 text-indigo-950 space-y-3">
                       <div className="flex items-center gap-2 font-bold text-indigo-900 text-sm">
@@ -2640,15 +3041,6 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                 ) : (
                   <>
                     <button
-                      type="button"
-                      onClick={() => setShowCertificateModal(true)}
-                      className="w-full py-3 px-4 rounded-2xl bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 font-bold text-xs sm:text-sm transition cursor-pointer flex items-center justify-center gap-2 shadow-xs hover:scale-[1.01] active:scale-[0.99]"
-                    >
-                      <Award className="w-4 h-4 text-amber-600" />
-                      <span>Xem Chứng Nhận Kiểm Định</span>
-                    </button>
-
-                    <button
                       onClick={() => setShowConfirmModal(true)}
                       disabled={isSubmitting || timeLeft.isExpired || isLoadingQuote}
                       className="w-full py-4 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-sm shadow-lg shadow-emerald-600/20 transition cursor-pointer flex flex-col items-center justify-center gap-0.5 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed text-center"
@@ -2733,7 +3125,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
             </div>
 
             <p className="text-xs text-slate-600 leading-relaxed">
-              Bằng việc bấm xác nhận, số tiền <strong>{formatVND(finalPriceToPay)}</strong> (gồm {formatVND(finalItemPrice)} tiền sản phẩm và {formatVND(apiDeliveryFee)} cước giao tận tay từ Hub) sẽ được chuyển vào quỹ Escrow bảo lãnh. Trạm kiểm định sẽ đóng gói với tem niêm phong QR và bàn giao bưu tá Lalamove để giao tới địa chỉ của bạn.
+              Bằng việc bấm xác nhận, số tiền <strong>{formatVND(finalPriceToPay)}</strong> (gồm {formatVND(finalItemPrice)} tiền sản phẩm và {formatVND(apiDeliveryFee)} cước giao tận tay từ Hub) sẽ được chuyển vào quỹ Escrow bảo lãnh.
             </p>
 
             {!isWalletSufficient && (
@@ -2866,7 +3258,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                 <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-amber-900 text-xs flex items-start gap-2">
                   <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                   <p className="leading-relaxed">
-                    <strong>Hệ thống sẽ gửi thông báo ngay cho Người bán:</strong> Sản phẩm sẽ được Trung tâm đóng gói niêm phong tem hoàn trả và bưu tá sẽ mang hàng hoàn về địa chỉ người bán theo quy chế sàn.
+                    <strong>Hệ thống sẽ gửi thông báo ngay cho Người bán:</strong> Sản phẩm sẽ được Trung tâm đóng gói sản phẩm hoàn trả về địa chỉ người bán theo quy chế sàn.
                   </p>
                 </div>
               </div>
@@ -2928,6 +3320,30 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
           initialDto={inspectionDto}
           onClose={() => setShowCertificateModal(false)}
           lang={lang}
+        />
+      )}
+
+      {/* Modal Hẹn Lịch Đón KTV (dành cho Người bán khi kiểm định tại nhà) */}
+      {showScheduleModal && (
+        <ScheduleAppointmentModal
+          orderId={effectiveOrderId}
+          orderCode={effectiveOrderId}
+          linkedOrderId={(inspectionDto as any)?.linkedOrderId || (order as any)?.linkedOrderId || effectiveOrderId}
+          inspectionOrderId={inspectionDto?.id || effectiveOrderId}
+          isOpen={showScheduleModal}
+          onClose={() => setShowScheduleModal(false)}
+          onSuccess={() => {
+            setShowScheduleModal(false);
+            if (effectiveOrderId) {
+              inspectorService.getOrder(effectiveOrderId).then((dto) => {
+                if (dto) setInspectionDto(dto);
+              }).catch(() => { });
+            }
+          }}
+          lang={lang}
+          readOnly={!isUserSeller}
+          initialScheduledAt={inspectionDto?.appointmentScheduledAt || currentAppt?.scheduledAt || undefined}
+          initialNote={(inspectionDto as any)?.appointmentNote || currentAppt?.note || undefined}
         />
       )}
 

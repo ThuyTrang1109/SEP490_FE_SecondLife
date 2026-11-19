@@ -2113,20 +2113,6 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                   </div>
                 </div>
 
-                {/* 2-stage escrow */}
-                <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-100 text-[10px] space-y-1">
-                  <div className="flex justify-between">
-                    <span className="text-slate-500 font-medium">Giai đoạn 1 (Trả trước):</span>
-                    <span className="font-bold text-slate-800">Phí kiểm định {formatAmount(buyerFeeShare)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500 font-medium">Giai đoạn 2 (Sau khi máy ĐẠT):</span>
-                    <span className="font-bold text-emerald-800">
-                      Tiền sản phẩm {formatAmount(finalItemPrice)} (Chưa tính tiền vận chuyển)
-                    </span>
-                  </div>
-                </div>
-
                 {/* Zin agreement notice */}
                 {inspectionDto.buyerConsentZin === true && inspectionDto.sellerConsentZin === true && (
                   <div className="text-[11px] text-amber-800 bg-amber-50/70 p-2.5 rounded-xl border border-amber-200/60">

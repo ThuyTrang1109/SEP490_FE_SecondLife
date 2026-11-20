@@ -411,7 +411,7 @@ export const AdminOrdersTab: React.FC<AdminOrdersTabProps> = ({
                 <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
-                  placeholder={lang === 'vi' ? 'Tìm theo mã đơn (#UUID), tên sản phẩm, email người mua / người bán...' : 'Search by order ID, title, buyer, seller...'}
+                  placeholder={lang === 'vi' ? 'Tìm theo mã đơn (ID), tên sản phẩm, email người mua / người bán...' : 'Search by order ID, title, buyer, seller...'}
                   value={searchQuery}
                   onChange={(e) => {
                     setSearchQuery(e.target.value);
@@ -616,7 +616,7 @@ export const AdminOrdersTab: React.FC<AdminOrdersTabProps> = ({
                             <button
                               onClick={(e) => handleCopyId(ord.id, e)}
                               className="text-slate-400 hover:text-slate-700 transition"
-                              title="Sao chép toàn bộ UUID"
+                              title="Sao chép toàn bộ ID"
                             >
                               {copiedId === ord.id ? (
                                 <Check className="w-3.5 h-3.5 text-emerald-600" />
@@ -1054,7 +1054,7 @@ export const AdminOrdersTab: React.FC<AdminOrdersTabProps> = ({
             {/* Modal Footer */}
             <div className="border-t border-slate-200 px-6 py-3.5 bg-slate-50 flex items-center justify-between rounded-b-2xl">
               <span className="text-xs text-slate-500 font-mono">
-                UUID: {selectedOrder.id}
+                ID: {selectedOrder.id}
               </span>
               <button
                 onClick={() => setIsDetailModalOpen(false)}

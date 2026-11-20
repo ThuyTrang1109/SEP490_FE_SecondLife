@@ -46,7 +46,7 @@ import {
 import { Listing, EscrowOrder, Language, UserProfile } from '../types';
 import { UserAvatar } from '../components/common/UserAvatar';
 import { formatVND } from '../utils/translations';
-import { staffService, staffListingService, adminPostService, SellerVerificationResponseDto, staffReportService, ReportItemDto, StaffOrderConfirmationResponse } from '../services';
+import { staffService, staffListingService, adminPostService, SellerVerificationResponseDto, staffReportService, ReportItemDto, StaffOrderConfirmationResponse, userReportService } from '../services';
 import { dialogService } from '../utils/dialogService';
 import { translateSystemNotification } from '../utils/systemNotificationTranslator';
 import { ListingComparisonModal } from '../components/staff/ListingComparisonModal';
@@ -95,6 +95,126 @@ export function getInitialStaffTab(): StaffTab {
   return (resolveAppRoute(window.location.href, 'staff').section || 'overview') as StaffTab;
 }
 
+const ReportEvidenceItem: React.FC<{
+  url: string;
+  index: number;
+  reportId: string;
+  onOpen: (src: string, title: string, kind?: 'IMAGE' | 'VIDEO') => void;
+}> = ({ url, index, reportId, onOpen }) => {
+  const [mediaSrc, setMediaSrc] = useState<string | null>(null);
+  const [mediaKind, setMediaKind] = useState<'IMAGE' | 'VIDEO'>('IMAGE');
+  const [loading, setLoading] = useState(false);
+  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (!url) return;
+
+    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
+      setMediaSrc(url);
+      return;
+    }
+
+    setLoading(true);
+    setHasError(false);
+
+    userReportService
+      .getEvidenceBlobUrl(url)
+      .then((blobUrl) => {
+        if (isMounted) {
+          setMediaSrc(blobUrl);
+          setMediaKind('IMAGE');
+        }
+      })
+      .catch((err) => {
+        console.warn('getEvidenceBlobUrl error, trying loadPrivateEvidenceView:', err);
+        userReportService
+          .loadPrivateEvidenceView(url)
+          .then((view) => {
+            if (isMounted) {
+              setMediaSrc(view.src);
+              setMediaKind(view.kind);
+            }
+          })
+          .catch((viewErr) => {
+            console.error('All evidence loaders failed for:', url, viewErr);
+            if (isMounted) setHasError(true);
+          });
+      })
+      .finally(() => {
+        if (isMounted) setLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [url]);
+
+  const title = `Bằng chứng ảnh #${index + 1} • Báo cáo #${reportId.slice(0, 8)}`;
+
+  const handleClick = async () => {
+    if (mediaSrc) {
+      onOpen(mediaSrc, title, mediaKind);
+      return;
+    }
+
+    setLoading(true);
+    setHasError(false);
+    try {
+      if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
+        onOpen(url, title, 'IMAGE');
+        return;
+      }
+      try {
+        const bUrl = await userReportService.getEvidenceBlobUrl(url);
+        setMediaSrc(bUrl);
+        setMediaKind('IMAGE');
+        onOpen(bUrl, title, 'IMAGE');
+        return;
+      } catch (err) {
+        const view = await userReportService.loadPrivateEvidenceView(url);
+        setMediaSrc(view.src);
+        setMediaKind(view.kind);
+        onOpen(view.src, title, view.kind);
+      }
+    } catch (finalErr: any) {
+      setHasError(true);
+      dialogService.error(
+        `Không thể tải file bằng chứng: ${finalErr?.message || 'Vui lòng kiểm tra kết nối mạng hoặc thử lại.'}`,
+        'Lỗi Tải Bằng Chứng'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border transition cursor-pointer text-xs font-bold shadow-2xs group ${
+        hasError
+          ? 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100'
+          : 'bg-white border-indigo-200 text-indigo-700 hover:bg-indigo-50/80 hover:border-indigo-400'
+      }`}
+      title={hasError ? 'Bấm để thử tải lại ảnh' : 'Bấm để xem ảnh phóng to'}
+    >
+      {loading ? (
+        <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600" />
+      ) : mediaSrc && mediaKind === 'IMAGE' ? (
+        <img
+          src={mediaSrc}
+          alt={title}
+          className="w-5 h-5 rounded object-cover border border-slate-200 group-hover:scale-110 transition-transform"
+        />
+      ) : (
+        <Eye className="w-3.5 h-3.5 text-indigo-600" />
+      )}
+      <span>{hasError ? `Thử lại [Ảnh ${index + 1}]` : `[Ảnh ${index + 1}]`}</span>
+    </button>
+  );
+};
+
 export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
   listings = [],
   orders = [],
@@ -122,6 +242,23 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
   }, []);
   const [searchQuery, setSearchQuery] = useState('');
   const [actionNotice, setActionNotice] = useState<string | null>(null);
+
+  // Evidence preview modal state
+  const [evidencePreview, setEvidencePreview] = useState<{
+    src: string;
+    title: string;
+    kind?: 'IMAGE' | 'VIDEO';
+  } | null>(null);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && evidencePreview) {
+        setEvidencePreview(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [evidencePreview]);
 
   // Trigger notice helper
   const triggerNotice = (msg: string) => {
@@ -1271,12 +1408,16 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                             Nội dung: <strong>{rep.description}</strong>
                           </p>
                           {rep.evidenceUrls && rep.evidenceUrls.length > 0 && (
-                            <div className="flex items-center gap-2 pt-1">
-                              <span className="text-slate-500 font-semibold">Bằng chứng:</span>
+                            <div className="flex items-center gap-2 pt-1 flex-wrap">
+                              <span className="text-slate-500 font-semibold text-xs">Bằng chứng:</span>
                               {rep.evidenceUrls.map((url, i) => (
-                                <a key={i} href={url} target="_blank" rel="noreferrer" className="text-indigo-600 underline font-mono text-[11px]">
-                                  [Ảnh {i + 1}]
-                                </a>
+                                <ReportEvidenceItem
+                                  key={i}
+                                  url={url}
+                                  index={i}
+                                  reportId={rep.id}
+                                  onOpen={(src, title, kind) => setEvidencePreview({ src, title, kind })}
+                                />
                               ))}
                             </div>
                           )}
@@ -1963,6 +2104,60 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
             loadStaffQueue(queuePage);
           }}
         />
+      )}
+
+      {/* ======================================================== */}
+      {/* EVIDENCE MEDIA PREVIEW MODAL                             */}
+      {/* ======================================================== */}
+      {evidencePreview && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-xs animate-fadeIn"
+          onClick={() => setEvidencePreview(null)}
+        >
+          <div
+            className="relative max-w-4xl max-h-[90vh] w-full bg-slate-900 rounded-2xl p-4 shadow-2xl flex flex-col border border-slate-700 space-y-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800 text-white">
+              <div className="flex items-center gap-2 min-w-0">
+                <Eye className="w-4 h-4 text-indigo-400 shrink-0" />
+                <span className="font-bold text-xs sm:text-sm truncate">{evidencePreview.title}</span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <a
+                  href={evidencePreview.src}
+                  target="_blank"
+                  rel="noreferrer"
+                  download={`evidence_${Date.now()}`}
+                  className="px-3 py-1 bg-white/10 hover:bg-white/20 text-white text-xs rounded-lg transition flex items-center gap-1.5 font-medium cursor-pointer"
+                  title="Mở trong tab mới"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Mở tab mới</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setEvidencePreview(null)}
+                  className="w-7 h-7 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition flex items-center justify-center cursor-pointer font-bold text-sm"
+                  title="Đóng (ESC)"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-auto flex items-center justify-center min-h-[220px] max-h-[75vh]">
+              {evidencePreview.kind === 'VIDEO' ? (
+                <video src={evidencePreview.src} controls autoPlay className="max-h-[72vh] max-w-full rounded-xl shadow-lg" />
+              ) : (
+                <img
+                  src={evidencePreview.src}
+                  alt={evidencePreview.title}
+                  className="max-h-[72vh] max-w-full object-contain rounded-xl shadow-lg"
+                />
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

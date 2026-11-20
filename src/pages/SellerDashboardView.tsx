@@ -126,10 +126,10 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             detail.status === 'ACTIVE'
               ? 'active'
               : detail.status === 'DRAFT'
-              ? 'draft'
-              : detail.status === 'REJECTED'
-              ? 'rejected'
-              : 'reserved'
+                ? 'draft'
+                : detail.status === 'REJECTED'
+                  ? 'rejected'
+                  : 'reserved'
           ) as any,
           backendStatus: detail.status || item.backendStatus,
           rejectionReason: detail.rejectionReason ?? item.rejectionReason,
@@ -539,29 +539,29 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             setResubmitSelfieUrl(ver.selfieUrl || '');
           }
         })
-        .catch(() => {});
+        .catch(() => { });
 
       sellerCreditService.getCredits()
         .then((bal) => {
           if (bal) setCreditBalance(bal);
         })
-        .catch(() => {});
+        .catch(() => { });
 
       walletService.getMyWallet()
         .then((w) => {
           if (w) setSellerWalletBalance(Number(w.balance || 0));
         })
-        .catch(() => {});
+        .catch(() => { });
 
       reputationService.getMyReputation()
         .then((rep) => {
           if (rep) setMyReputation(rep);
         })
-        .catch(() => {});
+        .catch(() => { });
 
       returnShippingFeeService.getMyReturnShippingDebt()
         .then((d) => setSellerDebt(d))
-        .catch(() => {});
+        .catch(() => { });
 
       const res = await postService.getMyPosts(0, 50);
       const posts = (res as any)?.content || (res as any)?.data || (Array.isArray(res) ? res : []);
@@ -835,12 +835,11 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
     <div className="space-y-8 pb-16 text-[#24263e]">
       {/* eKYC Verification Status Banner (Ẩn khi đã duyệt APPROVED thành công) */}
       {myVerification && myVerification.status !== 'APPROVED' && (
-        <div className={`p-4 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-xs ${
-          myVerification.status === 'NEEDS_REVIEW' ? 'bg-amber-50 border-amber-200 text-amber-900' :
+        <div className={`p-4 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-xs ${myVerification.status === 'NEEDS_REVIEW' ? 'bg-amber-50 border-amber-200 text-amber-900' :
           myVerification.status === 'RESUBMIT_REQUIRED' ? 'bg-orange-50 border-orange-200 text-orange-950' :
-          myVerification.status === 'REJECTED' ? 'bg-rose-50 border-rose-200 text-rose-900' :
-          'bg-blue-50 border-blue-200 text-blue-900'
-        }`}>
+            myVerification.status === 'REJECTED' ? 'bg-rose-50 border-rose-200 text-rose-900' :
+              'bg-blue-50 border-blue-200 text-blue-900'
+          }`}>
           <div className="flex items-center gap-3">
             {myVerification.status === 'NEEDS_REVIEW' ? (
               <Clock className="w-6 h-6 text-amber-600 shrink-0" />
@@ -962,10 +961,10 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                     {myReputation?.assessmentStatus === 'NO_TRANSACTIONS'
                       ? 'Chưa có đơn'
                       : myReputation?.score !== undefined && myReputation?.score !== null
-                      ? `${myReputation.score}/100`
-                      : currentUser?.trustScore
-                      ? `${currentUser.trustScore}/100`
-                      : '—'}
+                        ? `${myReputation.score}/100`
+                        : currentUser?.trustScore
+                          ? `${currentUser.trustScore}/100`
+                          : '—'}
                   </span>
                   <span>Uy Tín</span>
                   {myReputation?.sellingRestricted && (
@@ -1195,8 +1194,8 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                 {myReputation?.score !== null && myReputation?.score !== undefined
                   ? myReputation.score
                   : myReputation?.assessmentStatus === 'NO_TRANSACTIONS'
-                  ? 'Chưa có đơn'
-                  : '—'}
+                    ? 'Chưa có đơn'
+                    : '—'}
               </span>
               {myReputation?.score !== null && myReputation?.score !== undefined && (
                 <span className="text-xs font-bold text-slate-400">/ 100</span>
@@ -1207,8 +1206,8 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                 {myReputation?.evaluatedOrders
                   ? `${myReputation.goodTransactions} thành công • ${myReputation.badTransactions} lỗi SELLER`
                   : lang === 'vi'
-                  ? 'Bấm xem chi tiết & lịch sử'
-                  : 'Click to view audit trail'}
+                    ? 'Bấm xem chi tiết & lịch sử'
+                    : 'Click to view audit trail'}
               </span>
               <span className="text-xs font-bold text-[#c34c36] group-hover:translate-x-0.5 transition-transform ml-1">→</span>
             </div>
@@ -1227,11 +1226,10 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       <div className="flex items-center gap-3 border-b border-gray-200 pb-2">
         <button
           onClick={() => setSellerActiveTab('listings')}
-          className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
-            sellerActiveTab === 'listings'
-              ? 'bg-[#24263e] text-white shadow-md'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
+          className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${sellerActiveTab === 'listings'
+            ? 'bg-[#24263e] text-white shadow-md'
+            : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }`}
         >
           <Tag className="w-4 h-4" />
           <span>{lang === 'vi' ? 'Quản Lý Tin Đăng' : 'Listings'} ({filteredListings.length})</span>
@@ -1239,11 +1237,10 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
 
         <button
           onClick={() => setSellerActiveTab('return_fees')}
-          className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
-            sellerActiveTab === 'return_fees'
-              ? 'bg-[#24263e] text-white shadow-md'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
+          className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${sellerActiveTab === 'return_fees'
+            ? 'bg-[#24263e] text-white shadow-md'
+            : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }`}
         >
           <RotateCcw className="w-4 h-4 text-[#c34c36]" />
           <span>{lang === 'vi' ? 'Phí Hoàn Hàng & Công Nợ' : 'Return Fees & Debt'}</span>
@@ -1260,197 +1257,195 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       ) : (
         /* Seller Listings Management */
         <div className="bg-[#FFFFFF] rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-xs space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 pb-4">
-          <div>
-            <h2 className="text-lg font-bold text-[#24263e] flex items-center gap-2">
-              <Tag className="w-5 h-5 text-[#24263e]" />
-              <span>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 pb-4">
+            <div>
+              <h2 className="text-lg font-bold text-[#24263e] flex items-center gap-2">
+                <Tag className="w-5 h-5 text-[#24263e]" />
+                <span>
+                  {lang === 'vi'
+                    ? `Quản Lý Tin Đăng Cá Nhân (${filteredListings.length})`
+                    : `My Listings Management (${filteredListings.length})`}
+                </span>
+              </h2>
+              <p className="text-xs text-[#24263e]/70 mt-0.5">
                 {lang === 'vi'
-                  ? `Quản Lý Tin Đăng Cá Nhân (${filteredListings.length})`
-                  : `My Listings Management (${filteredListings.length})`}
-              </span>
-            </h2>
-            <p className="text-xs text-[#24263e]/70 mt-0.5">
-              {lang === 'vi'
-                ? 'Quản lý trạng thái niêm yết, theo dõi phản hồi đề xuất giá từ người mua và cập nhật thông tin.'
-                : 'Manage listing status, monitor buyer price offers, and update item details.'}
-            </p>
-          </div>
+                  ? 'Quản lý trạng thái niêm yết, theo dõi phản hồi đề xuất giá từ người mua và cập nhật thông tin.'
+                  : 'Manage listing status, monitor buyer price offers, and update item details.'}
+              </p>
+            </div>
 
-          <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-            <button
-              onClick={fetchSellerData}
-              disabled={isLoadingPosts}
-              className="p-1.5 px-2.5 rounded-xl border border-gray-200 bg-[#faf8f5] hover:bg-gray-100 text-[#24263e] text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
-              title={lang === 'vi' ? 'Làm mới dữ liệu từ server' : 'Refresh server data'}
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isLoadingPosts ? 'animate-spin text-indigo-600' : ''}`} />
-              <span>{lang === 'vi' ? 'Làm mới' : 'Refresh'}</span>
-            </button>
+            <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+              <button
+                onClick={fetchSellerData}
+                disabled={isLoadingPosts}
+                className="p-1.5 px-2.5 rounded-xl border border-gray-200 bg-[#faf8f5] hover:bg-gray-100 text-[#24263e] text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                title={lang === 'vi' ? 'Làm mới dữ liệu từ server' : 'Refresh server data'}
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isLoadingPosts ? 'animate-spin text-indigo-600' : ''}`} />
+                <span>{lang === 'vi' ? 'Làm mới' : 'Refresh'}</span>
+              </button>
 
-            <button
-              onClick={() => setSortOrder(prev => prev === 'newest' ? 'oldest' : 'newest')}
-              className="p-1.5 px-2.5 rounded-xl border border-gray-200 bg-[#faf8f5] hover:bg-gray-100 text-[#24263e] text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
-              title={lang === 'vi' ? 'Sắp xếp theo thời gian đăng bài' : 'Sort by posting time'}
-            >
-              <Clock className="w-3.5 h-3.5 text-[#c34c36]" />
-              <span>
-                {sortOrder === 'newest'
-                  ? (lang === 'vi' ? 'Mới đăng nhất' : 'Newest first')
-                  : (lang === 'vi' ? 'Cũ nhất trước' : 'Oldest first')}
-              </span>
-            </button>
+              <button
+                onClick={() => setSortOrder(prev => prev === 'newest' ? 'oldest' : 'newest')}
+                className="p-1.5 px-2.5 rounded-xl border border-gray-200 bg-[#faf8f5] hover:bg-gray-100 text-[#24263e] text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                title={lang === 'vi' ? 'Sắp xếp theo thời gian đăng bài' : 'Sort by posting time'}
+              >
+                <Clock className="w-3.5 h-3.5 text-[#c34c36]" />
+                <span>
+                  {sortOrder === 'newest'
+                    ? (lang === 'vi' ? 'Mới đăng nhất' : 'Newest first')
+                    : (lang === 'vi' ? 'Cũ nhất trước' : 'Oldest first')}
+                </span>
+              </button>
 
-            <div className="flex items-center gap-1.5 bg-[#faf8f5] p-1 rounded-xl border border-gray-200">
-              {(['ALL', 'active', 'draft', 'pending', 'rejected', 'reserved', 'sold'] as const).map((st) => (
-                <button
-                  key={st}
-                  onClick={() => setFilterStatus(st)}
-                  className={`px-3 py-1 rounded-lg text-xs transition cursor-pointer ${
-                    filterStatus === st ? 'bg-[#24263e] text-white font-bold' : 'text-[#24263e]/70 hover:text-[#24263e] font-medium'
-                  }`}
-                >
-                  {st === 'ALL'
-                    ? (lang === 'vi' ? 'Tất cả' : 'All')
-                    : st === 'active'
-                    ? (lang === 'vi' ? 'Đang bán' : 'Active')
-                    : st === 'draft'
-                    ? (lang === 'vi' ? 'Bản nháp' : 'Drafts')
-                    : st === 'pending'
-                    ? (lang === 'vi' ? 'Chờ duyệt / Hub' : 'Pending')
-                    : st === 'rejected'
-                    ? (lang === 'vi' ? 'Bị từ chối' : 'Rejected')
-                    : st === 'reserved'
-                    ? (lang === 'vi' ? 'Đang giữ hàng' : 'Reserved')
-                    : (lang === 'vi' ? 'Đã bán' : 'Sold')}
-                </button>
-              ))}
+              <div className="flex items-center gap-1.5 bg-[#faf8f5] p-1 rounded-xl border border-gray-200">
+                {(['ALL', 'active', 'draft', 'pending', 'rejected', 'reserved', 'sold'] as const).map((st) => (
+                  <button
+                    key={st}
+                    onClick={() => setFilterStatus(st)}
+                    className={`px-3 py-1 rounded-lg text-xs transition cursor-pointer ${filterStatus === st ? 'bg-[#24263e] text-white font-bold' : 'text-[#24263e]/70 hover:text-[#24263e] font-medium'
+                      }`}
+                  >
+                    {st === 'ALL'
+                      ? (lang === 'vi' ? 'Tất cả' : 'All')
+                      : st === 'active'
+                        ? (lang === 'vi' ? 'Đang bán' : 'Active')
+                        : st === 'draft'
+                          ? (lang === 'vi' ? 'Bản nháp' : 'Drafts')
+                          : st === 'pending'
+                            ? (lang === 'vi' ? 'Chờ duyệt / Hub' : 'Pending')
+                            : st === 'rejected'
+                              ? (lang === 'vi' ? 'Bị từ chối' : 'Rejected')
+                              : st === 'reserved'
+                                ? (lang === 'vi' ? 'Đang giữ hàng' : 'Reserved')
+                                : (lang === 'vi' ? 'Đã bán' : 'Sold')}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {filteredListings.map((item) => (
-            <div
-              key={item.id}
-              className="bg-[#faf8f5] rounded-2xl p-4 border border-gray-200 hover:border-[#c34c36] transition shadow-2xs flex flex-col justify-between space-y-3"
-            >
-              <div className="flex gap-3">
-                <img
-                  src={item.photos.front}
-                  alt={item.title}
-                  className="w-20 h-20 rounded-xl object-cover border border-gray-200 shrink-0 bg-[#FFFFFF]"
-                />
-                <div className="space-y-1 overflow-hidden flex-1">
-                  <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                    item.backendStatus === 'REJECTED'
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {filteredListings.map((item) => (
+              <div
+                key={item.id}
+                className="bg-[#faf8f5] rounded-2xl p-4 border border-gray-200 hover:border-[#c34c36] transition shadow-2xs flex flex-col justify-between space-y-3"
+              >
+                <div className="flex gap-3">
+                  <img
+                    src={item.photos.front}
+                    alt={item.title}
+                    className="w-20 h-20 rounded-xl object-cover border border-gray-200 shrink-0 bg-[#FFFFFF]"
+                  />
+                  <div className="space-y-1 overflow-hidden flex-1">
+                    <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full ${item.backendStatus === 'REJECTED'
                       ? 'bg-rose-600 text-white'
                       : item.backendStatus === 'PENDING' || item.backendStatus === 'PENDING_INSPECTION'
-                      ? 'bg-amber-500 text-white'
-                      : item.backendStatus === 'DRAFT' || item.status === 'draft'
-                      ? 'bg-slate-500 text-white'
-                      : item.status === 'active'
-                      ? 'bg-[#24263e] text-white'
-                      : 'bg-[#c34c36] text-white'
-                  }`}>
-                    {item.backendStatus === 'REJECTED'
-                      ? (lang === 'vi' ? '● Bị Từ Chối' : '● Rejected')
-                      : item.backendStatus === 'PENDING' || item.backendStatus === 'PENDING_INSPECTION'
-                      ? (lang === 'vi' ? '● Chờ Duyệt / Hub' : '● Pending Review')
-                      : item.backendStatus === 'DRAFT' || item.status === 'draft'
-                      ? (lang === 'vi' ? '● Bản Nháp' : '● Draft')
-                      : item.status === 'active'
-                      ? (lang === 'vi' ? '● Đang Niêm Yết' : '● Active')
-                      : (lang === 'vi' ? '● Đã Cọc Ký Quỹ' : '● Escrow Deposited')}
-                  </span>
-                  {isListingInspectionPassed(item) && (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-600 text-white shadow-2xs ml-1.5">
-                      <ShieldCheck className="w-2.5 h-2.5 text-emerald-100" />
-                      <span>{lang === 'vi' ? 'Đã đạt kiểm định tại Hub' : 'Hub Inspected'}</span>
+                        ? 'bg-amber-500 text-white'
+                        : item.backendStatus === 'DRAFT' || item.status === 'draft'
+                          ? 'bg-slate-500 text-white'
+                          : item.status === 'active'
+                            ? 'bg-[#24263e] text-white'
+                            : 'bg-[#c34c36] text-white'
+                      }`}>
+                      {item.backendStatus === 'REJECTED'
+                        ? (lang === 'vi' ? '● Bị Từ Chối' : '● Rejected')
+                        : item.backendStatus === 'PENDING' || item.backendStatus === 'PENDING_INSPECTION'
+                          ? (lang === 'vi' ? '● Chờ Duyệt / Hub' : '● Pending Review')
+                          : item.backendStatus === 'DRAFT' || item.status === 'draft'
+                            ? (lang === 'vi' ? '● Bản Nháp' : '● Draft')
+                            : item.status === 'active'
+                              ? (lang === 'vi' ? '● Đang Niêm Yết' : '● Active')
+                              : (lang === 'vi' ? '● Đã Cọc Ký Quỹ' : '● Escrow Deposited')}
                     </span>
-                  )}
-                  {item.backendStatus === 'REJECTED' && item.rejectionReason && (
-                    <div className="text-[10px] text-rose-700 bg-rose-50 p-1.5 rounded-lg border border-rose-200 mt-1 leading-snug">
-                      <span className="font-bold">{lang === 'vi' ? 'Lý do: ' : 'Reason: '}</span>
-                      <span>{item.rejectionReason}</span>
+                    {isListingInspectionPassed(item) && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-600 text-white shadow-2xs ml-1.5">
+                        <ShieldCheck className="w-2.5 h-2.5 text-emerald-100" />
+                        <span>{lang === 'vi' ? 'Đã đạt kiểm định tại Hub' : 'Hub Inspected'}</span>
+                      </span>
+                    )}
+                    {item.backendStatus === 'REJECTED' && item.rejectionReason && (
+                      <div className="text-[10px] text-rose-700 bg-rose-50 p-1.5 rounded-lg border border-rose-200 mt-1 leading-snug">
+                        <span className="font-bold">{lang === 'vi' ? 'Lý do: ' : 'Reason: '}</span>
+                        <span>{item.rejectionReason}</span>
+                      </div>
+                    )}
+                    <h3 className="font-bold text-xs text-[#24263e] truncate" title={item.title}>
+                      {item.title}
+                    </h3>
+                    <div className="text-sm font-extrabold text-[#24263e]">
+                      {formatVND(item.priceVnd)}
                     </div>
-                  )}
-                  <h3 className="font-bold text-xs text-[#24263e] truncate" title={item.title}>
-                    {item.title}
-                  </h3>
-                  <div className="text-sm font-extrabold text-[#24263e]">
-                    {formatVND(item.priceVnd)}
-                  </div>
-                  <div className="text-[11px] text-[#24263e]/70 flex items-center justify-between">
-                    <span>
-                      {lang === 'vi' ? 'Độ mới: ' : 'Grade: '}
-                      <span className="font-semibold text-[#24263e]">{formatConditionGrade(item.conditionGrade, lang)}</span>
-                    </span>
-                    <span className="truncate max-w-[130px] text-slate-500 font-medium" title={item.sellerAddress || item.location}>
-                      📍 {item.location || item.sellerAddress || 'Chưa cập nhật'}
-                    </span>
-                  </div>
-                  <div className="text-[10.5px] text-slate-500 flex items-center gap-1.5 pt-1 border-t border-gray-100">
-                    <Clock className="w-3 h-3 text-[#c34c36] shrink-0" />
-                    <span>
-                      {lang === 'vi' ? 'Đăng lúc: ' : 'Posted: '}
-                      <span className="font-semibold text-slate-700">{formatPostDateTime(item)}</span>
-                    </span>
+                    <div className="text-[11px] text-[#24263e]/70 flex items-center justify-between">
+                      <span>
+                        {lang === 'vi' ? 'Độ mới: ' : 'Grade: '}
+                        <span className="font-semibold text-[#24263e]">{formatConditionGrade(item.conditionGrade, lang)}</span>
+                      </span>
+                      <span className="truncate max-w-[130px] text-slate-500 font-medium" title={item.sellerAddress || item.location}>
+                        📍 {item.location || item.sellerAddress || 'Chưa cập nhật'}
+                      </span>
+                    </div>
+                    <div className="text-[10.5px] text-slate-500 flex items-center gap-1.5 pt-1 border-t border-gray-100">
+                      <Clock className="w-3 h-3 text-[#c34c36] shrink-0" />
+                      <span>
+                        {lang === 'vi' ? 'Đăng lúc: ' : 'Posted: '}
+                        <span className="font-semibold text-slate-700">{formatPostDateTime(item)}</span>
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="pt-2 border-t border-gray-200 flex items-center justify-between gap-2">
-                <button
-                  onClick={() => handleOpenSellerPostDetail(item)}
-                  disabled={loadingDetailPostId === item.id}
-                  className="flex-1 py-1.5 px-2 bg-[#24263e] hover:bg-black border border-[#24263e] rounded-lg text-xs font-bold text-white flex items-center justify-center gap-1 cursor-pointer transition disabled:opacity-60"
-                >
-                  {loadingDetailPostId === item.id ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Eye className="w-3.5 h-3.5" />
-                  )}
-                  <span>{lang === 'vi' ? 'Xem Chi Tiết' : 'View Details'}</span>
-                </button>
-                <button
-                  onClick={() => onCreateListing(item)}
-                  className="py-1.5 px-2 bg-[#FFFFFF] hover:bg-[#faf8f5] border border-gray-200 text-[#24263e] rounded-lg text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition"
-                  title={
-                    item.backendStatus === 'DRAFT' || item.status === 'draft'
-                      ? (lang === 'vi' ? 'Tiếp tục soạn bản nháp' : 'Resume draft')
-                      : (lang === 'vi' ? 'Sửa tin đăng' : 'Edit listing')
-                  }
-                >
-                  <Edit3 className="w-3.5 h-3.5 text-[#24263e]" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleOpenReclassifyModal(item)}
-                  className="py-1.5 px-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition"
-                  title={lang === 'vi' ? 'Chọn lại loại thiết bị cụ thể' : 'Reclassify item'}
-                >
-                  <Sliders className="w-3.5 h-3.5 text-slate-600" />
-                  <span className="hidden sm:inline">{lang === 'vi' ? 'Đổi Loại' : 'Reclassify'}</span>
-                </button>
-                {(item.backendStatus === 'DRAFT' || item.status === 'draft') && (
+                <div className="pt-2 border-t border-gray-200 flex items-center justify-between gap-2">
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDraftToDelete({ id: item.id, title: item.title });
-                    }}
-                    disabled={deletingDraftId === item.id}
-                    className="py-1.5 px-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition disabled:opacity-50"
-                    title={lang === 'vi' ? 'Xóa bản nháp này' : 'Delete draft'}
+                    onClick={() => handleOpenSellerPostDetail(item)}
+                    disabled={loadingDetailPostId === item.id}
+                    className="flex-1 py-1.5 px-2 bg-[#24263e] hover:bg-black border border-[#24263e] rounded-lg text-xs font-bold text-white flex items-center justify-center gap-1 cursor-pointer transition disabled:opacity-60"
                   >
-                    <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                    {loadingDetailPostId === item.id ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Eye className="w-3.5 h-3.5" />
+                    )}
+                    <span>{lang === 'vi' ? 'Xem Chi Tiết' : 'View Details'}</span>
                   </button>
-                )}
+                  <button
+                    onClick={() => onCreateListing(item)}
+                    className="py-1.5 px-2 bg-[#FFFFFF] hover:bg-[#faf8f5] border border-gray-200 text-[#24263e] rounded-lg text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition"
+                    title={
+                      item.backendStatus === 'DRAFT' || item.status === 'draft'
+                        ? (lang === 'vi' ? 'Tiếp tục soạn bản nháp' : 'Resume draft')
+                        : (lang === 'vi' ? 'Sửa tin đăng' : 'Edit listing')
+                    }
+                  >
+                    <Edit3 className="w-3.5 h-3.5 text-[#24263e]" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenReclassifyModal(item)}
+                    className="py-1.5 px-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition"
+                    title={lang === 'vi' ? 'Chọn lại loại thiết bị cụ thể' : 'Reclassify item'}
+                  >
+                    <Sliders className="w-3.5 h-3.5 text-slate-600" />
+                    <span className="hidden sm:inline">{lang === 'vi' ? 'Đổi Loại' : 'Reclassify'}</span>
+                  </button>
+                  {(item.backendStatus === 'DRAFT' || item.status === 'draft') && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDraftToDelete({ id: item.id, title: item.title });
+                      }}
+                      disabled={deletingDraftId === item.id}
+                      className="py-1.5 px-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition disabled:opacity-50"
+                      title={lang === 'vi' ? 'Xóa bản nháp này' : 'Delete draft'}
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
       )}
 
       {/* Seller Dispute Response Modal */}
@@ -1764,31 +1759,28 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
               <button
                 onClick={() => setCreditModalTab('ledger')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
-                  creditModalTab === 'ledger'
-                    ? 'bg-slate-900 text-white shadow-xs'
-                    : 'text-slate-600 hover:bg-slate-100'
-                }`}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${creditModalTab === 'ledger'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-100'
+                  }`}
               >
                 Sổ Cái Biến Động ({creditLedgerItems.length})
               </button>
               <button
                 onClick={() => setCreditModalTab('purchases')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
-                  creditModalTab === 'purchases'
-                    ? 'bg-slate-900 text-white shadow-xs'
-                    : 'text-slate-600 hover:bg-slate-100'
-                }`}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${creditModalTab === 'purchases'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-100'
+                  }`}
               >
                 Lịch Sử Đơn Mua ({creditPurchases.length})
               </button>
               <button
                 onClick={() => setCreditModalTab('buy')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
-                  creditModalTab === 'buy'
-                    ? 'bg-[#c34c36] text-white shadow-xs'
-                    : 'text-[#c34c36] hover:bg-rose-50'
-                }`}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${creditModalTab === 'buy'
+                  ? 'bg-[#c34c36] text-white shadow-xs'
+                  : 'text-[#c34c36] hover:bg-rose-50'
+                  }`}
               >
                 <PlusCircle className="w-3.5 h-3.5" />
                 <span>Mua Thêm Tín Dụng</span>
@@ -1820,22 +1812,20 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                             {item.createdAt ? new Date(item.createdAt).toLocaleString('vi-VN') : '—'}
                           </td>
                           <td className="py-2.5 px-3">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                              item.creditType === 'LISTING'
-                                ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                                : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            }`}>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${item.creditType === 'LISTING'
+                              ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                              : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              }`}>
                               {item.creditType}
                             </span>
                           </td>
                           <td className="py-2.5 px-3 font-semibold text-slate-800">
                             {item.entryType === 'PURCHASE' ? 'Nạp gói Credit' :
-                             item.entryType === 'CONSUMPTION' ? 'Tiêu trừ dịch vụ' :
-                             item.entryType === 'REFUND' ? 'Hoàn trả điểm' : item.entryType}
+                              item.entryType === 'CONSUMPTION' ? 'Tiêu trừ dịch vụ' :
+                                item.entryType === 'REFUND' ? 'Hoàn trả điểm' : item.entryType}
                           </td>
-                          <td className={`py-2.5 px-3 text-right font-mono font-bold ${
-                            item.quantityDelta > 0 ? 'text-emerald-600' : 'text-rose-600'
-                          }`}>
+                          <td className={`py-2.5 px-3 text-right font-mono font-bold ${item.quantityDelta > 0 ? 'text-emerald-600' : 'text-rose-600'
+                            }`}>
                             {item.quantityDelta > 0 ? `+${item.quantityDelta}` : item.quantityDelta}
                           </td>
                           <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900">
@@ -1884,13 +1874,12 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                             {formatVND(purchase.snapshot?.finalFee || 0)}
                           </td>
                           <td className="py-2.5 px-3 text-right">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                              purchase.status === 'PAID'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : purchase.status === 'FAILED' || purchase.status === 'EXPIRED'
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${purchase.status === 'PAID'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : purchase.status === 'FAILED' || purchase.status === 'EXPIRED'
                                 ? 'bg-rose-100 text-rose-800'
                                 : 'bg-amber-100 text-amber-800'
-                            }`}>
+                              }`}>
                               {purchase.status}
                             </span>
                           </td>
@@ -1935,9 +1924,8 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                           key={num}
                           type="button"
                           onClick={() => setBuyListingQty(num)}
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer ${
-                            buyListingQty === num ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 border'
-                          }`}
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer ${buyListingQty === num ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 border'
+                            }`}
                         >
                           {num}
                         </button>
@@ -1971,9 +1959,8 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                           key={num}
                           type="button"
                           onClick={() => setBuyValuationQty(num)}
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer ${
-                            buyValuationQty === num ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 border'
-                          }`}
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer ${buyValuationQty === num ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 border'
+                            }`}
                         >
                           {num}
                         </button>
@@ -2007,9 +1994,8 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                           key={num}
                           type="button"
                           onClick={() => setBuyChatQty(num)}
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer ${
-                            buyChatQty === num ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 border'
-                          }`}
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer ${buyChatQty === num ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 border'
+                            }`}
                         >
                           {num}
                         </button>
@@ -2025,7 +2011,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                     <span className="font-mono">
                       {formatVND(
                         calculatedPricing?.quote?.totalBaseFee ||
-                          buyListingQty * 5000 + buyValuationQty * 5000 + buyChatQty * 2000
+                        buyListingQty * 5000 + buyValuationQty * 5000 + buyChatQty * 2000
                       )}
                     </span>
                   </div>
@@ -2040,7 +2026,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                     <span className="font-mono text-base">
                       {formatVND(
                         calculatedPricing?.quote?.finalFee ||
-                          buyListingQty * 5000 + buyValuationQty * 5000 + buyChatQty * 2000
+                        buyListingQty * 5000 + buyValuationQty * 5000 + buyChatQty * 2000
                       )}
                     </span>
                   </div>
@@ -2337,13 +2323,12 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                         >
                           <div className="space-y-1">
                             <div className="font-bold text-slate-900 flex items-center gap-1.5 flex-wrap">
-                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                eventMeta.type === 'positive'
-                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                  : eventMeta.type === 'negative'
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${eventMeta.type === 'positive'
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : eventMeta.type === 'negative'
                                   ? 'bg-rose-50 text-rose-700 border border-rose-200'
                                   : 'bg-slate-100 text-slate-700 border border-slate-200'
-                              }`}>
+                                }`}>
                                 {eventMeta.label}
                               </span>
                               {item.orderId && (
@@ -2450,11 +2435,10 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                   key={tab.id}
                   type="button"
                   onClick={() => handleFilterVerificationStatus(tab.id)}
-                  className={`px-3 py-1.5 rounded-xl transition cursor-pointer shrink-0 ${
-                    verificationFilterStatus === tab.id
-                      ? 'bg-[#24263e] text-white shadow-xs'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
+                  className={`px-3 py-1.5 rounded-xl transition cursor-pointer shrink-0 ${verificationFilterStatus === tab.id
+                    ? 'bg-[#24263e] text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
                 >
                   {tab.label}
                 </button>
@@ -2519,8 +2503,8 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                           {item.submittedAt
                             ? new Date(item.submittedAt).toLocaleString('vi-VN')
                             : item.reviewedAt
-                            ? new Date(item.reviewedAt).toLocaleString('vi-VN')
-                            : ''}
+                              ? new Date(item.reviewedAt).toLocaleString('vi-VN')
+                              : ''}
                         </div>
                       </div>
 
@@ -2656,11 +2640,10 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       {/* Floating Modern Toast Notification (Positioned at top-right below navbar) */}
       {toastNotice && (
         <div className="fixed top-24 sm:top-28 right-4 sm:right-6 lg:right-8 z-50 animate-in fade-in slide-in-from-top-3">
-          <div className={`px-4 py-3 rounded-2xl shadow-xl flex items-center gap-2.5 text-xs font-bold border ${
-            toastNotice.type === 'success'
-              ? 'bg-emerald-600 text-white border-emerald-500 shadow-emerald-200/50'
-              : 'bg-rose-600 text-white border-rose-500 shadow-rose-200/50'
-          }`}>
+          <div className={`px-4 py-3 rounded-2xl shadow-xl flex items-center gap-2.5 text-xs font-bold border ${toastNotice.type === 'success'
+            ? 'bg-emerald-600 text-white border-emerald-500 shadow-emerald-200/50'
+            : 'bg-rose-600 text-white border-rose-500 shadow-rose-200/50'
+            }`}>
             {toastNotice.type === 'success' ? (
               <CheckCircle2 className="w-4 h-4 text-white shrink-0" />
             ) : (

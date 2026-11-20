@@ -350,10 +350,10 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
   const [myReputation, setMyReputation] = useState<SellerReputationDto | null>(null);
   const sellerReviewCount = useMemo(() => {
     const sellerId = currentUser?.id;
-    if (!sellerId) return myReputation?.evaluatedOrders ?? 0;
+    if (!sellerId) return (currentUser as any)?.reviewCount ?? 0;
     const directReviews = reviewService.getReviewsBySeller(sellerId).length;
-    return directReviews > 0 ? directReviews : (myReputation?.evaluatedOrders ?? 0);
-  }, [currentUser?.id, myReputation?.evaluatedOrders]);
+    return directReviews > 0 ? directReviews : ((currentUser as any)?.reviewCount ?? 0);
+  }, [currentUser?.id, (currentUser as any)?.reviewCount]);
 
   const sellerAverageRatingText = useMemo(() => {
     const sellerId = currentUser?.id;
@@ -365,11 +365,8 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
     if (currentUser?.sellerRating && currentUser.sellerRating > 0) {
       return `${currentUser.sellerRating.toFixed(1)} / 5.0`;
     }
-    if (myReputation?.score && myReputation.score > 0) {
-      return `${(myReputation.score / 20).toFixed(1)} / 5.0`;
-    }
     return lang === 'vi' ? 'Chưa có đánh giá' : 'No ratings yet';
-  }, [currentUser?.id, currentUser?.sellerRating, myReputation?.score, lang]);
+  }, [currentUser?.id, currentUser?.sellerRating, lang]);
 
   const [isReputationHistoryOpen, setIsReputationHistoryOpen] = useState(false);
   const [reputationHistoryItems, setReputationHistoryItems] = useState<ReputationHistoryDto[]>([]);
@@ -922,51 +919,46 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       )}
 
       {/* Top Banner */}
-      <div className="bg-[#fce5da] text-[#24263e] rounded-2xl p-4 sm:p-5 shadow-md border border-[#24263e]/15 space-y-3.5">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+      <div className="bg-[#fce5da] text-[#24263e] rounded-2xl p-4 sm:p-5 shadow-sm border border-[#24263e]/15 space-y-3.5">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5 min-w-0">
             <div className="relative shrink-0">
               <UserAvatar
                 src={currentUser?.avatar}
                 name={currentUser?.name}
-                className="w-12 h-12 rounded-xl border-2 border-[#24263e]/20 shadow-sm"
+                className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl border-2 border-[#24263e]/20 shadow-xs"
                 role="seller"
               />
               <div
-                className="absolute -bottom-1 -right-1 bg-[#24263e] text-white p-0.5 rounded-full text-xs shadow-xs"
+                className="absolute -bottom-1 -right-1 bg-emerald-600 text-white p-0.5 rounded-full text-xs shadow-xs"
                 title={lang === 'vi' ? 'Đã xác minh eKYC' : 'eKYC Verified'}
               >
-                <ShieldCheck className="w-3 h-3" />
+                <ShieldCheck className="w-3.5 h-3.5" />
               </div>
             </div>
 
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-lg sm:text-xl font-black text-[#24263e]">
+                <h1 className="text-lg sm:text-xl font-black text-[#24263e] truncate">
                   {currentUser?.name || currentUser?.email?.split('@')[0] || 'Người Bán SecondLife'}
                 </h1>
                 <button
                   type="button"
                   onClick={handleOpenVerificationHistory}
-                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white/90 hover:bg-white border border-[#24263e]/15 text-[#24263e] text-[11px] font-bold shadow-2xs transition cursor-pointer"
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-[11px] font-bold shadow-2xs transition cursor-pointer"
                   title={lang === 'vi' ? 'Đã xác minh eKYC - Bấm để xem lịch sử nộp hồ sơ' : 'eKYC Verified - Click to view history'}
                 >
-                  <CheckCircle2 className={`w-3.5 h-3.5 ${myVerification?.status === 'APPROVED' ? 'text-emerald-600' : 'text-amber-500'}`} />
+                  <CheckCircle2 className={`w-3 h-3 ${myVerification?.status === 'APPROVED' ? 'text-emerald-600' : 'text-amber-500'}`} />
                   <span>{myVerification?.status === 'APPROVED' ? (lang === 'vi' ? 'Đã xác minh eKYC' : 'eKYC Verified') : (lang === 'vi' ? 'Chưa xác minh eKYC' : 'Unverified')}</span>
                 </button>
-              </div>
-
-              {/* Dải chỉ số uy tín & bán hàng: Bố cục đẹp, thanh thoát, trực quan */}
-              <div className="flex items-center gap-2 flex-wrap text-xs">
-                {/* Điểm Uy Tín - Thiết kế nổi bật, trang nhã, mở lịch sử chi tiết khi click */}
                 <button
                   type="button"
                   onClick={handleOpenReputationHistory}
-                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white hover:bg-slate-50 border border-[#24263e]/20 text-[#24263e] text-xs font-bold shadow-2xs transition cursor-pointer group"
-                  title="Bấm để xem chi tiết chỉ số và lịch sử uy tín"
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-[11px] font-bold shadow-2xs transition cursor-pointer"
+                  title="Bấm để xem chi tiết bảng điểm và lịch sử uy tín"
                 >
-                  <Award className="w-3.5 h-3.5 text-amber-500 group-hover:scale-110 transition-transform" />
-                  <span className="font-mono font-black text-[13px] text-[#24263e]">
+                  <Award className="w-3 h-3 text-amber-600" />
+                  <span className="font-mono font-black">
                     {myReputation?.assessmentStatus === 'NO_TRANSACTIONS'
                       ? 'Chưa có đơn'
                       : myReputation?.score !== undefined && myReputation?.score !== null
@@ -975,75 +967,79 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                       ? `${currentUser.trustScore}/100`
                       : '—'}
                   </span>
-                  <span className="text-[11px] font-bold text-slate-600">Điểm Uy Tín</span>
+                  <span>Uy Tín</span>
                   {myReputation?.sellingRestricted && (
                     <span className="px-1.5 py-0.2 rounded text-[9px] bg-rose-500 text-white font-bold animate-pulse">
                       Hạn chế
                     </span>
                   )}
-                  <ChevronRight className="w-3 h-3 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+                  <ChevronRight className="w-2.5 h-2.5 text-amber-700/60" />
                 </button>
+              </div>
 
-                {/* Đơn hoàn thành - hiển thị chính xác số đơn thực tế */}
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/80 border border-[#24263e]/15 text-xs font-bold text-[#24263e] shadow-2xs">
-                  <PackageCheck className="w-3.5 h-3.5 text-emerald-600" />
+              {/* Dải chỉ số uy tín & bán hàng: Tinh gọn, chuyên nghiệp, không vỡ dòng */}
+              <div className="flex items-center gap-2.5 text-xs text-[#24263e]/85 font-semibold flex-wrap">
+                <span className="flex items-center gap-1 text-[#24263e] font-bold">
+                  <PackageCheck className="w-3.5 h-3.5 text-emerald-700" />
                   <span>{completedOrdersCount} {lang === 'vi' ? 'đơn hoàn thành' : 'completed orders'}</span>
                 </span>
-
-                {/* Đánh giá khách hàng */}
+                <span className="text-slate-400">•</span>
                 <button
                   type="button"
                   onClick={() => setIsSellerReviewsOpen(true)}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/80 hover:bg-white border border-[#24263e]/15 text-xs font-bold text-[#24263e] shadow-2xs transition cursor-pointer"
+                  className="flex items-center gap-1 hover:text-[#c34c36] text-[#24263e] font-bold transition cursor-pointer"
                   title="Bấm để xem đánh giá khách hàng"
                 >
                   <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-500" />
-                  <span>{sellerAverageRatingText}</span>
-                  {sellerReviewCount > 0 && (
-                    <span className="text-slate-500 text-[11px]">({sellerReviewCount})</span>
-                  )}
+                  <span>
+                    {sellerAverageRatingText}
+                    {sellerReviewCount > 0 ? ` (${sellerReviewCount})` : ''}
+                  </span>
                 </button>
-
-                {/* Tỷ lệ phản hồi */}
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/80 border border-[#24263e]/15 text-xs font-bold text-[#24263e] shadow-2xs">
-                  <Sparkles className="w-3 h-3 text-sky-600" />
+                <span className="text-slate-400">•</span>
+                <span className="flex items-center gap-1 text-slate-700 font-semibold">
+                  <Sparkles className="w-3.5 h-3.5 text-sky-600" />
                   <span>{lang === 'vi' ? 'Tỷ lệ phản hồi 100%' : '100% response'}</span>
                 </span>
               </div>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          {/* Cụm nút thao tác: phân cấp chính/phụ rõ ràng, bố cục cân đối */}
+          <div className="flex flex-col sm:items-end gap-2 shrink-0">
             <button
               onClick={() => onCreateListing()}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#c34c36] hover:bg-[#a83d2a] text-white font-bold text-xs shadow-sm transition cursor-pointer"
+              className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-[#c34c36] hover:bg-[#a83d2a] text-white font-black text-xs shadow-sm hover:shadow transition cursor-pointer"
             >
-              <PlusCircle className="w-3.5 h-3.5" />
+              <PlusCircle className="w-4 h-4" />
               <span>{lang === 'vi' ? 'Đăng Bán Đồ Gia Dụng Mới (AI)' : 'Post New Appliance (AI)'}</span>
             </button>
-            <button
-              onClick={() => setIsSellerReviewsOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/80 hover:bg-white text-[#24263e] border border-[#24263e]/15 font-bold text-xs transition cursor-pointer shadow-xs"
-            >
-              <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
-              <span>{lang === 'vi' ? `Đánh Giá (${sellerReviewCount})` : `Reviews (${sellerReviewCount})`}</span>
-            </button>
-            {onViewOrders && (
+
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {onViewOrders && (
+                <button
+                  onClick={onViewOrders}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/90 hover:bg-white text-[#24263e] border border-[#24263e]/15 font-bold text-xs transition cursor-pointer shadow-2xs"
+                >
+                  <Clock className="w-3.5 h-3.5 text-emerald-800" />
+                  <span>{lang === 'vi' ? 'Quản Lý Đơn' : 'Orders'}</span>
+                </button>
+              )}
               <button
-                onClick={onViewOrders}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/80 hover:bg-white text-[#24263e] border border-[#24263e]/15 font-bold text-xs transition cursor-pointer shadow-xs"
+                onClick={() => setIsPayoutModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/90 hover:bg-white text-[#24263e] border border-[#24263e]/15 font-bold text-xs transition cursor-pointer shadow-2xs"
               >
-                <Clock className="w-3.5 h-3.5 text-emerald-800" />
-                <span>{lang === 'vi' ? 'Quản Lý Đơn' : 'Orders'}</span>
+                <Wallet className="w-3.5 h-3.5 text-[#24263e]" />
+                <span>{lang === 'vi' ? 'Rút Tiền Ví' : 'Withdraw'}</span>
               </button>
-            )}
-            <button
-              onClick={() => setIsPayoutModalOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/80 hover:bg-white text-[#24263e] border border-[#24263e]/15 font-bold text-xs transition cursor-pointer shadow-xs"
-            >
-              <Wallet className="w-3.5 h-3.5 text-[#24263e]" />
-              <span>{lang === 'vi' ? 'Rút Tiền Ví' : 'Withdraw'}</span>
-            </button>
+              <button
+                onClick={() => setIsSellerReviewsOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/90 hover:bg-white text-[#24263e] border border-[#24263e]/15 font-bold text-xs transition cursor-pointer shadow-2xs"
+              >
+                <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
+                <span>{lang === 'vi' ? `Đánh Giá (${sellerReviewCount})` : `Reviews (${sellerReviewCount})`}</span>
+              </button>
+            </div>
           </div>
         </div>
 

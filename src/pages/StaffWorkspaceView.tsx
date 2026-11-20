@@ -798,9 +798,8 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
         {/* LEFT SIDEBAR */}
         <aside
           style={{ width: isSidebarCollapsed ? 64 : sidebarWidth }}
-          className={`bg-[#fce5da] text-[#24263e] border-r border-[#24263e]/15 max-w-[85vw] flex-col shrink-0 select-none z-30 top-13 sm:top-14 h-[calc(100vh-3.25rem)] sm:h-[calc(100vh-3.5rem)] md:sticky md:flex ${
-            isMobileSidebarOpen ? 'fixed left-0 flex shadow-2xl md:shadow-none' : 'hidden'
-          }`}
+          className={`bg-[#fce5da] text-[#24263e] border-r border-[#24263e]/15 max-w-[85vw] flex-col shrink-0 select-none z-30 top-13 sm:top-14 h-[calc(100vh-3.25rem)] sm:h-[calc(100vh-3.5rem)] md:sticky md:flex ${isMobileSidebarOpen ? 'fixed left-0 flex shadow-2xl md:shadow-none' : 'hidden'
+            }`}
         >
           {/* User Block */}
           <div
@@ -849,8 +848,8 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                     setIsMobileSidebarOpen(false);
                   }}
                   className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs transition cursor-pointer group ${isActive
-                      ? 'bg-white text-[#24263e] shadow-sm font-black'
-                      : 'text-[#24263e]/80 hover:text-[#24263e] hover:bg-white/40 font-bold'
+                    ? 'bg-white text-[#24263e] shadow-sm font-black'
+                    : 'text-[#24263e]/80 hover:text-[#24263e] hover:bg-white/40 font-bold'
                     }`}
                   title={item.label}
                 >
@@ -1340,8 +1339,8 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                           <td className="py-3 px-3">
                             <span
                               className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${item.status === 'VERIFIED'
-                                  ? 'bg-emerald-100 text-emerald-800'
-                                  : 'bg-amber-100 text-amber-800'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-amber-100 text-amber-800'
                                 }`}
                             >
                               {item.status === 'VERIFIED' ? 'ĐÃ XÁC MINH' : 'CHỜ THẨM ĐỊNH'}
@@ -1432,13 +1431,12 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                             </div>
                           )}
                           <div className="flex items-center justify-between pt-2 border-t border-slate-200">
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              rep.status === 'CONFIRMED'
-                                ? 'bg-rose-100 text-rose-800'
-                                : rep.status === 'DISMISSED'
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${rep.status === 'CONFIRMED'
+                              ? 'bg-rose-100 text-rose-800'
+                              : rep.status === 'DISMISSED'
                                 ? 'bg-slate-200 text-slate-700'
                                 : 'bg-amber-100 text-amber-800'
-                            }`}>
+                              }`}>
                               Trạng thái: {rep.status}
                             </span>
                             {rep.status !== 'CONFIRMED' && rep.status !== 'DISMISSED' && (
@@ -1647,8 +1645,8 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                           <td className="py-3 px-3">
                             <span
                               className={`px-2 py-0.5 rounded-full text-[10px] font-black ${item.status === 'HOLD'
-                                  ? 'bg-rose-100 text-rose-900 border border-rose-200'
-                                  : 'bg-emerald-100 text-emerald-900 border border-emerald-200'
+                                ? 'bg-rose-100 text-rose-900 border border-rose-200'
+                                : 'bg-emerald-100 text-emerald-900 border border-emerald-200'
                                 }`}
                             >
                               {item.status === 'HOLD' ? 'ĐANG TẠM GIỮ (HOLD)' : 'ĐÃ DUYỆT GIẢI NGÂN'}
@@ -1659,8 +1657,8 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                             <button
                               onClick={() => handleTogglePayoutHold(item.id, item.status)}
                               className={`px-2.5 py-1 rounded text-[11px] font-bold transition cursor-pointer ${item.status === 'HOLD'
-                                  ? 'bg-emerald-700 hover:bg-emerald-800 text-white'
-                                  : 'bg-rose-700 hover:bg-rose-800 text-white'
+                                ? 'bg-emerald-700 hover:bg-emerald-800 text-white'
+                                : 'bg-rose-700 hover:bg-rose-800 text-white'
                                 }`}
                             >
                               {item.status === 'HOLD' ? 'Gỡ Tạm Giữ' : 'Tạm Giữ (Hold)'}
@@ -1763,23 +1761,22 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                             </td>
                             <td className="py-3 px-3">
                               <span
-                                className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
-                                  ord.confirmationStatus === 'CONFIRMED'
-                                    ? 'bg-emerald-100 text-emerald-800'
-                                    : ord.confirmationStatus === 'PENDING'
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${ord.confirmationStatus === 'CONFIRMED'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : ord.confirmationStatus === 'PENDING'
                                     ? 'bg-amber-100 text-amber-800'
                                     : ord.confirmationStatus === 'CANCELLED'
-                                    ? 'bg-rose-100 text-rose-800'
-                                    : 'bg-slate-100 text-slate-600'
-                                }`}
+                                      ? 'bg-rose-100 text-rose-800'
+                                      : 'bg-slate-100 text-slate-600'
+                                  }`}
                               >
                                 {ord.confirmationStatus === 'CONFIRMED'
                                   ? 'Đã Xác Nhận'
                                   : ord.confirmationStatus === 'PENDING'
-                                  ? 'Đang Chờ Seller'
-                                  : ord.confirmationStatus === 'CANCELLED'
-                                  ? 'Đã Hủy Đơn'
-                                  : 'Không Yêu Cầu'}
+                                    ? 'Đang Chờ Seller'
+                                    : ord.confirmationStatus === 'CANCELLED'
+                                      ? 'Đã Hủy Đơn'
+                                      : 'Không Yêu Cầu'}
                               </span>
                             </td>
                             <td className="py-3 px-3 font-mono text-slate-600 text-[11px]">

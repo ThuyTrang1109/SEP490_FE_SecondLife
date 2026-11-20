@@ -185,10 +185,10 @@ export default function App() {
               const results = await Promise.allSettled(tasks);
               const obRes = results[0];
               const paRes = isSeller ? results[1] : null;
-              if (obRes && obRes.status === 'fulfilled' && obRes.value?.pickupAddress) {
-                pickupAddr = obRes.value.pickupAddress;
-              } else if (paRes && paRes.status === 'fulfilled' && paRes.value) {
+              if (paRes && paRes.status === 'fulfilled' && paRes.value?.address) {
                 pickupAddr = paRes.value;
+              } else if (obRes && obRes.status === 'fulfilled' && obRes.value?.pickupAddress) {
+                pickupAddr = obRes.value.pickupAddress;
               }
             } catch (_) { }
           }
@@ -208,12 +208,8 @@ export default function App() {
             profile.province
           );
 
-          // Ưu tiên địa chỉ kho lấy hàng chính thức từ BE (fullPickup)
           const resolvedPickup = cleanFullAddress(
-            fullPickup ||
-            (isSeller ? (stored?.pickupAddress && stored.pickupAddress !== profileFullAddress ? stored.pickupAddress : '') : (stored?.pickupAddress || profileFullAddress || '')) ||
-            savedAddr?.address ||
-            ''
+            fullPickup || (isSeller ? '' : stored?.pickupAddress || profileFullAddress || savedAddr?.address || '')
           );
           const resolvedAddress = cleanFullAddress(stored?.address || profileFullAddress || savedAddr?.address || '');
           const resolvedWard = stored?.wardName || pickupAddr?.wardName || profile.ward || savedAddr?.wardName || '';
@@ -1124,10 +1120,6 @@ export default function App() {
     const photoList = rawImgs.length > 0 ? rawImgs : [defaultImg];
     const price = Number(post.price || 0);
 
-    // Xác định địa chỉ sản phẩm từ người bán (cập nhật theo địa chỉ người bán)
-    let postLocation = '';
-    let postSellerAddress = '';
-
     const isOwner = Boolean(
       currentUser && (
         (post.userId && String(post.userId) === String(currentUser.id)) ||
@@ -1139,43 +1131,8 @@ export default function App() {
       )
     );
 
-    const savedAddr = getSavedSellerAddress();
-    const currentSellerAddr = currentUser?.pickupAddress || currentUser?.address || savedAddr.address;
-    const currentSellerWard = currentUser?.wardName || currentUser?.ward || savedAddr.wardName;
-    const currentSellerProv = currentUser?.provinceName || currentUser?.province || savedAddr.provinceName;
-
-    // 1. Nếu là bài đăng của chính seller hiện tại, ưu tiên lấy địa chỉ người bán mới nhất từ profile / onboarding
-    if (isOwner && (currentSellerAddr || currentSellerWard || currentSellerProv)) {
-      postLocation = extractWardAndCity(currentSellerAddr, currentSellerWard, currentSellerProv);
-      postSellerAddress = cleanFullAddress(currentSellerAddr) || (currentSellerWard && currentSellerProv ? `${currentSellerWard}, ${currentSellerProv}` : '');
-    } else {
-      // 2. Bài đăng từ backend của seller khác
-      const rawPostAddr = post.sellerAddress || post.pickupAddress || post.user?.address || (
-        post.user?.profile ? formatCombinedAddress(post.user.profile.streetAddress, post.user.profile.ward, post.user.profile.district, post.user.profile.province) : null
-      );
-      if (rawPostAddr) {
-        postSellerAddress = cleanFullAddress(rawPostAddr);
-        postLocation = extractWardAndCity(postSellerAddress);
-      } else if (post.location && post.location.toLowerCase() !== 'việt nam' && post.location.toLowerCase() !== 'toàn quốc') {
-        postSellerAddress = cleanFullAddress(post.location);
-        postLocation = extractWardAndCity(postSellerAddress);
-      }
-    }
-
-    if ((!postLocation || !postSellerAddress) && isOwner && (currentSellerAddr || currentSellerWard || currentSellerProv)) {
-      postLocation = postLocation || extractWardAndCity(currentSellerAddr, currentSellerWard, currentSellerProv);
-      postSellerAddress = postSellerAddress || cleanFullAddress(currentSellerAddr);
-    }
-
-    if (postSellerAddress) {
-      postSellerAddress = cleanFullAddress(postSellerAddress);
-    }
-    if (!postLocation) {
-      postLocation = postSellerAddress ? extractWardAndCity(postSellerAddress) : 'Hà Nội';
-    }
-    if (!postSellerAddress) {
-      postSellerAddress = postLocation;
-    }
+    const postSellerAddress = cleanFullAddress(post.sellerAddress ?? post.pickupAddress ?? post.user?.address ?? '');
+    const postLocation = extractWardAndCity(postSellerAddress);
 
     const resolvedParcel = getResolvedPostParcel(
       post.postId || post.id,
@@ -1250,12 +1207,6 @@ export default function App() {
     currentUser?.id,
     currentUser?.name,
     currentUser?.email,
-    currentUser?.address,
-    currentUser?.pickupAddress,
-    currentUser?.ward,
-    currentUser?.wardName,
-    currentUser?.province,
-    currentUser?.provinceName,
   ]);
 
   // Synchronize listings directly with Backend
@@ -1353,50 +1304,15 @@ export default function App() {
     }
   }, [mapBackendPostToListing, currentUser?.role, currentRole]);
 
-  // Handle user profile updates (especially seller address) and sync across all listings
+  // Reload listings after profile updates so their pickup address comes from the listing API.
   const handleUserProfileUpdated = React.useCallback(
     (updated: UserProfile, successToast?: string) => {
       setCurrentUser(updated);
       setStoredUser(updated);
-      const effectiveAddr = cleanFullAddress(updated.pickupAddress || updated.address || '');
-      const effectiveWard = updated.wardName || updated.ward || '';
-      const effectiveProv = updated.provinceName || updated.province || '';
-      saveSellerAddress(effectiveAddr, effectiveWard, effectiveProv);
-      const newLoc = extractWardAndCity(effectiveAddr, effectiveWard, effectiveProv);
-      if (newLoc || effectiveAddr) {
-        setListings((prev) =>
-          prev.map((item) => {
-            const isOwner =
-              item.sellerId === updated.id ||
-              item.sellerId === 'me' ||
-              (updated.name && item.sellerName?.trim().toLowerCase() === updated.name?.trim().toLowerCase());
-            if (isOwner) {
-              return {
-                ...item,
-                location: newLoc || item.location,
-                sellerAddress: effectiveAddr || item.sellerAddress || newLoc,
-              };
-            }
-            return item;
-          })
-        );
-
-        // Đồng bộ tức thì địa chỉ mới vào tất cả đơn hàng liên quan
+      const buyerAddress = cleanFullAddress(updated.pickupAddress || updated.address || '');
+      if (buyerAddress) {
         setOrders((prevOrders) =>
-          prevOrders.map((ord) => {
-            let updatedOrd = { ...ord };
-            if (ord.buyerId === updated.id) {
-              updatedOrd.buyerAddress = effectiveAddr || updatedOrd.buyerAddress;
-            }
-            if (ord.sellerId === updated.id && updatedOrd.listing) {
-              updatedOrd.listing = {
-                ...updatedOrd.listing,
-                location: newLoc || updatedOrd.listing.location,
-                sellerAddress: effectiveAddr || updatedOrd.listing.sellerAddress || newLoc,
-              };
-            }
-            return updatedOrd;
-          })
+          prevOrders.map((order) => order.buyerId === updated.id ? { ...order, buyerAddress } : order)
         );
       }
       loadListingsFromBackend(true);
@@ -1798,7 +1714,7 @@ export default function App() {
             (currentUserName && locOrd.listing?.sellerName && locOrd.listing.sellerName.trim().toLowerCase() === currentUserName) ||
             (currentUser?.email && (locOrd as any).sellerEmail && String((locOrd as any).sellerEmail).trim().toLowerCase() === currentUser.email.trim().toLowerCase()) ||
             (currentUser?.email && (locOrd.listing as any)?.sellerEmail && String((locOrd.listing as any).sellerEmail).trim().toLowerCase() === currentUser.email.trim().toLowerCase()) ||
-            (currentRole === 'seller' && !isBuyer)
+            (currentRole === 'seller' && !isBuyer && !locOrd.sellerId && !locOrd.listing?.sellerId)
           );
           const isInspectionRole = Boolean(
             currentUser?.role === 'inspector' ||

@@ -18,7 +18,6 @@ import {
   CheckCircle2,
   XCircle,
   ShieldCheck,
-  Printer,
   RefreshCw,
   Loader2,
   Users,
@@ -915,10 +914,10 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                 <h4 className="font-black text-xs sm:text-sm text-[#24263e] truncate">
                   {inspectorName}
                 </h4>
-                <div className="flex items-center gap-1.5 text-[11px] text-emerald-800 font-bold">
+                {/* <div className="flex items-center gap-1.5 text-[11px] text-emerald-800 font-bold">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
                   <span>Đang Trực Ca (Online)</span>
-                </div>
+                </div> */}
               </div>
             )}
           </div>
@@ -1025,9 +1024,9 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                     {inspectorTab === 'certificates' && 'Sổ Tay Hồ Sơ & Chứng Thư Số'}
                     {inspectorTab === 'standards' && 'Tiêu Chuẩn Phòng Lab ISO/IEC 17025'}
                   </span>
-                  <span className="text-xs bg-emerald-100 text-emerald-800 border border-emerald-300 px-2.5 py-0.5 rounded-full font-bold">
+                  {/* <span className="text-xs bg-emerald-100 text-emerald-800 border border-emerald-300 px-2.5 py-0.5 rounded-full font-bold">
                     Đang Trực Ca
-                  </span>
+                  </span> */}
                 </h1>
                 <p className="text-xs text-slate-500 mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-medium">
                   <span>Kĩ thuật viên: <strong className="text-slate-800">{inspectorName}</strong></span>
@@ -1539,7 +1538,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                               <div className="space-y-0.5">
                                 <p className="text-slate-500 line-clamp-1 flex items-center gap-1">
                                   <Clock className="w-3 h-3 text-slate-400 shrink-0" />
-                                  Tiếp nhận bàn test #{stationCode}
+                                  Tiếp nhận khu vực kiểm định:  #{stationCode}
                                 </p>
                                 {stage === 'inbound' && (
                                   <p className="text-cyan-700 font-medium flex items-center gap-1">
@@ -1638,7 +1637,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                                             {(() => {
                                               const appt = ord.appointmentScheduledAt || (ord as any).scheduledAt || getOrderScheduledAppointmentTime(ord);
                                               const checkIn = canInspectorCheckIn(appt);
-                                              return !checkIn.allowed ? 'Chi Tiết Lịch Hẹn (Mở nhận đơn trước 30p)' : 'Quét Mã Nhận Máy (Tại Nhà)';
+                                              return !checkIn.allowed ? 'Chi Tiết Lịch Hẹn ' : 'Quét Mã Nhận Máy (Tại Nhà)';
                                             })()}
                                           </span>
                                         </>
@@ -1745,15 +1744,6 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                           >
                             <Eye className="w-3.5 h-3.5" />
                             <span>Xem Chứng Thư Số</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => window.print()}
-                            className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 transition cursor-pointer"
-                            title="In báo cáo"
-                          >
-                            <Printer className="w-4 h-4" />
                           </button>
                         </div>
                       </div>

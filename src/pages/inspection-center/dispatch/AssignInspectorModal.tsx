@@ -222,7 +222,7 @@ export function AssignInspectorModal({
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                   <div className="p-3 bg-white rounded-xl border border-amber-200 shadow-2xs space-y-1">
-                    <span className="text-slate-400 font-bold block text-[10px] uppercase">Thời gian KTV có mặt:</span>
+                    <span className="text-slate-400 font-bold block text-[10px] uppercase">Thời gian đã chọn:</span>
                     <span className="font-black text-amber-900 text-sm">
                       🕒 {d.toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' })}
                     </span>
@@ -378,7 +378,7 @@ export function AssignInspectorModal({
                 ) : isAssignmentLocked ? (
                   <span className="text-amber-800 font-semibold flex items-center gap-1">
                     <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                    KTV đã nhận đơn / đang kiểm định • Đã khóa đổi KTV
+                    KTV đã nhận đơn / đang kiểm định • Đã khóa đổi kỹ thuật viên
                   </span>
                 ) : assignModalOrder.status === 'WAITING_SELLER_APPROVAL' ? (
                   <span className="text-purple-700 font-semibold flex items-center gap-1">
@@ -454,7 +454,7 @@ export function AssignInspectorModal({
                     {assignModalOrder.status === 'CANCELLED' || assignModalOrder.status === 'CANCELED'
                       ? 'Đã Hủy - Không Thể Giao'
                       : isAssignmentLocked
-                        ? 'Đã Khóa Đổi KTV'
+                        ? 'Đã khóa'
                         : isAtHomeMissingAppt
                           ? 'Chờ Người Bán Hẹn Lịch'
                           : assignModalOrder.orderType === 'AT_HOME'

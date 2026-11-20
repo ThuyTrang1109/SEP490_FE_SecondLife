@@ -1,7 +1,55 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { OrderStatusBadge } from '../components/orders/OrderStatusBadge';
-import type { EscrowOrder } from '../types';
+import { OrderCardInspection } from '../components/orders/card/OrderCardInspection';
+import type { EscrowOrder, ShipmentBackend } from '../types';
+
+test('failed Hub inspection follows the return shipment on the seller order card', () => {
+  const order = {
+    id: 'failed-hub-inspection', inspectionMethod: 'AT_CENTER', hasInspectionService: true,
+    status: 'FAILED', inspectionStatus: 'FAILED', escrowStatus: 'INSPECTION_FAILED',
+  } as EscrowOrder;
+  const shipment: ShipmentBackend = {
+    orderId: order.id, shipmentId: 'return-shipment', leg: 'CENTER_TO_SELLER', orderCode: 'return-waybill',
+    status: 'READY_TO_PICK', providerStatus: 'ASSIGNING_DRIVER', expectedDeliveryTime: null, deliveredAt: null,
+  };
+  const state = {
+    isOrderCancelledOrRefunded: () => false, isOrderReceiptConfirmed: () => false,
+    isOrderSellerConfirmed: () => true, isInspectorArrivedForOrder: () => false,
+  };
+  const renderBadge = (returnShipment: ShipmentBackend | null, isSeller = true) => renderToStaticMarkup(createElement(OrderStatusBadge, {
+    status: 'FAILED', orderItem: { ...order, returnShipment }, hasInspection: true, isSeller, lang: 'vi', ...state,
+    getOrderInboundShipment: () => null, inboundLoadingOrders: new Set<string>(), getOrderAppointment: () => null,
+    autoPaidOrderIds: new Set<string>(), isPartyInspectionFeePending: () => false,
+    getPartyInspectionFee: () => 0, isPartyInspectionFeePaid: () => true,
+  }));
+  const renderInspection = (returnShipment: ShipmentBackend | null) => renderToStaticMarkup(createElement(OrderCardInspection, {
+    order: { ...order, returnShipment }, orderIsSeller: true, hasInspection: true, lang: 'vi', ordShipment: null, state,
+    savedAppointment: null,
+    actions: { setSchedulingOrder: () => {}, setSchedulingReadOnly: () => {}, handleSellerAcceptCounterAppointment: async () => {} },
+  }));
+
+  for (const pending of [
+    null,
+    { ...shipment, leg: 'SELLER_TO_CENTER' },
+    { ...shipment, status: 'CREATING', orderCode: null },
+    { ...shipment, status: 'CANCELLED', providerStatus: 'CANCELED' },
+  ]) {
+    assert.match(renderBadge(pending), /Kiểm định không đạt • Chờ chuyển hoàn/);
+    assert.match(renderInspection(pending), /Chờ hoàn trả/);
+  }
+
+  assert.match(renderBadge(shipment), /Kiểm định không đạt • Trung tâm đang hoàn hàng về cho bạn/);
+  assert.match(renderInspection(shipment), /Đang hoàn hàng/);
+  assert.doesNotMatch(renderInspection(shipment), /Chờ hoàn trả/);
+  assert.match(renderBadge(shipment, false), /Kiểm định không đạt • Chờ chuyển hoàn/);
+
+  const delivered = { ...shipment, status: 'DELIVERED', providerStatus: 'COMPLETED' };
+  assert.match(renderBadge(delivered), /Kiểm định không đạt • Đã hoàn trả người bán/);
+  assert.match(renderInspection(delivered), /Đã hoàn trả/);
+});
 
 test('OrderStatusBadge renders "Người mua đã mua tiếp" for seller on AT_CENTER order when purchase is accepted', () => {
   const atCenterOrder: any = {
@@ -134,4 +182,142 @@ test('OrderStatusBadge renders "Người mua đã mua tiếp" when order has fin
   assert.ok(rendered);
   const textChild = rendered.props.children[1].props.children;
   assert.equal(textChild, 'Người mua đã mua tiếp');
+});
+
+test('OrderStatusBadge renders "Người mua từ chối mua" for seller on AT_HOME order when buyer rejects purchase', () => {
+  const atHomeOrder: any = {
+    id: 'd0d4e119-362d-41ca-a2a4-4f8d977923e1',
+    listingId: 'post-123',
+    sellerId: 'seller-trang',
+    buyerId: 'buyer-tuan',
+    itemPriceVnd: 280000,
+    totalPaidVnd: 280000,
+    escrowStatus: 'CANCELLED',
+    status: 'CANCELLED',
+    backendStatus: 'CANCELLED',
+    inspectionStatus: 'CANCELLED',
+    inspectionMethod: 'AT_HOME',
+    orderType: 'AT_HOME',
+    hasInspectionService: true,
+    inspectionFeeVnd: 50000,
+    inspectionNote: '[Từ chối mua tiếp sau kiểm định] Lý do: Sản phẩm có vết trầy xước và hao mòn nhiều hơn kỳ vọng',
+    createdAt: '2026-11-19T10:00:00Z',
+  };
+
+  const badgeProps: any = {
+    status: 'CANCELLED',
+    hasInspection: true,
+    isCurrentOrderSeller: true,
+    isSeller: true,
+    orderItem: atHomeOrder as EscrowOrder,
+    lang: 'vi',
+    isOrderCancelledOrRefunded: () => false,
+    isOrderSellerConfirmed: () => true,
+    getOrderInboundShipment: () => null,
+    inboundLoadingOrders: new Set(),
+    isInspectorArrivedForOrder: () => false,
+    getOrderAppointment: () => null,
+    autoPaidOrderIds: new Set(),
+    isPartyInspectionFeePending: () => false,
+    getPartyInspectionFee: () => 0,
+    isPartyInspectionFeePaid: () => true,
+  };
+
+  const rendered = OrderStatusBadge(badgeProps) as any;
+  assert.ok(rendered);
+  const textChild = rendered.props.children[1].props.children;
+  assert.equal(textChild, 'Người mua từ chối mua');
+  assert.ok(!textChild.includes('Chờ trung tâm hoàn hàng'), 'Should not include "Chờ trung tâm hoàn hàng" for AT_HOME orders');
+});
+
+test('OrderStatusBadge renders "Đã từ chối mua tiếp" for buyer on AT_HOME order when buyer rejects purchase', () => {
+  const atHomeOrder: any = {
+    id: 'd0d4e119-362d-41ca-a2a4-4f8d977923e1',
+    listingId: 'post-123',
+    sellerId: 'seller-trang',
+    buyerId: 'buyer-tuan',
+    itemPriceVnd: 280000,
+    totalPaidVnd: 280000,
+    escrowStatus: 'CANCELLED',
+    status: 'CANCELLED',
+    backendStatus: 'CANCELLED',
+    inspectionStatus: 'CANCELLED',
+    inspectionMethod: 'AT_HOME',
+    orderType: 'AT_HOME',
+    hasInspectionService: true,
+    inspectionFeeVnd: 50000,
+    inspectionNote: '[Từ chối mua tiếp sau kiểm định] Lý do: Sản phẩm có vết trầy xước và hao mòn nhiều hơn kỳ vọng',
+    createdAt: '2026-11-19T10:00:00Z',
+  };
+
+  const badgeProps: any = {
+    status: 'CANCELLED',
+    hasInspection: true,
+    isCurrentOrderSeller: false,
+    isSeller: false,
+    orderItem: atHomeOrder as EscrowOrder,
+    lang: 'vi',
+    isOrderCancelledOrRefunded: () => false,
+    isOrderSellerConfirmed: () => true,
+    getOrderInboundShipment: () => null,
+    inboundLoadingOrders: new Set(),
+    isInspectorArrivedForOrder: () => false,
+    getOrderAppointment: () => null,
+    autoPaidOrderIds: new Set(),
+    isPartyInspectionFeePending: () => false,
+    getPartyInspectionFee: () => 0,
+    isPartyInspectionFeePaid: () => true,
+  };
+
+  const rendered = OrderStatusBadge(badgeProps) as any;
+  assert.ok(rendered);
+  const textChild = rendered.props.children[1].props.children;
+  assert.equal(textChild, 'Đã từ chối mua tiếp');
+  assert.ok(!textChild.includes('Chờ trung tâm hoàn hàng'), 'Should not include "Chờ trung tâm hoàn hàng" for AT_HOME orders');
+});
+
+test('OrderStatusBadge keeps "Người mua từ chối mua • Chờ trung tâm hoàn hàng" for seller on AT_CENTER order when buyer rejects purchase', () => {
+  const atCenterOrder: any = {
+    id: 'center-order-rejected-001',
+    listingId: 'post-456',
+    sellerId: 'seller-trang',
+    buyerId: 'buyer-tuan',
+    itemPriceVnd: 280000,
+    totalPaidVnd: 280000,
+    escrowStatus: 'CANCELLED',
+    status: 'CANCELLED',
+    backendStatus: 'CANCELLED',
+    inspectionStatus: 'CANCELLED',
+    inspectionMethod: 'AT_CENTER',
+    orderType: 'AT_CENTER',
+    hasInspectionService: true,
+    inspectionFeeVnd: 50000,
+    inspectionNote: '[Từ chối mua tiếp sau kiểm định] Lý do: Sản phẩm có vết trầy xước và hao mòn nhiều hơn kỳ vọng',
+    createdAt: '2026-11-19T10:00:00Z',
+    shipments: [],
+  };
+
+  const badgeProps: any = {
+    status: 'CANCELLED',
+    hasInspection: true,
+    isCurrentOrderSeller: true,
+    isSeller: true,
+    orderItem: atCenterOrder as EscrowOrder,
+    lang: 'vi',
+    isOrderCancelledOrRefunded: () => false,
+    isOrderSellerConfirmed: () => true,
+    getOrderInboundShipment: () => null,
+    inboundLoadingOrders: new Set(),
+    isInspectorArrivedForOrder: () => false,
+    getOrderAppointment: () => null,
+    autoPaidOrderIds: new Set(),
+    isPartyInspectionFeePending: () => false,
+    getPartyInspectionFee: () => 0,
+    isPartyInspectionFeePaid: () => true,
+  };
+
+  const rendered = OrderStatusBadge(badgeProps) as any;
+  assert.ok(rendered);
+  const textChild = rendered.props.children[1].props.children;
+  assert.equal(textChild, 'Người mua từ chối mua • Chờ trung tâm hoàn hàng');
 });

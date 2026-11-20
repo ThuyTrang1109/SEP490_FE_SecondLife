@@ -145,7 +145,8 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     if (activeUserName && ordBuyerName && ordBuyerName === activeUserName) return false;
     if (activeEmail && ordBuyerEmail && ordBuyerEmail === activeEmail) return false;
 
-    if (userRole === 'seller' && (!ord.buyerId || String(ord.buyerId) !== String(currentUser?.id))) {
+    const hasExplicitSeller = Boolean(ord.sellerId || ord.listing?.sellerId || (ord.listing as any)?.userId);
+    if (!hasExplicitSeller && userRole === 'seller' && (!ord.buyerId || String(ord.buyerId) !== String(currentUser?.id))) {
       return true;
     }
 
@@ -289,7 +290,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         ((ord.listing as any)?.user?.id && String((ord.listing as any).user.id) === String(currentUser.id)) ||
         (activeUserName && ordSellerName === activeUserName) ||
         (activeEmail && ordSellerEmail && ordSellerEmail === activeEmail) ||
-        (userRole === 'seller' && !isBuyer);
+        (userRole === 'seller' && !isBuyer && !ord.sellerId && !ord.listing?.sellerId);
       return isBuyer || isSeller;
     });
   }, [resolvedOrders, currentUser, userRole]);
@@ -657,7 +658,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     ? getBuyerInspectionStage(detailModalOrder)
     : null;
   const [createShipmentOrder, setCreateShipmentOrder] = useState<EscrowOrder | null>(null);
-  const { getOrderInboundShipment, saveSellerInboundShipment, inboundLoadingOrders, sellerInboundShipments } = useOrderInboundShipments({
+  const { getOrderInboundShipment, saveSellerInboundShipment, inboundLoadingOrders, sellerInboundShipments, sellerReturnShipments } = useOrderInboundShipments({
     userId: currentUser?.id,
     userOrders,
     trackingOrderId: trackingOrder?.id,
@@ -670,6 +671,11 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     : null;
   const detailInboundProgress = detailInboundShipment ? getInboundShipmentProgress(detailInboundShipment, lang) : null;
   const detailHasInboundTracking = Boolean(detailModalOrder && detailInboundProgress && isHubInboundInProgress(detailModalOrder));
+  const detailHasHubBuyerShipment = Boolean(detailModalOrder && (
+    detailShipments.length > 0
+      ? detailShipments
+      : getOrderAllShipments(detailModalOrder.id, detailModalOrder.linkedOrderId)
+  ).some((shipment) => shipment.leg === 'CENTER_TO_BUYER' && shipment.status !== 'CANCELLED' && shipment.orderCode?.trim()));
   const getSellerInboundLabel = (order: EscrowOrder) => {
     if (order.inspectionMethod !== 'AT_CENTER') return null;
     const shipment = getOrderInboundShipment(order);
@@ -1521,6 +1527,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         <div className="space-y-4" aria-busy={isLoading}>
           {orders.map((ord) => {
             const orderIsSeller = isOrderSeller(ord);
+            const returnShipment = orderIsSeller ? sellerReturnShipments.get(ord.id) : undefined;
             const payoutData = getOrderFinanceLookup(ord)
               ? payoutDataMap[ord.id]
               : getInspectionPayoutPreview(ord);
@@ -1545,7 +1552,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
               <OrderCard
                 key={ord.id}
                 payoutData={payoutData}
-                order={ord}
+                order={returnShipment === undefined ? ord : { ...ord, returnShipment }}
                 orderIsSeller={orderIsSeller}
                 hasInspection={hasInspection}
                 lang={lang}
@@ -1670,6 +1677,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
               handlePromptCancelInspectionRequest={handlePromptCancelInspectionRequest}
               isShipmentCreatedForOrder={isShipmentCreatedForOrder}
               detailHasInboundTracking={detailHasInboundTracking}
+              detailHasHubBuyerShipment={detailHasHubBuyerShipment}
               detailInboundProgress={detailInboundProgress}
               detailBuyerInspectionStage={detailBuyerInspectionStage}
               confirmingReceiptIds={confirmingReceiptIds}
@@ -1879,6 +1887,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
           readOnly={schedulingReadOnly}
           initialScheduledAt={getOrderAppointment(schedulingOrder)?.scheduledAt}
           initialNote={getOrderAppointment(schedulingOrder)?.note}
+          order={schedulingOrder}
         />
       )}
       {confirmDialog?.isOpen && (

@@ -6,7 +6,7 @@ import {
 import type { EscrowOrder, Language, ShipmentBackend } from '../../types';
 import { formatInspectionDeadline, isInspectionPaymentExpired } from '../../utils/inspectionPaymentDeadline';
 import { buyerInspectionStageLabel, getCustomerInspectionStatus, getInspectionPurchaseDecision } from '../../utils/inspectionPurchase';
-import { getHubReturnProgress, getHubReturnState, getInboundShipmentProgress } from '../../utils/inspectionCenterData';
+import { getHubReturnProgress, getHubReturnState, getInboundShipmentProgress, getSellerHubReturnStage } from '../../utils/inspectionCenterData';
 import { formatVND } from '../../utils/translations';
 import { getOrderAppointmentRejection, type OrderAppointment } from '../../utils/orders/orderAppointments';
 import type { OrderCheck } from '../../types/orders/orderTypes';
@@ -51,7 +51,7 @@ export function OrderStatusBadge({
 
   const isAtHomeOrderCheck = (item: any): boolean => {
     if (!item) return false;
-    const m = String(item.inspectionMethod || item.inspection_method || '').toUpperCase();
+    const m = String(item.inspectionMethod || item.inspection_method || item.inspectionOrder?.inspectionMethod || item.inspectionOrder?.inspection_method || '').toUpperCase();
     const ot = String(item.orderType || item.order_type || item.inspectionOrder?.orderType || item.inspectionOrder?.order_type || '').toUpperCase();
     if (m === 'AT_HOME' || ot === 'AT_HOME') return true;
     if (typeof window !== 'undefined' && item.id) {
@@ -261,6 +261,20 @@ export function OrderStatusBadge({
   }
 
   if (purchaseDecision === 'rejected') {
+    const isAtHome = isAtHomeOrderCheck(orderItem);
+    if (isAtHome) {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-800 border border-rose-200">
+          <XCircle className="w-3.5 h-3.5 text-rose-600" />
+          <span>
+            {lang === 'vi'
+              ? (isSellerForThisOrder ? 'Người mua từ chối mua' : 'Đã từ chối mua tiếp')
+              : (isSellerForThisOrder ? 'Buyer Declined Purchase' : 'Declined Purchase')}
+          </span>
+        </span>
+      );
+    }
+
     const allOrderShipments = (orderItem as any)?.shipments?.length
       ? (orderItem as any).shipments
       : (orderItem?.id ? getOrderAllShipments(orderItem.id, (orderItem as any).linkedOrderId) : []);
@@ -291,14 +305,30 @@ export function OrderStatusBadge({
   }
 
   if (isFailedInsp) {
+    const isAtHome = isAtHomeOrderCheck(orderItem);
+    if (isAtHome) {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-800 border border-rose-200">
+          <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+          <span>
+            {lang === 'vi' ? 'Kiểm định không đạt' : 'Inspection Failed'}
+          </span>
+        </span>
+      );
+    }
+
     const allOrderShipments = (orderItem as any)?.shipments?.length
       ? (orderItem as any).shipments
       : (orderItem?.id ? getOrderAllShipments(orderItem.id, (orderItem as any).linkedOrderId) : []);
-    const returnShipment = (orderItem as any)?.returnShipment ||
-      allOrderShipments.find((s: any) => s.leg === 'CENTER_TO_SELLER' && s.status !== 'CANCELLED') ||
-      allOrderShipments.find((s: any) => s.leg === 'CENTER_TO_SELLER');
+    const returnShipment = isSellerForThisOrder
+      ? (orderItem?.returnShipment === undefined ? getHubReturnState(allOrderShipments).shipment : orderItem.returnShipment)
+      : orderItem?.returnShipment ||
+        allOrderShipments.find((s: ShipmentBackend) => s.leg === 'CENTER_TO_SELLER' && s.status !== 'CANCELLED') ||
+        allOrderShipments.find((s: ShipmentBackend) => s.leg === 'CENTER_TO_SELLER');
     const isReturnDelivered = returnShipment?.status === 'DELIVERED' || returnShipment?.status === 'COMPLETED' || (returnShipment && getHubReturnProgress(returnShipment, lang).step === 3);
-    const isReturnInTransit = returnShipment && (returnShipment.status === 'IN_TRANSIT' || returnShipment.status === 'SHIPPED' || returnShipment.status === 'PICKED_UP' || getHubReturnProgress(returnShipment, lang).step === 2);
+    const isReturnInProgress = isSellerForThisOrder
+      ? getSellerHubReturnStage(returnShipment) === 'returning'
+      : returnShipment && (returnShipment.status === 'IN_TRANSIT' || getHubReturnProgress(returnShipment, lang).step === 2);
 
     return (
       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-800 border border-rose-200">
@@ -307,13 +337,13 @@ export function OrderStatusBadge({
           {lang === 'vi'
             ? isReturnDelivered
               ? 'Kiểm định không đạt • Đã hoàn trả người bán'
-              : isReturnInTransit
-                ? 'Kiểm định không đạt • Đang chuyển hoàn'
+              : isReturnInProgress
+                ? (isSellerForThisOrder ? 'Kiểm định không đạt • Trung tâm đang hoàn hàng về cho bạn' : 'Kiểm định không đạt • Đang chuyển hoàn')
                 : 'Kiểm định không đạt • Chờ chuyển hoàn'
             : isReturnDelivered
               ? 'Inspection Failed • Returned to Seller'
-              : isReturnInTransit
-                ? 'Inspection Failed • Returning to Seller'
+              : isReturnInProgress
+                ? (isSellerForThisOrder ? 'Inspection Failed • The center is returning the item to you' : 'Inspection Failed • Returning to Seller')
                 : 'Inspection Failed • Pending Return'}
         </span>
       </span>

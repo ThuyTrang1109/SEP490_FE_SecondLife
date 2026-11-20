@@ -1,6 +1,20 @@
 import type { InspectionOrderDto } from '../services/inspectorService';
-import type { ShippingQuoteResponseDto } from '../types';
+import type { EscrowOrder, ShippingQuoteResponseDto, UserProfile } from '../types';
 import { getInspectionTaskStage } from './inspectionTaskStatus';
+
+export function getInspectionDecisionStatus(
+  order?: Partial<Pick<EscrowOrder, 'inspectionStatus' | 'backendStatus' | 'status' | 'escrowStatus'>> | null,
+  inspection?: Pick<InspectionOrderDto, 'status'> | null,
+) {
+  const status = (inspection?.status || order?.inspectionStatus || order?.backendStatus || order?.status || '').toUpperCase();
+  const isFailed = status === 'FAILED' || status === 'INSPECTION_FAILED' ||
+    (!inspection?.status && order?.escrowStatus === 'INSPECTION_FAILED');
+  return {
+    status,
+    isFailed,
+    isCancellationStatus: !isFailed && ['CANCELLED', 'CANCELED', 'REJECTED'].includes(status),
+  };
+}
 
 export function getInspectionApprovalMessage(status: string, isSeller: boolean) {
   switch (status) {
@@ -47,6 +61,60 @@ export function getInspectionStageTwo(order: InspectionOrderDto | null, quote: S
   const deliveryFee = quote?.shippingFee ?? order?.finalShippingFee ?? null;
   const total = quote?.totalPayable ?? (itemPrice !== null && deliveryFee !== null ? itemPrice + deliveryFee : null);
   return { itemPrice, deliveryFee, total };
+}
+
+type BuyerDestination = NonNullable<InspectionOrderDto['buyerDeliveryAddress']>;
+
+function readBuyerDestination(value: unknown): BuyerDestination {
+  if (typeof value === 'string' && value.trim()) {
+    if (!value.trimStart().startsWith('{')) return { address: value };
+    try {
+      return readBuyerDestination(JSON.parse(value));
+    } catch {
+      return {};
+    }
+  }
+  return value && typeof value === 'object' ? value as BuyerDestination : {};
+}
+
+function buyerStreetAddress(value?: string | null) {
+  const address = value?.trim() || '';
+  return /^(?:(?:tp\.?|thành phố)\s*)?(?:hồ chí minh|hcm|hà nội|đà nẵng)(?:,\s*việt nam)?$/i.test(address)
+    ? '' : address;
+}
+
+export function getInspectionBuyerDestination(
+  inspection: InspectionOrderDto | null,
+  order?: EscrowOrder | null,
+  currentUser?: UserProfile | null,
+) {
+  const buyerId = inspection?.buyerId || order?.buyerId;
+  if (!buyerId || currentUser?.id?.toLowerCase() !== buyerId.toLowerCase()) return null;
+
+  const delivery = readBuyerDestination(order?.deliveryAddress);
+  const profileAddress = buyerStreetAddress(currentUser.streetAddress
+    ? [currentUser.streetAddress, currentUser.ward, currentUser.district, currentUser.province].filter(Boolean).join(', ')
+    : currentUser.address);
+  const saved = inspection?.buyerDeliveryAddress
+    ?? (delivery.address || (delivery.latitude != null && delivery.longitude != null) ? delivery : null);
+  const address = saved
+    ? buyerStreetAddress(saved.address)
+    : buyerStreetAddress(inspection?.buyerAddress) || profileAddress;
+  const name = (saved?.name || inspection?.buyerName || currentUser.name)?.trim().slice(0, 100);
+  const phone = (saved?.phone || inspection?.buyerPhone || currentUser.phone || '').replace(/[^\d+]/g, '');
+  const coords = saved ?? (address === profileAddress ? currentUser : null);
+  const latitude = coords?.latitude;
+  const longitude = coords?.longitude;
+  const hasCoordinates = typeof latitude === 'number' && Math.abs(latitude) <= 90 && latitude !== 0
+    && typeof longitude === 'number' && Math.abs(longitude) <= 180 && longitude !== 0;
+  if (!address && !hasCoordinates) return null;
+
+  return {
+    name,
+    phone: /^(?:0|\+?84)\d{9,10}$/.test(phone) ? phone : '',
+    address,
+    ...(hasCoordinates ? { latitude, longitude } : {}),
+  };
 }
 
 export function getInspectionRemoteMediaUrl(value?: string | null) {

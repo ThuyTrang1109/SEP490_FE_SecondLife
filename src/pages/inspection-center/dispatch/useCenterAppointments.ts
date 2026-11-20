@@ -3,11 +3,13 @@ import { paths } from '../../../app/router/paths';
 import { inspectorService, InspectionOrderDto } from '../../../services';
 import { ApiError } from '../../../services/apiClient';
 import { INSPECTION_SHIFT_HOURS, isInspectionTimeInShift, type InspectionShift } from '../../../utils/inspectionAppointmentTime';
+import { hasCenterCounterProposal } from '../../../utils/inspectionCenterData';
 import { saveScopedLocalNotification } from '../../../utils/notificationStorage';
 import type { useCenterOrders } from '../orders/useCenterOrders';
 import type { useInspectorAssignment } from './useInspectorAssignment';
 
 interface Options {
+  applyCounterResponse: ReturnType<typeof useCenterOrders>['applyCounterResponse'];
   handleOpenAssign: ReturnType<typeof useInspectorAssignment>['handleOpenAssign'];
   setAssignModalOrder: ReturnType<typeof useInspectorAssignment>['setAssignModalOrder'];
   setOrders: ReturnType<typeof useCenterOrders>['setOrders'];
@@ -22,7 +24,7 @@ function getMinCounterDate() {
   return `${tomorrow.getFullYear()}-${month}-${day}`;
 }
 
-export function useCenterAppointments({ handleOpenAssign, setAssignModalOrder, setOrders, showNotice }: Options) {
+export function useCenterAppointments({ applyCounterResponse, handleOpenAssign, setAssignModalOrder, setOrders, showNotice }: Options) {
   // --- Review / Negotiate Appointment Modal State ---
   const [reviewApptOrder, setReviewApptOrder] = useState<InspectionOrderDto | null>(null);
   const [reviewMode, setReviewMode] = useState<'VIEW' | 'COUNTER'>('VIEW');
@@ -62,20 +64,76 @@ export function useCenterAppointments({ handleOpenAssign, setAssignModalOrder, s
     const possibleIds = [order.id, order.linkedOrderId, (order as any).orderId, (order as any).inspectionOrderId].filter(Boolean) as string[];
     const idSet = new Set(possibleIds);
 
-    for (const pid of possibleIds) {
-      try {
-        const raw = localStorage.getItem(`order_appointment_${pid}`);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (parsed.scheduledAt) resolvedApptTime = parsed.scheduledAt;
-          if (parsed.note) resolvedApptNote = parsed.note;
-          if (parsed.status) resolvedApptStatus = parsed.status;
-          if (parsed.status === 'PENDING_CENTER_CONFIRMATION' && !parsed.counterScheduledAt) {
-            resolvedCounterTime = undefined;
-            resolvedCounterShift = undefined;
-            resolvedCounterNote = undefined;
-            setReviewMode('VIEW');
-            if (parsed.scheduledAt) {
+    const hasCurrentCounter = hasCenterCounterProposal(order);
+    const isBackendPendingNoCounter = order.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !order.counterScheduledAt;
+    if (isBackendPendingNoCounter) {
+      resolvedApptStatus = 'PENDING_CENTER_CONFIRMATION';
+      resolvedApptTime = order.appointmentScheduledAt || resolvedApptTime;
+      resolvedCounterTime = undefined;
+      resolvedCounterShift = undefined;
+      resolvedCounterNote = undefined;
+      setReviewMode('VIEW');
+      if (resolvedApptTime) {
+        const sd = new Date(resolvedApptTime);
+        if (!isNaN(sd.getTime())) {
+          initialDate = `${sd.getFullYear()}-${pad(sd.getMonth() + 1)}-${pad(sd.getDate())}`;
+          initialShift = sd.getHours() >= 12 ? 'AFTERNOON' : 'MORNING';
+          initialTime = initialShift === 'AFTERNOON' ? '14:00' : '09:00';
+        }
+      }
+      for (const pid of possibleIds) {
+        try {
+          const raw = localStorage.getItem(`order_appointment_${pid}`);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed.counterScheduledAt) {
+              delete parsed.counterScheduledAt;
+              delete parsed.counterShift;
+              delete parsed.counterNote;
+              parsed.status = 'PENDING_CENTER_CONFIRMATION';
+              if (order.appointmentScheduledAt) parsed.scheduledAt = order.appointmentScheduledAt;
+              localStorage.setItem(`order_appointment_${pid}`, JSON.stringify(parsed));
+            }
+          }
+        } catch {}
+      }
+    } else if (!hasCurrentCounter) {
+      for (const pid of possibleIds) {
+        try {
+          const raw = localStorage.getItem(`order_appointment_${pid}`);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed.scheduledAt && !resolvedApptTime) resolvedApptTime = parsed.scheduledAt;
+            if (parsed.note) resolvedApptNote = parsed.note;
+            if (parsed.status && !resolvedApptStatus) resolvedApptStatus = parsed.status;
+            if (parsed.status === 'PENDING_CENTER_CONFIRMATION' && !parsed.counterScheduledAt) {
+              resolvedCounterTime = undefined;
+              resolvedCounterShift = undefined;
+              resolvedCounterNote = undefined;
+              setReviewMode('VIEW');
+              if (parsed.scheduledAt) {
+                const sd = new Date(parsed.scheduledAt);
+                if (!isNaN(sd.getTime())) {
+                  initialDate = `${sd.getFullYear()}-${pad(sd.getMonth() + 1)}-${pad(sd.getDate())}`;
+                  initialShift = parsed.shift === 'MORNING' ? 'AFTERNOON' : 'MORNING';
+                  initialTime = initialShift === 'AFTERNOON' ? '14:00' : '09:00';
+                }
+              }
+              break;
+            } else if (parsed.counterScheduledAt) {
+              resolvedCounterTime = parsed.counterScheduledAt;
+              resolvedCounterShift = parsed.counterShift;
+              resolvedCounterNote = parsed.counterNote;
+              const cd = new Date(parsed.counterScheduledAt);
+              if (!isNaN(cd.getTime())) {
+                initialDate = `${cd.getFullYear()}-${pad(cd.getMonth() + 1)}-${pad(cd.getDate())}`;
+                initialTime = `${pad(cd.getHours())}:${pad(cd.getMinutes())}`;
+                initialShift = parsed.counterShift || (cd.getHours() >= 13 ? 'AFTERNOON' : 'MORNING');
+              }
+              if (parsed.counterNote) initialNote = parsed.counterNote;
+              setReviewMode('COUNTER');
+              break;
+            } else if (parsed.scheduledAt) {
               const sd = new Date(parsed.scheduledAt);
               if (!isNaN(sd.getTime())) {
                 initialDate = `${sd.getFullYear()}-${pad(sd.getMonth() + 1)}-${pad(sd.getDate())}`;
@@ -83,34 +141,13 @@ export function useCenterAppointments({ handleOpenAssign, setAssignModalOrder, s
                 initialTime = initialShift === 'AFTERNOON' ? '14:00' : '09:00';
               }
             }
-            break;
-          } else if (parsed.counterScheduledAt) {
-            resolvedCounterTime = parsed.counterScheduledAt;
-            resolvedCounterShift = parsed.counterShift;
-            resolvedCounterNote = parsed.counterNote;
-            const cd = new Date(parsed.counterScheduledAt);
-            if (!isNaN(cd.getTime())) {
-              initialDate = `${cd.getFullYear()}-${pad(cd.getMonth() + 1)}-${pad(cd.getDate())}`;
-              initialTime = `${pad(cd.getHours())}:${pad(cd.getMinutes())}`;
-              initialShift = parsed.counterShift || (cd.getHours() >= 13 ? 'AFTERNOON' : 'MORNING');
-            }
-            if (parsed.counterNote) initialNote = parsed.counterNote;
-            setReviewMode('COUNTER');
-            break;
-          } else if (parsed.scheduledAt) {
-            const sd = new Date(parsed.scheduledAt);
-            if (!isNaN(sd.getTime())) {
-              initialDate = `${sd.getFullYear()}-${pad(sd.getMonth() + 1)}-${pad(sd.getDate())}`;
-              initialShift = parsed.shift === 'MORNING' ? 'AFTERNOON' : 'MORNING';
-              initialTime = initialShift === 'AFTERNOON' ? '14:00' : '09:00';
-            }
           }
-        }
-      } catch { }
+        } catch { }
+      }
     }
 
     // Nếu bộ nhớ cache order_appointment_${pid} bị ghi đè, kiểm tra tiếp center_inspection_orders và my_seller_inspection_orders
-    if (resolvedApptStatus !== 'PENDING_CENTER_CONFIRMATION') {
+    if (!hasCurrentCounter && resolvedApptStatus !== 'PENDING_CENTER_CONFIRMATION') {
       try {
         const rawCenter = localStorage.getItem('center_inspection_orders');
         if (rawCenter) {
@@ -204,7 +241,7 @@ export function useCenterAppointments({ handleOpenAssign, setAssignModalOrder, s
     setCounterDate(initialDate < tomorrowStr ? tomorrowStr : initialDate);
     setCounterShift(initialShift);
     setCounterTime(initialTime);
-    setCounterNote(initialNote || 'KTV khu vực đã kín lịch ca sáng, Trung tâm xin phép đề xuất dời sang ca chiều cùng ngày.');
+    setCounterNote(initialNote);
   };
 
   // Action: Accept Seller's Appointment
@@ -404,12 +441,13 @@ export function useCenterAppointments({ handleOpenAssign, setAssignModalOrder, s
       const targetIds = new Set<string>([orderId]);
       if (linkedId) targetIds.add(linkedId);
 
-      await inspectorService.counterAppointment(
+      const updated = await inspectorService.counterAppointment(
         orderId,
         scheduledDate.toISOString(),
         counterNote.trim(),
         counterShift
       );
+      applyCounterResponse(updated);
 
       let prevScheduledAt = reviewApptOrder.appointmentScheduledAt;
       let prevNote = reviewApptOrder.appointmentNote;
@@ -439,6 +477,37 @@ export function useCenterAppointments({ handleOpenAssign, setAssignModalOrder, s
           localStorage.removeItem(`order_appointment_rejection_${id}`);
         } catch { }
       });
+
+      if (reviewApptOrder.appointmentScheduledAt) {
+        try {
+          const d = new Date(reviewApptOrder.appointmentScheduledAt);
+          if (!isNaN(d.getTime())) {
+            const pad = (n: number) => String(n).padStart(2, '0');
+            const dateStr = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+            const timeStr = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+            const shiftStr = reviewApptOrder.appointmentShift || (d.getHours() >= 13 ? 'AFTERNOON' : 'MORNING');
+            const isMorningFull = /(?:kín\s*(?:lịch\s*)?ca\s*sáng|hết\s*(?:lịch\s*|chỗ\s*)?ca\s*sáng|bận\s*ca\s*sáng)/i.test(counterNote);
+            const isAfternoonFull = /(?:kín\s*(?:lịch\s*)?ca\s*chiều|hết\s*(?:lịch\s*|chỗ\s*)?ca\s*chiều|bận\s*ca\s*chiều)/i.test(counterNote);
+            const rejectedItem = {
+              date: dateStr,
+              time: timeStr,
+              shift: shiftStr,
+              isEntireShift: isMorningFull || isAfternoonFull,
+              reason: counterNote.trim(),
+              rejectedAt: new Date().toISOString(),
+            };
+            targetIds.forEach((id) => {
+              try {
+                const rawExisting = localStorage.getItem(`order_rejected_slots_${id}`);
+                const list = rawExisting ? JSON.parse(rawExisting) : [];
+                const arr = Array.isArray(list) ? list : [];
+                arr.push(rejectedItem);
+                localStorage.setItem(`order_rejected_slots_${id}`, JSON.stringify(arr));
+              } catch {}
+            });
+          }
+        } catch {}
+      }
 
       try {
         const raw = localStorage.getItem('recent_placed_orders');
@@ -537,14 +606,6 @@ export function useCenterAppointments({ handleOpenAssign, setAssignModalOrder, s
         saveScopedLocalNotification(sellerNotif, sellerId, 'seller');
       } catch { }
 
-      setOrders((prev) => prev.map((o) => o.id === orderId ? {
-        ...o,
-        appointmentStatus: 'COUNTERED_BY_CENTER',
-        counterScheduledAt: scheduledDate.toISOString(),
-        counterShift,
-        counterNote: counterNote.trim(),
-      } : o));
-
       window.dispatchEvent(new CustomEvent('secondlife_appointment_countered', {
         detail: {
           orderId,
@@ -580,6 +641,39 @@ export function useCenterAppointments({ handleOpenAssign, setAssignModalOrder, s
   // Action: Reject Appointment for AT_HOME Order
   const handleRejectAppointment = async () => {
     if (!rejectApptModalOrder) return;
+
+    // Khi đã gửi đề xuất dời lịch mới (COUNTERED_BY_CENTER), không cho phép từ chối nữa mà phải chờ người bán phản hồi
+    const possibleIds = [
+      rejectApptModalOrder.id,
+      rejectApptModalOrder.linkedOrderId,
+      (rejectApptModalOrder as any).orderId,
+      (rejectApptModalOrder as any).inspectionOrderId,
+    ].filter(Boolean) as string[];
+
+    let isAlreadyCountered = Boolean(
+      rejectApptModalOrder.counterScheduledAt ||
+      rejectApptModalOrder.appointmentStatus === 'COUNTERED_BY_CENTER'
+    );
+    if (!isAlreadyCountered) {
+      for (const pid of possibleIds) {
+        try {
+          const raw = localStorage.getItem(`order_appointment_${pid}`);
+          if (raw) {
+            const p = JSON.parse(raw);
+            if (p.counterScheduledAt || p.status === 'COUNTERED_BY_CENTER') {
+              isAlreadyCountered = true;
+              break;
+            }
+          }
+        } catch { }
+      }
+    }
+
+    if (isAlreadyCountered) {
+      setRejectApptError('Trung tâm đã gửi đề xuất lịch mới cho người bán. Vui lòng chờ người bán phản hồi trước khi thực hiện thao tác khác.');
+      return;
+    }
+
     const reason = rejectApptReason.trim();
     if (!reason) {
       setRejectApptError('Vui lòng chọn hoặc nhập lý do từ chối lịch hẹn để người bán nắm rõ thông tin.');
@@ -620,6 +714,37 @@ export function useCenterAppointments({ handleOpenAssign, setAssignModalOrder, s
         localStorage.removeItem(`order_appointment_${tid}`);
         localStorage.removeItem(`order_assigned_inspector_${tid}`);
       });
+
+      if (rejectApptModalOrder.appointmentScheduledAt) {
+        try {
+          const d = new Date(rejectApptModalOrder.appointmentScheduledAt);
+          if (!isNaN(d.getTime())) {
+            const pad = (n: number) => String(n).padStart(2, '0');
+            const dateStr = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+            const timeStr = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+            const shiftStr = rejectApptModalOrder.appointmentShift || (d.getHours() >= 13 ? 'AFTERNOON' : 'MORNING');
+            const isMorningFull = /(?:kín\s*(?:lịch\s*)?ca\s*sáng|hết\s*(?:lịch\s*|chỗ\s*)?ca\s*sáng|bận\s*ca\s*sáng)/i.test(reason);
+            const isAfternoonFull = /(?:kín\s*(?:lịch\s*)?ca\s*chiều|hết\s*(?:lịch\s*|chỗ\s*)?ca\s*chiều|bận\s*ca\s*chiều)/i.test(reason);
+            const rejectedItem = {
+              date: dateStr,
+              time: timeStr,
+              shift: shiftStr,
+              isEntireShift: isMorningFull || isAfternoonFull,
+              reason: reason.trim(),
+              rejectedAt: new Date().toISOString(),
+            };
+            targetIds.forEach((id) => {
+              try {
+                const rawExisting = localStorage.getItem(`order_rejected_slots_${id}`);
+                const list = rawExisting ? JSON.parse(rawExisting) : [];
+                const arr = Array.isArray(list) ? list : [];
+                arr.push(rejectedItem);
+                localStorage.setItem(`order_rejected_slots_${id}`, JSON.stringify(arr));
+              } catch {}
+            });
+          }
+        } catch {}
+      }
 
       // 2. Cập nhật recent_placed_orders
       try {

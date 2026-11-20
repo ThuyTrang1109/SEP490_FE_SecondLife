@@ -33,29 +33,14 @@ export function useInspectorAssignment({ isOrderReceivedAtHub, orders, setOrders
     });
   }, [assignModalOrder, staffList]);
 
-  const handleOpenAssign = async (order: InspectionOrderDto) => {
+  const handleOpenAssign = (order: InspectionOrderDto) => {
     setAssignError(null);
     if (isInspectorAssignmentLocked(order)) {
       showNotice('Kỹ thuật viên đã xác nhận đơn hoặc đang tiến hành kiểm định. Quyền đổi KTV đã bị khóa.');
       return;
     }
 
-    // Kiểm tra trực tiếp với Backend để ngăn đổi KTV nếu KTV ở trình duyệt khác vừa ấn xác nhận
-    try {
-      const latestOrder = await inspectorService.getOrder(order.id, { bypassCache: true });
-      if (latestOrder && isInspectorAssignmentLocked(latestOrder)) {
-        if (setOrders) {
-          setOrders((prev) =>
-            prev.map((o) => (o.id === order.id ? { ...o, ...latestOrder, inspectorConfirmed: true } : o))
-          );
-        }
-        showNotice('Kỹ thuật viên đã xác nhận tiếp nhận đơn này. Quyền đổi KTV đã bị khóa!');
-        return;
-      }
-    } catch {
-      // Tiếp tục nếu mạng bận hoặc đơn giả lập
-    }
-
+    // Mở modal ngay lập tức (0ms latency), không chặn UI chờ mạng
     const resolvedAddr = getOrderSellerAddress(order);
     const resolvedPhone = getOrderSellerPhone(order);
     const resolvedName = getOrderSellerName(order);
@@ -68,6 +53,21 @@ export function useInspectorAssignment({ isOrderReceivedAtHub, orders, setOrders
     setSelectedInspectorId(staffList.find((staff) => staff.id === order.inspectorId)?.id ?? staffList[0]?.id ?? '');
     const savedDispatchNote = localStorage.getItem(`order_dispatch_note_${order.id}`) || '';
     setAssignNote(savedDispatchNote);
+
+    // Kiểm tra chạy nền (non-blocking) để tự động đóng modal nếu KTV vừa ấn nhận đơn ở máy khác
+    inspectorService.getOrder(order.id, { bypassCache: true }).then((latestOrder) => {
+      if (latestOrder && isInspectorAssignmentLocked(latestOrder)) {
+        if (setOrders) {
+          setOrders((prev) =>
+            prev.map((o) => (o.id === order.id ? { ...o, ...latestOrder, inspectorConfirmed: true } : o))
+          );
+        }
+        setAssignModalOrder(null);
+        showNotice('Kỹ thuật viên đã xác nhận tiếp nhận đơn này. Quyền đổi KTV đã bị khóa!');
+      }
+    }).catch(() => {
+      // Tiếp tục nếu mạng bận hoặc đơn giả lập
+    });
   };
 
   // Action: Submit Assign Inspector
@@ -86,6 +86,20 @@ export function useInspectorAssignment({ isOrderReceivedAtHub, orders, setOrders
       return;
     }
 
+    if (!staffList.some((staff) => staff.id === selectedInspectorId)) {
+      setAssignError('Vui lòng chọn kỹ thuật viên kiểm định từ danh sách trước khi xác nhận.');
+      return;
+    }
+
+    const stage = getCenterDispatchStage(currentOrder, isOrderReceivedAtHub(currentOrder));
+    if (!stage || stage === 'WAITING_HUB_RECEIPT') {
+      setAssignError(stage === 'WAITING_HUB_RECEIPT'
+        ? 'Chờ hàng đến Hub trước khi phân công kỹ thuật viên.'
+        : 'Đơn kiểm định hiện không ở giai đoạn điều phối.');
+      return;
+    }
+
+    setIsAssigning(true);
     // Tái kiểm tra với Backend ngay trước khi gửi lệnh điều phối
     try {
       const latestOrder = await inspectorService.getOrder(assignModalOrder.id, { bypassCache: true });
@@ -96,24 +110,12 @@ export function useInspectorAssignment({ isOrderReceivedAtHub, orders, setOrders
           );
         }
         setAssignError('Kỹ thuật viên đã xác nhận tiếp nhận đơn này. Quyền đổi KTV đã bị khóa!');
+        setIsAssigning(false);
         return;
       }
     } catch {
       // Tiếp tục
     }
-
-    if (!staffList.some((staff) => staff.id === selectedInspectorId)) {
-      setAssignError('Vui lòng chọn kỹ thuật viên kiểm định từ danh sách trước khi xác nhận.');
-      return;
-    }
-
-    const stage = getCenterDispatchStage(currentOrder, isOrderReceivedAtHub(currentOrder));
-    if (!stage) {
-      setAssignError('Đơn kiểm định hiện không ở giai đoạn điều phối.');
-      return;
-    }
-
-    setIsAssigning(true);
     try {
       const assignedOrder = await inspectorService.assignInspector(assignModalOrder.id, selectedInspectorId);
 

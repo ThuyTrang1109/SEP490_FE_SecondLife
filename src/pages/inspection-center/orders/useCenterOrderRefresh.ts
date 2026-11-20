@@ -26,23 +26,28 @@ export function useCenterOrderRefresh({
   }, [needsStaff, centerId, loadStaff]);
 
   useEffect(() => {
-    if (needsOrders) loadOrders();
+    if (needsOrders) void loadOrders();
 
-    const handleSignal = () => {
-      if (needsOrders) loadOrders();
-      if (needsStaff) loadStaff();
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const debouncedSignal = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        if (needsOrders) void loadOrders();
+        if (needsStaff) void loadStaff();
+      }, 250);
     };
 
-    window.addEventListener('secondlife_order_placed_signal', handleSignal);
-    window.addEventListener('secondlife_inspection_task_created', handleSignal);
-    window.addEventListener('secondlife_order_assigned_signal', handleSignal);
-    window.addEventListener('secondlife_inspection_completed', handleSignal);
-    window.addEventListener('secondlife_hub_package_received', handleSignal);
-    window.addEventListener('secondlife_seller_shipped_to_hub', handleSignal);
-    window.addEventListener('secondlife_appointment_scheduled', handleSignal);
-    window.addEventListener('secondlife_appointment_confirmed', handleSignal);
-    window.addEventListener('secondlife_appointment_countered', handleSignal);
-    window.addEventListener('secondlife_inspector_confirmed_signal', handleSignal);
+    window.addEventListener('secondlife_order_placed_signal', debouncedSignal);
+    window.addEventListener('secondlife_inspection_task_created', debouncedSignal);
+    window.addEventListener('secondlife_order_assigned_signal', debouncedSignal);
+    window.addEventListener('secondlife_inspection_completed', debouncedSignal);
+    window.addEventListener('secondlife_hub_package_received', debouncedSignal);
+    window.addEventListener('secondlife_seller_shipped_to_hub', debouncedSignal);
+    window.addEventListener('secondlife_appointment_scheduled', debouncedSignal);
+    window.addEventListener('secondlife_appointment_confirmed', debouncedSignal);
+    window.addEventListener('secondlife_appointment_updated', debouncedSignal);
+    window.addEventListener('secondlife_appointment_countered', debouncedSignal);
+    window.addEventListener('secondlife_inspector_confirmed_signal', debouncedSignal);
 
     let channel: BroadcastChannel | null = null;
     try {
@@ -52,9 +57,11 @@ export function useCenterOrderRefresh({
           if (
             event.data?.type === 'INSPECTOR_CONFIRMED' ||
             event.data?.type === 'ORDER_ASSIGNED' ||
-            event.data?.type === 'APPOINTMENT_SCHEDULED'
+            event.data?.type === 'APPOINTMENT_SCHEDULED' ||
+            event.data?.type === 'APPOINTMENT_UPDATED' ||
+            event.data?.type === 'APPOINTMENT_CONFIRMED'
           ) {
-            handleSignal();
+            debouncedSignal();
           }
         };
       }
@@ -71,7 +78,7 @@ export function useCenterOrderRefresh({
         e.key?.startsWith('hub_package_received_') ||
         e.key?.startsWith('seller_shipped_to_hub_')
       ) {
-        handleSignal();
+        debouncedSignal();
       }
     };
     window.addEventListener('storage', handleStorage);
@@ -86,17 +93,19 @@ export function useCenterOrderRefresh({
     if (shouldPoll) document.addEventListener('visibilitychange', refreshOrderTracking);
 
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       channel?.close();
-      window.removeEventListener('secondlife_order_placed_signal', handleSignal);
-      window.removeEventListener('secondlife_inspection_task_created', handleSignal);
-      window.removeEventListener('secondlife_order_assigned_signal', handleSignal);
-      window.removeEventListener('secondlife_inspection_completed', handleSignal);
-      window.removeEventListener('secondlife_hub_package_received', handleSignal);
-      window.removeEventListener('secondlife_seller_shipped_to_hub', handleSignal);
-      window.removeEventListener('secondlife_appointment_scheduled', handleSignal);
-      window.removeEventListener('secondlife_appointment_confirmed', handleSignal);
-      window.removeEventListener('secondlife_appointment_countered', handleSignal);
-      window.removeEventListener('secondlife_inspector_confirmed_signal', handleSignal);
+      window.removeEventListener('secondlife_order_placed_signal', debouncedSignal);
+      window.removeEventListener('secondlife_inspection_task_created', debouncedSignal);
+      window.removeEventListener('secondlife_order_assigned_signal', debouncedSignal);
+      window.removeEventListener('secondlife_inspection_completed', debouncedSignal);
+      window.removeEventListener('secondlife_hub_package_received', debouncedSignal);
+      window.removeEventListener('secondlife_seller_shipped_to_hub', debouncedSignal);
+      window.removeEventListener('secondlife_appointment_scheduled', debouncedSignal);
+      window.removeEventListener('secondlife_appointment_confirmed', debouncedSignal);
+      window.removeEventListener('secondlife_appointment_updated', debouncedSignal);
+      window.removeEventListener('secondlife_appointment_countered', debouncedSignal);
+      window.removeEventListener('secondlife_inspector_confirmed_signal', debouncedSignal);
       window.removeEventListener('storage', handleStorage);
       window.clearInterval(trackingTimer);
       if (shouldPoll) document.removeEventListener('visibilitychange', refreshOrderTracking);

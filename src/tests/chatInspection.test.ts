@@ -140,6 +140,45 @@ test('at-home inspection card after purchase accepted shows awaiting shipment be
   assert.doesNotMatch(buyerHtml, /Kiện hàng đã được bàn giao cho tài xế Lalamove/);
 });
 
+test('delivered inspection card shows only the detailed review notice for both participants', () => {
+  const delivered = {
+    ...passed,
+    status: 'DELIVERING_TO_BUYER',
+    orderType: 'AT_HOME' as const,
+    shippingDeliveredAt: '2026-11-18T11:00:00Z',
+  };
+  for (const currentRole of ['buyer', 'seller'] as const) {
+    const isSeller = currentRole === 'seller';
+    const card = renderToStaticMarkup(createElement(InspectionProposalCard, {
+      order: delivered, listing: buildChatProductListing(room), isSeller, isBuyer: !isSeller,
+      currentRole, lang: 'vi', onOrderUpdated: () => {}, onRefreshOrder: async () => {},
+    }));
+    const title = isSeller ? /Đã giao hàng • Chờ đối soát \(48h\)/g : /Đã nhận hàng • 48h kiểm tra đối soát/g;
+    assert.equal([...card.matchAll(title)].length, 1);
+    assert.doesNotMatch(card, /Đã giao hàng thành công • Chờ đối soát/);
+    assert.match(card, isSeller ? /giải ngân vào ví của bạn/ : /giải ngân cho người bán/);
+  }
+});
+
+test('completed Hub inspection card shows only the detailed settlement notice for both participants', () => {
+  for (const currentRole of ['buyer', 'seller'] as const) {
+    const isSeller = currentRole === 'seller';
+    const renderCard = (orderType: 'AT_CENTER' | 'AT_HOME') => renderToStaticMarkup(createElement(InspectionProposalCard, {
+      order: { ...passed, status: 'COMPLETED', orderType }, listing: buildChatProductListing(room),
+      isSeller, isBuyer: !isSeller, currentRole, lang: 'vi', onOrderUpdated: () => {}, onRefreshOrder: async () => {},
+    }));
+    const summary = isSeller
+      ? /Giao dịch hoàn tất • Tiền hàng đã chuyển về ví/
+      : /Giao dịch hoàn tất • Đã nhận hàng thành công/;
+    const hubCard = renderCard('AT_CENTER');
+    assert.doesNotMatch(hubCard, summary);
+    assert.match(hubCard, isSeller
+      ? /Hoàn tất giao dịch • Đã nhận tiền vào ví/
+      : /Giao dịch hoàn tất • Đã giải ngân/);
+    assert.match(renderCard('AT_HOME'), summary);
+  }
+});
+
 test('the proposal card keeps accept and reject available when there are no intermediate percentages', () => {
   assert.deepEqual(feePercentOptions(20, 30), [25]);
   assert.deepEqual(feePercentOptions(30, 20), [25]);

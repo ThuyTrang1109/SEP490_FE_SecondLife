@@ -32,16 +32,16 @@ export function OrderSettlement({
     <>
       {!isEscrowReleased && !detailBuyerInspectionStage && detailModalOrder.shippingDeliveredAt &&
         !isOrderReceiptConfirmed(detailModalOrder) && detailModalOrder.escrowStatus !== 'DISPUTED' && (
-        <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-1.5">
-          <div className="flex items-center gap-2 font-bold text-amber-900">
-            <Clock className="w-4 h-4 text-amber-600 shrink-0" />
-            <span>Quy Trình Tự Động Giải Ngân Sau 48 Giờ</span>
+          <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-1.5">
+            <div className="flex items-center gap-2 font-bold text-amber-900">
+              <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>Quy Trình Tự Động Giải Ngân Sau 48 Giờ</span>
+            </div>
+            <p className="text-[11px] text-amber-800 leading-relaxed">
+              Đơn hàng đã được bưu tá xác nhận giao thành công vào lúc <strong>{new Date(detailModalOrder.shippingDeliveredAt).toLocaleString('vi-VN')}</strong>.
+              Theo chính sách bảo vệ người mua của SecondLife, hệ thống sẽ tự động giải ngân cho người bán sau 48 giờ kể từ thời điểm này nếu không có khiếu nại phát sinh.
+            </p>
           </div>
-          <p className="text-[11px] text-amber-800 leading-relaxed">
-            Đơn hàng đã được bưu tá xác nhận giao thành công vào lúc <strong>{new Date(detailModalOrder.shippingDeliveredAt).toLocaleString('vi-VN')}</strong>.
-            Theo chính sách bảo vệ người mua của SecondLife, hệ thống sẽ tự động giải ngân cho người bán sau 48 giờ kể từ thời điểm này nếu không có khiếu nại phát sinh.
-          </p>
-        </div>
         )}
 
       <div className="rounded-2xl p-4 border border-gray-200 bg-[#faf8f5] space-y-3">
@@ -83,10 +83,7 @@ export function OrderSettlement({
                 </span>
               </div>
               <div className="flex justify-between items-center text-slate-600 text-[11px]">
-                <span>Cước vận chuyển:</span>
-                <span className="font-bold text-slate-800">
-                  {formatVND(orderSettlement.shippingFee)}
-                </span>
+
               </div>
               <div className="flex justify-between items-center text-slate-600 text-[11px]">
                 <span>Giá cơ sở tính hoa hồng:</span>

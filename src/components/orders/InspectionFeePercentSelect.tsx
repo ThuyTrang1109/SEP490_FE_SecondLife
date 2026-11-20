@@ -1,7 +1,9 @@
 import React from 'react';
-import { Scale, ChevronDown, User, Store } from 'lucide-react';
+import { Scale, User, Store } from 'lucide-react';
 import { formatVND } from '../../utils/translations';
 import { feePercentLabel, feePercentOptions, splitInspectionFee } from '../../utils/inspectionFeePercent';
+
+const allPercentages = feePercentOptions();
 
 interface InspectionFeePercentSelectProps {
   value: number;
@@ -14,12 +16,16 @@ interface InspectionFeePercentSelectProps {
 export function InspectionFeePercentSelect({
   value,
   onChange,
-  options = feePercentOptions(),
+  options = allPercentages,
   total,
   lang,
 }: InspectionFeePercentSelectProps) {
   const amounts = total == null ? undefined : splitInspectionFee(total, value);
   const sellerPercent = 100 - value;
+  const lastOptionIndex = options.length - 1;
+  const selectedIndex = Math.max(options.indexOf(value), 0);
+  const canAdjust = lastOptionIndex > 0;
+  const showRatioOnTrack = !canAdjust || options.length === allPercentages.length;
 
   // Key preset shortcuts for quick one-click selection
   const presets = [
@@ -57,17 +63,30 @@ export function InspectionFeePercentSelect({
         </div>
       </div>
 
-      {/* 2. Visual Two-Tone Ratio Bar */}
+      {/* 2. Fee Split Slider */}
       <div className="space-y-1.5">
-        <div className="relative h-2.5 w-full bg-slate-200/70 rounded-full overflow-hidden p-0.5 border border-slate-300/40 flex shadow-inner">
+        <div className="relative flex h-8 items-center">
           <div
-            className="h-full bg-gradient-to-r from-blue-600 to-indigo-600 rounded-l-full transition-all duration-300 ease-out shadow-xs"
-            style={{ width: `${Math.max(3, Math.min(97, value))}%` }}
-          />
-          <div
-            className="h-full bg-gradient-to-r from-amber-500 to-orange-500 rounded-r-full transition-all duration-300 ease-out shadow-xs"
-            style={{ width: `${Math.max(3, Math.min(97, sellerPercent))}%` }}
-          />
+            aria-hidden="true"
+            className={`pointer-events-none absolute inset-x-2.5 h-1.5 overflow-hidden rounded-full ${showRatioOnTrack ? 'bg-amber-500' : 'bg-slate-300'}`}
+          >
+            {showRatioOnTrack && <div className="h-full bg-gradient-to-r from-blue-600 to-indigo-600" style={{ width: `${value}%` }} />}
+          </div>
+          {canAdjust && (
+            <input
+              type="range"
+              min={0}
+              max={lastOptionIndex}
+              step={1}
+              value={selectedIndex}
+              onChange={(event) => onChange(options[event.currentTarget.valueAsNumber])}
+              aria-label={lang === 'vi' ? 'Tỷ lệ chia phí kiểm định' : 'Inspection fee split'}
+              aria-valuetext={feePercentLabel(value, lang)}
+              className="relative w-full h-full appearance-none bg-transparent rounded-full cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2
+                [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:size-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-indigo-600 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow-sm [&::-webkit-slider-thumb]:cursor-grab [&::-webkit-slider-thumb]:active:cursor-grabbing
+                [&::-moz-range-track]:bg-transparent [&::-moz-range-thumb]:size-5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-indigo-600 [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:shadow-sm [&::-moz-range-thumb]:cursor-grab [&::-moz-range-thumb]:active:cursor-grabbing"
+            />
+          )}
         </div>
         <div className="flex justify-between items-center text-[10.5px] font-bold px-0.5">
           <span className="text-blue-700 flex items-center gap-1">
@@ -90,6 +109,7 @@ export function InspectionFeePercentSelect({
               <button
                 key={preset.val}
                 type="button"
+                aria-pressed={isSelected}
                 onClick={() => onChange(preset.val)}
                 className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
                   isSelected
@@ -104,24 +124,7 @@ export function InspectionFeePercentSelect({
         </div>
       )}
 
-      {/* 4. Styled Select Dropdown for Detailed Percentages */}
-      <div className="relative">
-        <select
-          aria-label={lang === 'vi' ? 'Tỷ lệ chia phí kiểm định' : 'Inspection fee split'}
-          className="w-full appearance-none rounded-xl border border-slate-300 bg-white py-2.5 pl-3.5 pr-9 text-xs sm:text-sm font-semibold text-slate-800 shadow-2xs hover:border-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none cursor-pointer transition-all"
-          value={value}
-          onChange={(event) => onChange(Number(event.target.value))}
-        >
-          {options.map((percent) => (
-            <option key={percent} value={percent}>
-              {feePercentLabel(percent, lang)}
-            </option>
-          ))}
-        </select>
-        <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-      </div>
-
-      {/* 5. Financial Breakdown Cards for Buyer & Seller */}
+      {/* 4. Financial Breakdown Cards for Buyer & Seller */}
       {amounts && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
           {/* Buyer Card */}

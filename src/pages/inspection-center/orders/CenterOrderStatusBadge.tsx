@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import type { InspectionOrderDto } from '../../../services';
 import type { UserProfile } from '../../../types';
-import { canBookHubBuyerDelivery, canReadCenterInspectionShipments, getHubBuyerShipmentLabel, getInboundShipmentProgress, isPaidHubBuyerDelivery, shouldTrackInboundShipment, isOrderConfirmedByInspector } from '../../../utils/inspectionCenterData';
+import { canBookHubBuyerDelivery, canReadCenterInspectionShipments, getHubBuyerShipmentLabel, getInboundShipmentProgress, hasCenterCounterProposal, isPaidHubBuyerDelivery, shouldTrackInboundShipment, isOrderConfirmedByInspector } from '../../../utils/inspectionCenterData';
 import { hasLocalShipmentSignal } from './shipmentTrackingConfig';
 import type { useCenterShipments } from './useCenterShipments';
 
@@ -137,7 +137,18 @@ export function CenterOrderStatusBadge({ order, buyerShipments, currentUser, den
     let counterTime = (order as any)?.counterScheduledAt;
     let counterNote = (order as any)?.counterNote;
 
-    if (typeof window !== 'undefined') {
+    const isBackendConfirmed = (apptStatus === 'CONFIRMED' || order?.status === 'SCHEDULED' || (order as any)?.backendStatus === 'SCHEDULED') && !counterTime;
+    const isBackendPendingCenter = apptStatus === 'PENDING_CENTER_CONFIRMATION' && !counterTime;
+    if (isBackendConfirmed) {
+      counterTime = undefined;
+      counterNote = undefined;
+      apptStatus = 'CONFIRMED';
+    } else if (isBackendPendingCenter) {
+      counterTime = undefined;
+      counterNote = undefined;
+    }
+
+    if (!hasCenterCounterProposal(order) && typeof window !== 'undefined') {
       const possibleIds = [
         order?.id,
         (order as any)?.linkedOrderId,
@@ -145,26 +156,54 @@ export function CenterOrderStatusBadge({ order, buyerShipments, currentUser, den
         (order as any)?.inspectionOrderId,
       ].filter(Boolean) as string[];
 
-      for (const id of possibleIds) {
-        try {
-          const raw = localStorage.getItem(`order_appointment_${id}`);
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            if (parsed.scheduledAt) apptTime = parsed.scheduledAt;
-            if (parsed.status) apptStatus = parsed.status;
-            if (parsed.status === 'PENDING_CENTER_CONFIRMATION' && !parsed.counterScheduledAt) {
-              counterTime = undefined;
-              counterNote = undefined;
-            } else {
-              if (parsed.counterScheduledAt) counterTime = parsed.counterScheduledAt;
-              if (parsed.counterNote) counterNote = parsed.counterNote;
+      if (isBackendConfirmed || isBackendPendingCenter) {
+        for (const id of possibleIds) {
+          try {
+            const raw = localStorage.getItem(`order_appointment_${id}`);
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              if (parsed.counterScheduledAt || (isBackendConfirmed && parsed.status !== 'CONFIRMED')) {
+                delete parsed.counterScheduledAt;
+                delete parsed.counterShift;
+                delete parsed.counterNote;
+                parsed.status = isBackendConfirmed ? 'CONFIRMED' : 'PENDING_CENTER_CONFIRMATION';
+                if (order?.appointmentScheduledAt) parsed.scheduledAt = order.appointmentScheduledAt;
+                localStorage.setItem(`order_appointment_${id}`, JSON.stringify(parsed));
+              }
             }
-            break;
-          }
-        } catch { }
+          } catch {}
+        }
+      } else {
+        for (const id of possibleIds) {
+          try {
+            const raw = localStorage.getItem(`order_appointment_${id}`);
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              if (parsed.status === 'CONFIRMED' || apptStatus === 'CONFIRMED') {
+                apptStatus = 'CONFIRMED';
+                if (parsed.scheduledAt) apptTime = parsed.scheduledAt;
+                counterTime = undefined;
+                counterNote = undefined;
+              } else if (parsed.status === 'PENDING_CENTER_CONFIRMATION' && !parsed.counterScheduledAt) {
+                apptStatus = 'PENDING_CENTER_CONFIRMATION';
+                if (parsed.scheduledAt) apptTime = parsed.scheduledAt;
+                counterTime = undefined;
+                counterNote = undefined;
+              } else if (parsed.counterScheduledAt) {
+                counterTime = parsed.counterScheduledAt;
+                if (parsed.counterNote) counterNote = parsed.counterNote;
+                apptStatus = 'COUNTERED_BY_CENTER';
+              } else {
+                if (parsed.scheduledAt && !apptTime) apptTime = parsed.scheduledAt;
+                if (parsed.status && !apptStatus) apptStatus = parsed.status;
+              }
+              break;
+            }
+          } catch { }
+        }
       }
 
-      if (apptStatus !== 'PENDING_CENTER_CONFIRMATION') {
+      if (apptStatus !== 'PENDING_CENTER_CONFIRMATION' && apptStatus !== 'CONFIRMED') {
         const idSet = new Set(possibleIds);
         try {
           const rawCenter = localStorage.getItem('center_inspection_orders');
@@ -172,24 +211,55 @@ export function CenterOrderStatusBadge({ order, buyerShipments, currentUser, den
             const listCenter = JSON.parse(rawCenter);
             if (Array.isArray(listCenter)) {
               const m = listCenter.find((o: any) => idSet.has(o.id) || idSet.has(o.linkedOrderId) || idSet.has(o.orderId) || idSet.has(o.inspectionOrderId));
-              if (m && m.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !m.counterScheduledAt) {
+              if (m) {
+                if (m.appointmentStatus === 'CONFIRMED') {
+                  apptStatus = 'CONFIRMED';
+                  if (m.appointmentScheduledAt) apptTime = m.appointmentScheduledAt;
+                  counterTime = undefined;
+                  counterNote = undefined;
+                } else if (m.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !m.counterScheduledAt) {
+                  if (m.appointmentScheduledAt) apptTime = m.appointmentScheduledAt;
+                  apptStatus = 'PENDING_CENTER_CONFIRMATION';
+                  counterTime = undefined;
+                  counterNote = undefined;
+                }
+              }
+            }
+          }
+        } catch { }
+        try {
+          const rawRecent = localStorage.getItem('recent_placed_orders');
+          if (rawRecent && apptStatus !== 'CONFIRMED') {
+            const listRecent = JSON.parse(rawRecent);
+            if (Array.isArray(listRecent)) {
+              const m = listRecent.find((ro: any) => idSet.has(ro.id) || idSet.has(ro.linkedOrderId) || idSet.has(ro.orderId) || idSet.has(ro.inspectionOrderId));
+              if (m && m.appointmentStatus === 'CONFIRMED') {
+                apptStatus = 'CONFIRMED';
                 if (m.appointmentScheduledAt) apptTime = m.appointmentScheduledAt;
-                apptStatus = 'PENDING_CENTER_CONFIRMATION';
                 counterTime = undefined;
+                counterNote = undefined;
               }
             }
           }
         } catch { }
         try {
           const rawSeller = localStorage.getItem('my_seller_inspection_orders');
-          if (rawSeller && apptStatus !== 'PENDING_CENTER_CONFIRMATION') {
+          if (rawSeller && apptStatus !== 'PENDING_CENTER_CONFIRMATION' && apptStatus !== 'CONFIRMED') {
             const listSeller = JSON.parse(rawSeller);
             if (Array.isArray(listSeller)) {
               const m = listSeller.find((o: any) => idSet.has(o.id) || idSet.has(o.linkedOrderId) || idSet.has(o.orderId) || idSet.has(o.inspectionOrderId));
-              if (m && m.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !m.counterScheduledAt) {
-                if (m.appointmentScheduledAt) apptTime = m.appointmentScheduledAt;
-                apptStatus = 'PENDING_CENTER_CONFIRMATION';
-                counterTime = undefined;
+              if (m) {
+                if (m.appointmentStatus === 'CONFIRMED') {
+                  apptStatus = 'CONFIRMED';
+                  if (m.appointmentScheduledAt) apptTime = m.appointmentScheduledAt;
+                  counterTime = undefined;
+                  counterNote = undefined;
+                } else if (m.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !m.counterScheduledAt) {
+                  if (m.appointmentScheduledAt) apptTime = m.appointmentScheduledAt;
+                  apptStatus = 'PENDING_CENTER_CONFIRMATION';
+                  counterTime = undefined;
+                  counterNote = undefined;
+                }
               }
             }
           }
@@ -198,6 +268,7 @@ export function CenterOrderStatusBadge({ order, buyerShipments, currentUser, den
     }
 
     if (
+      apptStatus !== 'CONFIRMED' &&
       apptStatus !== 'PENDING_CENTER_CONFIRMATION' &&
       (
         (counterTime && !hasInspector) ||
@@ -210,7 +281,7 @@ export function CenterOrderStatusBadge({ order, buyerShipments, currentUser, den
       apptStatus = 'COUNTERED_BY_CENTER';
     }
 
-    if (!apptTime || apptStatus === 'REJECTED') {
+    if ((!apptTime && !counterTime) || apptStatus === 'REJECTED') {
       return (
         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-300 whitespace-nowrap shadow-2xs">
           <Clock className="w-3.5 h-3.5 text-amber-600 animate-spin" />
@@ -219,7 +290,7 @@ export function CenterOrderStatusBadge({ order, buyerShipments, currentUser, den
       );
     }
 
-    const formattedAppt = new Date(apptTime).toLocaleString('vi-VN', {
+    const formattedAppt = new Date(apptTime || counterTime).toLocaleString('vi-VN', {
       hour: '2-digit',
       minute: '2-digit',
       day: '2-digit',
@@ -231,13 +302,13 @@ export function CenterOrderStatusBadge({ order, buyerShipments, currentUser, den
       return (
         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-950 border border-amber-300 whitespace-nowrap shadow-2xs" title={`Người bán đề xuất: ${formattedAppt} • Chờ Trung tâm xem và duyệt`}>
           <Clock className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-          <span>Đề Xuất {formattedAppt} • Chờ Duyệt</span>
+          <span>Chờ Duyệt Lịch Hẹn</span>
         </span>
       );
     }
 
     // 2. Trung tâm đã gửi lại đề xuất mới, chờ Seller phản hồi
-    if (apptStatus === 'COUNTERED_BY_CENTER' || Boolean(counterTime)) {
+    if (apptStatus !== 'CONFIRMED' && (apptStatus === 'COUNTERED_BY_CENTER' || Boolean(counterTime))) {
       const formattedCounter = counterTime ? new Date(counterTime).toLocaleString('vi-VN', {
         hour: '2-digit',
         minute: '2-digit',
@@ -247,7 +318,7 @@ export function CenterOrderStatusBadge({ order, buyerShipments, currentUser, den
       return (
         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-sky-100 text-sky-950 border border-sky-300 whitespace-nowrap shadow-2xs" title={`Trung tâm đã gửi đề xuất: ${formattedCounter} • Chờ người bán đồng ý`}>
           <CalendarSync className="w-3.5 h-3.5 text-sky-700 shrink-0" />
-          <span>Đã Gửi Lịch {formattedCounter} • Chờ Seller</span>
+          <span>Đã Đề Xuất Lại • Chờ Seller</span>
         </span>
       );
     }
@@ -257,7 +328,7 @@ export function CenterOrderStatusBadge({ order, buyerShipments, currentUser, den
       return (
         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-orange-100 text-orange-950 border border-orange-300 animate-pulse whitespace-nowrap shadow-2xs" title={`Lịch hẹn đã chốt: ${formattedAppt} • Cần phân công KTV`}>
           <CalendarCheck className="w-3.5 h-3.5 text-orange-700 shrink-0" />
-          <span>Đã Chốt {formattedAppt} • Cần Giao KTV</span>
+          <span>Đã Chốt Lịch • Cần Giao KTV</span>
         </span>
       );
     }
@@ -266,7 +337,7 @@ export function CenterOrderStatusBadge({ order, buyerShipments, currentUser, den
     return (
       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-900 border border-emerald-300 whitespace-nowrap shadow-2xs" title={`Lịch hẹn đã chốt: ${formattedAppt}`}>
         <CalendarCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-        <span>Đã Phân Công KTV ({formattedAppt})</span>
+        <span>Đã Phân Công KTV</span>
       </span>
     );
   }
@@ -290,7 +361,7 @@ export function CenterOrderStatusBadge({ order, buyerShipments, currentUser, den
         <Package className="w-3.5 h-3.5 text-amber-700 shrink-0" />
         <span>{showOrderShipments && order && shouldTrackInboundShipment(order) &&
           (!canReadCenterInspectionShipments(order, currentUser?.id) || deniedShipmentOrders.has(order.id))
-          ? 'Chưa xem được vận đơn' : 'Chờ Người Bán Gửi Hub'}</span>
+          ? 'Chưa xem được vận đơn' : 'Chờ người bán gửi hàng đến Hub'}</span>
       </span>
     );
   }

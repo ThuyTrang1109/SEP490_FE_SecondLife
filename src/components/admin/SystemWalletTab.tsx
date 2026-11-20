@@ -561,10 +561,7 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
           <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-[#24263e] text-white">
             ADMIN ONLY
           </span>
-          <span className="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
-            <ShieldCheck className="w-3 h-3 text-emerald-600" />
-            <span>Tổng bảo chứng: <strong className="font-mono">{formatVND(grandTotalHeld)}</strong></span>
-          </span>
+
         </div>
 
         <div className="flex items-center gap-2">

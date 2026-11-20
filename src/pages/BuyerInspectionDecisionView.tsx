@@ -4,7 +4,7 @@ import { navigatePath } from '../app/router/browser';
 import { chatService } from '../services/chatService';
 import React, { useState, useEffect, useMemo } from 'react';
 import { EscrowOrder, Language, UserProfile } from '../types';
-import { formatVND } from '../utils/translations';
+import { formatConditionGrade, formatVND } from '../utils/translations';
 import {
   ShieldCheck,
   CheckCircle2,
@@ -47,9 +47,9 @@ import { ShipmentBackend, ShippingQuoteResponseDto } from '../types';
 import { walletService, WalletBackend, notifyWalletBalanceUpdated } from '../services/walletService';
 import { saveScopedLocalNotification } from '../utils/notificationStorage';
 import { markListingInspectionPassed } from '../utils/listingInspection';
-import { getCustomerInspectionStatus, getInspectionPurchaseDecision, inspectionPurchaseDecisionLabel, isExpiredInspectionPurchase, extractInspectionRejectionDetails } from '../utils/inspectionPurchase';
+import { getCustomerInspectionStatus, getInspectionPurchaseDecision, inspectionPurchaseDecisionLabel, isExpiredInspectionPurchase, extractInspectionRejectionDetails, parseInspectorVerdictNote } from '../utils/inspectionPurchase';
 import { notificationWsClient } from '../services/notificationWsClient';
-import { getInspectionReportMedia, getInspectionStageOne, getInspectionStageTwo } from '../utils/inspectionDecisionData';
+import { getInspectionBuyerDestination, getInspectionDecisionStatus, getInspectionReportMedia, getInspectionStageOne, getInspectionStageTwo } from '../utils/inspectionDecisionData';
 import { canAppealInspection, getHubReturnProgress, getHubReturnState, getReturnReserveMessage, isHubReturnCase, getInboundShipmentProgress, getLatestInboundShipment } from '../utils/inspectionCenterData';
 import { getOrderAllShipments } from '../utils/orders/shipmentCache';
 import { isOrderReceivedAtHub } from './ProductInspectionStationView';
@@ -98,11 +98,14 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [alertNotice, setAlertNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  // Shipping quote states (calculated via API from Inspection Center to Buyer)
-  const [finalShippingQuote, setFinalShippingQuote] = useState<ShippingQuoteResponseDto | null>(null);
+  const [deliveryQuote, setDeliveryQuote] = useState<{
+    key: string;
+    address: string;
+    quote: ShippingQuoteResponseDto | null;
+  } | null>(null);
   const [isLoadingQuote, setIsLoadingQuote] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
-  const quoteRequestIdRef = React.useRef(0);
+  const [quoteAttempt, setQuoteAttempt] = useState(0);
 
   // Return shipment states
   const confirmRequestIdRef = React.useRef<string | null>(null);
@@ -118,6 +121,11 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
   const [showScheduleModal, setShowScheduleModal] = useState<boolean>(false);
   const [selectedRejectReason, setSelectedRejectReason] = useState<string>('Sản phẩm có vết trầy xước và hao mòn nhiều hơn kỳ vọng');
   const [customRejectNote, setCustomRejectNote] = useState<string>('');
+
+  const isOtherRejectReason = selectedRejectReason === 'Lý do khác';
+  const rejectWords = customRejectNote.trim() ? customRejectNote.trim().split(/\s+/).filter(Boolean) : [];
+  const rejectWordCount = rejectWords.length;
+  const isRejectNoteValid = rejectWordCount > 10 && rejectWordCount < 50;
 
   // Tab state for report view
   const [activeReportTab, setActiveReportTab] = useState<'checklist' | 'media' | 'verdict'>('checklist');
@@ -229,32 +237,20 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
   }, [order, inspectionDto]);
 
   // Status & Role Resolution
-  const backendStatus = String(inspectionDto?.status || order?.inspectionStatus || order?.backendStatus || order?.status || '').toUpperCase();
+  const { status: backendStatus, isFailed, isCancellationStatus } = getInspectionDecisionStatus(order, inspectionDto);
   const escrowStatus = String(order?.escrowStatus || '').toUpperCase();
 
   const rejectionDetails = extractInspectionRejectionDetails(
     inspectionDto?.note || (order as any)?.note || (order as any)?.inspectionNote
   );
-  const purchaseDecision = getInspectionPurchaseDecision(order, inspectionDto);
+  const purchaseDecision = isFailed ? null : getInspectionPurchaseDecision(order, inspectionDto);
   const purchaseExpired = isExpiredInspectionPurchase(inspectionDto?.status, inspectionDto?.note);
-  const isBuyerPurchaseRejected = purchaseDecision === 'rejected' || rejectionDetails.isBuyerPurchaseRejected;
+  const isBuyerPurchaseRejected = !isFailed && (purchaseDecision === 'rejected' || rejectionDetails.isBuyerPurchaseRejected);
   const decisionSettled = purchaseDecision === 'accepted' || purchaseDecision === 'rejected' || purchaseExpired || isBuyerPurchaseRejected;
 
-  const isCancelled =
-    !isBuyerPurchaseRejected && (
-      backendStatus === 'CANCELLED' ||
-      backendStatus === 'CANCELED' ||
-      backendStatus === 'REJECTED' ||
-      String(inspectionDto?.status || '').toUpperCase() === 'CANCELLED' ||
-      String(inspectionDto?.status || '').toUpperCase() === 'REJECTED' ||
-      String((order as any)?.status || '').toUpperCase() === 'CANCELLED' ||
-      String((order as any)?.status || '').toUpperCase() === 'REJECTED' ||
-      String((order as any)?.inspectionStatus || '').toUpperCase() === 'CANCELLED' ||
-      String((order as any)?.inspectionStatus || '').toUpperCase() === 'REJECTED'
-    );
+  const isCancelled = !isBuyerPurchaseRejected && isCancellationStatus;
 
-  const isPassed = !isCancelled && (purchaseDecision !== null || purchaseExpired || isBuyerPurchaseRejected);
-  const isFailed = !isPassed && !isCancelled && !isBuyerPurchaseRejected && (backendStatus === 'FAILED' || (!inspectionDto && escrowStatus === 'INSPECTION_FAILED'));
+  const isPassed = !isFailed && !isCancelled && (purchaseDecision !== null || purchaseExpired || isBuyerPurchaseRejected);
   const customerStatus = getCustomerInspectionStatus(backendStatus, inspectionDto?.customerStatus,
     inspectionDto ? inspectionDto.inspectorId : order?.inspectorId);
   const isInspecting = !isPassed && !isFailed && !isCancelled && !isBuyerPurchaseRejected && (customerStatus === 'INSPECTING' || customerStatus === 'INSPECTION_IN_PROGRESS');
@@ -562,65 +558,64 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
   const buyerFeePercent = inspectionDto?.buyerFeePercent ?? buyerFeePercentFor(inspectionDto?.feePayer);
   const { base: baseInspectionFee, transport: inspectionTransportFee, reserve: returnReserveFee,
     buyerShare: buyerFeeShare, sellerShare: sellerFeeShare, total: totalInspectionFee } = getInspectionStageOne(inspectionDto);
-  const resolvedBuyerAddress = useMemo(() => {
-    const name = (inspectionDto?.buyerName || currentUser?.name || 'Khách Hàng').trim();
-    const rawPhone = currentUser?.phone || '0912345678';
-    let cleanedPhone = rawPhone.replace(/\D/g, '');
-    if (!cleanedPhone.startsWith('0') && !cleanedPhone.startsWith('84')) {
-      cleanedPhone = '0' + cleanedPhone;
-    }
-    const phone = cleanedPhone.length >= 10 ? cleanedPhone : '0912345678';
-    const address = currentUser?.address || (inspectionDto as any)?.address || (order as any)?.deliveryAddress?.address || 'TP. Hồ Chí Minh';
-    const latitude = Number(currentUser?.latitude ?? (inspectionDto as any)?.buyerLatitude ?? (order as any)?.deliveryAddress?.latitude) || 10.762622;
-    const longitude = Number(currentUser?.longitude ?? (inspectionDto as any)?.buyerLongitude ?? (order as any)?.deliveryAddress?.longitude) || 106.660172;
-    return { name, phone, address, latitude, longitude };
-  }, [inspectionDto, currentUser, order]);
+  const buyerDestination = getInspectionBuyerDestination(inspectionDto, order, currentUser);
+  const { name: recipientName, phone: recipientPhone, address: recipientAddress, latitude, longitude } = buyerDestination ?? {};
+  const postId = inspectionDto?.postId;
+  const deliveryQuoteKey = JSON.stringify([effectiveOrderId, postId, recipientName, recipientPhone, recipientAddress, latitude, longitude, quoteAttempt]);
+  const currentDeliveryQuote = deliveryQuote?.key === deliveryQuoteKey ? deliveryQuote : null;
+  const finalShippingQuote = currentDeliveryQuote?.quote ?? null;
+  const displayedRecipientAddress = currentDeliveryQuote?.address || recipientAddress;
 
-  // Tự động gọi API tính cước giao hàng từ Trung tâm kiểm định đến người mua (chiều 2)
   useEffect(() => {
-    if (!inspectionDto?.postId || !canDecide) return;
-    const currentReq = ++quoteRequestIdRef.current;
-    setIsLoadingQuote(true);
+    setIsLoadingQuote(false);
     setQuoteError(null);
+    if (!postId || !canDecide || (!recipientAddress && (latitude == null || longitude == null))) return;
 
-    shippingService.getShippingQuote({
-      postId: inspectionDto.postId,
-      deliveryAddress: {
-        name: resolvedBuyerAddress.name,
-        phone: resolvedBuyerAddress.phone,
-        latitude: resolvedBuyerAddress.latitude,
-        longitude: resolvedBuyerAddress.longitude,
-        address: resolvedBuyerAddress.address,
-      },
-    }).then((q) => {
-      if (currentReq === quoteRequestIdRef.current) {
-        if (q && Number.isFinite(q.shippingFee)) {
-          setFinalShippingQuote(q);
+    const controller = new AbortController();
+    const { signal } = controller;
+    setIsLoadingQuote(true);
+    const loadQuote = async () => {
+      try {
+        const coords = latitude != null && longitude != null
+          ? { latitude, longitude }
+          : await shippingService.geocode(recipientAddress ?? '', signal);
+        const address = recipientAddress || (await shippingService.reverseGeocode(coords.latitude, coords.longitude, signal)).address?.trim();
+        if (signal.aborted) return;
+        if (!address) throw new Error('Chưa thể xác định địa chỉ nhận hàng từ vị trí đã chọn.');
+        setDeliveryQuote({ key: deliveryQuoteKey, address, quote: null });
+        if (!recipientName || !recipientPhone) {
+          throw new Error('Cần có tên và số điện thoại hợp lệ của người nhận để tính cước giao hàng.');
         }
+        const quote = await shippingService.getShippingQuote({
+          postId,
+          deliveryAddress: { name: recipientName, phone: recipientPhone, address, latitude: coords.latitude, longitude: coords.longitude },
+        }, { signal });
+        if (signal.aborted) return;
+        if (!quote?.quoteId || !Number.isFinite(quote.shippingFee)) throw new Error('Chưa có báo giá vận chuyển.');
+        setDeliveryQuote({ key: deliveryQuoteKey, address, quote });
+      } catch (err) {
+        if (!signal.aborted) {
+          setQuoteError(err instanceof Error ? err.message : 'Chưa thể tải báo giá vận chuyển.');
+        }
+      } finally {
+        if (!signal.aborted) setIsLoadingQuote(false);
       }
-    }).catch((err) => {
-      console.warn('Lỗi gọi API tính cước Lalamove từ Hub đến người mua:', err);
-      if (currentReq === quoteRequestIdRef.current) {
-        setQuoteError(err?.message || 'Chưa thể tải báo giá vận chuyển tự động');
-      }
-    }).finally(() => {
-      if (currentReq === quoteRequestIdRef.current) {
-        setIsLoadingQuote(false);
-      }
-    });
-  }, [inspectionDto?.postId, canDecide, resolvedBuyerAddress]);
+    };
+    void loadQuote();
+    return () => controller.abort();
+  }, [postId, canDecide, recipientName, recipientPhone, recipientAddress, latitude, longitude, deliveryQuoteKey]);
 
-  // Phí giao tận tay (chiều 2) tính từ Trung tâm kiểm định qua người mua (Ưu tiên: từ API báo giá -> từ DTO backend -> cước giao hàng chiều 2)
+  // Ưu tiên báo giá khi hiển thị tiền hàng và cước giao đến người mua.
   const { itemPrice: stageTwoItemPrice, deliveryFee: stageTwoDeliveryFee, total: stageTwoTotal } = getInspectionStageTwo(inspectionDto, finalShippingQuote);
   const finalItemPrice = stageTwoItemPrice ?? postPrice;
   const apiDeliveryFee = stageTwoDeliveryFee ?? (order as any)?.leg2ShippingFee ?? 0;
   const finalPriceToPay = stageTwoTotal ?? (finalItemPrice + apiDeliveryFee);
   const inspectionTransportLabel = isAtHome ? 'Phí di chuyển kỹ thuật viên' : 'Cước vận chuyển giao tới trung tâm kiểm định';
-  const stageTwoShippingLabel = (finalShippingQuote?.leg === 'CENTER_TO_BUYER' || (!isAtHome && finalShippingQuote?.leg !== 'SELLER_TO_BUYER'))
-    ? 'Tiền vận chuyển từ Hub đến người mua'
-    : 'Tiền vận chuyển từ người bán đến người mua';
+  const stageTwoDeliveryRoute = (finalShippingQuote?.leg === 'CENTER_TO_BUYER' || (!isAtHome && finalShippingQuote?.leg !== 'SELLER_TO_BUYER'))
+    ? 'từ Hub đến bạn'
+    : 'từ người bán đến bạn';
 
-  const isWaitingSellerApproval = !isCancelled && (
+  const isWaitingSellerApproval = !isFailed && !isCancelled && (
     backendStatus === 'WAITING_SELLER_APPROVAL' ||
     backendStatus === 'PENDING_SELLER_APPROVAL' ||
     backendStatus === 'AWAITING_SELLER_APPROVAL' ||
@@ -629,7 +624,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
     (order as any)?.inspectionStatus === 'WAITING_SELLER_APPROVAL'
   );
 
-  const isWaitingBuyerApproval = !isCancelled && (
+  const isWaitingBuyerApproval = !isFailed && !isCancelled && (
     backendStatus === 'WAITING_BUYER_APPROVAL' ||
     backendStatus === 'PENDING_BUYER_APPROVAL' ||
     backendStatus === 'AWAITING_BUYER_APPROVAL' ||
@@ -640,7 +635,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
 
   const feesPaid = Boolean((buyerFeeShare === 0 || inspectionDto?.buyerPaidAt) && (sellerFeeShare === 0 || inspectionDto?.sellerPaidAt));
 
-  const isWaitingFeePayment = !isCancelled && (
+  const isWaitingFeePayment = !isFailed && !isCancelled && (
     backendStatus === 'WAITING_FEE_PAYMENT' ||
     backendStatus === 'PENDING_PAYMENT' ||
     backendStatus === 'WAITING_PAYMENT' ||
@@ -793,7 +788,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
 
   // Handle Confirm Final Purchase
   const handleConfirmPurchase = async () => {
-    if (!canDecide || isSubmitting || timeLeft.isExpired) return;
+    if (!canDecide || isSubmitting || timeLeft.isExpired || !finalShippingQuote) return;
     setIsSubmitting(true);
     try {
       if (!confirmRequestIdRef.current) {
@@ -804,9 +799,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
         const confirmRes = await inspectorService.confirmPurchase(effectiveOrderId, {
           requestId: confirmRequestIdRef.current,
           paymentMethod: 'WALLET',
-          shippingQuoteId: finalShippingQuote?.quoteId,
-        }).catch(() => {
-          return inspectorService.confirmPurchase(effectiveOrderId);
+          shippingQuoteId: finalShippingQuote.quoteId,
         });
         if (confirmRes) {
           setInspectionDto(confirmRes);
@@ -866,6 +859,10 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
         onSuccess?.();
       }, 2500);
     } catch (err: any) {
+      if (/quote.*(?:consumed|expired)/i.test(err?.message || '')) {
+        setQuoteAttempt((attempt) => attempt + 1);
+        return;
+      }
       setAlertNotice({
         type: 'error',
         message: err?.message || 'Không thể xác nhận mua hàng. Vui lòng kiểm tra lại số dư ví hoặc thử lại.',
@@ -881,7 +878,9 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
     if (!canDecide) return;
     setIsSubmitting(true);
     try {
-      const fullReason = `${selectedRejectReason}${customRejectNote ? `: ${customRejectNote}` : ''}`;
+      const fullReason = selectedRejectReason === 'Lý do khác'
+        ? `Lý do khác: ${customRejectNote.trim()}`
+        : `${selectedRejectReason}${customRejectNote ? `: ${customRejectNote}` : ''}`;
       const rejectedOrder = effectiveOrderId ? await inspectorService.rejectPurchase(effectiveOrderId, fullReason) : null;
       if (rejectedOrder) setInspectionDto(rejectedOrder);
 
@@ -1482,7 +1481,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                     : 'Kỹ thuật viên đã kiểm tra và ghi nhận sản phẩm không vượt qua các tiêu chí kỹ thuật quy định. Đơn hàng đã dừng lại ở bước kiểm định và thiết bị sẽ được hoàn trả cho người bán.'}
                 </p>
                 <p className="text-xs text-rose-50/90 leading-relaxed max-w-3xl">
-                  Phí kiểm định và vận chuyển được chia theo tỷ lệ đã thống nhất. Nếu có khoản dự phòng cước trả hàng, phần dư sẽ được hoàn theo tỷ lệ này sau khi trừ cước thực tế.
+                  Giai đoạn 2 không mở thanh toán tiền hàng vì sản phẩm kiểm định không đạt.
                 </p>
               </div>
 
@@ -1965,7 +1964,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                   <div className="flex items-center gap-3 pt-1 text-xs text-slate-600">
                     <span>Giá sản phẩm: <strong className="text-slate-900 font-extrabold">{formatAmount(postPrice)}</strong></span>
                     <span>•</span>
-                    <span>Tình trạng: <strong className="text-emerald-700 font-bold">{conditionGrade}</strong></span>
+                    <span>Tình trạng: <strong className="text-emerald-700 font-bold">{formatConditionGrade(conditionGrade, lang)}</strong></span>
                   </div>
                   {inspectionDto.sellerName && (
                     <div className="text-[11px] text-slate-500 flex items-center gap-1.5 pt-0.5">
@@ -2113,20 +2112,6 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                   </div>
                 </div>
 
-                {/* 2-stage escrow */}
-                <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-100 text-[10px] space-y-1">
-                  <div className="flex justify-between">
-                    <span className="text-slate-500 font-medium">Giai đoạn 1 (Trả trước):</span>
-                    <span className="font-bold text-slate-800">Phí kiểm định {formatAmount(buyerFeeShare)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500 font-medium">Giai đoạn 2 (Sau khi máy ĐẠT):</span>
-                    <span className="font-bold text-emerald-800">
-                      Tiền sản phẩm {formatAmount(finalItemPrice)} (Chưa tính tiền vận chuyển)
-                    </span>
-                  </div>
-                </div>
-
                 {/* Zin agreement notice */}
                 {inspectionDto.buyerConsentZin === true && inspectionDto.sellerConsentZin === true && (
                   <div className="text-[11px] text-amber-800 bg-amber-50/70 p-2.5 rounded-xl border border-amber-200/60">
@@ -2214,33 +2199,91 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
               )}
 
               {/* Tab 2: Inspector Verdict */}
-              {activeReportTab === 'verdict' && (
-                <div className="space-y-4 text-xs text-slate-700">
-                  <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 space-y-2">
-                    <span className="text-[11px] font-bold text-emerald-900 uppercase tracking-wider block">
-                      Kết luận tổng thể của Kỹ thuật viên
-                    </span>
-                    <blockquote className="italic text-slate-700 text-xs sm:text-sm leading-relaxed border-l-2 border-emerald-600 pl-3">
-                      {(isPassed || isFailed) && inspectorNote
-                        ? inspectorNote
-                        : (isPassed || isFailed)
-                          ? 'Kỹ thuật viên không để lại ghi chú thêm.'
-                          : 'Chưa có nhận xét kiểm định từ kỹ thuật viên.'}
-                    </blockquote>
-                  </div>
+              {activeReportTab === 'verdict' && (() => {
+                const parsedVerdict = parseInspectorVerdictNote(inspectorNote || '');
+                const effectiveGrade = conditionGrade || parsedVerdict.grade || 'Chưa có';
+                const effectiveScore = conditionScore != null ? `${conditionScore}/100` : (parsedVerdict.score ? `${parsedVerdict.score}` : 'Chưa có');
 
-                  <div className="grid grid-cols-2 gap-3 text-center">
-                    <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100">
-                      <span className="text-[10px] text-slate-400 block font-semibold">Tình trạng sau kiểm định</span>
-                      <strong className="text-sm font-black text-slate-900">{conditionGrade}</strong>
+                return (
+                  <div className="space-y-4 text-xs text-slate-700 animate-fadeIn">
+                    <div className="p-5 rounded-3xl bg-gradient-to-br from-emerald-50/90 via-white to-teal-50/50 border border-emerald-200/90 shadow-2xs space-y-3.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-emerald-100">
+                        <div className="flex items-center gap-2.5">
+                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 shadow-2xs ${isPassed ? 'bg-emerald-600 text-white' : isFailed ? 'bg-rose-600 text-white' : 'bg-slate-600 text-white'
+                            }`}>
+                            {isPassed ? <CheckCircle2 className="w-4 h-4 stroke-[2.5]" /> : isFailed ? <XCircle className="w-4 h-4 stroke-[2.5]" /> : <FileCheck className="w-4 h-4 stroke-[2.5]" />}
+                          </div>
+                          <div>
+                            <span className="text-xs font-black text-emerald-950 uppercase tracking-wider block">
+                              Kết luận tổng thể của Kỹ thuật viên
+                            </span>
+                            <span className="text-[10px] text-emerald-700 font-medium">
+                              Đánh giá chuyên môn từ trạm kiểm định SecondLife Hub
+                            </span>
+                          </div>
+                        </div>
+
+                        <span className={`text-[11px] font-black px-3 py-1 rounded-full uppercase tracking-wider ${isPassed
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                          : isFailed
+                            ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                            : 'bg-slate-100 text-slate-700 border border-slate-300'
+                          }`}>
+                          {isPassed ? 'ĐẠT CHUẨN (PASS)' : isFailed ? 'TỪ CHỐI (FAILED)' : 'ĐANG KIỂM ĐỊNH'}
+                        </span>
+                      </div>
+
+                      {/* Main Note text */}
+                      <div className="p-3.5 bg-white rounded-2xl border border-emerald-100/90 shadow-2xs">
+                        {parsedVerdict.cleanText ? (
+                          <p className="text-slate-800 text-xs sm:text-sm font-bold leading-relaxed">
+                            "{parsedVerdict.cleanText}"
+                          </p>
+                        ) : (
+                          <p className="text-slate-500 text-xs italic">
+                            {(isPassed || isFailed)
+                              ? 'Kỹ thuật viên không để lại ghi chú thêm.'
+                              : 'Chưa có nhận xét kiểm định từ kỹ thuật viên.'}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Metadata Chips: Bao bì & Phụ kiện */}
+                      {(parsedVerdict.packaging || parsedVerdict.accessories) && (
+                        <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                          {parsedVerdict.packaging && (
+                            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50/80 border border-amber-200 text-xs text-amber-950 shadow-2xs">
+                              <span className="font-bold text-amber-800">Tình trạng bao bì:</span>
+                              <span className="font-medium text-amber-900">{parsedVerdict.packaging}</span>
+                            </div>
+                          )}
+                          {parsedVerdict.accessories && (
+                            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-50/80 border border-sky-200 text-xs text-sky-950 shadow-2xs">
+                              <span className="font-bold text-sky-800">Phụ kiện bàn giao:</span>
+                              <span className="font-medium text-sky-900">{parsedVerdict.accessories}</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100">
-                      <span className="text-[10px] text-slate-400 block font-semibold">Điểm đánh giá</span>
-                      <strong className="text-sm font-black text-[#c34c36]">{conditionScore != null ? `${conditionScore}/100` : 'Chưa có'}</strong>
+
+                    <div className="grid grid-cols-2 gap-3 text-center">
+                      <div className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs space-y-1">
+                        <span className="text-[10px] text-slate-500 block font-bold uppercase tracking-wider">
+                          Tình trạng sau kiểm định
+                        </span>
+                        <strong className="text-base font-black text-slate-900 block">{formatConditionGrade(effectiveGrade, lang)}</strong>
+                      </div>
+                      <div className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs space-y-1">
+                        <span className="text-[10px] text-slate-500 block font-bold uppercase tracking-wider">
+                          Điểm đánh giá kỹ thuật
+                        </span>
+                        <strong className="text-base font-black text-[#c34c36] block">{effectiveScore}</strong>
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* Tab 3: Media & Video proof */}
               {activeReportTab === 'media' && (
@@ -2481,7 +2524,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                             : isCancelled
                               ? 'ĐÃ HỦY'
                               : isFailed
-                                ? 'KHÔNG MỞ THANH TOÁN (LỖI)'
+                                ? 'KHÔNG MỞ THANH TOÁN'
                                 : 'CHƯA MỞ THANH TOÁN'}
                   </span>
                 </div>
@@ -2498,7 +2541,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
 
                   {hasInspectionResult && (
                     <div className="flex justify-between items-baseline gap-2">
-                      <span>• {stageTwoShippingLabel}:</span>
+                      <span>• Tiền vận chuyển {stageTwoDeliveryRoute}:</span>
                       <span className="font-bold text-slate-900 shrink-0">
                         {isLoadingQuote && !apiDeliveryFee ? (
                           <span className="text-slate-400 font-normal italic text-[11px]">Đang tính cước...</span>
@@ -3056,7 +3099,9 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                       <span className="text-[11px] font-medium text-emerald-100">
                         {isLoadingQuote
                           ? 'Đang tính cước giao hàng...'
-                          : `Trừ ${formatVND(finalPriceToPay)} từ ví Escrow (gồm ${formatVND(apiDeliveryFee)} cước giao Hub đến người mua)`}
+                          : finalShippingQuote
+                            ? `Trừ ${formatVND(finalPriceToPay)} từ ví Escrow (gồm ${formatVND(apiDeliveryFee)} cước giao ${stageTwoDeliveryRoute})`
+                            : 'Xem địa chỉ nhận hàng và cước giao'}
                       </span>
                     </button>
 
@@ -3104,19 +3149,21 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                 <span>Tiền sản phẩm:</span>
                 <span className="font-bold text-slate-900">{formatVND(finalItemPrice)}</span>
               </div>
-              <div className="flex justify-between text-slate-600">
-                <span>Cước giao Hub ➔ Bạn:</span>
-                <span className="font-bold text-slate-900">{formatVND(apiDeliveryFee)}</span>
+              <div className="flex justify-between gap-2 text-slate-600">
+                <span>Cước giao {stageTwoDeliveryRoute}:</span>
+                <span className="shrink-0 font-bold text-slate-900">
+                  {finalShippingQuote ? formatVND(apiDeliveryFee) : isLoadingQuote ? 'Đang tính cước…' : 'Chưa có báo giá'}
+                </span>
               </div>
-              <div className="flex justify-between text-slate-600">
-                <span>Địa chỉ nhận hàng:</span>
-                <span className="font-medium text-slate-700 truncate max-w-[200px]" title={resolvedBuyerAddress.address}>
-                  {resolvedBuyerAddress.address}
+              <div className="flex justify-between gap-4 text-slate-600">
+                <span className="shrink-0">Địa chỉ nhận hàng:</span>
+                <span className="min-w-0 break-words text-right font-medium text-slate-700">
+                  {displayedRecipientAddress || (isLoadingQuote ? 'Đang tải địa chỉ…' : 'Chưa xác định được địa chỉ')}
                 </span>
               </div>
               <div className="flex justify-between pt-2 border-t border-slate-200 text-slate-600">
                 <span className="font-bold">Tổng thanh toán GĐ 2:</span>
-                <span className="font-extrabold text-[#c34c36] text-sm">{formatVND(finalPriceToPay)}</span>
+                <span className="font-extrabold text-[#c34c36] text-sm">{finalShippingQuote ? formatVND(finalPriceToPay) : '—'}</span>
               </div>
               <div className="flex justify-between text-slate-600">
                 <span>Phương thức:</span>
@@ -3124,11 +3171,26 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
               </div>
             </div>
 
-            <p className="text-xs text-slate-600 leading-relaxed">
-              Bằng việc bấm xác nhận, số tiền <strong>{formatVND(finalPriceToPay)}</strong> (gồm {formatVND(finalItemPrice)} tiền sản phẩm và {formatVND(apiDeliveryFee)} cước giao tận tay từ Hub) sẽ được chuyển vào quỹ Escrow bảo lãnh.
-            </p>
+            {finalShippingQuote && (
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Bằng việc bấm xác nhận, số tiền <strong>{formatVND(finalPriceToPay)}</strong> (gồm {formatVND(finalItemPrice)} tiền sản phẩm và {formatVND(apiDeliveryFee)} cước giao {stageTwoDeliveryRoute}) sẽ được chuyển vào quỹ Escrow bảo lãnh.
+              </p>
+            )}
 
-            {!isWalletSufficient && (
+            {quoteError && (
+              <div role="status" className="flex items-center justify-between gap-3 text-xs text-amber-800">
+                <span>{quoteError}</span>
+                <button
+                  type="button"
+                  onClick={() => setQuoteAttempt((attempt) => attempt + 1)}
+                  className="shrink-0 font-bold underline"
+                >
+                  Thử lại
+                </button>
+              </div>
+            )}
+
+            {finalShippingQuote && !isWalletSufficient && (
               <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center justify-between gap-2">
                 <div>
                   <span className="font-bold block">Số dư ví không đủ:</span>
@@ -3160,7 +3222,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
               <button
                 type="button"
                 onClick={handleConfirmPurchase}
-                disabled={isSubmitting || !isWalletSufficient || timeLeft.isExpired}
+                disabled={isSubmitting || !finalShippingQuote || !isWalletSufficient || timeLeft.isExpired}
                 className="flex-1 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-90 text-white text-xs font-black shadow-md transition cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isSubmitting ? (
@@ -3221,12 +3283,13 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                   'Sản phẩm có vết trầy xước và hao mòn nhiều hơn kỳ vọng',
                   'Kết quả kiểm định pin hoặc linh kiện chưa đáp ứng nhu cầu',
                   'Phát hiện dấu hiệu linh kiện đã từng được thay thế',
-                  'Thay đổi nhu cầu sử dụng / Lý do cá nhân'
+                  'Thay đổi nhu cầu sử dụng / Lý do cá nhân',
+                  'Lý do khác'
                 ].map((reason) => (
                   <label
                     key={reason}
                     className={`p-3 rounded-xl border text-xs font-semibold flex items-center gap-2.5 transition cursor-pointer ${selectedRejectReason === reason
-                      ? 'bg-red-50 border-red-300 text-red-950'
+                      ? 'bg-red-50 border-red-300 text-red-950 ring-1 ring-red-200'
                       : 'border-slate-200 hover:bg-slate-50 text-slate-700'
                       }`}
                   >
@@ -3235,32 +3298,68 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                       name="rejectReason"
                       value={reason}
                       checked={selectedRejectReason === reason}
-                      onChange={(e) => setSelectedRejectReason(e.target.value)}
+                      onChange={(e) => {
+                        setSelectedRejectReason(e.target.value);
+                        if (e.target.value !== 'Lý do khác') {
+                          setCustomRejectNote('');
+                        }
+                      }}
                       className="accent-red-600"
                     />
                     <span>{reason}</span>
                   </label>
                 ))}
 
-                <div>
-                  <label className="text-[11px] font-semibold text-slate-500 block mb-1">
-                    Ghi chú chi tiết thêm cho Người bán (tùy chọn):
-                  </label>
-                  <textarea
-                    value={customRejectNote}
-                    onChange={(e) => setCustomRejectNote(e.target.value)}
-                    placeholder="Nhập thêm lý do hoặc lời nhắn cho người bán..."
-                    rows={2}
-                    className="w-full p-3 rounded-xl border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-red-400 bg-slate-50/50"
-                  />
-                </div>
+                {/* Phần ghi chú chỉ hiển thị khi chọn Lý do khác */}
+                {selectedRejectReason === 'Lý do khác' && (
+                  <div className="space-y-1.5 animate-fadeIn">
+                    <div className="flex items-center justify-between text-[11px] font-semibold text-slate-700">
+                      <span>Ghi chú chi tiết thêm cho Người bán (*):</span>
+                      <span
+                        className={`font-bold transition ${rejectWordCount === 0
+                          ? 'text-slate-400'
+                          : isRejectNoteValid
+                            ? 'text-emerald-600'
+                            : 'text-rose-600'
+                          }`}
+                      >
+                        {rejectWordCount === 0
+                          ? 'Yêu cầu trên 10 chữ và dưới 50 chữ'
+                          : isRejectNoteValid
+                            ? `✓ Hợp lệ (${rejectWordCount} từ)`
+                            : rejectWordCount <= 10
+                              ? `Cần trên 10 chữ (hiện có ${rejectWordCount} từ)`
+                              : `Cần dưới 50 chữ (hiện có ${rejectWordCount} từ)`}
+                      </span>
+                    </div>
+                    <textarea
+                      value={customRejectNote}
+                      onChange={(e) => setCustomRejectNote(e.target.value)}
+                      placeholder="Nhập lý do chi tiết từ chối mua tiếp (yêu cầu trên 10 chữ và dưới 50 chữ)..."
+                      rows={3}
+                      className={`w-full p-3 rounded-xl border text-xs text-slate-800 focus:outline-none bg-slate-50/50 transition ${rejectWordCount > 0 && !isRejectNoteValid
+                        ? 'border-rose-400 focus:border-rose-500 bg-rose-50/20'
+                        : rejectWordCount > 0 && isRejectNoteValid
+                          ? 'border-emerald-400 focus:border-emerald-500 bg-emerald-50/20'
+                          : 'border-slate-200 focus:border-red-400'
+                        }`}
+                    />
+                    {rejectWordCount > 0 && !isRejectNoteValid && (
+                      <p className="text-[11px] text-rose-600 font-medium">
+                        {rejectWordCount <= 10
+                          ? `⚠️ Bạn cần nhập trên 10 chữ (hiện tại có ${rejectWordCount} từ, còn thiếu ít nhất ${11 - rejectWordCount} từ).`
+                          : `⚠️ Bạn đã nhập ${rejectWordCount} từ, vượt quá giới hạn tối đa dưới 50 từ.`}
+                      </p>
+                    )}
+                  </div>
+                )}
 
-                <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-amber-900 text-xs flex items-start gap-2">
+                {/* <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-amber-900 text-xs flex items-start gap-2">
                   <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                   <p className="leading-relaxed">
                     <strong>Hệ thống sẽ gửi thông báo ngay cho Người bán:</strong> Sản phẩm sẽ được Trung tâm đóng gói sản phẩm hoàn trả về địa chỉ người bán theo quy chế sàn.
                   </p>
-                </div>
+                </div> */}
               </div>
             )}
 
@@ -3275,7 +3374,11 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
               <button
                 type="button"
                 onClick={isUserSeller && isWaitingSellerApproval ? handleSellerRejectProposal : handleRejectPurchase}
-                disabled={isSubmitting || (isUserSeller && isWaitingSellerApproval && !customRejectNote.trim())}
+                disabled={
+                  isSubmitting ||
+                  (isUserSeller && isWaitingSellerApproval && !customRejectNote.trim()) ||
+                  (!isUserSeller && isOtherRejectReason && !isRejectNoteValid)
+                }
                 className="flex-1 py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
               >
                 {isSubmitting ? (
@@ -3344,6 +3447,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
           readOnly={!isUserSeller}
           initialScheduledAt={inspectionDto?.appointmentScheduledAt || currentAppt?.scheduledAt || undefined}
           initialNote={(inspectionDto as any)?.appointmentNote || currentAppt?.note || undefined}
+          order={inspectionDto || order}
         />
       )}
 

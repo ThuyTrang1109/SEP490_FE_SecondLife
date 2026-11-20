@@ -46,6 +46,18 @@ export function extractInspectionRejectionDetails(note?: string | null): Inspect
     };
   }
 
+  const bracketMarker = '[Từ chối mua tiếp sau kiểm định]';
+  const bracketIndex = raw.indexOf(bracketMarker);
+  if (bracketIndex !== -1) {
+    const inspectorPart = raw.slice(0, bracketIndex).replace(/\|\s*$/, '').trim();
+    const buyerPart = raw.slice(bracketIndex + bracketMarker.length).replace(/^[:\s.\-Lý do]+/, '').trim();
+    return {
+      inspectorNote: inspectorPart,
+      buyerRejectReason: buyerPart || 'Thay đổi nhu cầu sử dụng / Lý do cá nhân',
+      isBuyerPurchaseRejected: true,
+    };
+  }
+
   return {
     inspectorNote: raw,
     buyerRejectReason: raw,
@@ -67,6 +79,66 @@ export function formatOrderCancellationReason(
     .split(/\|\s*Người mua từ chối/i)[0]
     .trim();
   return cleanReason || String(rawReason).trim();
+}
+
+export interface ParsedInspectorVerdict {
+  cleanText: string;
+  packaging?: string;
+  accessories?: string;
+  grade?: string;
+  score?: string;
+}
+
+export function parseInspectorVerdictNote(rawNote?: string | null): ParsedInspectorVerdict {
+  if (!rawNote) return { cleanText: '' };
+
+  let text = String(rawNote).trim();
+
+  // Extract Packaging: [Bao bì: ...]
+  let packaging: string | undefined;
+  const pkgMatch = text.match(/\[Bao bì:\s*([^\]]+)\]/i);
+  if (pkgMatch) {
+    packaging = pkgMatch[1].trim();
+    text = text.replace(pkgMatch[0], '').trim();
+  }
+
+  // Extract Accessories: [Phụ kiện: ...]
+  let accessories: string | undefined;
+  const accMatch = text.match(/\[Phụ kiện:\s*([^\]]+)\]/i);
+  if (accMatch) {
+    accessories = accMatch[1].trim();
+    text = text.replace(accMatch[0], '').trim();
+  }
+
+  // Extract Grade: [Grade: ...]
+  let grade: string | undefined;
+  const gradeMatch = text.match(/\[Grade:\s*([^\]]+)\]/i);
+  if (gradeMatch) {
+    grade = gradeMatch[1].trim();
+    text = text.replace(gradeMatch[0], '').trim();
+  }
+
+  // Extract Score: [Điểm: ...]
+  let score: string | undefined;
+  const scoreMatch = text.match(/\[Điểm:\s*([^\]]+)\]/i);
+  if (scoreMatch) {
+    score = scoreMatch[1].trim();
+    text = text.replace(scoreMatch[0], '').trim();
+  }
+
+  // Remove [Tem: ...], [Photos: ...], and any other [Key: Value] tags
+  text = text.replace(/\[Tem:\s*[^\]]+\]/gi, '').trim();
+  text = text.replace(/\[Photos:\s*[^\]]+\]/gi, '').trim();
+  text = text.replace(/\[(Tem|Grade|Điểm|Bao bì|Phụ kiện|Photos):.*?\]/gi, '').trim();
+  text = text.replace(/\[\s*\]/g, '').trim();
+
+  return {
+    cleanText: text,
+    packaging,
+    accessories,
+    grade,
+    score,
+  };
 }
 
 export function getCustomerInspectionStatus(status?: string | null, customerStatus?: string | null, inspectorId?: string | null) {
@@ -97,7 +169,13 @@ export function getInspectionPurchaseDecision(
   // The inspection API records an explicit rejection in the note and also uses CANCELLED for other reasons.
   const note = details?.note || order?.inspectionNote || (order as any)?.note;
   if (status === 'CANCELLED' && (
+    (order as any)?.cancellationReasonCode === 'PASSED_BUYER_DEFAULTED' ||
+    (order as any)?.settlementOutcome === 'PASSED_BUYER_DEFAULTED' ||
+    (order as any)?.inspectionDecision === 'rejected' ||
+    (order as any)?.buyerDecision === 'rejected' ||
+    (details as any)?.inspectionDecision === 'rejected' ||
     Boolean(note?.includes('Người mua từ chối mua tiếp sau kiểm định')) ||
+    Boolean(note?.includes('Từ chối mua tiếp sau kiểm định')) ||
     extractInspectionRejectionDetails(note).isBuyerPurchaseRejected
   )) return 'rejected';
   if (status === 'PASSED' || status === 'INSPECTION_PASSED' ||

@@ -1500,17 +1500,14 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
         {/* 5. STATUS: PASSED / DELIVERING_TO_BUYER / COMPLETED */}
         {isPassed && (
           <div className="space-y-2">
-            <p className="text-xs text-emerald-800 font-bold bg-emerald-50 p-2.5 rounded-xl border border-emerald-200 flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>
-                {isCompleted
-                  ? (isSeller
-                    ? (lang === 'vi' ? 'Giao dịch hoàn tất • Tiền hàng đã chuyển về ví' : 'Transaction completed • Payout credited to wallet')
-                    : (lang === 'vi' ? 'Giao dịch hoàn tất • Đã nhận hàng thành công' : 'Transaction completed • Order successfully delivered'))
-                  : isDelivered
+            {!isDelivered && !(isAtCenter && isCompleted) && (
+              <p className="text-xs text-emerald-800 font-bold bg-emerald-50 p-2.5 rounded-xl border border-emerald-200 flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>
+                  {isCompleted
                     ? (isSeller
-                      ? (lang === 'vi' ? 'Đã giao hàng thành công • Chờ đối soát (48h)' : 'Delivered successfully • Review window (48h)')
-                      : (lang === 'vi' ? 'Đã nhận hàng • 48h kiểm tra đối soát' : 'Package delivered • 48h inspection window'))
+                      ? (lang === 'vi' ? 'Giao dịch hoàn tất • Tiền hàng đã chuyển về ví' : 'Transaction completed • Payout credited to wallet')
+                      : (lang === 'vi' ? 'Giao dịch hoàn tất • Đã nhận hàng thành công' : 'Transaction completed • Order successfully delivered'))
                     : isPurchaseAccepted
                       ? (isSeller
                         ? (lang === 'vi'
@@ -1530,8 +1527,9 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                           : (lang === 'vi'
                             ? 'Sản phẩm đã kiểm định ĐẠT CHUẨN. Bạn có thể mua tiếp.'
                             : 'Product passed inspection. You can proceed with the purchase.')}
-              </span>
-            </p>
+                </span>
+              </p>
+            )}
             {isCompleted ? (
               <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-950 space-y-1.5 animate-fadeIn">
                 <div className="font-bold flex items-center justify-between">
@@ -1694,7 +1692,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                 <p className="text-[11px] text-amber-800 leading-relaxed">
                   {isSeller
                     ? (lang === 'vi'
-                      ? 'Kỹ thuật viên Hub đã kiểm định ĐẠT chuẩn và dán tem niêm phong. Đang chờ người mua xem kết quả và quyết định tiếp tục mua hàng.'
+                      ? 'Kỹ thuật viên Hub đã kiểm định ĐẠT chuẩn. Đang chờ người mua xem kết quả và quyết định tiếp tục mua hàng.'
                       : 'Hub inspector confirmed the item PASSED quality standards with tamper seal. Awaiting buyer to review report and decide on purchase.')
                     : (lang === 'vi'
                       ? 'Thiết bị đã được KTV kiểm định ĐẠT chuẩn và dán tem niêm phong. Bạn hãy xem biên bản thẩm định và đưa ra quyết định mua hàng tiếp tục.'
@@ -1713,7 +1711,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                   ? 'Sản phẩm kiểm định KHÔNG ĐẠT chuẩn. Kiện hàng sẽ được hoàn trả về cho bạn.'
                   : 'Inspection failed. Item will be returned to seller.')
                 : (lang === 'vi'
-                  ? 'Sản phẩm kiểm định KHÔNG ĐẠT chuẩn. Đơn hàng sẽ được hủy và tiền cọc sẽ được hoàn trả cho bạn.'
+                  ? 'Sản phẩm kiểm định KHÔNG ĐẠT chuẩn. Đơn hàng sẽ được hủy và tiền sẽ được chia đều theo đúng tỉ lệ mà hai bên đã thương lượng'
                   : 'Inspection failed. Order cancelled and payment refunded.')}
             </span>
           </p>
@@ -1930,6 +1928,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
             readOnly={!isSeller}
             initialScheduledAt={order.appointmentScheduledAt || currentAppt?.scheduledAt || undefined}
             initialNote={(order as any).appointmentNote || currentAppt?.note || undefined}
+            order={order}
           />
         )}
       </div>

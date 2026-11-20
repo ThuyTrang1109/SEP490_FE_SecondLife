@@ -346,6 +346,13 @@ export interface InspectionOrderDto {
   buyerName?: string;
   buyerPhone?: string;
   buyerAddress?: string;
+  buyerDeliveryAddress?: {
+    name?: string | null;
+    phone?: string | null;
+    address?: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
+  } | null;
   inspectionCenterAddress?: string;
 
   sellerId?: string;
@@ -1162,11 +1169,18 @@ export const inspectorService = {
   // 3. INSPECTION CENTER PORTAL (/api/v1/inspector-center)
   // --------------------------------------------------------------------------
 
-  async getCenterOrderHistory(options?: Pick<RequestOptions, 'isBackground'>): Promise<PageResponse<InspectionOrderDto>> {
-    const result = await requestGet<PageResponse<InspectionOrderDto>>('/inspector-center/orders?page=0&size=100&sort=createdAt,desc', {
-      ...options,
-      requiresAuth: true,
-    });
+  async getCenterOrderHistory(
+    options?: Pick<RequestOptions, 'isBackground'>,
+    page: number = 0,
+    size: number = 50,
+  ): Promise<PageResponse<InspectionOrderDto>> {
+    const result = await requestGet<PageResponse<InspectionOrderDto>>(
+      `/inspector-center/orders?page=${page}&size=${size}&sort=createdAt,desc`,
+      {
+        ...options,
+        requiresAuth: true,
+      }
+    );
     return result.data;
   },
 

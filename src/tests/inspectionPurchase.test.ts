@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buyerInspectionStageLabel, extractInspectionRejectionDetails, formatOrderCancellationReason, getBuyerInspectionStage, getCustomerInspectionStatus, getInspectionPurchaseDecision, inspectionPurchaseDecisionLabel, shouldReadSellerHubReturn } from '../utils/inspectionPurchase';
+import { buyerInspectionStageLabel, extractInspectionRejectionDetails, formatOrderCancellationReason, getBuyerInspectionStage, getCustomerInspectionStatus, getInspectionPurchaseDecision, inspectionPurchaseDecisionLabel, parseInspectorVerdictNote, shouldReadSellerHubReturn } from '../utils/inspectionPurchase';
 
 test('the buyer only sees inspection status while the item is on its way to the hub or being inspected', () => {
   const order = { inspectionStatus: 'SHIPPING_TO_CENTER', shippingDeliveredAt: '2026-11-09T08:00:00Z' };
@@ -129,4 +129,19 @@ test('buyer-rejected inspection order continues tracking return shipment from Hu
   };
 
   assert.equal(getInspectionPurchaseDecision(rejectedOrder), 'rejected');
+});
+
+test('parseInspectorVerdictNote removes Tem tag and cleans up verdict note', () => {
+  const rawNote = '[Tem: SL-SEAL-1333420][Grade: Good][Điểm: 100/100][Bao bì: Rách nặng / Móp méo] [Phụ kiện: OK] SẢN PHẨM ĐẠT CHUẨN';
+  const parsed = parseInspectorVerdictNote(rawNote);
+
+  assert.equal(parsed.cleanText, 'SẢN PHẨM ĐẠT CHUẨN');
+  assert.equal(parsed.packaging, 'Rách nặng / Móp méo');
+  assert.equal(parsed.accessories, 'OK');
+  assert.equal(parsed.grade, 'Good');
+  assert.equal(parsed.score, '100/100');
+
+  // Verify empty fallback
+  assert.equal(parseInspectorVerdictNote('').cleanText, '');
+  assert.equal(parseInspectorVerdictNote(null).cleanText, '');
 });

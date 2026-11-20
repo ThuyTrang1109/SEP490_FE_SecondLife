@@ -86,6 +86,26 @@ export function readOrderAppointment(ord: EscrowOrder, detailInspectionDto: Insp
     } catch { }
   }
 
+  const isConfirmed = Boolean(
+    (storedAppt?.status === 'CONFIRMED' && !storedAppt?.counterScheduledAt) ||
+    ((ord as any).appointmentStatus === 'CONFIRMED' && !(ord as any).counterScheduledAt) ||
+    ((detailInspectionDto as any)?.appointmentStatus === 'CONFIRMED' && !(detailInspectionDto as any)?.counterScheduledAt) ||
+    ord.status === 'SCHEDULED' ||
+    (detailInspectionDto as any)?.status === 'SCHEDULED'
+  );
+
+  if (isConfirmed && (storedAppt?.scheduledAt || ord.appointmentScheduledAt || (detailInspectionDto as any)?.appointmentScheduledAt)) {
+    return {
+      scheduledAt: storedAppt?.scheduledAt || ord.appointmentScheduledAt || (detailInspectionDto as any)?.appointmentScheduledAt,
+      note: storedAppt?.note || ord.appointmentNote || (detailInspectionDto as any)?.appointmentNote || '',
+      shift: storedAppt?.shift || (ord as any).appointmentShift || (detailInspectionDto as any)?.appointmentShift || 'MORNING',
+      status: 'CONFIRMED',
+      counterScheduledAt: null,
+      counterShift: null,
+      counterNote: null,
+    };
+  }
+
   const isPendingCenter = Boolean(
     (storedAppt?.status === 'PENDING_CENTER_CONFIRMATION' && !storedAppt?.counterScheduledAt) ||
     (ord as any).appointmentStatus === 'PENDING_CENTER_CONFIRMATION' ||
@@ -104,7 +124,7 @@ export function readOrderAppointment(ord: EscrowOrder, detailInspectionDto: Insp
     };
   }
 
-  const isCountered = !isPendingCenter && (
+  const isCountered = !isConfirmed && !isPendingCenter && (
     isOrderWaitingSeller || Boolean(
       (ord as any).appointmentStatus === 'COUNTERED_BY_CENTER' ||
       (detailInspectionDto as any)?.appointmentStatus === 'COUNTERED_BY_CENTER' ||

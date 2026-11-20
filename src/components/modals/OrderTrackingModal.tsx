@@ -1450,7 +1450,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                         className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:opacity-90 text-white text-xs font-black transition flex items-center gap-2 shadow-md cursor-pointer disabled:opacity-50 animate-pulse"
                       >
                         <CheckCircle2 className="w-4 h-4" />
-                        <span>{isConfirmingDelivered ? 'Đang giải ngân...' : 'Xác Nhận Đã Nhận Hàng (Giải Ngân)'}</span>
+                        <span>{isConfirmingDelivered ? 'Đang giải ngân...' : 'Xác nhận đã nhận hàng'}</span>
                       </button>
                     ) : (
                       <span className="text-[11px] text-slate-500 italic">

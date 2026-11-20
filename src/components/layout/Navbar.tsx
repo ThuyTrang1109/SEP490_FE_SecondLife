@@ -176,8 +176,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               onClick={() => onTabChange('admin-dashboard')}
               className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${activeTab === 'admin-dashboard'
-                  ? 'bg-[#c34c36] text-white shadow-sm'
-                  : 'text-white/80 hover:text-white hover:bg-white/10'
+                ? 'bg-[#c34c36] text-white shadow-sm'
+                : 'text-white/80 hover:text-white hover:bg-white/10'
                 }`}
             >
               <ShieldAlert className="w-4 h-4" />
@@ -188,8 +188,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               onClick={() => onTabChange(currentRole === 'inspection_center' ? 'inspection-center' : 'inspection-hub')}
               className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${activeTab === 'inspection-center' || activeTab === 'inspection-hub'
-                  ? 'bg-[#c34c36] text-white shadow-sm'
-                  : 'text-white/80 hover:text-white hover:bg-white/10'
+                ? 'bg-[#c34c36] text-white shadow-sm'
+                : 'text-white/80 hover:text-white hover:bg-white/10'
                 }`}
             >
               <Building2 className="w-4 h-4" />
@@ -201,8 +201,8 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 onClick={() => onTabChange('home')}
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${activeTab === 'home'
-                    ? 'bg-[#c34c36] text-white shadow-sm font-black'
-                    : 'text-white/80 hover:text-white hover:bg-white/10'
+                  ? 'bg-[#c34c36] text-white shadow-sm font-black'
+                  : 'text-white/80 hover:text-white hover:bg-white/10'
                   }`}
               >
                 <Home className="w-3.5 h-3.5" />
@@ -212,8 +212,8 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 onClick={() => onTabChange('marketplace')}
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${activeTab === 'marketplace'
-                    ? 'bg-[#c34c36] text-white shadow-sm font-black'
-                    : 'text-white/80 hover:text-white hover:bg-white/10'
+                  ? 'bg-[#c34c36] text-white shadow-sm font-black'
+                  : 'text-white/80 hover:text-white hover:bg-white/10'
                   }`}
               >
                 <ShoppingBag className="w-3.5 h-3.5" />
@@ -224,8 +224,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <button
                   onClick={() => onTabChange('seller-dashboard')}
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${activeTab === 'seller-dashboard'
-                      ? 'bg-[#c34c36] text-white shadow-sm font-black'
-                      : 'text-white/80 hover:text-white hover:bg-white/10'
+                    ? 'bg-[#c34c36] text-white shadow-sm font-black'
+                    : 'text-white/80 hover:text-white hover:bg-white/10'
                     }`}
                 >
                   <Building2 className="w-3.5 h-3.5" />
@@ -237,12 +237,12 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <button
                   onClick={() => onTabChange('orders')}
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer relative ${activeTab === 'orders'
-                      ? 'bg-[#c34c36] text-white shadow-sm font-black'
-                      : 'text-white/80 hover:text-white hover:bg-white/10'
+                    ? 'bg-[#c34c36] text-white shadow-sm font-black'
+                    : 'text-white/80 hover:text-white hover:bg-white/10'
                     }`}
                 >
                   <Clock className="w-3.5 h-3.5" />
-                  <span>{lang === 'vi' ? (currentRole === 'buyer' ? 'Đơn Ký Quỹ' : 'Quản Lý Đơn') : 'Orders'}</span>
+                  <span>{lang === 'vi' ? (currentRole === 'buyer' ? 'Đơn hàng' : 'Quản Lý Đơn') : 'Orders'}</span>
                   {activeOrdersCount > 0 && (
                     <span className="ml-0.5 px-1.5 py-0.2 bg-[#c34c36] text-white rounded-full text-[10px] font-extrabold shadow-xs">
                       {activeOrdersCount}
@@ -255,8 +255,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <button
                   onClick={() => onTabChange('disputes')}
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer relative ${activeTab === 'disputes'
-                      ? 'bg-[#c34c36] text-white shadow-sm font-black'
-                      : 'text-white/80 hover:text-white hover:bg-white/10'
+                    ? 'bg-[#c34c36] text-white shadow-sm font-black'
+                    : 'text-white/80 hover:text-white hover:bg-white/10'
                     }`}
                   title={lang === 'vi' ? 'Khiếu nại & Trọng tài Escrow' : 'Disputes & Escrow Arbitration'}
                 >
@@ -270,8 +270,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <button
                   onClick={() => onTabChange('staff-workspace')}
                   className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${activeTab === 'staff-workspace'
-                      ? 'bg-[#c34c36] text-white shadow-sm font-black'
-                      : 'text-white/80 hover:text-white hover:bg-white/10'
+                    ? 'bg-[#c34c36] text-white shadow-sm font-black'
+                    : 'text-white/80 hover:text-white hover:bg-white/10'
                     }`}
                 >
                   <FileCheck className="w-3.5 h-3.5 text-[#cea981]" />

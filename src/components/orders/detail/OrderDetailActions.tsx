@@ -42,6 +42,7 @@ interface Props {
   handlePromptCancelInspectionRequest: (order: EscrowOrder) => void;
   isShipmentCreatedForOrder: OrderCheck;
   detailHasInboundTracking: boolean;
+  detailHasHubBuyerShipment: boolean;
   detailInboundProgress: ReturnType<typeof getInboundShipmentProgress> | null;
   detailBuyerInspectionStage: BuyerInspectionStage | null;
   confirmingReceiptIds: ReadonlySet<string>;
@@ -84,6 +85,7 @@ export function OrderDetailActions({
   handlePromptCancelInspectionRequest,
   isShipmentCreatedForOrder,
   detailHasInboundTracking,
+  detailHasHubBuyerShipment,
   detailInboundProgress,
   detailBuyerInspectionStage,
   confirmingReceiptIds,
@@ -115,6 +117,9 @@ export function OrderDetailActions({
     String((detailModalOrder as any).inspectionStatus || '').toUpperCase() === 'DELIVERING_TO_BUYER' ||
     String((detailModalOrder as any).inspectionOrder?.status || '').toUpperCase() === 'DELIVERING_TO_BUYER'
   );
+  const showInboundFooterStatus = detailInboundProgress?.step !== 3 || !detailHasHubBuyerShipment;
+  const showInboundFooterTracking = (!detailHasInspection || (detailModalOrder.escrowStatus as string) === 'DELIVERING_TO_BUYER') &&
+    (detailHasInboundTracking || isShipmentCreatedForOrder(detailModalOrder));
   return (
     <>
       {/* Modal Bottom Sticky Footer */}
@@ -504,10 +509,11 @@ export function OrderDetailActions({
                               detailModalOrder.backendStatus !== 'DELIVERED' &&
                               (detailModalOrder.escrowStatus as string) !== 'SHIPPED_TO_BUYER' &&
                               (detailModalOrder.escrowStatus as string) !== 'DELIVERED_INSPECTION_WINDOW' &&
-                              (detailModalOrder.escrowStatus as string) !== 'COMPLETED_RELEASED')) && (
+                              (detailModalOrder.escrowStatus as string) !== 'COMPLETED_RELEASED')) &&
+                            (showInboundFooterStatus || showInboundFooterTracking) && (
                               <div className="flex flex-col sm:flex-row items-stretch gap-2 flex-1">
                                 {/* Nhãn Tĩnh (Không phải nút bấm, không click được) */}
-                                {detailInboundProgress?.step === 3 ? (
+                                {showInboundFooterStatus && (detailInboundProgress?.step === 3 ? (
                                   <div
                                     className="flex-1 py-2.5 px-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xs cursor-default select-none"
                                   >
@@ -528,9 +534,9 @@ export function OrderDetailActions({
                                     <PackageCheck className="w-4 h-4 text-teal-600" />
                                     <span>{lang === 'vi' ? 'Đã gói hàng• Chờ Bàn Giao Tài Xế' : 'Packed • Waiting for Carrier'}</span>
                                   </div>
-                                )}
+                                ))}
 
-                                {(!detailHasInspection || (detailModalOrder.escrowStatus as string) === 'DELIVERING_TO_BUYER') && (detailHasInboundTracking || isShipmentCreatedForOrder(detailModalOrder)) && (
+                                {showInboundFooterTracking && (
                                   <button
                                     onClick={() => setTrackingOrder(detailModalOrder)}
                                     className="py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
@@ -682,63 +688,25 @@ export function OrderDetailActions({
 
 
 
-                    {/* Chỉ Người Mua (Buyer) mới có nút Đã Nhận Hàng & Khiếu Nại Trả Hàng khi đơn đã giao thành công và CHƯA xác nhận */}
+                    {/* Chỉ Người Mua (Buyer) mới có nút Khiếu Nại Trả Hàng khi đơn đã giao thành công và CHƯA xác nhận */}
                     {!isOrderSeller(detailModalOrder) &&
                       !detailBuyerInspectionStage &&
                       !isOrderReceiptConfirmed(detailModalOrder) &&
                       isOrderDeliveredToBuyer(detailModalOrder) && (
-                        <>
-                          <button
-                            onClick={() => {
-                              if (confirmingReceiptIds.has(detailModalOrder.id) || isOrderReceiptConfirmed(detailModalOrder)) return;
-                              setConfirmDialog({
-                                isOpen: true,
-                                title: lang === 'vi' ? 'Xác Nhận Đã Nhận Hàng' : 'Confirm Delivery Receipt',
-                                message: lang === 'vi'
-                                  ? 'Xác nhận bạn đã nhận hàng đầy đủ và nghiệm thu sản phẩm?'
-                                  : 'Confirm you have received and inspected the item?',
-                                subMessage: lang === 'vi'
-                                  ? 'Tiền ký quỹ trong Escrow sẽ được giải ngân an toàn cho người bán. Hành động này không thể hoàn tác.'
-                                  : 'Escrow funds will be released to the seller immediately.',
-                                confirmText: lang === 'vi' ? 'Đã Nhận Hàng' : 'Confirm Receipt',
-                                cancelText: lang === 'vi' ? 'Đóng' : 'Cancel',
-                                variant: 'success',
-                                iconType: 'check',
-                                onConfirm: () => {
-                                  setConfirmingReceiptIds((prev) => new Set(prev).add(detailModalOrder.id));
-                                  try {
-                                    if (typeof window !== 'undefined') {
-                                      localStorage.setItem(`order_receipt_confirmed_${detailModalOrder.id}`, 'true');
-                                    }
-                                  } catch { }
-                                  onConfirmReceipt(detailModalOrder.id);
-                                  setDetailModalOrder(null);
-                                  setConfirmDialog(null);
-                                }
-                              });
-                            }}
-                            disabled={confirmingReceiptIds.has(detailModalOrder.id)}
-                            className="py-2.5 px-3.5 sm:px-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-90 disabled:opacity-50 text-white rounded-xl font-bold text-xs sm:text-sm shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
-                          >
-                            <CheckCircle2 className="w-4 h-4" />
-                            <span>{confirmingReceiptIds.has(detailModalOrder.id) ? (lang === 'vi' ? 'Đang xử lý...' : 'Processing...') : t.confirmReceipt}</span>
-                          </button>
-
-                          <button
-                            onClick={() => {
-                              if (onOpenDispute) {
-                                onOpenDispute(detailModalOrder);
-                              } else {
-                                setReportingOrder(detailModalOrder);
-                              }
-                              setDetailModalOrder(null);
-                            }}
-                            className="py-2.5 px-4 bg-white hover:bg-gray-100 text-[#24263e] border border-[#24263e]/30 rounded-xl font-bold text-xs sm:text-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
-                          >
-                            <AlertTriangle className="w-4 h-4 text-[#24263e]" />
-                            <span>{t.openDispute}</span>
-                          </button>
-                        </>
+                        <button
+                          onClick={() => {
+                            if (onOpenDispute) {
+                              onOpenDispute(detailModalOrder);
+                            } else {
+                              setReportingOrder(detailModalOrder);
+                            }
+                            setDetailModalOrder(null);
+                          }}
+                          className="py-1.5 px-3 bg-white hover:bg-slate-50 text-[#24263e] border border-[#24263e]/30 rounded-xl font-bold text-xs transition inline-flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                        >
+                          <AlertTriangle className="w-3.5 h-3.5 text-[#24263e] shrink-0" />
+                          <span>{t.openDispute}</span>
+                        </button>
                       )}
                   </>
                 )}

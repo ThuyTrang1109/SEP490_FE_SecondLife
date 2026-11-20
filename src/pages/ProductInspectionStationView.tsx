@@ -6,7 +6,7 @@ import {
   ConditionGrade,
   UserProfile
 } from '../types';
-import { formatVND } from '../utils/translations';
+import { formatConditionGrade, formatVND } from '../utils/translations';
 import { getInspectionTaskStage } from '../utils/inspectionTaskStatus';
 import { DigitalInspectionCertificateModal } from '../components/modals/DigitalInspectionCertificateModal';
 import {
@@ -670,7 +670,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
 
   const notify = (text: string, isError = false) => {
     setNoticeMessage({ text: translateSystemNotification(text), isError });
-    setTimeout(() => setNoticeMessage(null), 4500);
+    setTimeout(() => setNoticeMessage(null), 6000);
   };
 
   // Hàm tìm kiếm đơn hàng: Luôn gọi API Backend trước, sau đó đối chiếu làm giàu thông tin
@@ -1504,8 +1504,8 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
         </div>
       )}
 
-      {/* Notifications */}
-      {noticeMessage && (
+      {/* Notifications: Chỉ hiển thị ở đầu trang khi chưa chọn đơn hàng (màn hình tìm kiếm / quét barcode) */}
+      {!activeOrder && noticeMessage && (
         <div
           className={`p-4 rounded-2xl border text-sm font-bold flex items-center gap-2 animate-fadeIn ${noticeMessage.isError
             ? 'bg-red-50 border-red-200 text-red-800'
@@ -1665,29 +1665,17 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {!isInspectorArrived && !isCompletedOrder && (
+                  {!isInspectorArrived && !isCompletedOrder && !isCheckInTooEarly && (
                     <button
                       type="button"
-                      disabled={isCheckInTooEarly}
                       onClick={() => {
-                        if (isCheckInTooEarly) {
-                          notify(checkInEligibility.reason || 'Kỹ thuật viên chỉ được ấn xác nhận đơn trước giờ hẹn tối đa 30 phút!', true);
-                          return;
-                        }
                         handleAcceptTask(activeOrder, barcodeScanInput);
                       }}
-                      className={`px-4 py-2 text-white text-xs font-black rounded-xl flex items-center gap-1.5 shadow-md transition ${isCheckInTooEarly
-                        ? 'bg-slate-400 hover:bg-slate-400 cursor-not-allowed opacity-80'
-                        : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 cursor-pointer active:scale-95'
-                        }`}
-                      title={isCheckInTooEarly ? checkInEligibility.reason : 'Xác nhận tiếp nhận đơn hàng và bắt đầu kiểm định'}
+                      className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-black rounded-xl flex items-center gap-1.5 shadow-md transition cursor-pointer active:scale-95"
+                      title="Xác nhận tiếp nhận đơn hàng và bắt đầu kiểm định"
                     >
-                      {isCheckInTooEarly ? (
-                        <Clock className="w-3.5 h-3.5 text-amber-200" />
-                      ) : (
-                        <CheckCircle2 className="w-3.5 h-3.5 stroke-[2.5]" />
-                      )}
-                      <span>{isCheckInTooEarly ? 'Chưa Đến Giờ Nhận Đơn (Mở trước 30p)' : 'Xác Nhận Đơn'}</span>
+                      <CheckCircle2 className="w-3.5 h-3.5 stroke-[2.5]" />
+                      <span>Xác Nhận Đơn</span>
                     </button>
                   )}
                   {isInspectorArrived && (
@@ -1695,10 +1683,10 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                       type="button"
                       onClick={() => {
                         setAtHomeViewMode('WORKBENCH');
-                        if (currentStep === 'intake') setCurrentStep('exterior');
+                        setCurrentStep('intake');
                       }}
                       className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-black rounded-xl flex items-center gap-1.5 shadow-md transition cursor-pointer"
-                      title="Mở bàn kiểm tra trực tiếp (Ngoại quan, chức năng, checklist)"
+                      title="Mở bàn kiểm tra trực tiếp (Bắt đầu từ Bước 1: Tiếp nhận)"
                     >
                       <Wrench className="w-3.5 h-3.5" />
                       <span>Đến Bàn Kiểm Tra</span>
@@ -1731,6 +1719,21 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                 </div>
               </div>
 
+              {/* Cảnh báo khi chưa đến giờ check-in (chỉ mở trước giờ hẹn tối đa 30 phút) - Đưa lên trên */}
+              {!isInspectorArrived && !isCompletedOrder && isCheckInTooEarly && (
+                <div className="p-3.5 bg-amber-100/90 border border-amber-300 rounded-2xl text-xs text-amber-950 flex items-start gap-2.5 shadow-2xs animate-fadeIn">
+                  <Clock className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                  <div className="space-y-0.5">
+                    <div className="font-black text-amber-900 flex items-center gap-1.5">
+                      <span>Chưa Đến Giờ Nhận Đơn (Chỉ mở trước giờ hẹn tối đa 30 phút)</span>
+                    </div>
+                    <p className="text-[11px] text-amber-800 leading-relaxed font-medium">
+                      {checkInEligibility.reason}
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Banner khóa hồ sơ khi kiểm định đã hoàn tất */}
               {isCompletedOrder && (
                 <div className="p-3.5 sm:p-4 rounded-2xl bg-amber-50/90 border border-amber-300 flex items-center justify-between gap-3 text-xs text-amber-950 shadow-xs animate-fadeIn">
@@ -1760,16 +1763,14 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                     <Calendar className="w-4 h-4 text-purple-600" />
                     <span>Thông Tin Lịch Hẹn & Địa Chỉ Người Bán Cần Đến Khảo Sát</span>
                   </div>
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-purple-200 text-purple-900 border border-purple-300">
-                    KTV Lưu Động
-                  </span>
+
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                   <div className="p-3 bg-white rounded-xl border border-purple-200 shadow-2xs space-y-1">
-                    <span className="text-slate-400 font-bold block text-[10px] uppercase">Thời gian KTV có mặt:</span>
+                    <span className="text-slate-400 font-bold block text-[10px] uppercase">Thời gian:</span>
                     <span className="font-black text-purple-950 text-sm">
-                      🕒 {activeOrder.appointmentScheduledAt ? new Date(activeOrder.appointmentScheduledAt).toLocaleString('vi-VN') : 'Chưa chốt giờ'}
+                      🕒  {activeOrder.appointmentScheduledAt ? new Date(activeOrder.appointmentScheduledAt).toLocaleString('vi-VN') : 'Chưa chốt giờ'}
                     </span>
                   </div>
 
@@ -1791,20 +1792,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                   </div>
                 )}
 
-                {/* Cảnh báo khi chưa đến giờ check-in (chỉ mở trước giờ hẹn 30 phút) */}
-                {isCheckInTooEarly && (
-                  <div className="p-3 bg-amber-100/90 border border-amber-300 rounded-xl text-xs text-amber-950 flex items-start gap-2.5 shadow-2xs animate-fadeIn">
-                    <Clock className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
-                    <div className="space-y-0.5">
-                      <div className="font-black text-amber-900 flex items-center gap-1.5">
-                        <span>Chưa Đến Giờ Nhận Đơn (Chỉ mở trước giờ hẹn tối đa 30 phút)</span>
-                      </div>
-                      <p className="text-[11px] text-amber-800 leading-relaxed font-medium">
-                        {checkInEligibility.reason}
-                      </p>
-                    </div>
-                  </div>
-                )}
+
               </div>
 
               {/* Trạng thái KTV đã đến và đang đo kiểm tại nhà */}
@@ -1887,53 +1875,96 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                   )}
                 </div>
 
-                {/* Cột 2: Thông tin sản phẩm & Khách hàng */}
+                {/* Cột 2: Thông tin sản phẩm bài đăng hiển thị đầy đủ */}
                 <div className="space-y-4 text-xs">
-                  <div className="p-4 rounded-2xl bg-[#faf8f5] border border-gray-200 space-y-2">
-                    <div className="font-bold text-gray-700 uppercase text-[11px] pb-1 border-b border-gray-200/80">
-                      Thông Tin Sản Phẩm Bài Đăng
+                  <div className="p-4 sm:p-5 rounded-2xl bg-[#faf8f5] border border-gray-200 space-y-3 shadow-2xs">
+                    <div className="font-bold text-gray-700 uppercase text-[11px] pb-2 border-b border-gray-200/80 flex items-center justify-between flex-wrap gap-1">
+                      <span>Thông Tin Sản Phẩm Bài Đăng</span>
+                      {activeOrder?.listing?.id && (
+                        <span className="font-mono text-gray-400 font-normal">
+                          Mã bài đăng: #{String(activeOrder.listing.id).slice(0, 8)}
+                        </span>
+                      )}
                     </div>
-                    <div><strong>Tên sản phẩm:</strong> {activeOrder?.listing?.title}</div>
-                    <div>
-                      <strong>Giá sản phẩm:</strong>{' '}
-                      <span className="font-mono text-[#c34c36] font-bold">
-                        {formatVND(activeOrder?.itemPriceVnd || activeOrder?.listing?.priceVnd || 0)}
-                      </span>
-                    </div>
-                    <div><strong>Người bán:</strong> {activeOrder?.sellerName}</div>
-                    <div><strong>Người mua:</strong> {activeOrder?.buyerName}</div>
-                    {activeOrder?.listing?.description && (
-                      <div className="pt-1 text-gray-500 text-[11px] line-clamp-3">
-                        <strong>Mô tả:</strong> {activeOrder.listing.description}
-                      </div>
-                    )}
-                  </div>
 
-                  <div className="p-4 rounded-2xl bg-white border border-purple-200 space-y-2.5 shadow-2xs">
-                    <div className="font-bold text-purple-900 uppercase text-[11px] pb-1 border-b border-purple-100 flex items-center gap-1.5">
-                      <MapPin className="w-3.5 h-3.5 text-purple-600" />
-                      <span>Địa Chỉ & Liên Hệ Khách Hàng</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">Địa chỉ khảo sát:</span>
-                      <div className="font-semibold text-gray-900 mt-0.5">
-                        {activeOrder.buyerAddress || 'Quận Cầu Giấy, TP. Hà Nội'}
-                      </div>
-                    </div>
-                    <div className="pt-1 flex items-center justify-between">
+                    <div className="space-y-2">
                       <div>
-                        <span className="text-gray-500">Số điện thoại:</span>
-                        <div className="font-mono font-bold text-slate-800">
-                          {activeOrder.buyerPhone || '0988 123 456'}
-                        </div>
+                        <strong className="text-gray-600">Tên sản phẩm:</strong>{' '}
+                        <span className="font-bold text-gray-900">{activeOrder?.listing?.title || (activeOrder as any)?.postTitle}</span>
                       </div>
-                      <a
-                        href={`tel:${activeOrder.buyerPhone || '0988123456'}`}
-                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer"
-                      >
-                        <Phone className="w-3.5 h-3.5" />
-                        <span>Gọi Điện</span>
-                      </a>
+
+                      {(() => {
+                        const rawDesc = activeOrder?.listing?.description || (activeOrder as any)?.description || '';
+                        const origPriceMatch = rawDesc.match(/<!--(?:sl_orig_price|ORIGINAL_PRICE):(\d+)-->/i);
+                        const extractedOrigPrice = origPriceMatch ? Number(origPriceMatch[1]) : 0;
+                        const originalPrice = activeOrder?.listing?.originalPriceVnd || extractedOrigPrice || 0;
+                        const cleanDesc = rawDesc.replace(/<!--[\s\S]*?-->/gi, '').trim();
+
+                        return (
+                          <>
+                            <div className="flex flex-wrap items-center gap-x-6 gap-y-1">
+                              <div>
+                                <strong className="text-gray-600">Giá bài đăng:</strong>{' '}
+                                <span className="font-mono text-[#c34c36] font-extrabold text-sm">
+                                  {formatVND(activeOrder?.itemPriceVnd || activeOrder?.listing?.priceVnd || 0)}
+                                </span>
+                              </div>
+                              {originalPrice > 0 && (
+                                <div>
+                                  <strong className="text-gray-600">Giá lúc mua mới:</strong>{' '}
+                                  <span className="font-mono text-slate-400 line-through">
+                                    {formatVND(originalPrice)}
+                                  </span>
+                                </div>
+                              )}
+                              {(activeOrder?.listing?.brand || activeOrder?.listing?.model) && (
+                                <div>
+                                  <strong className="text-gray-600">Thương hiệu / Model:</strong>{' '}
+                                  <span className="font-semibold text-gray-800">
+                                    {[activeOrder?.listing?.brand, activeOrder?.listing?.model].filter(Boolean).join(' - ')}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+
+                            {(activeOrder?.listing?.declaredConditionText || activeOrder?.listing?.conditionGrade || (activeOrder as any)?.condition) && (
+                              <div>
+                                <strong className="text-gray-600">Tình trạng công bố:</strong>{' '}
+                                <span className="font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                                  {formatConditionGrade(activeOrder?.listing?.declaredConditionText || activeOrder?.listing?.conditionGrade || (activeOrder as any)?.condition, 'vi')}
+                                </span>
+                              </div>
+                            )}
+
+                            <div className="flex flex-wrap items-center gap-x-6 gap-y-1 pt-0.5">
+                              <div>
+                                <strong className="text-gray-600">Người bán:</strong>{' '}
+                                <span className="font-semibold text-gray-800">{resolvedSellerName || activeOrder?.sellerName}</span>
+                              </div>
+                              <div>
+                                <strong className="text-gray-600">Người mua:</strong>{' '}
+                                <span className="font-semibold text-gray-800">{activeOrder?.buyerName}</span>
+                              </div>
+                            </div>
+
+                            {activeOrder?.listing?.location && (
+                              <div>
+                                <strong className="text-gray-600">Khu vực đăng bán:</strong>{' '}
+                                <span className="text-gray-700">{activeOrder.listing.location}</span>
+                              </div>
+                            )}
+
+                            {cleanDesc && (
+                              <div className="pt-2 border-t border-gray-200/80 space-y-1">
+                                <strong className="text-gray-700 block">Mô tả chi tiết bài đăng:</strong>
+                                <div className="text-gray-700 text-xs bg-white p-3 rounded-xl border border-gray-200 leading-relaxed whitespace-pre-line max-h-60 overflow-y-auto">
+                                  {cleanDesc}
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -1959,6 +1990,17 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                 </div>
 
                 <div className="flex items-center gap-2">
+                  {isAtHomeOrder && (
+                    <button
+                      type="button"
+                      onClick={() => setAtHomeViewMode('INFO')}
+                      className="px-3 py-2 rounded-xl border border-purple-200 hover:bg-purple-50 text-xs font-bold text-purple-700 flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                      title="Xem lại thông tin lịch hẹn và địa chỉ khảo sát"
+                    >
+                      <Calendar className="w-3.5 h-3.5 text-purple-600" />
+                      <span>Xem Lịch Hẹn</span>
+                    </button>
+                  )}
                   {isCompletedOrder && (
                     <button
                       type="button"
@@ -2109,7 +2151,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                             Bàn Giao Nhận Tại Phòng Lab Hub
                           </div>
                           <div className="text-gray-600">
-                            Bưu tá giao hàng bọc đệm khí tới quầy tiếp nhận Hub.
+                            Bưu tá giao hàng tới quầy tiếp nhận Hub.
                           </div>
                         </>
                       )}
@@ -2172,6 +2214,22 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                       </div>
                     </div>
                   </div>
+
+                  {noticeMessage && (
+                    <div
+                      className={`p-3.5 rounded-xl border text-xs font-bold flex items-center gap-2 animate-fadeIn ${noticeMessage.isError
+                        ? 'bg-red-50 border-red-200 text-red-800'
+                        : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                        }`}
+                    >
+                      {noticeMessage.isError ? (
+                        <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                      ) : (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      )}
+                      <span>{translateSystemNotification(noticeMessage.text)}</span>
+                    </div>
+                  )}
 
                   <div className="flex justify-end pt-3">
                     <button
@@ -2259,6 +2317,22 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                     />
                   </div>
 
+                  {noticeMessage && (
+                    <div
+                      className={`p-3.5 rounded-xl border text-xs font-bold flex items-center gap-2 animate-fadeIn ${noticeMessage.isError
+                        ? 'bg-red-50 border-red-200 text-red-800'
+                        : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                        }`}
+                    >
+                      {noticeMessage.isError ? (
+                        <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                      ) : (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      )}
+                      <span>{translateSystemNotification(noticeMessage.text)}</span>
+                    </div>
+                  )}
+
                   <div className="flex justify-between pt-3">
                     <button
                       type="button"
@@ -2337,12 +2411,14 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                           ? 'border-emerald-300 bg-emerald-50/20'
                           : item.status === 'fail'
                             ? 'border-red-300 bg-red-50/20'
-                            : 'border-gray-200 bg-[#faf8f5]'
+                            : item.mandatory
+                              ? 'border-amber-300 bg-amber-50/30 ring-1 ring-amber-200/70'
+                              : 'border-gray-200 bg-[#faf8f5]'
                           }`}
                       >
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                           <div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-[10px] font-bold text-[#c34c36] uppercase tracking-wider">
                                 [{item.category || selectedCategory || 'Kỹ thuật'}]
                               </span>
@@ -2356,6 +2432,11 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                                 <span className="inline-flex items-center gap-1 text-[10px] font-black text-red-700 bg-red-100 px-2 py-0.5 rounded-full border border-red-300">
                                   <X className="w-3 h-3 text-red-600" />
                                   PHÁT HIỆN LỖI
+                                </span>
+                              )}
+                              {item.mandatory && item.status !== 'pass' && item.status !== 'fail' && (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full">
+                                  Chưa đánh giá
                                 </span>
                               )}
                             </div>
@@ -2403,7 +2484,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                         </div>
 
                         <div className="pt-2 border-t border-gray-200 flex items-center gap-2">
-                          <span className="text-gray-500 text-[11px] shrink-0">Chỉ số đo đạc thực tế:</span>
+                          <span className="text-gray-500 text-[11px] shrink-0">Đánh giá thực tế của kỹ thuật viên:</span>
                           <input
                             type="text"
                             readOnly={isCompletedOrder}

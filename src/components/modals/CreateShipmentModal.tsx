@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { EscrowOrder, Language, ShipmentBackend } from '../../types';
-import { formatVND } from '../../utils/translations';
+import { formatConditionGrade, formatVND } from '../../utils/translations';
 import {
   Truck,
   Package,
@@ -521,7 +521,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
                   {resolveOrderListing(order.listing).brand}
                 </span>
                 <span className="text-[10px] bg-slate-200 text-slate-700 font-bold px-1.5 py-0.2 rounded">
-                  {order.listing?.conditionGrade || 'Đã qua sử dụng'}
+                  {formatConditionGrade(order.listing?.conditionGrade, 'vi') || 'Đã qua sử dụng'}
                 </span>
               </div>
               <h4 className="font-bold text-slate-900 text-xs sm:text-sm truncate mt-0.5">

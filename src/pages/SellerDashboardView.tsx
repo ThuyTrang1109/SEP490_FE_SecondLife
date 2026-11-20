@@ -23,7 +23,10 @@ import {
   Trash2,
   FileText,
   Sliders,
-  RotateCcw
+  RotateCcw,
+  Sparkles,
+  ChevronRight,
+  PackageCheck
 } from 'lucide-react';
 import { Listing, Language, UserProfile, ItemBackend } from '../types';
 import { itemService } from '../services/itemService';
@@ -125,10 +128,10 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             detail.status === 'ACTIVE'
               ? 'active'
               : detail.status === 'DRAFT'
-              ? 'draft'
-              : detail.status === 'REJECTED'
-              ? 'rejected'
-              : 'reserved'
+                ? 'draft'
+                : detail.status === 'REJECTED'
+                  ? 'rejected'
+                  : 'reserved'
           ) as any,
           backendStatus: detail.status || item.backendStatus,
           rejectionReason: detail.rejectionReason ?? item.rejectionReason,
@@ -349,10 +352,10 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
   const [myReputation, setMyReputation] = useState<SellerReputationDto | null>(null);
   const sellerReviewCount = useMemo(() => {
     const sellerId = currentUser?.id;
-    if (!sellerId) return myReputation?.evaluatedOrders ?? 0;
+    if (!sellerId) return (currentUser as any)?.reviewCount ?? 0;
     const directReviews = reviewService.getReviewsBySeller(sellerId).length;
-    return directReviews > 0 ? directReviews : (myReputation?.evaluatedOrders ?? 0);
-  }, [currentUser?.id, myReputation?.evaluatedOrders]);
+    return directReviews > 0 ? directReviews : ((currentUser as any)?.reviewCount ?? 0);
+  }, [currentUser?.id, (currentUser as any)?.reviewCount]);
 
   const sellerAverageRatingText = useMemo(() => {
     const sellerId = currentUser?.id;
@@ -364,15 +367,24 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
     if (currentUser?.sellerRating && currentUser.sellerRating > 0) {
       return `${currentUser.sellerRating.toFixed(1)} / 5.0`;
     }
-    if (myReputation?.score !== undefined && myReputation?.score !== null && (myReputation.evaluatedOrders ?? 0) > 0) {
-      return `${(myReputation.score / 20).toFixed(1)} / 5.0`;
-    }
     return lang === 'vi' ? 'Chưa có đánh giá' : 'No ratings yet';
-  }, [currentUser?.id, currentUser?.sellerRating, myReputation, lang]);
+  }, [currentUser?.id, currentUser?.sellerRating, lang]);
+
   const [isReputationHistoryOpen, setIsReputationHistoryOpen] = useState(false);
   const [reputationHistoryItems, setReputationHistoryItems] = useState<ReputationHistoryDto[]>([]);
   const [isLoadingReputationHistory, setIsLoadingReputationHistory] = useState(false);
   const [isReloadingReputation, setIsReloadingReputation] = useState(false);
+  const [showViolationWarning, setShowViolationWarning] = useState(true);
+
+  useEffect(() => {
+    if (myReputation?.sellingRestricted || myReputation?.warningCode) {
+      setShowViolationWarning(true);
+      const timer = setTimeout(() => {
+        setShowViolationWarning(false);
+      }, 15000);
+      return () => clearTimeout(timer);
+    }
+  }, [myReputation?.sellingRestricted, myReputation?.warningCode]);
 
   const handleRefreshReputation = async () => {
     setIsReloadingReputation(true);
@@ -529,29 +541,29 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             setResubmitSelfieUrl(ver.selfieUrl || '');
           }
         })
-        .catch(() => {});
+        .catch(() => { });
 
       sellerCreditService.getCredits()
         .then((bal) => {
           if (bal) setCreditBalance(bal);
         })
-        .catch(() => {});
+        .catch(() => { });
 
       walletService.getMyWallet()
         .then((w) => {
           if (w) setSellerWalletBalance(Number(w.balance || 0));
         })
-        .catch(() => {});
+        .catch(() => { });
 
       reputationService.getMyReputation()
         .then((rep) => {
           if (rep) setMyReputation(rep);
         })
-        .catch(() => {});
+        .catch(() => { });
 
       returnShippingFeeService.getMyReturnShippingDebt()
         .then((d) => setSellerDebt(d))
-        .catch(() => {});
+        .catch(() => { });
 
       const res = await postService.getMyPosts(0, 50);
       const posts = (res as any)?.content || (res as any)?.data || (Array.isArray(res) ? res : []);
@@ -752,6 +764,18 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
     currentUser?.name,
   ]);
 
+  // Đơn hoàn thành thực tế của người bán (đồng bộ từ myReputation.goodTransactions hoặc currentUser)
+  const completedOrdersCount = useMemo(() => {
+    if (myReputation?.goodTransactions !== undefined && myReputation?.goodTransactions !== null && myReputation.goodTransactions > 0) {
+      return myReputation.goodTransactions;
+    }
+    if (currentUser?.completedOrdersCount !== undefined && currentUser?.completedOrdersCount !== null && currentUser.completedOrdersCount > 0) {
+      return currentUser.completedOrdersCount;
+    }
+    const soldListingsCount = combinedListings.filter((l) => l.status === 'sold' || (l as any).backendStatus === 'SOLD').length;
+    return soldListingsCount > 0 ? soldListingsCount : (myReputation?.goodTransactions ?? 0);
+  }, [myReputation?.goodTransactions, currentUser?.completedOrdersCount, combinedListings]);
+
   const filteredListings = React.useMemo(() => {
     const list = combinedListings.filter((l) => {
       if (filterStatus === 'ALL') return true;
@@ -811,19 +835,15 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
 
   return (
     <div className="space-y-8 pb-16 text-[#24263e]">
-      {/* eKYC Verification Status Banner */}
-      {myVerification && (
-        <div className={`p-4 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-xs ${
-          myVerification.status === 'APPROVED' ? 'bg-emerald-50 border-emerald-200 text-emerald-900' :
-          myVerification.status === 'NEEDS_REVIEW' ? 'bg-amber-50 border-amber-200 text-amber-900' :
+      {/* eKYC Verification Status Banner (Ẩn khi đã duyệt APPROVED thành công) */}
+      {myVerification && myVerification.status !== 'APPROVED' && (
+        <div className={`p-4 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-xs ${myVerification.status === 'NEEDS_REVIEW' ? 'bg-amber-50 border-amber-200 text-amber-900' :
           myVerification.status === 'RESUBMIT_REQUIRED' ? 'bg-orange-50 border-orange-200 text-orange-950' :
-          myVerification.status === 'REJECTED' ? 'bg-rose-50 border-rose-200 text-rose-900' :
-          'bg-blue-50 border-blue-200 text-blue-900'
-        }`}>
+            myVerification.status === 'REJECTED' ? 'bg-rose-50 border-rose-200 text-rose-900' :
+              'bg-blue-50 border-blue-200 text-blue-900'
+          }`}>
           <div className="flex items-center gap-3">
-            {myVerification.status === 'APPROVED' ? (
-              <ShieldCheck className="w-6 h-6 text-emerald-600 shrink-0" />
-            ) : myVerification.status === 'NEEDS_REVIEW' ? (
+            {myVerification.status === 'NEEDS_REVIEW' ? (
               <Clock className="w-6 h-6 text-amber-600 shrink-0" />
             ) : myVerification.status === 'RESUBMIT_REQUIRED' ? (
               <AlertCircle className="w-6 h-6 text-orange-600 shrink-0" />
@@ -834,16 +854,12 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             )}
             <div>
               <div className="font-bold text-sm">
-                {myVerification.status === 'APPROVED' && (lang === 'vi' ? 'Xác thực thành công! Tài khoản người bán đã kích hoạt.' : 'eKYC Verified! Seller account active.')}
                 {myVerification.status === 'NEEDS_REVIEW' && (lang === 'vi' ? 'Đang chờ Quản trị viên duyệt' : 'Pending Admin Review')}
                 {(myVerification.status === 'EKYC_PENDING' || myVerification.status === 'SUBMITTED' || myVerification.status === 'PENDING') && (lang === 'vi' ? 'Đang đối soát eKYC' : 'eKYC Verification In Progress')}
                 {myVerification.status === 'RESUBMIT_REQUIRED' && (lang === 'vi' ? 'Cần chụp lại ảnh' : 'Resubmission Required')}
                 {myVerification.status === 'REJECTED' && (lang === 'vi' ? 'Hồ sơ bị từ chối' : 'Verification Rejected')}
               </div>
               <div className="mt-0.5 text-[11px] leading-relaxed">
-                {myVerification.status === 'APPROVED' && (
-                  <span>{lang === 'vi' ? 'Tất cả các tin đăng của bạn sẽ hiển thị huy hiệu Người Bán Uy Tín & Đã Kiểm Định.' : 'All your listings will display the Verified Seller badge.'}</span>
-                )}
                 {myVerification.status === 'NEEDS_REVIEW' && (
                   <span>{lang === 'vi' ? `Hồ sơ đang được chuyên viên thẩm định thủ công trong 24h. Mã CCCD: ${myVerification.documentNumber}` : `Application is under manual review within 24h. ID: ${myVerification.documentNumber}`}</span>
                 )}
@@ -904,133 +920,160 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       )}
 
       {/* Top Banner */}
-      <div className="bg-[#fce5da] text-[#24263e] rounded-3xl p-6 sm:p-8 shadow-xl border border-[#24263e]/15 space-y-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="flex items-center gap-4">
-            <div className="relative">
+      <div className="bg-[#fce5da] text-[#24263e] rounded-2xl p-4 sm:p-5 shadow-sm border border-[#24263e]/15 space-y-3.5">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div className="relative shrink-0">
               <UserAvatar
                 src={currentUser?.avatar}
                 name={currentUser?.name}
-                className="w-16 h-16 rounded-2xl border-2 border-[#24263e]/20 shadow-md"
+                className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl border-2 border-[#24263e]/20 shadow-xs"
                 role="seller"
               />
               <div
-                className="absolute -bottom-1 -right-1 bg-[#24263e] text-white p-1 rounded-full text-xs shadow-xs"
+                className="absolute -bottom-1 -right-1 bg-emerald-600 text-white p-0.5 rounded-full text-xs shadow-xs"
                 title={lang === 'vi' ? 'Đã xác minh eKYC' : 'eKYC Verified'}
               >
                 <ShieldCheck className="w-3.5 h-3.5" />
               </div>
             </div>
 
-            <div>
+            <div className="space-y-1.5 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-xl sm:text-2xl font-black text-[#24263e]">
+                <h1 className="text-lg sm:text-xl font-black text-[#24263e] truncate">
                   {currentUser?.name || currentUser?.email?.split('@')[0] || 'Người Bán SecondLife'}
                 </h1>
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white/80 border border-[#24263e]/15 text-[#24263e] text-[11px] font-bold shadow-xs">
+                <button
+                  type="button"
+                  onClick={handleOpenVerificationHistory}
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-[11px] font-bold shadow-2xs transition cursor-pointer"
+                  title={lang === 'vi' ? 'Đã xác minh eKYC - Bấm để xem lịch sử nộp hồ sơ' : 'eKYC Verified - Click to view history'}
+                >
                   <CheckCircle2 className={`w-3 h-3 ${myVerification?.status === 'APPROVED' ? 'text-emerald-600' : 'text-amber-500'}`} />
-                  {myVerification?.status === 'APPROVED' ? (lang === 'vi' ? 'Đã xác minh eKYC' : 'eKYC Verified') : (lang === 'vi' ? 'Chưa xác minh eKYC' : 'Unverified')}
-                </span>
+                  <span>{myVerification?.status === 'APPROVED' ? (lang === 'vi' ? 'Đã xác minh eKYC' : 'eKYC Verified') : (lang === 'vi' ? 'Chưa xác minh eKYC' : 'Unverified')}</span>
+                </button>
                 <button
                   type="button"
                   onClick={handleOpenReputationHistory}
-                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#24263e] hover:bg-[#c34c36] text-white text-[11px] font-black shadow-xs transition cursor-pointer"
-                  title="Bấm để xem chi tiết chỉ số và lịch sử uy tín"
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-[11px] font-bold shadow-2xs transition cursor-pointer"
+                  title="Bấm để xem chi tiết bảng điểm và lịch sử uy tín"
                 >
-                  <Award className="w-3.5 h-3.5 text-amber-300" />
-                  <span>
+                  <Award className="w-3 h-3 text-amber-600" />
+                  <span className="font-mono font-black">
                     {myReputation?.assessmentStatus === 'NO_TRANSACTIONS'
-                      ? 'Chưa có đơn (Mới)'
+                      ? 'Chưa có đơn'
                       : myReputation?.score !== undefined && myReputation?.score !== null
-                      ? `${myReputation.score}/100 Điểm Uy Tín`
-                      : currentUser?.trustScore
-                      ? `${currentUser.trustScore}/100 Điểm Uy Tín`
-                      : 'Chưa có điểm'}
+                        ? `${myReputation.score}/100`
+                        : currentUser?.trustScore
+                          ? `${currentUser.trustScore}/100`
+                          : '—'}
                   </span>
+                  <span>Uy Tín</span>
                   {myReputation?.sellingRestricted && (
                     <span className="px-1.5 py-0.2 rounded text-[9px] bg-rose-500 text-white font-bold animate-pulse">
                       Hạn chế
                     </span>
                   )}
-                  <History className="w-3 h-3 text-slate-300 ml-0.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={handleOpenVerificationHistory}
-                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/90 hover:bg-white text-[#24263e] text-[11px] font-black shadow-xs transition cursor-pointer border border-[#24263e]/15"
-                  title="Bấm để xem lịch sử nộp hồ sơ eKYC"
-                >
-                  <ShieldCheck className="w-3.5 h-3.5 text-[#c34c36]" />
-                  <span>{lang === 'vi' ? 'Lịch Sử eKYC' : 'eKYC History'}</span>
+                  <ChevronRight className="w-2.5 h-2.5 text-amber-700/60" />
                 </button>
               </div>
-              <p className="text-xs text-[#24263e]/80 mt-1 flex items-center gap-3 font-semibold flex-wrap">
+
+              {/* Dải chỉ số uy tín & bán hàng: Tinh gọn, chuyên nghiệp, không vỡ dòng */}
+              <div className="flex items-center gap-2.5 text-xs text-[#24263e]/85 font-semibold flex-wrap">
                 <span className="flex items-center gap-1 text-[#24263e] font-bold">
-                  <Star className="w-3.5 h-3.5 fill-[#c34c36] text-[#c34c36]" />
-                  {sellerAverageRatingText}
+                  <PackageCheck className="w-3.5 h-3.5 text-emerald-700" />
+                  <span>{completedOrdersCount} {lang === 'vi' ? 'đơn hoàn thành' : 'completed orders'}</span>
                 </span>
-                <span>•</span>
-                <span>{filteredListings.filter((l) => l.status === 'sold').length} {lang === 'vi' ? 'đơn hoàn thành' : 'completed orders'}</span>
-                <span>•</span>
-                <span>{lang === 'vi' ? 'Tỷ lệ phản hồi 100%' : '100% response rate'}</span>
-              </p>
+                <span className="text-slate-400">•</span>
+                <button
+                  type="button"
+                  onClick={() => setIsSellerReviewsOpen(true)}
+                  className="flex items-center gap-1 hover:text-[#c34c36] text-[#24263e] font-bold transition cursor-pointer"
+                  title="Bấm để xem đánh giá khách hàng"
+                >
+                  <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-500" />
+                  <span>
+                    {sellerAverageRatingText}
+                    {sellerReviewCount > 0 ? ` (${sellerReviewCount})` : ''}
+                  </span>
+                </button>
+                <span className="text-slate-400">•</span>
+                <span className="flex items-center gap-1 text-slate-700 font-semibold">
+                  <Sparkles className="w-3.5 h-3.5 text-sky-600" />
+                  <span>{lang === 'vi' ? 'Tỷ lệ phản hồi 100%' : '100% response'}</span>
+                </span>
+              </div>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
+          {/* Cụm nút thao tác: phân cấp chính/phụ rõ ràng, bố cục cân đối */}
+          <div className="flex flex-col sm:items-end gap-2 shrink-0">
             <button
               onClick={() => onCreateListing()}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#c34c36] hover:bg-[#a83d2a] text-white font-black text-xs shadow-md transition cursor-pointer"
+              className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-[#c34c36] hover:bg-[#a83d2a] text-white font-black text-xs shadow-sm hover:shadow transition cursor-pointer"
             >
               <PlusCircle className="w-4 h-4" />
               <span>{lang === 'vi' ? 'Đăng Bán Đồ Gia Dụng Mới (AI)' : 'Post New Appliance (AI)'}</span>
             </button>
-            <button
-              onClick={() => setIsSellerReviewsOpen(true)}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/80 hover:bg-white text-[#24263e] border border-[#24263e]/15 font-bold text-xs transition cursor-pointer shadow-xs"
-            >
-              <Star className="w-4 h-4 text-amber-500 fill-amber-400" />
-              <span>{lang === 'vi' ? `Xem Đánh Giá Của Khách Hàng (${sellerReviewCount})` : `Customer Reviews (${sellerReviewCount})`}</span>
-            </button>
-            {onViewOrders && (
+
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {onViewOrders && (
+                <button
+                  onClick={onViewOrders}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/90 hover:bg-white text-[#24263e] border border-[#24263e]/15 font-bold text-xs transition cursor-pointer shadow-2xs"
+                >
+                  <Clock className="w-3.5 h-3.5 text-emerald-800" />
+                  <span>{lang === 'vi' ? 'Quản Lý Đơn' : 'Orders'}</span>
+                </button>
+              )}
               <button
-                onClick={onViewOrders}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/80 hover:bg-white text-[#24263e] border border-[#24263e]/15 font-bold text-xs transition cursor-pointer shadow-xs"
+                onClick={() => setIsPayoutModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/90 hover:bg-white text-[#24263e] border border-[#24263e]/15 font-bold text-xs transition cursor-pointer shadow-2xs"
               >
-                <Clock className="w-4 h-4 text-emerald-800" />
-                <span>{lang === 'vi' ? 'Quản Lý Đơn Bán Hàng' : 'Manage Sales Orders'}</span>
+                <Wallet className="w-3.5 h-3.5 text-[#24263e]" />
+                <span>{lang === 'vi' ? 'Rút Tiền Ví' : 'Withdraw'}</span>
               </button>
-            )}
-            <button
-              onClick={() => setIsPayoutModalOpen(true)}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/80 hover:bg-white text-[#24263e] border border-[#24263e]/15 font-bold text-xs transition cursor-pointer shadow-xs"
-            >
-              <Wallet className="w-4 h-4 text-[#24263e]" />
-              <span>{lang === 'vi' ? 'Rút Tiền Ví Doanh Thu' : 'Withdraw Revenue'}</span>
-            </button>
+              <button
+                onClick={() => setIsSellerReviewsOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/90 hover:bg-white text-[#24263e] border border-[#24263e]/15 font-bold text-xs transition cursor-pointer shadow-2xs"
+              >
+                <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
+                <span>{lang === 'vi' ? `Đánh Giá (${sellerReviewCount})` : `Reviews (${sellerReviewCount})`}</span>
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Cảnh báo hạn chế bán hàng hoặc cảnh báo vi phạm uy tín theo tài liệu BE */}
-        {myReputation?.sellingRestricted ? (
-          <div className="bg-rose-50 border border-rose-300 text-rose-900 p-4 rounded-2xl flex items-start gap-3 shadow-xs animate-fadeIn mt-4">
-            <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
-            <div className="flex-1 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-sm text-rose-900">
-                  Tài khoản đang bị hạn chế bán hàng (Selling Restricted)
+        {/* Cảnh báo hạn chế bán hàng hoặc cảnh báo vi phạm uy tín theo tài liệu BE (tự động tắt sau 15s) */}
+        {showViolationWarning && (myReputation?.sellingRestricted ? (
+          <div className="bg-rose-50 border border-rose-300 text-rose-900 p-2.5 sm:p-3 rounded-xl flex items-center justify-between gap-3 shadow-xs animate-fadeIn text-xs">
+            <div className="flex items-center gap-2 min-w-0">
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+              <div className="truncate">
+                <span className="font-bold text-rose-900 mr-2">
+                  Tài khoản đang bị hạn chế bán hàng:
                 </span>
-                <button
-                  type="button"
-                  onClick={handleOpenReputationHistory}
-                  className="text-xs font-bold text-rose-700 underline hover:text-rose-900 cursor-pointer"
-                >
-                  Xem lý do & lịch sử
-                </button>
+                <span className="text-rose-700 text-[11px]">
+                  Quyền đăng bán bị tạm khóa do vi phạm hoặc điểm phạt.
+                </span>
               </div>
-              <p className="mt-1 text-rose-700 leading-relaxed">
-                Quyền đăng bán sản phẩm mới đang tạm thời bị khóa do điểm phạt hoặc vi phạm quy chế sàn. Bạn vẫn có thể tiếp tục thực hiện và hoàn tất các đơn hàng đang xử lý. Vui lòng liên hệ Quản trị viên để được hỗ trợ gỡ hạn chế.
-              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleOpenReputationHistory}
+                className="text-xs font-bold text-rose-700 underline hover:text-rose-900 cursor-pointer"
+              >
+                Xem chi tiết
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowViolationWarning(false)}
+                className="text-rose-500 hover:text-rose-800 p-1 text-xs"
+                title="Đóng thông báo"
+              >
+                ✕
+              </button>
             </div>
           </div>
         ) : myReputation?.warningCode ? (
@@ -1038,82 +1081,92 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             const warnMeta = getReputationWarningMeta(myReputation.warningCode);
             if (!warnMeta) return null;
             return (
-              <div className={`p-3.5 rounded-2xl border flex items-start gap-3 shadow-xs animate-fadeIn mt-4 ${warnMeta.badgeClass}`}>
-                <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
-                <div className="flex-1 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-sm">{warnMeta.title}</span>
-                    <button
-                      type="button"
-                      onClick={handleOpenReputationHistory}
-                      className="text-[11px] font-bold underline hover:opacity-80 cursor-pointer"
-                    >
-                      Chi tiết uy tín
-                    </button>
+              <div className={`p-2.5 sm:p-3 rounded-xl border flex items-center justify-between gap-3 shadow-xs animate-fadeIn text-xs ${warnMeta.badgeClass}`}>
+                <div className="flex items-center gap-2 min-w-0">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <div className="truncate">
+                    <span className="font-bold mr-2">{warnMeta.title}:</span>
+                    <span className="opacity-90 text-[11px]">{warnMeta.desc}</span>
                   </div>
-                  <p className="mt-0.5 opacity-90">{warnMeta.desc}</p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleOpenReputationHistory}
+                    className="text-[11px] font-bold underline hover:opacity-80 cursor-pointer"
+                  >
+                    Chi tiết uy tín
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowViolationWarning(false)}
+                    className="opacity-70 hover:opacity-100 p-1 text-xs"
+                    title="Đóng thông báo"
+                  >
+                    ✕
+                  </button>
                 </div>
               </div>
             );
           })()
-        ) : null}
+        ) : null)}
 
-        {/* Financial Metrics Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-4 border-t border-[#24263e]/15">
-          <div className="bg-[#FFFFFF] text-[#24263e] rounded-2xl p-4 border border-gray-200 shadow-sm space-y-1">
-            <div className="text-xs text-[#24263e]/70 flex items-center justify-between">
-              <span>{lang === 'vi' ? 'Số dư ví khả dụng' : 'Available wallet balance'}</span>
-              <Wallet className="w-4 h-4 text-[#24263e]" />
+        {/* Financial Metrics Cards (gọn gàng, thanh thoát) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2 border-t border-[#24263e]/15">
+          <div className="bg-[#FFFFFF] text-[#24263e] rounded-xl p-3 border border-gray-200 shadow-xs space-y-0.5">
+            <div className="text-[11px] text-[#24263e]/70 flex items-center justify-between font-medium">
+              <span>{lang === 'vi' ? 'Số dư ví khả dụng' : 'Available balance'}</span>
+              <Wallet className="w-3.5 h-3.5 text-[#24263e]" />
             </div>
-            <div className="text-2xl font-black text-[#24263e]">
+            <div className="text-xl font-black text-[#24263e] tracking-tight">
               {formatVND(totalEarnings)}
             </div>
-            <div className="text-[11px] text-[#24263e]/60">
-              {lang === 'vi' ? 'Có thể rút về Ngân hàng ngay' : 'Can withdraw to bank immediately'}
+            <div className="text-[10px] text-[#24263e]/60">
+              {lang === 'vi' ? 'Có thể rút về Ngân hàng ngay' : 'Can withdraw to bank'}
             </div>
           </div>
 
-          <div className="bg-[#FFFFFF] text-[#24263e] rounded-2xl p-4 border border-gray-200 shadow-sm space-y-1">
-            <div className="text-xs text-[#24263e]/70 flex items-center justify-between">
+          <div className="bg-[#FFFFFF] text-[#24263e] rounded-xl p-3 border border-gray-200 shadow-xs space-y-0.5">
+            <div className="text-[11px] text-[#24263e]/70 flex items-center justify-between font-medium">
               <span>{lang === 'vi' ? 'Đang đóng băng Escrow' : 'Held in Escrow'}</span>
-              <Clock className="w-4 h-4 text-gray-400" />
+              <Clock className="w-3.5 h-3.5 text-gray-400" />
             </div>
-            <div className="text-2xl font-black text-[#24263e]">
+            <div className="text-xl font-black text-[#24263e] tracking-tight">
               {formatVND(pendingEscrow)}
             </div>
-            <div className="text-[11px] text-[#24263e]/60">
-              {lang === 'vi' ? 'Giải ngân sau khi Buyer nhận hàng' : 'Released after buyer confirms delivery'}
+            <div className="text-[10px] text-[#24263e]/60">
+              {lang === 'vi' ? 'Giải ngân khi Buyer nhận hàng' : 'Released after confirmation'}
             </div>
           </div>
 
-          <div className="bg-[#FFFFFF] text-[#24263e] rounded-2xl p-4 border border-gray-200 shadow-sm space-y-1">
-            <div className="text-xs text-[#24263e]/70 flex items-center justify-between">
-              <span>{lang === 'vi' ? 'Điểm Tín Dụng (Credits)' : 'Active Credits'}</span>
-              <Coins className="w-4 h-4 text-amber-500" />
+          <div className="bg-[#FFFFFF] text-[#24263e] rounded-xl p-3 border border-gray-200 shadow-xs space-y-0.5">
+            <div className="text-[11px] text-[#24263e]/70 flex items-center justify-between font-medium">
+              <span>{lang === 'vi' ? 'Điểm Tín Dụng' : 'Active Credits'}</span>
+              <Coins className="w-3.5 h-3.5 text-amber-500" />
             </div>
-            <div className="flex flex-wrap items-baseline gap-2">
-              <span className="text-2xl font-black text-[#24263e]">
+            <div className="flex flex-wrap items-baseline gap-1.5">
+              <span className="text-xl font-black text-[#24263e]">
                 {creditBalance ? creditBalance.postCredits : (currentUser as any)?.postCredits ?? 0}
               </span>
-              <span className="text-xs font-bold text-slate-500">Đăng tin</span>
+              <span className="text-[11px] font-bold text-slate-500">Đăng tin</span>
               <span className="text-slate-300">•</span>
-              <span className="text-lg font-black text-emerald-600">
+              <span className="text-base font-black text-emerald-600">
                 {creditBalance ? creditBalance.valuationCredits : (currentUser as any)?.valuationCredits ?? 0}
               </span>
-              <span className="text-xs font-bold text-slate-500">Định giá</span>
+              <span className="text-[11px] font-bold text-slate-500">Định giá</span>
               <span className="text-slate-300">•</span>
-              <span className="text-lg font-black text-blue-600">
+              <span className="text-base font-black text-blue-600">
                 {creditBalance ? creditBalance.chatCredits : (currentUser as any)?.chatCredits ?? 0}
               </span>
-              <span className="text-xs font-bold text-slate-500">Chat AI</span>
+              <span className="text-[11px] font-bold text-slate-500">Chat AI</span>
             </div>
-            <div className="pt-1 flex items-center justify-between">
+            <div className="pt-0.5 flex items-center justify-between">
               <button
                 type="button"
                 onClick={handleOpenCreditLedger}
-                className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 transition cursor-pointer"
+                className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 transition cursor-pointer"
               >
-                <History className="w-3 h-3" />
+                <History className="w-2.5 h-2.5" />
                 <span>Xem sổ cái điểm</span>
               </button>
             </div>
@@ -1121,44 +1174,44 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
 
           <div
             onClick={handleOpenReputationHistory}
-            className="bg-[#FFFFFF] text-[#24263e] rounded-2xl p-4 border border-gray-200 shadow-sm space-y-1 hover:border-[#c34c36]/40 transition cursor-pointer group"
+            className="bg-[#FFFFFF] text-[#24263e] rounded-xl p-3 border border-gray-200 shadow-xs space-y-0.5 hover:border-[#c34c36]/40 transition cursor-pointer group"
             title="Bấm để xem bảng chỉ số uy tín và lịch sử"
           >
-            <div className="text-xs text-[#24263e]/70 flex items-center justify-between">
-              <span className="font-bold flex items-center gap-1.5">
-                <Award className="w-4 h-4 text-amber-500" />
+            <div className="text-[11px] text-[#24263e]/70 flex items-center justify-between font-medium">
+              <span className="font-bold flex items-center gap-1">
+                <Award className="w-3.5 h-3.5 text-amber-500" />
                 <span>{lang === 'vi' ? 'Uy Tín Giao Dịch' : 'Seller Reputation'}</span>
               </span>
               {(() => {
                 const statusMeta = getAssessmentStatusMeta(myReputation?.assessmentStatus);
                 return (
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${statusMeta.badgeClass}`}>
+                  <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold border ${statusMeta.badgeClass}`}>
                     {statusMeta.shortLabel}
                   </span>
                 );
               })()}
             </div>
-            <div className="text-2xl font-black text-[#24263e] flex items-baseline gap-1">
+            <div className="text-xl font-black text-[#24263e] flex items-baseline gap-1">
               <span>
                 {myReputation?.score !== null && myReputation?.score !== undefined
                   ? myReputation.score
                   : myReputation?.assessmentStatus === 'NO_TRANSACTIONS'
-                  ? 'Chưa có đơn'
-                  : '—'}
+                    ? 'Chưa có đơn'
+                    : '—'}
               </span>
               {myReputation?.score !== null && myReputation?.score !== undefined && (
                 <span className="text-xs font-bold text-slate-400">/ 100</span>
               )}
             </div>
-            <div className="text-[11px] text-[#24263e]/60 flex items-center justify-between pt-0.5">
-              <span>
+            <div className="text-[10px] text-[#24263e]/60 flex items-center justify-between pt-0.5">
+              <span className="truncate">
                 {myReputation?.evaluatedOrders
                   ? `${myReputation.goodTransactions} thành công • ${myReputation.badTransactions} lỗi SELLER`
                   : lang === 'vi'
-                  ? 'Bấm xem chi tiết & lịch sử'
-                  : 'Click to view audit trail'}
+                    ? 'Bấm xem chi tiết & lịch sử'
+                    : 'Click to view audit trail'}
               </span>
-              <span className="text-xs font-bold text-[#c34c36] group-hover:translate-x-0.5 transition-transform">→</span>
+              <span className="text-xs font-bold text-[#c34c36] group-hover:translate-x-0.5 transition-transform ml-1">→</span>
             </div>
           </div>
         </div>
@@ -1175,11 +1228,10 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       <div className="flex items-center gap-3 border-b border-gray-200 pb-2">
         <button
           onClick={() => setSellerActiveTab('listings')}
-          className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
-            sellerActiveTab === 'listings'
-              ? 'bg-[#24263e] text-white shadow-md'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
+          className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${sellerActiveTab === 'listings'
+            ? 'bg-[#24263e] text-white shadow-md'
+            : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }`}
         >
           <Tag className="w-4 h-4" />
           <span>{lang === 'vi' ? 'Quản Lý Tin Đăng' : 'Listings'} ({filteredListings.length})</span>
@@ -1187,11 +1239,10 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
 
         <button
           onClick={() => setSellerActiveTab('return_fees')}
-          className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
-            sellerActiveTab === 'return_fees'
-              ? 'bg-[#24263e] text-white shadow-md'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
+          className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${sellerActiveTab === 'return_fees'
+            ? 'bg-[#24263e] text-white shadow-md'
+            : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }`}
         >
           <RotateCcw className="w-4 h-4 text-[#c34c36]" />
           <span>{lang === 'vi' ? 'Phí Hoàn Hàng & Công Nợ' : 'Return Fees & Debt'}</span>
@@ -1208,212 +1259,210 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       ) : (
         /* Seller Listings Management */
         <div className="bg-[#FFFFFF] rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-xs space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 pb-4">
-          <div>
-            <h2 className="text-lg font-bold text-[#24263e] flex items-center gap-2">
-              <Tag className="w-5 h-5 text-[#24263e]" />
-              <span>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 pb-4">
+            <div>
+              <h2 className="text-lg font-bold text-[#24263e] flex items-center gap-2">
+                <Tag className="w-5 h-5 text-[#24263e]" />
+                <span>
+                  {lang === 'vi'
+                    ? `Quản Lý Tin Đăng Cá Nhân (${filteredListings.length})`
+                    : `My Listings Management (${filteredListings.length})`}
+                </span>
+              </h2>
+              <p className="text-xs text-[#24263e]/70 mt-0.5">
                 {lang === 'vi'
-                  ? `Quản Lý Tin Đăng Cá Nhân (${filteredListings.length})`
-                  : `My Listings Management (${filteredListings.length})`}
-              </span>
-            </h2>
-            <p className="text-xs text-[#24263e]/70 mt-0.5">
-              {lang === 'vi'
-                ? 'Quản lý trạng thái niêm yết, theo dõi phản hồi đề xuất giá từ người mua và cập nhật thông tin.'
-                : 'Manage listing status, monitor buyer price offers, and update item details.'}
-            </p>
-          </div>
+                  ? 'Quản lý trạng thái niêm yết, theo dõi phản hồi đề xuất giá từ người mua và cập nhật thông tin.'
+                  : 'Manage listing status, monitor buyer price offers, and update item details.'}
+              </p>
+            </div>
 
-          <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-            <button
-              onClick={fetchSellerData}
-              disabled={isLoadingPosts}
-              className="p-1.5 px-2.5 rounded-xl border border-gray-200 bg-[#faf8f5] hover:bg-gray-100 text-[#24263e] text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
-              title={lang === 'vi' ? 'Làm mới dữ liệu từ server' : 'Refresh server data'}
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isLoadingPosts ? 'animate-spin text-indigo-600' : ''}`} />
-              <span>{lang === 'vi' ? 'Làm mới' : 'Refresh'}</span>
-            </button>
+            <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+              <button
+                onClick={fetchSellerData}
+                disabled={isLoadingPosts}
+                className="p-1.5 px-2.5 rounded-xl border border-gray-200 bg-[#faf8f5] hover:bg-gray-100 text-[#24263e] text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                title={lang === 'vi' ? 'Làm mới dữ liệu từ server' : 'Refresh server data'}
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isLoadingPosts ? 'animate-spin text-indigo-600' : ''}`} />
+                <span>{lang === 'vi' ? 'Làm mới' : 'Refresh'}</span>
+              </button>
 
-            <button
-              onClick={() => setSortOrder(prev => prev === 'newest' ? 'oldest' : 'newest')}
-              className="p-1.5 px-2.5 rounded-xl border border-gray-200 bg-[#faf8f5] hover:bg-gray-100 text-[#24263e] text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
-              title={lang === 'vi' ? 'Sắp xếp theo thời gian đăng bài' : 'Sort by posting time'}
-            >
-              <Clock className="w-3.5 h-3.5 text-[#c34c36]" />
-              <span>
-                {sortOrder === 'newest'
-                  ? (lang === 'vi' ? 'Mới đăng nhất' : 'Newest first')
-                  : (lang === 'vi' ? 'Cũ nhất trước' : 'Oldest first')}
-              </span>
-            </button>
+              <button
+                onClick={() => setSortOrder(prev => prev === 'newest' ? 'oldest' : 'newest')}
+                className="p-1.5 px-2.5 rounded-xl border border-gray-200 bg-[#faf8f5] hover:bg-gray-100 text-[#24263e] text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                title={lang === 'vi' ? 'Sắp xếp theo thời gian đăng bài' : 'Sort by posting time'}
+              >
+                <Clock className="w-3.5 h-3.5 text-[#c34c36]" />
+                <span>
+                  {sortOrder === 'newest'
+                    ? (lang === 'vi' ? 'Mới đăng nhất' : 'Newest first')
+                    : (lang === 'vi' ? 'Cũ nhất trước' : 'Oldest first')}
+                </span>
+              </button>
 
-            <div className="flex items-center gap-1.5 bg-[#faf8f5] p-1 rounded-xl border border-gray-200">
-              {(['ALL', 'active', 'draft', 'pending', 'rejected', 'reserved', 'sold'] as const).map((st) => (
-                <button
-                  key={st}
-                  onClick={() => setFilterStatus(st)}
-                  className={`px-3 py-1 rounded-lg text-xs transition cursor-pointer ${
-                    filterStatus === st ? 'bg-[#24263e] text-white font-bold' : 'text-[#24263e]/70 hover:text-[#24263e] font-medium'
-                  }`}
-                >
-                  {st === 'ALL'
-                    ? (lang === 'vi' ? 'Tất cả' : 'All')
-                    : st === 'active'
-                    ? (lang === 'vi' ? 'Đang bán' : 'Active')
-                    : st === 'draft'
-                    ? (lang === 'vi' ? 'Bản nháp' : 'Drafts')
-                    : st === 'pending'
-                    ? (lang === 'vi' ? 'Chờ duyệt / Hub' : 'Pending')
-                    : st === 'rejected'
-                    ? (lang === 'vi' ? 'Bị từ chối' : 'Rejected')
-                    : st === 'reserved'
-                    ? (lang === 'vi' ? 'Đang giữ hàng' : 'Reserved')
-                    : (lang === 'vi' ? 'Đã bán' : 'Sold')}
-                </button>
-              ))}
+              <div className="flex items-center gap-1.5 bg-[#faf8f5] p-1 rounded-xl border border-gray-200">
+                {(['ALL', 'active', 'draft', 'pending', 'rejected', 'reserved', 'sold'] as const).map((st) => (
+                  <button
+                    key={st}
+                    onClick={() => setFilterStatus(st)}
+                    className={`px-3 py-1 rounded-lg text-xs transition cursor-pointer ${filterStatus === st ? 'bg-[#24263e] text-white font-bold' : 'text-[#24263e]/70 hover:text-[#24263e] font-medium'
+                      }`}
+                  >
+                    {st === 'ALL'
+                      ? (lang === 'vi' ? 'Tất cả' : 'All')
+                      : st === 'active'
+                        ? (lang === 'vi' ? 'Đang bán' : 'Active')
+                        : st === 'draft'
+                          ? (lang === 'vi' ? 'Bản nháp' : 'Drafts')
+                          : st === 'pending'
+                            ? (lang === 'vi' ? 'Chờ duyệt / Hub' : 'Pending')
+                            : st === 'rejected'
+                              ? (lang === 'vi' ? 'Bị từ chối' : 'Rejected')
+                              : st === 'reserved'
+                                ? (lang === 'vi' ? 'Đang giữ hàng' : 'Reserved')
+                                : (lang === 'vi' ? 'Đã bán' : 'Sold')}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {filteredListings.map((item) => (
-            <div
-              key={item.id}
-              className="bg-[#faf8f5] rounded-2xl p-4 border border-gray-200 hover:border-[#c34c36] transition shadow-2xs flex flex-col justify-between space-y-3"
-            >
-              <div className="flex gap-3">
-                <img
-                  src={item.photos.front}
-                  alt={item.title}
-                  className="w-20 h-20 rounded-xl object-cover border border-gray-200 shrink-0 bg-[#FFFFFF]"
-                />
-                <div className="space-y-1 overflow-hidden flex-1">
-                  <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                    item.backendStatus === 'REJECTED'
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {filteredListings.map((item) => (
+              <div
+                key={item.id}
+                className="bg-[#faf8f5] rounded-2xl p-4 border border-gray-200 hover:border-[#c34c36] transition shadow-2xs flex flex-col justify-between space-y-3"
+              >
+                <div className="flex gap-3">
+                  <img
+                    src={item.photos.front}
+                    alt={item.title}
+                    className="w-20 h-20 rounded-xl object-cover border border-gray-200 shrink-0 bg-[#FFFFFF]"
+                  />
+                  <div className="space-y-1 overflow-hidden flex-1">
+                    <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full ${item.backendStatus === 'REJECTED'
                       ? 'bg-rose-600 text-white'
                       : item.backendStatus === 'PENDING_INSPECTION'
-                      ? 'bg-cyan-700 text-white'
-                      : item.backendStatus === 'PENDING'
-                      ? 'bg-amber-500 text-white'
-                      : item.backendStatus === 'DRAFT' || item.status === 'draft'
-                      ? 'bg-slate-500 text-white'
-                      : item.status === 'active'
-                      ? 'bg-[#24263e] text-white'
-                      : 'bg-[#c34c36] text-white'
-                  }`}>
-                    {item.backendStatus === 'REJECTED'
-                      ? (lang === 'vi' ? '● Bị Từ Chối' : '● Rejected')
-                      : item.backendStatus === 'PENDING_INSPECTION'
-                      ? (lang === 'vi' ? '● Chờ Kiểm Định (PRE_LISTING)' : '● Pending Inspection')
-                      : item.backendStatus === 'PENDING'
-                      ? (lang === 'vi' ? '● Chờ Duyệt / Hub' : '● Pending Review')
-                      : item.backendStatus === 'DRAFT' || item.status === 'draft'
-                      ? (lang === 'vi' ? '● Bản Nháp' : '● Draft')
-                      : item.status === 'active'
-                      ? (lang === 'vi' ? '● Đang Niêm Yết' : '● Active')
-                      : (lang === 'vi' ? '● Đã Cọc Ký Quỹ' : '● Escrow Deposited')}
-                  </span>
-                  {isListingInspectionPassed(item) && (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-600 text-white shadow-2xs ml-1.5">
-                      <ShieldCheck className="w-2.5 h-2.5 text-emerald-100" />
-                      <span>{lang === 'vi' ? 'Đã đạt kiểm định tại Hub' : 'Hub Inspected'}</span>
+                        ? 'bg-cyan-700 text-white'
+                        : item.backendStatus === 'PENDING'
+                          ? 'bg-amber-500 text-white'
+                          : item.backendStatus === 'DRAFT' || item.status === 'draft'
+                            ? 'bg-slate-500 text-white'
+                            : item.status === 'active'
+                              ? 'bg-[#24263e] text-white'
+                              : 'bg-[#c34c36] text-white'
+                      }`}>
+                      {item.backendStatus === 'REJECTED'
+                        ? (lang === 'vi' ? '● Bị Từ Chối' : '● Rejected')
+                        : item.backendStatus === 'PENDING_INSPECTION'
+                          ? (lang === 'vi' ? '● Chờ Kiểm Định (PRE_LISTING)' : '● Pending Inspection')
+                          : item.backendStatus === 'PENDING'
+                            ? (lang === 'vi' ? '● Chờ Duyệt / Hub' : '● Pending Review')
+                            : item.backendStatus === 'DRAFT' || item.status === 'draft'
+                              ? (lang === 'vi' ? '● Bản Nháp' : '● Draft')
+                              : item.status === 'active'
+                                ? (lang === 'vi' ? '● Đang Niêm Yết' : '● Active')
+                                : (lang === 'vi' ? '● Đã Cọc Ký Quỹ' : '● Escrow Deposited')}
                     </span>
-                  )}
-                  {item.backendStatus === 'REJECTED' && item.rejectionReason && (
-                    <div className="text-[10px] text-rose-700 bg-rose-50 p-1.5 rounded-lg border border-rose-200 mt-1 leading-snug">
-                      <span className="font-bold">{lang === 'vi' ? 'Lý do: ' : 'Reason: '}</span>
-                      <span>{item.rejectionReason}</span>
+                    {isListingInspectionPassed(item) && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-600 text-white shadow-2xs ml-1.5">
+                        <ShieldCheck className="w-2.5 h-2.5 text-emerald-100" />
+                        <span>{lang === 'vi' ? 'Đã đạt kiểm định tại Hub' : 'Hub Inspected'}</span>
+                      </span>
+                    )}
+                    {item.backendStatus === 'REJECTED' && item.rejectionReason && (
+                      <div className="text-[10px] text-rose-700 bg-rose-50 p-1.5 rounded-lg border border-rose-200 mt-1 leading-snug">
+                        <span className="font-bold">{lang === 'vi' ? 'Lý do: ' : 'Reason: '}</span>
+                        <span>{item.rejectionReason}</span>
+                      </div>
+                    )}
+                    <h3 className="font-bold text-xs text-[#24263e] truncate" title={item.title}>
+                      {item.title}
+                    </h3>
+                    <div className="text-sm font-extrabold text-[#24263e]">
+                      {formatVND(item.priceVnd)}
                     </div>
-                  )}
-                  <h3 className="font-bold text-xs text-[#24263e] truncate" title={item.title}>
-                    {item.title}
-                  </h3>
-                  <div className="text-sm font-extrabold text-[#24263e]">
-                    {formatVND(item.priceVnd)}
-                  </div>
-                  <div className="text-[11px] text-[#24263e]/70 flex items-center justify-between">
-                    <span>
-                      {lang === 'vi' ? 'Độ mới: ' : 'Grade: '}
-                      <span className="font-semibold text-[#24263e]">{formatConditionGrade(item.conditionGrade, lang)}</span>
-                    </span>
-                    <span className="truncate max-w-[130px] text-slate-500 font-medium" title={item.sellerAddress || item.location}>
-                      📍 {item.location || item.sellerAddress || 'Chưa cập nhật'}
-                    </span>
-                  </div>
-                  <div className="text-[10.5px] text-slate-500 flex items-center gap-1.5 pt-1 border-t border-gray-100">
-                    <Clock className="w-3 h-3 text-[#c34c36] shrink-0" />
-                    <span>
-                      {lang === 'vi' ? 'Đăng lúc: ' : 'Posted: '}
-                      <span className="font-semibold text-slate-700">{formatPostDateTime(item)}</span>
-                    </span>
+                    <div className="text-[11px] text-[#24263e]/70 flex items-center justify-between">
+                      <span>
+                        {lang === 'vi' ? 'Độ mới: ' : 'Grade: '}
+                        <span className="font-semibold text-[#24263e]">{formatConditionGrade(item.conditionGrade, lang)}</span>
+                      </span>
+                      <span className="truncate max-w-[130px] text-slate-500 font-medium" title={item.sellerAddress || item.location}>
+                        📍 {item.location || item.sellerAddress || 'Chưa cập nhật'}
+                      </span>
+                    </div>
+                    <div className="text-[10.5px] text-slate-500 flex items-center gap-1.5 pt-1 border-t border-gray-100">
+                      <Clock className="w-3 h-3 text-[#c34c36] shrink-0" />
+                      <span>
+                        {lang === 'vi' ? 'Đăng lúc: ' : 'Posted: '}
+                        <span className="font-semibold text-slate-700">{formatPostDateTime(item)}</span>
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="pt-2 border-t border-gray-200 flex items-center justify-between gap-2 flex-wrap">
-                <button
-                  onClick={() => handleOpenSellerPostDetail(item)}
-                  disabled={loadingDetailPostId === item.id}
-                  className="flex-1 py-1.5 px-2 bg-[#24263e] hover:bg-black border border-[#24263e] rounded-lg text-xs font-bold text-white flex items-center justify-center gap-1 cursor-pointer transition disabled:opacity-60"
-                >
-                  {loadingDetailPostId === item.id ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Eye className="w-3.5 h-3.5" />
+                <div className="pt-2 border-t border-gray-200 flex items-center justify-between gap-2 flex-wrap">
+                  <button
+                    onClick={() => handleOpenSellerPostDetail(item)}
+                    disabled={loadingDetailPostId === item.id}
+                    className="flex-1 py-1.5 px-2 bg-[#24263e] hover:bg-black border border-[#24263e] rounded-lg text-xs font-bold text-white flex items-center justify-center gap-1 cursor-pointer transition disabled:opacity-60"
+                  >
+                    {loadingDetailPostId === item.id ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Eye className="w-3.5 h-3.5" />
+                    )}
+                    <span>{lang === 'vi' ? 'Xem Chi Tiết' : 'View Details'}</span>
+                  </button>
+                  {item.backendStatus === 'PENDING_INSPECTION' && (
+                    <button
+                      type="button"
+                      onClick={() => setPreListingPost(item)}
+                      className="py-1.5 px-2.5 bg-cyan-700 hover:bg-cyan-800 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition shadow-xs animate-pulse"
+                      title={lang === 'vi' ? 'Tiếp tục quy trình kiểm định bắt buộc' : 'Resume mandatory inspection'}
+                    >
+                      <ShieldCheck className="w-3.5 h-3.5 text-cyan-200" />
+                      <span>{lang === 'vi' ? 'Tiếp tục kiểm định' : 'Resume Inspection'}</span>
+                    </button>
                   )}
-                  <span>{lang === 'vi' ? 'Xem Chi Tiết' : 'View Details'}</span>
-                </button>
-                {item.backendStatus === 'PENDING_INSPECTION' && (
+                  <button
+                    onClick={() => onCreateListing(item)}
+                    className="py-1.5 px-2 bg-[#FFFFFF] hover:bg-[#faf8f5] border border-gray-200 text-[#24263e] rounded-lg text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition"
+                    title={
+                      item.backendStatus === 'DRAFT' || item.status === 'draft'
+                        ? (lang === 'vi' ? 'Tiếp tục soạn bản nháp' : 'Resume draft')
+                        : (lang === 'vi' ? 'Sửa tin đăng' : 'Edit listing')
+                    }
+                  >
+                    <Edit3 className="w-3.5 h-3.5 text-[#24263e]" />
+                  </button>
                   <button
                     type="button"
-                    onClick={() => setPreListingPost(item)}
-                    className="py-1.5 px-2.5 bg-cyan-700 hover:bg-cyan-800 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition shadow-xs animate-pulse"
-                    title={lang === 'vi' ? 'Tiếp tục quy trình kiểm định bắt buộc' : 'Resume mandatory inspection'}
+                    onClick={() => handleOpenReclassifyModal(item)}
+                    className="py-1.5 px-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition"
+                    title={lang === 'vi' ? 'Chọn lại loại thiết bị cụ thể' : 'Reclassify item'}
                   >
-                    <ShieldCheck className="w-3.5 h-3.5 text-cyan-200" />
-                    <span>{lang === 'vi' ? 'Tiếp tục kiểm định' : 'Resume Inspection'}</span>
+                    <Sliders className="w-3.5 h-3.5 text-slate-600" />
+                    <span className="hidden sm:inline">{lang === 'vi' ? 'Đổi Loại' : 'Reclassify'}</span>
                   </button>
-                )}
-                <button
-                  onClick={() => onCreateListing(item)}
-                  className="py-1.5 px-2 bg-[#FFFFFF] hover:bg-[#faf8f5] border border-gray-200 text-[#24263e] rounded-lg text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition"
-                  title={
-                    item.backendStatus === 'DRAFT' || item.status === 'draft'
-                      ? (lang === 'vi' ? 'Tiếp tục soạn bản nháp' : 'Resume draft')
-                      : (lang === 'vi' ? 'Sửa tin đăng' : 'Edit listing')
-                  }
-                >
-                  <Edit3 className="w-3.5 h-3.5 text-[#24263e]" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleOpenReclassifyModal(item)}
-                  className="py-1.5 px-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition"
-                  title={lang === 'vi' ? 'Chọn lại loại thiết bị cụ thể' : 'Reclassify item'}
-                >
-                  <Sliders className="w-3.5 h-3.5 text-slate-600" />
-                  <span className="hidden sm:inline">{lang === 'vi' ? 'Đổi Loại' : 'Reclassify'}</span>
-                </button>
-                {(item.backendStatus === 'DRAFT' || item.status === 'draft') && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDraftToDelete({ id: item.id, title: item.title });
-                    }}
-                    disabled={deletingDraftId === item.id}
-                    className="py-1.5 px-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition disabled:opacity-50"
-                    title={lang === 'vi' ? 'Xóa bản nháp này' : 'Delete draft'}
-                  >
-                    <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                  </button>
-                )}
+                  {(item.backendStatus === 'DRAFT' || item.status === 'draft') && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDraftToDelete({ id: item.id, title: item.title });
+                      }}
+                      disabled={deletingDraftId === item.id}
+                      className="py-1.5 px-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition disabled:opacity-50"
+                      title={lang === 'vi' ? 'Xóa bản nháp này' : 'Delete draft'}
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
       )}
 
       {/* Seller Dispute Response Modal */}
@@ -1727,31 +1776,28 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
               <button
                 onClick={() => setCreditModalTab('ledger')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
-                  creditModalTab === 'ledger'
-                    ? 'bg-slate-900 text-white shadow-xs'
-                    : 'text-slate-600 hover:bg-slate-100'
-                }`}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${creditModalTab === 'ledger'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-100'
+                  }`}
               >
                 Sổ Cái Biến Động ({creditLedgerItems.length})
               </button>
               <button
                 onClick={() => setCreditModalTab('purchases')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
-                  creditModalTab === 'purchases'
-                    ? 'bg-slate-900 text-white shadow-xs'
-                    : 'text-slate-600 hover:bg-slate-100'
-                }`}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${creditModalTab === 'purchases'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-100'
+                  }`}
               >
                 Lịch Sử Đơn Mua ({creditPurchases.length})
               </button>
               <button
                 onClick={() => setCreditModalTab('buy')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
-                  creditModalTab === 'buy'
-                    ? 'bg-[#c34c36] text-white shadow-xs'
-                    : 'text-[#c34c36] hover:bg-rose-50'
-                }`}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${creditModalTab === 'buy'
+                  ? 'bg-[#c34c36] text-white shadow-xs'
+                  : 'text-[#c34c36] hover:bg-rose-50'
+                  }`}
               >
                 <PlusCircle className="w-3.5 h-3.5" />
                 <span>Mua Thêm Tín Dụng</span>
@@ -1783,22 +1829,20 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                             {item.createdAt ? new Date(item.createdAt).toLocaleString('vi-VN') : '—'}
                           </td>
                           <td className="py-2.5 px-3">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                              item.creditType === 'LISTING'
-                                ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                                : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            }`}>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${item.creditType === 'LISTING'
+                              ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                              : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              }`}>
                               {item.creditType}
                             </span>
                           </td>
                           <td className="py-2.5 px-3 font-semibold text-slate-800">
                             {item.entryType === 'PURCHASE' ? 'Nạp gói Credit' :
-                             item.entryType === 'CONSUMPTION' ? 'Tiêu trừ dịch vụ' :
-                             item.entryType === 'REFUND' ? 'Hoàn trả điểm' : item.entryType}
+                              item.entryType === 'CONSUMPTION' ? 'Tiêu trừ dịch vụ' :
+                                item.entryType === 'REFUND' ? 'Hoàn trả điểm' : item.entryType}
                           </td>
-                          <td className={`py-2.5 px-3 text-right font-mono font-bold ${
-                            item.quantityDelta > 0 ? 'text-emerald-600' : 'text-rose-600'
-                          }`}>
+                          <td className={`py-2.5 px-3 text-right font-mono font-bold ${item.quantityDelta > 0 ? 'text-emerald-600' : 'text-rose-600'
+                            }`}>
                             {item.quantityDelta > 0 ? `+${item.quantityDelta}` : item.quantityDelta}
                           </td>
                           <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900">
@@ -1847,13 +1891,12 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                             {formatVND(purchase.snapshot?.finalFee || 0)}
                           </td>
                           <td className="py-2.5 px-3 text-right">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                              purchase.status === 'PAID'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : purchase.status === 'FAILED' || purchase.status === 'EXPIRED'
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${purchase.status === 'PAID'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : purchase.status === 'FAILED' || purchase.status === 'EXPIRED'
                                 ? 'bg-rose-100 text-rose-800'
                                 : 'bg-amber-100 text-amber-800'
-                            }`}>
+                              }`}>
                               {purchase.status}
                             </span>
                           </td>
@@ -1898,9 +1941,8 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                           key={num}
                           type="button"
                           onClick={() => setBuyListingQty(num)}
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer ${
-                            buyListingQty === num ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 border'
-                          }`}
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer ${buyListingQty === num ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 border'
+                            }`}
                         >
                           {num}
                         </button>
@@ -1934,9 +1976,8 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                           key={num}
                           type="button"
                           onClick={() => setBuyValuationQty(num)}
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer ${
-                            buyValuationQty === num ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 border'
-                          }`}
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer ${buyValuationQty === num ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 border'
+                            }`}
                         >
                           {num}
                         </button>
@@ -1970,9 +2011,8 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                           key={num}
                           type="button"
                           onClick={() => setBuyChatQty(num)}
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer ${
-                            buyChatQty === num ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 border'
-                          }`}
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer ${buyChatQty === num ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 border'
+                            }`}
                         >
                           {num}
                         </button>
@@ -1988,7 +2028,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                     <span className="font-mono">
                       {formatVND(
                         calculatedPricing?.quote?.totalBaseFee ||
-                          buyListingQty * 5000 + buyValuationQty * 5000 + buyChatQty * 2000
+                        buyListingQty * 5000 + buyValuationQty * 5000 + buyChatQty * 2000
                       )}
                     </span>
                   </div>
@@ -2003,7 +2043,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                     <span className="font-mono text-base">
                       {formatVND(
                         calculatedPricing?.quote?.finalFee ||
-                          buyListingQty * 5000 + buyValuationQty * 5000 + buyChatQty * 2000
+                        buyListingQty * 5000 + buyValuationQty * 5000 + buyChatQty * 2000
                       )}
                     </span>
                   </div>
@@ -2300,13 +2340,12 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                         >
                           <div className="space-y-1">
                             <div className="font-bold text-slate-900 flex items-center gap-1.5 flex-wrap">
-                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                eventMeta.type === 'positive'
-                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                  : eventMeta.type === 'negative'
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${eventMeta.type === 'positive'
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : eventMeta.type === 'negative'
                                   ? 'bg-rose-50 text-rose-700 border border-rose-200'
                                   : 'bg-slate-100 text-slate-700 border border-slate-200'
-                              }`}>
+                                }`}>
                                 {eventMeta.label}
                               </span>
                               {item.orderId && (
@@ -2413,11 +2452,10 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                   key={tab.id}
                   type="button"
                   onClick={() => handleFilterVerificationStatus(tab.id)}
-                  className={`px-3 py-1.5 rounded-xl transition cursor-pointer shrink-0 ${
-                    verificationFilterStatus === tab.id
-                      ? 'bg-[#24263e] text-white shadow-xs'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
+                  className={`px-3 py-1.5 rounded-xl transition cursor-pointer shrink-0 ${verificationFilterStatus === tab.id
+                    ? 'bg-[#24263e] text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
                 >
                   {tab.label}
                 </button>
@@ -2482,8 +2520,8 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                           {item.submittedAt
                             ? new Date(item.submittedAt).toLocaleString('vi-VN')
                             : item.reviewedAt
-                            ? new Date(item.reviewedAt).toLocaleString('vi-VN')
-                            : ''}
+                              ? new Date(item.reviewedAt).toLocaleString('vi-VN')
+                              : ''}
                         </div>
                       </div>
 
@@ -2619,11 +2657,10 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       {/* Floating Modern Toast Notification (Positioned at top-right below navbar) */}
       {toastNotice && (
         <div className="fixed top-24 sm:top-28 right-4 sm:right-6 lg:right-8 z-50 animate-in fade-in slide-in-from-top-3">
-          <div className={`px-4 py-3 rounded-2xl shadow-xl flex items-center gap-2.5 text-xs font-bold border ${
-            toastNotice.type === 'success'
-              ? 'bg-emerald-600 text-white border-emerald-500 shadow-emerald-200/50'
-              : 'bg-rose-600 text-white border-rose-500 shadow-rose-200/50'
-          }`}>
+          <div className={`px-4 py-3 rounded-2xl shadow-xl flex items-center gap-2.5 text-xs font-bold border ${toastNotice.type === 'success'
+            ? 'bg-emerald-600 text-white border-emerald-500 shadow-emerald-200/50'
+            : 'bg-rose-600 text-white border-rose-500 shadow-rose-200/50'
+            }`}>
             {toastNotice.type === 'success' ? (
               <CheckCircle2 className="w-4 h-4 text-white shrink-0" />
             ) : (

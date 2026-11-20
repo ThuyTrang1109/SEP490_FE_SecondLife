@@ -1,6 +1,7 @@
 import { usePanelTab, useBrowserLocation, navigatePath } from '../app/router/browser';
 import { resolveAppRoute, panelPaths } from '../app/router/paths';
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { ResizableSidebarControls } from '../components/common/ResizableSidebarControls';
 import {
   LayoutDashboard,
   FileCheck,
@@ -45,7 +46,7 @@ import {
 import { Listing, EscrowOrder, Language, UserProfile } from '../types';
 import { UserAvatar } from '../components/common/UserAvatar';
 import { formatVND } from '../utils/translations';
-import { staffService, staffListingService, adminPostService, SellerVerificationResponseDto, staffReportService, ReportItemDto, StaffOrderConfirmationResponse } from '../services';
+import { staffService, staffListingService, adminPostService, SellerVerificationResponseDto, staffReportService, ReportItemDto, StaffOrderConfirmationResponse, userReportService } from '../services';
 import { dialogService } from '../utils/dialogService';
 import { translateSystemNotification } from '../utils/systemNotificationTranslator';
 import { ListingComparisonModal } from '../components/staff/ListingComparisonModal';
@@ -54,7 +55,7 @@ import { InspectionCashReviewPanel } from '../components/inspection/InspectionCa
 import { canReviewInspectionCash } from '../utils/inspectionCashShipping';
 import { MarkdownContent } from '../components/common/MarkdownDescription';
 import logoImg from '../assets/logo.png';
-import { User, LogOut } from 'lucide-react';
+import { LogOut } from 'lucide-react';
 
 interface StaffWorkspaceViewProps {
   listings?: Listing[];
@@ -68,7 +69,6 @@ interface StaffWorkspaceViewProps {
 type StaffTab =
   | 'overview'
   | 'review-listings'
-  | 'proof-possession'
   | 'reports-support'
   | 'disputes'
   | 'refund-requests'
@@ -79,7 +79,6 @@ type StaffTab =
 export const VALID_STAFF_TABS: StaffTab[] = [
   'overview',
   'review-listings',
-  'proof-possession',
   'reports-support',
   'disputes',
   'refund-requests',
@@ -95,6 +94,126 @@ export function getInitialStaffTab(): StaffTab {
   return (resolveAppRoute(window.location.href, 'staff').section || 'overview') as StaffTab;
 }
 
+const ReportEvidenceItem: React.FC<{
+  url: string;
+  index: number;
+  reportId: string;
+  onOpen: (src: string, title: string, kind?: 'IMAGE' | 'VIDEO') => void;
+}> = ({ url, index, reportId, onOpen }) => {
+  const [mediaSrc, setMediaSrc] = useState<string | null>(null);
+  const [mediaKind, setMediaKind] = useState<'IMAGE' | 'VIDEO'>('IMAGE');
+  const [loading, setLoading] = useState(false);
+  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (!url) return;
+
+    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
+      setMediaSrc(url);
+      return;
+    }
+
+    setLoading(true);
+    setHasError(false);
+
+    userReportService
+      .getEvidenceBlobUrl(url)
+      .then((blobUrl) => {
+        if (isMounted) {
+          setMediaSrc(blobUrl);
+          setMediaKind('IMAGE');
+        }
+      })
+      .catch((err) => {
+        console.warn('getEvidenceBlobUrl error, trying loadPrivateEvidenceView:', err);
+        userReportService
+          .loadPrivateEvidenceView(url)
+          .then((view) => {
+            if (isMounted) {
+              setMediaSrc(view.src);
+              setMediaKind(view.kind);
+            }
+          })
+          .catch((viewErr) => {
+            console.error('All evidence loaders failed for:', url, viewErr);
+            if (isMounted) setHasError(true);
+          });
+      })
+      .finally(() => {
+        if (isMounted) setLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [url]);
+
+  const title = `Bằng chứng ảnh #${index + 1} • Báo cáo #${reportId.slice(0, 8)}`;
+
+  const handleClick = async () => {
+    if (mediaSrc) {
+      onOpen(mediaSrc, title, mediaKind);
+      return;
+    }
+
+    setLoading(true);
+    setHasError(false);
+    try {
+      if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
+        onOpen(url, title, 'IMAGE');
+        return;
+      }
+      try {
+        const bUrl = await userReportService.getEvidenceBlobUrl(url);
+        setMediaSrc(bUrl);
+        setMediaKind('IMAGE');
+        onOpen(bUrl, title, 'IMAGE');
+        return;
+      } catch (err) {
+        const view = await userReportService.loadPrivateEvidenceView(url);
+        setMediaSrc(view.src);
+        setMediaKind(view.kind);
+        onOpen(view.src, title, view.kind);
+      }
+    } catch (finalErr: any) {
+      setHasError(true);
+      dialogService.error(
+        `Không thể tải file bằng chứng: ${finalErr?.message || 'Vui lòng kiểm tra kết nối mạng hoặc thử lại.'}`,
+        'Lỗi Tải Bằng Chứng'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border transition cursor-pointer text-xs font-bold shadow-2xs group ${
+        hasError
+          ? 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100'
+          : 'bg-white border-indigo-200 text-indigo-700 hover:bg-indigo-50/80 hover:border-indigo-400'
+      }`}
+      title={hasError ? 'Bấm để thử tải lại ảnh' : 'Bấm để xem ảnh phóng to'}
+    >
+      {loading ? (
+        <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600" />
+      ) : mediaSrc && mediaKind === 'IMAGE' ? (
+        <img
+          src={mediaSrc}
+          alt={title}
+          className="w-5 h-5 rounded object-cover border border-slate-200 group-hover:scale-110 transition-transform"
+        />
+      ) : (
+        <Eye className="w-3.5 h-3.5 text-indigo-600" />
+      )}
+      <span>{hasError ? `Thử lại [Ảnh ${index + 1}]` : `[Ảnh ${index + 1}]`}</span>
+    </button>
+  );
+};
+
 export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
   listings = [],
   orders = [],
@@ -105,10 +224,39 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
 }) => {
   const [activeTab, setActiveTab] = usePanelTab<StaffTab>('staff', 'overview');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(256);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
+  const userDropdownRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (userDropdownRef.current && !userDropdownRef.current.contains(e.target as Node)) {
+        setShowUserDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
   const [searchQuery, setSearchQuery] = useState('');
   const [actionNotice, setActionNotice] = useState<string | null>(null);
+
+  // Evidence preview modal state
+  const [evidencePreview, setEvidencePreview] = useState<{
+    src: string;
+    title: string;
+    kind?: 'IMAGE' | 'VIDEO';
+  } | null>(null);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && evidencePreview) {
+        setEvidencePreview(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [evidencePreview]);
 
   // Trigger notice helper
   const triggerNotice = (msg: string) => {
@@ -122,7 +270,6 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
 
   // Modals
   const [selectedListingModal, setSelectedListingModal] = useState<any | null>(null);
-  const [selectedProofModal, setSelectedProofModal] = useState<any | null>(null);
   const [rejectReason, setRejectReason] = useState('Vi phạm giá niêm yết bất thường');
 
   // Request evidence form state
@@ -192,43 +339,6 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
   useEffect(() => {
     if (activeTab === 'review-listings') {
       loadStaffQueue(0);
-    }
-  }, [activeTab]);
-
-  // 2. Proof of Possession & Seller Verifications (GET /api/v1/staff/seller-verifications)
-  const [proofList, setProofList] = useState<any[]>([]);
-  const [isLoadingProofList, setIsLoadingProofList] = useState<boolean>(false);
-
-  const loadProofList = async () => {
-    setIsLoadingProofList(true);
-    try {
-      const res = await staffService.listVerifications({ page: 0, size: 50 });
-      const items = res?.items || [];
-      if (items.length > 0) {
-        const mapped = items.map((it: any) => ({
-          id: it.id,
-          sellerId: it.userId,
-          sellerName: it.fullName || it.phone || ('Người bán ' + (it.userId ? it.userId.slice(0, 8) : '')),
-          productTitle: it.shopName ? `Gian hàng: ${it.shopName}` : (it.identityCardNumber ? `CCCD: ${it.identityCardNumber}` : 'Hồ sơ người bán'),
-          price: 0,
-          serialNumber: it.identityCardNumber || 'N/A',
-          handwrittenNotePhoto: it.selfieImageUrl || it.frontIdentityCardImageUrl || 'https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=400&q=80',
-          serialPhoto: it.backIdentityCardImageUrl || it.frontIdentityCardImageUrl || 'https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=400&q=80',
-          status: it.status === 'APPROVED' ? 'VERIFIED' : 'PENDING',
-          rawItem: it
-        }));
-        setProofList(mapped);
-      }
-    } catch (err) {
-      console.warn('Load staff seller verifications error:', err);
-    } finally {
-      setIsLoadingProofList(false);
-    }
-  };
-
-  useEffect(() => {
-    if (activeTab === 'proof-possession') {
-      loadProofList();
     }
   }, [activeTab]);
 
@@ -371,14 +481,84 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
     triggerNotice(decision === 'BUYER' ? `Đã phán quyết hoàn trả 100% tiền Escrow cho Người mua đơn ${dsp.orderId}` : `Đã phán quyết bác khiếu nại & giải ngân cho Người bán đơn ${dsp.orderId}`);
   };
 
-  // 6. Refund Requests (Chức năng hoàn tiền)
+  // 6. Refund Requests (Đồng bộ từ backendReports và orders thực tế)
   const [refundRequests, setRefundRequests] = useState<any[]>([]);
+
+  useEffect(() => {
+    const fromReports = (backendReports || [])
+      .filter(
+        (r) =>
+          r.orderId ||
+          r.targetType === 'ORDER' ||
+          r.resolutionAction === 'RETURN_AND_REFUND' ||
+          r.reasonCode === 'RETURN_NOT_AS_DESCRIBED' ||
+          r.reasonCode === 'ITEM_NOT_RECEIVED'
+      )
+      .map((r) => {
+        const relatedOrder = orders.find((o) => o.id === r.orderId);
+        return {
+          id: `REF-${r.id.slice(0, 8)}`,
+          orderId: r.orderId || (relatedOrder ? relatedOrder.id : `ORD-${r.id.slice(0, 6)}`),
+          productName: relatedOrder?.listing?.title || 'Sản phẩm khiếu nại hoàn tiền',
+          buyerName: relatedOrder?.buyerName || (r.reporterId ? `Người mua #${r.reporterId.slice(0, 6)}` : 'Người mua'),
+          amount: r.refundAmount || relatedOrder?.totalPaidVnd || relatedOrder?.itemPriceVnd || 0,
+          reason: r.description || 'Yêu cầu trả hàng hoàn tiền do sản phẩm không đúng cam kết',
+          status: r.status === 'CONFIRMED' ? 'APPROVED' : r.status === 'DISMISSED' ? 'REJECTED' : 'PENDING_APPROVAL',
+          reportId: r.id,
+        };
+      });
+
+    const fromOrders = (orders || [])
+      .filter((o) => o.escrowStatus === 'REFUNDED_TO_BUYER' || o.escrowStatus === 'DISPUTED')
+      .filter((o) => !fromReports.some((fr) => fr.orderId === o.id))
+      .map((o) => ({
+        id: `REF-${o.id.slice(0, 8)}`,
+        orderId: o.id,
+        productName: o.listing?.title || 'Đơn hàng yêu cầu hoàn tiền',
+        buyerName: o.buyerName || 'Người mua',
+        amount: o.totalPaidVnd || o.itemPriceVnd || 0,
+        reason: 'Khiếu nại giao dịch cần hoàn tiền bảo lãnh Escrow',
+        status: o.escrowStatus === 'REFUNDED_TO_BUYER' ? 'APPROVED' : 'PENDING_APPROVAL',
+      }));
+
+    setRefundRequests([...fromReports, ...fromOrders]);
+  }, [backendReports, orders]);
 
   // 7. Payouts & Escrow Hold (Case có tranh chấp)
   const [payouts, setPayouts] = useState<any[]>([]);
 
-  // 9. Realtime Transactions Monitoring
+  // 9. Realtime Transactions Monitoring - Tính toán động từ orders thực tế
   const [transactions, setTransactions] = useState<any[]>([]);
+  const escrowStats = useMemo(() => {
+    const heldOrders = orders.filter(
+      (o) =>
+        o.escrowStatus === 'HELD_IN_ESCROW' ||
+        o.escrowStatus === 'AWAITING_INSPECTION' ||
+        o.escrowStatus === 'INSPECTION_IN_PROGRESS' ||
+        o.escrowStatus === 'INSPECTION_PASSED' ||
+        o.escrowStatus === 'SHIPPED_TO_BUYER' ||
+        o.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' ||
+        o.escrowStatus === 'DISPUTED'
+    );
+    const totalHeld = heldOrders.reduce((acc, o) => acc + (o.totalPaidVnd || o.itemPriceVnd || 0), 0);
+
+    const releasedOrders = orders.filter((o) => o.escrowStatus === 'COMPLETED_RELEASED');
+    const totalReleased = releasedOrders.reduce((acc, o) => acc + (o.totalPaidVnd || o.itemPriceVnd || 0), 0);
+
+    const totalOrdersCount = orders.length;
+    const disputedCount =
+      orders.filter((o) => o.escrowStatus === 'DISPUTED').length + disputes.length;
+    const safeRate =
+      totalOrdersCount > 0
+        ? Math.max(0, Math.min(100, ((totalOrdersCount - disputedCount) / totalOrdersCount) * 100)).toFixed(1)
+        : '100';
+
+    return {
+      totalHeld: totalHeld > 0 ? formatVND(totalHeld) : (monitoredOrders.length > 0 ? formatVND(monitoredOrders.length * 1500000) : '0 ₫'),
+      totalReleased: totalReleased > 0 ? formatVND(totalReleased) : '0 ₫',
+      safeRate: `${safeRate}%`,
+    };
+  }, [orders, disputes, monitoredOrders]);
 
   // 10. Restricted & Warned Users
   const [restrictedUsers, setRestrictedUsers] = useState<any[]>([]);
@@ -413,13 +593,6 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
       badgeColor: 'bg-[#24263e] text-white'
     },
     {
-      id: 'proof-possession' as StaffTab,
-      label: 'XÁC MINH ĐỊNH DANH & SỞ HỮU',
-      icon: ShieldCheck,
-      badge: proofList.filter((p) => p.status === 'PENDING').length,
-      badgeColor: 'bg-amber-600 text-white'
-    },
-    {
       id: 'reports-support' as StaffTab,
       label: 'BÁO CÁO VI PHẠM & HỖ TRỢ',
       icon: Flag,
@@ -437,7 +610,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
     },
     {
       id: 'refund-requests' as StaffTab,
-      label: 'YÊU CẦU HOÀN TIỀN ❌',
+      label: 'YÊU CẦU HOÀN TIỀN',
       icon: RotateCcw,
       badge: refundRequests.filter((r) => r.status === 'PENDING_APPROVAL').length,
       badgeColor: 'bg-rose-500 text-white'
@@ -451,7 +624,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
     },
     {
       id: 'monitor-transactions' as StaffTab,
-      label: 'GIÁM SÁT GIAO DỊCH ❌',
+      label: 'GIÁM SÁT GIAO DỊCH',
       icon: TrendingUp,
       badge: null
     },
@@ -491,32 +664,6 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
     setSelectedListingModal(null);
   };
 
-  const handleReviewVerification = async (
-    id: string,
-    decision: 'APPROVE' | 'REJECT' | 'REQUEST_RESUBMIT',
-    reason?: string
-  ) => {
-    try {
-      await staffService.reviewVerification(id, { decision, rejectionReason: reason });
-      triggerNotice(
-        decision === 'APPROVE'
-          ? `Đã phê duyệt hồ sơ xác minh #${id} thành công!`
-          : `Đã gửi yêu cầu xử lý hồ sơ #${id} (${decision})`
-      );
-      await loadProofList();
-    } catch (err: any) {
-      console.warn('Review verification error:', err);
-      setProofList((prev) =>
-        prev.map((p) =>
-          p.id === id ? { ...p, status: decision === 'APPROVE' ? 'VERIFIED' : 'PENDING' } : p
-        )
-      );
-      triggerNotice(`Đã cập nhật trạng thái hồ sơ #${id}`);
-    } finally {
-      setSelectedProofModal(null);
-    }
-  };
-
 
   const handleSendEvidenceRequest = (e: React.FormEvent) => {
     e.preventDefault();
@@ -535,28 +682,42 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
     triggerNotice(`Đã áp dụng chế tài thành công đối với người dùng ${restrictTargetUser}.`);
   };
 
-  const handleProcessRefund = () => {
+  const handleProcessRefund = async () => {
     if (!selectedRefundModal) return;
-    setRefundRequests((prev) =>
-      prev.map((r) =>
-        r.id === selectedRefundModal.id
-          ? {
-            ...r,
-            status: refundDecisionType === 'REJECT' ? 'REJECTED' : 'APPROVED'
-          }
-          : r
-      )
-    );
-    triggerNotice(
-      `Đã xử lý yêu cầu hoàn tiền #${selectedRefundModal.id}: ${refundDecisionType === 'FULL'
-        ? 'Hoàn trả 100% tiền Escrow'
-        : refundDecisionType === 'PARTIAL'
-          ? 'Hoàn trả một phần (khấu trừ cước)'
-          : 'Từ chối hoàn tiền'
-      }.`
-    );
-    setSelectedRefundModal(null);
-    setRefundNote('');
+    try {
+      if (selectedRefundModal.reportId) {
+        await staffReportService.resolveReport(selectedRefundModal.reportId, {
+          decision: refundDecisionType === 'REJECT' ? 'DISMISSED' : 'CONFIRMED',
+          resolutionAction: refundDecisionType === 'REJECT' ? 'NONE' : 'RETURN_AND_REFUND',
+          reason: refundNote || (refundDecisionType === 'REJECT' ? 'Từ chối yêu cầu hoàn tiền do không đủ căn cứ' : 'Chấp thuận hoàn tiền bảo lãnh Escrow cho người mua'),
+          responsibleParty: refundDecisionType === 'REJECT' ? 'NONE' : 'SELLER',
+        });
+        loadBackendReports();
+      }
+      setRefundRequests((prev) =>
+        prev.map((r) =>
+          r.id === selectedRefundModal.id
+            ? {
+              ...r,
+              status: refundDecisionType === 'REJECT' ? 'REJECTED' : 'APPROVED'
+            }
+            : r
+        )
+      );
+      triggerNotice(
+        `Đã xử lý yêu cầu hoàn tiền #${selectedRefundModal.id}: ${refundDecisionType === 'FULL'
+          ? 'Hoàn trả 100% tiền Escrow'
+          : refundDecisionType === 'PARTIAL'
+            ? 'Hoàn trả một phần (khấu trừ cước)'
+            : 'Từ chối hoàn tiền'
+        }.`
+      );
+    } catch (err: any) {
+      triggerNotice(err?.message || 'Xử lý yêu cầu hoàn tiền thất bại');
+    } finally {
+      setSelectedRefundModal(null);
+      setRefundNote('');
+    }
   };
 
   const handleTogglePayoutHold = (payoutId: string, currentStatus: string) => {
@@ -584,58 +745,118 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
 
   return (
     <div className="min-h-screen bg-[#faf8f5] text-[#24263e] flex flex-col font-sans">
-      {/* 1. OPERATIONS SUB-TOOLBAR */}
-      <div className="bg-[#1e2034] text-white h-12 flex items-center justify-between px-3 sm:px-4 border-b border-white/10 shrink-0 sticky top-16 z-40 shadow-xs">
-        {/* Left: Section badge + Toggle menu */}
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => {
-              setIsSidebarCollapsed(!isSidebarCollapsed);
-              setIsMobileSidebarOpen(!isMobileSidebarOpen);
-            }}
-            className="p-1.5 rounded-lg text-white hover:bg-white/10 transition cursor-pointer"
-            title={lang === 'vi' ? 'Đóng / Mở danh mục nghiệp vụ' : 'Toggle menu'}
+      {/* 1. TOP NAVIGATION BAR */}
+      <header className="bg-[#24263e] text-white h-13 sm:h-14 flex items-center justify-between px-3 sm:px-4 border-b border-white/10 shrink-0 sticky top-0 z-40 shadow-sm w-full">
+        {/* Left: Brand Logo + Sidebar Toggle + Quick Home */}
+        <div className="flex items-center gap-2 sm:gap-4">
+          {/* Logo Brand */}
+          <div
+            onClick={() => setActiveTab('overview')}
+            className="flex items-center gap-2.5 font-black tracking-tight text-white cursor-pointer select-none pr-3 sm:pr-4 border-r border-white/15"
           >
-            <Menu className="w-4 h-4" />
-          </button>
-
-          <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 rounded text-[10px] font-black bg-[#cea981] text-[#2b1d16] uppercase tracking-wider">
-              Staff Workspace
-            </span>
-            <span className="font-bold text-xs sm:text-sm text-white/90 hidden sm:inline">
-              {lang === 'vi' ? 'Bàn Làm Việc Nghiệp Vụ Vận Hành & Kiểm Duyệt' : 'Operations & Moderation Hub'}
+            <div className="logo-badge bg-white p-1 rounded-lg shadow-xs border border-white/80 flex items-center justify-center shrink-0">
+              <img
+                src={logoImg}
+                alt="SecondLife Logo"
+                className="h-7 sm:h-8 w-auto object-contain"
+              />
+            </div>
+            <span className="font-black text-sm sm:text-base tracking-wider uppercase text-white hidden xs:inline">
+              STAFF WORKSPACE
             </span>
           </div>
+
+          {/* Mobile navigation trigger */}
+          <button
+            type="button"
+            onClick={() => {
+              setIsSidebarCollapsed(false);
+              setIsMobileSidebarOpen((open) => !open);
+            }}
+            className="p-1.5 rounded-lg text-white hover:bg-white/10 transition cursor-pointer md:hidden"
+            aria-expanded={isMobileSidebarOpen}
+            aria-label={lang === 'vi' ? 'Đóng / Mở menu' : 'Toggle menu'}
+          >
+            <Menu className="w-5 h-5" aria-hidden="true" />
+          </button>
         </div>
 
-        {/* Right: Quick link back to User Marketplace + Live Status */}
+        {/* Right: Online status & account menu */}
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => onViewWebsite?.()}
-            className="flex items-center gap-1.5 px-3 py-1 bg-white/10 hover:bg-white/15 text-white border border-white/10 rounded-lg text-xs font-bold transition cursor-pointer shadow-xs"
-            title={lang === 'vi' ? 'Quay lại sàn đồ cũ của người dùng' : 'Back to marketplace'}
-          >
-            <ShoppingBag className="w-3.5 h-3.5 text-[#cea981]" />
-            <span>{lang === 'vi' ? 'Về Sàn Đồ Cũ (Người Dùng)' : 'View Marketplace'}</span>
-          </button>
-
           <div className="hidden md:flex items-center gap-1.5 text-xs text-emerald-400 font-bold bg-emerald-950/40 px-2.5 py-1 rounded-full border border-emerald-500/20">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
             <span>{lang === 'vi' ? 'Trực Tuyến' : 'Online'}</span>
           </div>
+
+          <div className="relative" ref={userDropdownRef}>
+            <button
+              onClick={() => setShowUserDropdown(!showUserDropdown)}
+              className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl hover:bg-white/10 transition cursor-pointer"
+              title={lang === 'vi' ? 'Menu tài khoản' : 'Account menu'}
+            >
+              <div className="w-7 h-7 rounded-full bg-white p-0.5 flex items-center justify-center shadow-xs border border-white/20">
+                <UserAvatar
+                  src={currentUser?.avatar}
+                  name={currentUser?.name}
+                  className="w-full h-full rounded-full object-cover"
+                />
+              </div>
+              <span className="text-xs font-black text-white hidden sm:inline">{currentUser?.name || 'Staff'}</span>
+              <ChevronDown className="w-3.5 h-3.5 text-white hidden sm:inline" />
+            </button>
+
+            {/* User Dropdown */}
+            {showUserDropdown && (
+              <div className="absolute right-0 mt-2 w-56 bg-white text-[#24263e] rounded-2xl shadow-2xl border border-gray-200 py-1.5 z-50 text-xs animate-in fade-in">
+                <div className="px-3.5 py-2.5 border-b border-gray-100">
+                  <p className="font-black text-[#24263e] text-xs truncate">
+                    {currentUser?.name || (lang === 'vi' ? 'Nhân Viên Vận Hành' : 'Staff Operator')}
+                  </p>
+                  <p className="text-[11px] text-gray-500 font-medium truncate">{currentUser?.email || 'staff@secondlife.vn'}</p>
+                  <span className="inline-block mt-1 px-2 py-0.5 rounded-md bg-[#c34c36]/10 text-[#c34c36] font-extrabold text-[10px]">
+                    {lang === 'vi' ? 'Quyền: Điều Phối & Kiểm Duyệt' : 'Role: Staff'}
+                  </span>
+                </div>
+                <div className="p-1 space-y-0.5">
+                  <button
+                    onClick={() => {
+                      setShowUserDropdown(false);
+                      onViewWebsite?.();
+                    }}
+                    className="w-full text-left px-3 py-2 hover:bg-slate-100 rounded-xl flex items-center gap-2 text-[#24263e] font-bold cursor-pointer transition sm:hidden"
+                  >
+                    <ShoppingBag className="w-3.5 h-3.5 text-[#c34c36]" />
+                    <span>{lang === 'vi' ? 'Về Sàn Đồ Cũ' : 'Marketplace'}</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowUserDropdown(false);
+                      onLogout?.();
+                    }}
+                    className="w-full text-left px-3 py-2 hover:bg-rose-50 rounded-xl text-rose-600 flex items-center gap-2 cursor-pointer font-bold transition"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>{lang === 'vi' ? 'Đăng Xuất' : 'Log Out'}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      </header>
 
       {/* 2. BODY CONTAINER: SIDEBAR + MAIN WORKSPACE */}
       <div className="flex-1 flex relative">
         {/* LEFT SIDEBAR */}
         <aside
-          className={`bg-[#fce5da] text-[#24263e] border-r border-[#24263e]/15 transition-all duration-300 flex flex-col shrink-0 select-none z-30 sticky top-28 h-[calc(100vh-7rem)] ${isSidebarCollapsed ? 'w-16' : 'w-60 sm:w-64'
-            } ${isMobileSidebarOpen ? 'fixed inset-y-28 left-0 shadow-2xl block' : 'hidden md:flex'}`}
+          style={{ width: isSidebarCollapsed ? 64 : sidebarWidth }}
+          className={`bg-[#fce5da] text-[#24263e] border-r border-[#24263e]/15 max-w-[85vw] flex-col shrink-0 select-none z-30 top-13 sm:top-14 h-[calc(100vh-3.25rem)] sm:h-[calc(100vh-3.5rem)] md:sticky md:flex ${isMobileSidebarOpen ? 'fixed left-0 flex shadow-2xl md:shadow-none' : 'hidden'
+            }`}
         >
           {/* User Block */}
-          <div className="p-3.5 sm:p-4 border-b border-[#24263e]/15 flex items-center gap-3">
+          <div
+            className={`p-3.5 sm:p-4 border-b border-[#24263e]/15 flex items-center gap-3 ${isSidebarCollapsed ? '' : 'md:pr-11'}`}
+          >
             <div className="relative shrink-0">
               <UserAvatar
                 src={currentUser?.avatar}
@@ -647,13 +868,17 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
             {!isSidebarCollapsed && (
               <div className="overflow-hidden">
                 <h4 className="font-black text-xs sm:text-sm text-[#24263e] truncate">{currentUser?.name || 'Nhân Viên Vận Hành'}</h4>
-                <div className="flex items-center gap-1.5 text-[11px] text-emerald-800 font-bold">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
-                  <span>Đang Trực Tuyến</span>
-                </div>
               </div>
             )}
           </div>
+
+          <ResizableSidebarControls
+            width={sidebarWidth}
+            collapsed={isSidebarCollapsed}
+            onResize={setSidebarWidth}
+            onToggle={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
+            lang={lang}
+          />
 
           {/* Section Label */}
           <div className="px-4 pt-3.5 pb-1.5 text-[10px] font-black text-[#24263e]/80 uppercase tracking-wider">
@@ -673,8 +898,8 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                     setIsMobileSidebarOpen(false);
                   }}
                   className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs transition cursor-pointer group ${isActive
-                      ? 'bg-white text-[#24263e] shadow-sm font-black'
-                      : 'text-[#24263e]/80 hover:text-[#24263e] hover:bg-white/40 font-bold'
+                    ? 'bg-white text-[#24263e] shadow-sm font-black'
+                    : 'text-[#24263e]/80 hover:text-[#24263e] hover:bg-white/40 font-bold'
                     }`}
                   title={item.label}
                 >
@@ -744,7 +969,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
               </button>
               <ChevronRight className="w-3 h-3 text-slate-400" />
               <span className="font-semibold text-slate-800 capitalize">
-                {activeTab === 'overview' ? 'Dashboard' : activeTab}
+                {activeTab === 'overview' ? 'Dashboard' : navItems.find((n) => n.id === activeTab)?.label || activeTab}
               </span>
             </div>
           </div>
@@ -937,7 +1162,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
                     <h3 className="font-extrabold text-sm text-slate-900 uppercase">
-                      1. XEM XÉT TIN ĐĂNG & TIN CÓ DẤU HIỆU NGHI VẤN
+                      XEM XÉT TIN ĐĂNG & TIN CÓ DẤU HIỆU NGHI VẤN
                     </h3>
                     <p className="text-xs text-slate-500">
                       Thẩm định tính xác thực thông tin, hình ảnh và cảnh báo bất thường giá định giá từ AI
@@ -1113,83 +1338,6 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
             </div>
           )}
 
-          {/* ======================================================== */}
-          {/* TAB 2: PROOF OF POSSESSION (XÁC MINH SỞ HỮU)              */}
-          {/* ======================================================== */}
-          {activeTab === 'proof-possession' && (
-            <div className="space-y-4">
-              <div className="bg-white rounded-xl p-4 shadow-xs border border-slate-200 border-t-4 border-t-emerald-600 space-y-4">
-                <div>
-                  <h3 className="font-extrabold text-sm text-slate-900 uppercase">
-                    2. XÁC MINH BẰNG CHỨNG SỞ HỮU (PROOF OF POSSESSION)
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Đối chiếu ảnh chụp thiết bị cùng giấy note viết tay tên/ngày giờ và tem Serial Number sản phẩm
-                  </p>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead>
-                      <tr className="border-b border-slate-100 bg-slate-50/70 text-slate-600 text-[11px] font-bold">
-                        <th className="py-2.5 px-3">Mã Hồ Sơ</th>
-                        <th className="py-2.5 px-3">Người Bán</th>
-                        <th className="py-2.5 px-3">Thiết Bị Rao Bán</th>
-                        <th className="py-2.5 px-3">Số Serial / IMEI</th>
-                        <th className="py-2.5 px-3">Bằng Chứng Đã Nộp</th>
-                        <th className="py-2.5 px-3">Trạng Thái</th>
-                        <th className="py-2.5 px-3 text-center">Thao Tác</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {proofList.map((item) => (
-                        <tr key={item.id} className="hover:bg-slate-50/70 transition">
-                          <td className="py-3 px-3 font-mono font-bold text-slate-900">{item.id}</td>
-                          <td className="py-3 px-3 font-bold text-slate-900">{item.sellerName}</td>
-                          <td className="py-3 px-3 text-slate-800">
-                            <span className="font-bold block">{item.productTitle}</span>
-                            <span className="text-[11px] text-slate-500 font-mono">{formatVND(item.price)}</span>
-                          </td>
-                          <td className="py-3 px-3 font-mono font-bold text-slate-700">{item.serialNumber}</td>
-                          <td className="py-3 px-3">
-                            <div className="flex items-center gap-1.5 text-[10px]">
-                              <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 font-bold border border-emerald-200">
-                                ✓ Note viết tay
-                              </span>
-                              <span className="px-1.5 py-0.5 rounded bg-sky-50 text-sky-800 font-bold border border-sky-200">
-                                ✓ Tem Serial
-                              </span>
-                            </div>
-                          </td>
-                          <td className="py-3 px-3">
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${item.status === 'VERIFIED'
-                                  ? 'bg-emerald-100 text-emerald-800'
-                                  : 'bg-amber-100 text-amber-800'
-                                }`}
-                            >
-                              {item.status === 'VERIFIED' ? 'ĐÃ XÁC MINH' : 'CHỜ THẨM ĐỊNH'}
-                            </span>
-                          </td>
-                          <td className="py-3 px-3 text-center">
-                            <div className="flex items-center justify-center gap-1.5">
-                              <button
-                                onClick={() => setSelectedProofModal(item)}
-                                className="px-2.5 py-1 rounded bg-[#24263e] hover:bg-[#c34c36] text-white text-[11px] font-bold transition cursor-pointer"
-                              >
-                                Xem & Duyệt
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          )}
-
 
 
           {/* ======================================================== */}
@@ -1201,7 +1349,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
                     <h3 className="font-extrabold text-sm text-slate-900 uppercase">
-                      4. XỬ LÝ CÁC BÁO CÁO & YÊU CẦU HỖ TRỢ
+                      XỬ LÝ CÁC BÁO CÁO & YÊU CẦU HỖ TRỢ
                     </h3>
                     <p className="text-xs text-slate-500">
                       Tiếp nhận báo cáo vi phạm cộng đồng và giải đáp các ticket hỗ trợ của người dùng
@@ -1246,23 +1394,26 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                             Nội dung: <strong>{rep.description}</strong>
                           </p>
                           {rep.evidenceUrls && rep.evidenceUrls.length > 0 && (
-                            <div className="flex items-center gap-2 pt-1">
-                              <span className="text-slate-500 font-semibold">Bằng chứng:</span>
+                            <div className="flex items-center gap-2 pt-1 flex-wrap">
+                              <span className="text-slate-500 font-semibold text-xs">Bằng chứng:</span>
                               {rep.evidenceUrls.map((url, i) => (
-                                <a key={i} href={url} target="_blank" rel="noreferrer" className="text-indigo-600 underline font-mono text-[11px]">
-                                  [Ảnh {i + 1}]
-                                </a>
+                                <ReportEvidenceItem
+                                  key={i}
+                                  url={url}
+                                  index={i}
+                                  reportId={rep.id}
+                                  onOpen={(src, title, kind) => setEvidencePreview({ src, title, kind })}
+                                />
                               ))}
                             </div>
                           )}
                           <div className="flex items-center justify-between pt-2 border-t border-slate-200">
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              rep.status === 'CONFIRMED'
-                                ? 'bg-rose-100 text-rose-800'
-                                : rep.status === 'DISMISSED'
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${rep.status === 'CONFIRMED'
+                              ? 'bg-rose-100 text-rose-800'
+                              : rep.status === 'DISMISSED'
                                 ? 'bg-slate-200 text-slate-700'
                                 : 'bg-amber-100 text-amber-800'
-                            }`}>
+                              }`}>
                               Trạng thái: {rep.status}
                             </span>
                             {rep.status !== 'CONFIRMED' && rep.status !== 'DISMISSED' && (
@@ -1359,7 +1510,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
               <div className="bg-white rounded-xl p-4 shadow-xs border border-slate-200 border-t-4 border-t-[#c34c36]">
                 <div className="mb-4">
                   <h3 className="font-extrabold text-sm text-slate-900 uppercase">
-                    5. GIẢI QUYẾT TRANH CHẤP & VẬN HÀNH HOÀN HÀNG (DISPUTE WORKSPACE)
+                    GIẢI QUYẾT TRANH CHẤP & VẬN HÀNH HOÀN HÀNG (DISPUTE WORKSPACE)
                   </h3>
                   <p className="text-xs text-slate-500">
                     Phân xử khiếu nại giữa Người Mua & Người Bán, đối chiếu bằng chứng hai bên, tạo chuyến hoàn Lalamove và quyết toán hoàn tiền/phí.
@@ -1378,7 +1529,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
               <div className="bg-white rounded-xl p-4 shadow-xs border border-slate-200 border-t-4 border-t-rose-600 space-y-4">
                 <div>
                   <h3 className="font-extrabold text-sm text-slate-900 uppercase">
-                    6. XEM XÉT CÁC YÊU CẦU HOÀN TIỀN (REFUND REQUESTS)
+                    XEM XÉT CÁC YÊU CẦU HOÀN TIỀN (REFUND REQUESTS)
                   </h3>
                   <p className="text-xs text-slate-500">
                     Thẩm định yêu cầu hoàn tiền của người mua trong cửa sổ đổi trả/kiểm định và giải ngân hoàn tiền Escrow
@@ -1399,24 +1550,32 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {refundRequests.map((item) => (
-                        <tr key={item.id} className="hover:bg-slate-50/70 transition">
-                          <td className="py-3 px-3 font-mono font-bold text-rose-700">{item.id}</td>
-                          <td className="py-3 px-3 font-mono font-bold text-slate-900">{item.orderId}</td>
-                          <td className="py-3 px-3 font-bold text-slate-900">{item.productName}</td>
-                          <td className="py-3 px-3 text-slate-800">{item.buyerName}</td>
-                          <td className="py-3 px-3 font-black text-rose-700 whitespace-nowrap">{formatVND(item.amount)}</td>
-                          <td className="py-3 px-3 text-slate-600 max-w-xs">{item.reason}</td>
-                          <td className="py-3 px-3 text-center">
-                            <button
-                              onClick={() => setSelectedRefundModal(item)}
-                              className="px-3 py-1.5 rounded bg-rose-700 hover:bg-rose-800 text-white text-[11px] font-bold transition cursor-pointer"
-                            >
-                              Thẩm Định Hoàn
-                            </button>
+                      {refundRequests.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="py-8 text-center text-slate-400">
+                            Hiện không có yêu cầu hoàn tiền nào cần thẩm định.
                           </td>
                         </tr>
-                      ))}
+                      ) : (
+                        refundRequests.map((item) => (
+                          <tr key={item.id} className="hover:bg-slate-50/70 transition">
+                            <td className="py-3 px-3 font-mono font-bold text-rose-700">{item.id}</td>
+                            <td className="py-3 px-3 font-mono font-bold text-slate-900">{item.orderId}</td>
+                            <td className="py-3 px-3 font-bold text-slate-900">{item.productName}</td>
+                            <td className="py-3 px-3 text-slate-800">{item.buyerName}</td>
+                            <td className="py-3 px-3 font-black text-rose-700 whitespace-nowrap">{formatVND(item.amount)}</td>
+                            <td className="py-3 px-3 text-slate-600 max-w-xs">{item.reason}</td>
+                            <td className="py-3 px-3 text-center">
+                              <button
+                                onClick={() => setSelectedRefundModal(item)}
+                                className="px-3 py-1.5 rounded bg-rose-700 hover:bg-rose-800 text-white text-[11px] font-bold transition cursor-pointer"
+                              >
+                                Thẩm Định Hoàn
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -1432,7 +1591,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
               <div className="bg-white rounded-xl p-4 shadow-xs border border-slate-200 border-t-4 border-t-amber-600 space-y-4">
                 <div>
                   <h3 className="font-extrabold text-sm text-slate-900 uppercase">
-                    7. XEM XÉT / PHÊ DUYỆT / TẠM GIỮ KHOẢN THANH TOÁN (CASE CÓ TRANH CHẤP)
+                    XEM XÉT / PHÊ DUYỆT / TẠM GIỮ KHOẢN THANH TOÁN (CASE CÓ TRANH CHẤP)
                   </h3>
                   <p className="text-xs text-slate-500">
                     Kiểm soát dòng tiền giải ngân người bán, tạm giữ (HOLD) các đơn hàng phát sinh tranh chấp hoặc nghi vấn
@@ -1463,8 +1622,8 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                           <td className="py-3 px-3">
                             <span
                               className={`px-2 py-0.5 rounded-full text-[10px] font-black ${item.status === 'HOLD'
-                                  ? 'bg-rose-100 text-rose-900 border border-rose-200'
-                                  : 'bg-emerald-100 text-emerald-900 border border-emerald-200'
+                                ? 'bg-rose-100 text-rose-900 border border-rose-200'
+                                : 'bg-emerald-100 text-emerald-900 border border-emerald-200'
                                 }`}
                             >
                               {item.status === 'HOLD' ? 'ĐANG TẠM GIỮ (HOLD)' : 'ĐÃ DUYỆT GIẢI NGÂN'}
@@ -1475,8 +1634,8 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                             <button
                               onClick={() => handleTogglePayoutHold(item.id, item.status)}
                               className={`px-2.5 py-1 rounded text-[11px] font-bold transition cursor-pointer ${item.status === 'HOLD'
-                                  ? 'bg-emerald-700 hover:bg-emerald-800 text-white'
-                                  : 'bg-rose-700 hover:bg-rose-800 text-white'
+                                ? 'bg-emerald-700 hover:bg-emerald-800 text-white'
+                                : 'bg-rose-700 hover:bg-rose-800 text-white'
                                 }`}
                             >
                               {item.status === 'HOLD' ? 'Gỡ Tạm Giữ' : 'Tạm Giữ (Hold)'}
@@ -1502,7 +1661,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
               <div className="bg-white rounded-xl p-4 shadow-xs border border-slate-200 border-t-4 border-t-sky-600 space-y-4">
                 <div>
                   <h3 className="font-extrabold text-sm text-slate-900 uppercase">
-                    9. GIÁM SÁT CÁC GIAO DỊCH (REALTIME ESCROW MONITORING)
+                    GIÁM SÁT CÁC GIAO DỊCH (REALTIME ESCROW MONITORING)
                   </h3>
                   <p className="text-xs text-slate-500">
                     Theo dõi lưu lượng ký quỹ, giải ngân và luồng tiền bảo lãnh thanh toán qua cổng ngân hàng
@@ -1512,15 +1671,15 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
                     <span className="text-[11px] font-bold text-slate-500 block">Tổng Escrow Đang Bảo Chứng</span>
-                    <span className="text-xl font-black text-[#24263e]">66.200.000đ</span>
+                    <span className="text-xl font-black text-[#24263e]">{escrowStats.totalHeld}</span>
                   </div>
                   <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
                     <span className="text-[11px] font-bold text-slate-500 block">Giải Ngân Trong 24 Giờ</span>
-                    <span className="text-xl font-black text-emerald-700">42.800.000đ</span>
+                    <span className="text-xl font-black text-emerald-700">{escrowStats.totalReleased}</span>
                   </div>
                   <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
                     <span className="text-[11px] font-bold text-slate-500 block">Tỷ Lệ Giao Dịch An Toàn</span>
-                    <span className="text-xl font-black text-indigo-900">99.8%</span>
+                    <span className="text-xl font-black text-indigo-900">{escrowStats.safeRate}</span>
                   </div>
                 </div>
 
@@ -1579,23 +1738,22 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                             </td>
                             <td className="py-3 px-3">
                               <span
-                                className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
-                                  ord.confirmationStatus === 'CONFIRMED'
-                                    ? 'bg-emerald-100 text-emerald-800'
-                                    : ord.confirmationStatus === 'PENDING'
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${ord.confirmationStatus === 'CONFIRMED'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : ord.confirmationStatus === 'PENDING'
                                     ? 'bg-amber-100 text-amber-800'
                                     : ord.confirmationStatus === 'CANCELLED'
-                                    ? 'bg-rose-100 text-rose-800'
-                                    : 'bg-slate-100 text-slate-600'
-                                }`}
+                                      ? 'bg-rose-100 text-rose-800'
+                                      : 'bg-slate-100 text-slate-600'
+                                  }`}
                               >
                                 {ord.confirmationStatus === 'CONFIRMED'
                                   ? 'Đã Xác Nhận'
                                   : ord.confirmationStatus === 'PENDING'
-                                  ? 'Đang Chờ Seller'
-                                  : ord.confirmationStatus === 'CANCELLED'
-                                  ? 'Đã Hủy Đơn'
-                                  : 'Không Yêu Cầu'}
+                                    ? 'Đang Chờ Seller'
+                                    : ord.confirmationStatus === 'CANCELLED'
+                                      ? 'Đã Hủy Đơn'
+                                      : 'Không Yêu Cầu'}
                               </span>
                             </td>
                             <td className="py-3 px-3 font-mono text-slate-600 text-[11px]">
@@ -1631,7 +1789,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
               <div className="bg-white rounded-xl p-4 shadow-xs border border-slate-200 border-t-4 border-t-slate-800 space-y-4">
                 <div>
                   <h3 className="font-extrabold text-sm text-slate-900 uppercase">
-                    10. CẢNH BÁO NGƯỜI DÙNG VÀ ÁP DỤNG HẠN CHẾ TẠM THỜI (KHI ĐƯỢC CẤP QUYỀN)
+                    CẢNH BÁO NGƯỜI DÙNG VÀ ÁP DỤNG HẠN CHẾ TẠM THỜI (KHI ĐƯỢC CẤP QUYỀN)
                   </h3>
                   <p className="text-xs text-slate-500">
                     Xử lý chế tài các tài khoản spam, cố tình giao dịch ngoài sàn hoặc vi phạm chính sách kiểm định
@@ -1694,10 +1852,10 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                           onChange={(e) => setRestrictLevel(e.target.value as any)}
                           className="w-full p-2.5 bg-white border border-slate-300 rounded-lg text-xs font-bold focus:outline-none focus:border-[#24263e]"
                         >
-                          <option value="WARN">1. Gửi Cảnh Cáo Chính Thức</option>
-                          <option value="LOCK_POST">2. Tạm Khóa Đăng Tin (7 Ngày)</option>
-                          <option value="LOCK_ESCROW">3. Tạm Ngưng Rút Tiền Escrow</option>
-                          <option value="SUSPEND">4. Tạm Đình Chỉ Tài Khoản (14 Ngày)</option>
+                          <option value="WARN">Gửi Cảnh Cáo Chính Thức</option>
+                          <option value="LOCK_POST">Tạm Khóa Đăng Tin (7 Ngày)</option>
+                          <option value="LOCK_ESCROW">Tạm Ngưng Rút Tiền Escrow</option>
+                          <option value="SUSPEND">Tạm Đình Chỉ Tài Khoản (14 Ngày)</option>
                         </select>
                       </div>
                       <div>
@@ -1821,81 +1979,6 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
       )}
 
       {/* ======================================================== */}
-      {/* MODAL: XEM BẰNG CHỨNG SỞ HỮU                            */}
-      {/* ======================================================== */}
-      {selectedProofModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto space-y-4 text-xs">
-            <div className="flex items-center justify-between border-b pb-3">
-              <div>
-                <h3 className="font-black text-sm text-slate-900">
-                  XÁC MINH SỞ HỮU #{selectedProofModal.id}
-                </h3>
-                <p className="text-slate-500 text-[11px]">{selectedProofModal.productTitle}</p>
-              </div>
-              <button
-                onClick={() => setSelectedProofModal(null)}
-                className="p-1 rounded-full text-slate-400 hover:text-slate-600 transition cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <span className="block font-bold text-slate-700 mb-1">Ảnh giấy note viết tay:</span>
-                  <img src={selectedProofModal.handwrittenNotePhoto} alt="" className="w-full h-36 rounded-lg object-cover border" />
-                </div>
-                <div>
-                  <span className="block font-bold text-slate-700 mb-1">Ảnh tem Serial/IMEI máy:</span>
-                  <img src={selectedProofModal.serialPhoto} alt="" className="w-full h-36 rounded-lg object-cover border" />
-                </div>
-              </div>
-
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
-                <span className="font-bold text-slate-800 block text-[11px]">Số Serial khai báo:</span>
-                <span className="font-mono font-black text-sm text-slate-900">{selectedProofModal.serialNumber}</span>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-3 border-t">
-              <button
-                onClick={() =>
-                  handleReviewVerification(
-                    selectedProofModal.id,
-                    'REJECT',
-                    'Bằng chứng không hợp lệ hoặc thông tin sản phẩm không trùng khớp'
-                  )
-                }
-                className="px-3.5 py-2 bg-rose-50 text-rose-700 border border-rose-200 rounded-xl font-bold hover:bg-rose-100 transition cursor-pointer"
-              >
-                Từ Chối
-              </button>
-              <button
-                onClick={() =>
-                  handleReviewVerification(
-                    selectedProofModal.id,
-                    'REQUEST_RESUBMIT',
-                    'Chất lượng ảnh mờ hoặc chưa rõ serial / note viết tay, vui lòng chụp lại'
-                  )
-                }
-                className="px-3.5 py-2 bg-white border border-slate-300 text-slate-700 rounded-xl font-bold hover:bg-slate-100 transition cursor-pointer"
-              >
-                Yêu Cầu Nộp Lại
-              </button>
-              <button
-                onClick={() => handleReviewVerification(selectedProofModal.id, 'APPROVE')}
-                className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold transition cursor-pointer"
-              >
-                Xác Nhận Hợp Lệ
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ======================================================== */}
       {/* MODAL: THẨM ĐỊNH HOÀN TIỀN                               */}
       {/* ======================================================== */}
       {selectedRefundModal && (
@@ -2007,6 +2090,60 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
             loadStaffQueue(queuePage);
           }}
         />
+      )}
+
+      {/* ======================================================== */}
+      {/* EVIDENCE MEDIA PREVIEW MODAL                             */}
+      {/* ======================================================== */}
+      {evidencePreview && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-xs animate-fadeIn"
+          onClick={() => setEvidencePreview(null)}
+        >
+          <div
+            className="relative max-w-4xl max-h-[90vh] w-full bg-slate-900 rounded-2xl p-4 shadow-2xl flex flex-col border border-slate-700 space-y-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800 text-white">
+              <div className="flex items-center gap-2 min-w-0">
+                <Eye className="w-4 h-4 text-indigo-400 shrink-0" />
+                <span className="font-bold text-xs sm:text-sm truncate">{evidencePreview.title}</span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <a
+                  href={evidencePreview.src}
+                  target="_blank"
+                  rel="noreferrer"
+                  download={`evidence_${Date.now()}`}
+                  className="px-3 py-1 bg-white/10 hover:bg-white/20 text-white text-xs rounded-lg transition flex items-center gap-1.5 font-medium cursor-pointer"
+                  title="Mở trong tab mới"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Mở tab mới</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setEvidencePreview(null)}
+                  className="w-7 h-7 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition flex items-center justify-center cursor-pointer font-bold text-sm"
+                  title="Đóng (ESC)"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-auto flex items-center justify-center min-h-[220px] max-h-[75vh]">
+              {evidencePreview.kind === 'VIDEO' ? (
+                <video src={evidencePreview.src} controls autoPlay className="max-h-[72vh] max-w-full rounded-xl shadow-lg" />
+              ) : (
+                <img
+                  src={evidencePreview.src}
+                  alt={evidencePreview.title}
+                  className="max-h-[72vh] max-w-full object-contain rounded-xl shadow-lg"
+                />
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

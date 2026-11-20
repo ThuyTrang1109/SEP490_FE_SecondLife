@@ -109,6 +109,7 @@ import { InspectionCashReviewPanel } from '../components/inspection/InspectionCa
 import { canReviewInspectionCash } from '../utils/inspectionCashShipping';
 import { AdminInspectionFundsModal } from '../components/admin/AdminInspectionFundsModal';
 import { AdminInspectionFundsTab } from '../components/admin/AdminInspectionFundsTab';
+import { AdminOrdersTab } from '../components/admin/AdminOrdersTab';
 
 interface AdminDashboardViewProps {
   orders: EscrowOrder[];
@@ -1887,8 +1888,15 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           {/* TAB: ORDERS                                               */}
           {/* ======================================================== */}
           {activeTab === 'orders' && (
-            <div className="max-w-4xl">
-              <InspectionCashReviewPanel allowManualConfirmation={canReviewInspectionCash(currentUser)} />
+            <div className="space-y-6">
+              <AdminOrdersTab
+                lang={lang}
+                currentUser={currentUser}
+                onOpenListingDetail={onOpenListingDetail}
+              />
+              <div className="max-w-4xl">
+                <InspectionCashReviewPanel allowManualConfirmation={canReviewInspectionCash(currentUser)} />
+              </div>
             </div>
           )}
 

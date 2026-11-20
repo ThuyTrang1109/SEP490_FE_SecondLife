@@ -19,7 +19,7 @@ export const panelPaths: Partial<Record<UserRole, Record<string, string>>> = {
     'inspection-funds': '/admin/inspection-funds',
   },
   staff: {
-    overview: '/staff/dashboard', 'review-listings': '/staff/products', 'proof-possession': '/staff/proof-possession',
+    overview: '/staff/dashboard', 'review-listings': '/staff/products',
     'reports-support': '/staff/reports', disputes: '/staff/disputes', 'refund-requests': '/staff/refunds',
     payouts: '/staff/payouts', 'monitor-transactions': '/staff/transactions', 'restrict-users': '/staff/restrictions',
   },

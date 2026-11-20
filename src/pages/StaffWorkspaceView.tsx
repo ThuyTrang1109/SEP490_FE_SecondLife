@@ -70,7 +70,6 @@ interface StaffWorkspaceViewProps {
 type StaffTab =
   | 'overview'
   | 'review-listings'
-  | 'proof-possession'
   | 'reports-support'
   | 'disputes'
   | 'refund-requests'
@@ -81,7 +80,6 @@ type StaffTab =
 export const VALID_STAFF_TABS: StaffTab[] = [
   'overview',
   'review-listings',
-  'proof-possession',
   'reports-support',
   'disputes',
   'refund-requests',
@@ -137,7 +135,6 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
 
   // Modals
   const [selectedListingModal, setSelectedListingModal] = useState<any | null>(null);
-  const [selectedProofModal, setSelectedProofModal] = useState<any | null>(null);
   const [rejectReason, setRejectReason] = useState('Vi phạm giá niêm yết bất thường');
 
   // Request evidence form state
@@ -207,43 +204,6 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
   useEffect(() => {
     if (activeTab === 'review-listings') {
       loadStaffQueue(0);
-    }
-  }, [activeTab]);
-
-  // 2. Proof of Possession & Seller Verifications (GET /api/v1/staff/seller-verifications)
-  const [proofList, setProofList] = useState<any[]>([]);
-  const [isLoadingProofList, setIsLoadingProofList] = useState<boolean>(false);
-
-  const loadProofList = async () => {
-    setIsLoadingProofList(true);
-    try {
-      const res = await staffService.listVerifications({ page: 0, size: 50 });
-      const items = res?.items || [];
-      if (items.length > 0) {
-        const mapped = items.map((it: any) => ({
-          id: it.id,
-          sellerId: it.userId,
-          sellerName: it.fullName || it.phone || ('Người bán ' + (it.userId ? it.userId.slice(0, 8) : '')),
-          productTitle: it.shopName ? `Gian hàng: ${it.shopName}` : (it.identityCardNumber ? `CCCD: ${it.identityCardNumber}` : 'Hồ sơ người bán'),
-          price: 0,
-          serialNumber: it.identityCardNumber || 'N/A',
-          handwrittenNotePhoto: it.selfieImageUrl || it.frontIdentityCardImageUrl || 'https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=400&q=80',
-          serialPhoto: it.backIdentityCardImageUrl || it.frontIdentityCardImageUrl || 'https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=400&q=80',
-          status: it.status === 'APPROVED' ? 'VERIFIED' : 'PENDING',
-          rawItem: it
-        }));
-        setProofList(mapped);
-      }
-    } catch (err) {
-      console.warn('Load staff seller verifications error:', err);
-    } finally {
-      setIsLoadingProofList(false);
-    }
-  };
-
-  useEffect(() => {
-    if (activeTab === 'proof-possession') {
-      loadProofList();
     }
   }, [activeTab]);
 
@@ -498,13 +458,6 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
       badgeColor: 'bg-[#24263e] text-white'
     },
     {
-      id: 'proof-possession' as StaffTab,
-      label: 'XÁC MINH ĐỊNH DANH & SỞ HỮU',
-      icon: ShieldCheck,
-      badge: proofList.filter((p) => p.status === 'PENDING').length,
-      badgeColor: 'bg-amber-600 text-white'
-    },
-    {
       id: 'reports-support' as StaffTab,
       label: 'BÁO CÁO VI PHẠM & HỖ TRỢ',
       icon: Flag,
@@ -574,32 +527,6 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
       triggerNotice(`Lỗi từ chối tin #${id}: ${msg}`);
     }
     setSelectedListingModal(null);
-  };
-
-  const handleReviewVerification = async (
-    id: string,
-    decision: 'APPROVE' | 'REJECT' | 'REQUEST_RESUBMIT',
-    reason?: string
-  ) => {
-    try {
-      await staffService.reviewVerification(id, { decision, rejectionReason: reason });
-      triggerNotice(
-        decision === 'APPROVE'
-          ? `Đã phê duyệt hồ sơ xác minh #${id} thành công!`
-          : `Đã gửi yêu cầu xử lý hồ sơ #${id} (${decision})`
-      );
-      await loadProofList();
-    } catch (err: any) {
-      console.warn('Review verification error:', err);
-      setProofList((prev) =>
-        prev.map((p) =>
-          p.id === id ? { ...p, status: decision === 'APPROVE' ? 'VERIFIED' : 'PENDING' } : p
-        )
-      );
-      triggerNotice(`Đã cập nhật trạng thái hồ sơ #${id}`);
-    } finally {
-      setSelectedProofModal(null);
-    }
   };
 
 
@@ -1288,83 +1215,6 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
             </div>
           )}
 
-          {/* ======================================================== */}
-          {/* TAB 2: PROOF OF POSSESSION (XÁC MINH SỞ HỮU)              */}
-          {/* ======================================================== */}
-          {activeTab === 'proof-possession' && (
-            <div className="space-y-4">
-              <div className="bg-white rounded-xl p-4 shadow-xs border border-slate-200 border-t-4 border-t-emerald-600 space-y-4">
-                <div>
-                  <h3 className="font-extrabold text-sm text-slate-900 uppercase">
-                    2. XÁC MINH BẰNG CHỨNG SỞ HỮU (PROOF OF POSSESSION)
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Đối chiếu ảnh chụp thiết bị cùng giấy note viết tay tên/ngày giờ và tem Serial Number sản phẩm
-                  </p>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead>
-                      <tr className="border-b border-slate-100 bg-slate-50/70 text-slate-600 text-[11px] font-bold">
-                        <th className="py-2.5 px-3">Mã Hồ Sơ</th>
-                        <th className="py-2.5 px-3">Người Bán</th>
-                        <th className="py-2.5 px-3">Thiết Bị Rao Bán</th>
-                        <th className="py-2.5 px-3">Số Serial / IMEI</th>
-                        <th className="py-2.5 px-3">Bằng Chứng Đã Nộp</th>
-                        <th className="py-2.5 px-3">Trạng Thái</th>
-                        <th className="py-2.5 px-3 text-center">Thao Tác</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {proofList.map((item) => (
-                        <tr key={item.id} className="hover:bg-slate-50/70 transition">
-                          <td className="py-3 px-3 font-mono font-bold text-slate-900">{item.id}</td>
-                          <td className="py-3 px-3 font-bold text-slate-900">{item.sellerName}</td>
-                          <td className="py-3 px-3 text-slate-800">
-                            <span className="font-bold block">{item.productTitle}</span>
-                            <span className="text-[11px] text-slate-500 font-mono">{formatVND(item.price)}</span>
-                          </td>
-                          <td className="py-3 px-3 font-mono font-bold text-slate-700">{item.serialNumber}</td>
-                          <td className="py-3 px-3">
-                            <div className="flex items-center gap-1.5 text-[10px]">
-                              <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 font-bold border border-emerald-200">
-                                ✓ Note viết tay
-                              </span>
-                              <span className="px-1.5 py-0.5 rounded bg-sky-50 text-sky-800 font-bold border border-sky-200">
-                                ✓ Tem Serial
-                              </span>
-                            </div>
-                          </td>
-                          <td className="py-3 px-3">
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${item.status === 'VERIFIED'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : 'bg-amber-100 text-amber-800'
-                                }`}
-                            >
-                              {item.status === 'VERIFIED' ? 'ĐÃ XÁC MINH' : 'CHỜ THẨM ĐỊNH'}
-                            </span>
-                          </td>
-                          <td className="py-3 px-3 text-center">
-                            <div className="flex items-center justify-center gap-1.5">
-                              <button
-                                onClick={() => setSelectedProofModal(item)}
-                                className="px-2.5 py-1 rounded bg-[#24263e] hover:bg-[#c34c36] text-white text-[11px] font-bold transition cursor-pointer"
-                              >
-                                Xem & Duyệt
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          )}
-
 
 
           {/* ======================================================== */}
@@ -1996,81 +1846,6 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                   Phê Duyệt Tin
                 </button>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ======================================================== */}
-      {/* MODAL: XEM BẰNG CHỨNG SỞ HỮU                            */}
-      {/* ======================================================== */}
-      {selectedProofModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto space-y-4 text-xs">
-            <div className="flex items-center justify-between border-b pb-3">
-              <div>
-                <h3 className="font-black text-sm text-slate-900">
-                  XÁC MINH SỞ HỮU #{selectedProofModal.id}
-                </h3>
-                <p className="text-slate-500 text-[11px]">{selectedProofModal.productTitle}</p>
-              </div>
-              <button
-                onClick={() => setSelectedProofModal(null)}
-                className="p-1 rounded-full text-slate-400 hover:text-slate-600 transition cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <span className="block font-bold text-slate-700 mb-1">Ảnh giấy note viết tay:</span>
-                  <img src={selectedProofModal.handwrittenNotePhoto} alt="" className="w-full h-36 rounded-lg object-cover border" />
-                </div>
-                <div>
-                  <span className="block font-bold text-slate-700 mb-1">Ảnh tem Serial/IMEI máy:</span>
-                  <img src={selectedProofModal.serialPhoto} alt="" className="w-full h-36 rounded-lg object-cover border" />
-                </div>
-              </div>
-
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
-                <span className="font-bold text-slate-800 block text-[11px]">Số Serial khai báo:</span>
-                <span className="font-mono font-black text-sm text-slate-900">{selectedProofModal.serialNumber}</span>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-3 border-t">
-              <button
-                onClick={() =>
-                  handleReviewVerification(
-                    selectedProofModal.id,
-                    'REJECT',
-                    'Bằng chứng không hợp lệ hoặc thông tin sản phẩm không trùng khớp'
-                  )
-                }
-                className="px-3.5 py-2 bg-rose-50 text-rose-700 border border-rose-200 rounded-xl font-bold hover:bg-rose-100 transition cursor-pointer"
-              >
-                Từ Chối
-              </button>
-              <button
-                onClick={() =>
-                  handleReviewVerification(
-                    selectedProofModal.id,
-                    'REQUEST_RESUBMIT',
-                    'Chất lượng ảnh mờ hoặc chưa rõ serial / note viết tay, vui lòng chụp lại'
-                  )
-                }
-                className="px-3.5 py-2 bg-white border border-slate-300 text-slate-700 rounded-xl font-bold hover:bg-slate-100 transition cursor-pointer"
-              >
-                Yêu Cầu Nộp Lại
-              </button>
-              <button
-                onClick={() => handleReviewVerification(selectedProofModal.id, 'APPROVE')}
-                className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold transition cursor-pointer"
-              >
-                Xác Nhận Hợp Lệ
-              </button>
             </div>
           </div>
         </div>

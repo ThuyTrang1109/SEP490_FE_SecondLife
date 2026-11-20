@@ -18,7 +18,7 @@ import {
   Home
 } from 'lucide-react';
 import { EscrowOrder, Language } from '../../types';
-import { formatVND } from '../../utils/translations';
+import { formatConditionGrade, formatVND } from '../../utils/translations';
 import { ScannableQRCode } from '../common/ScannableQRCode';
 import { dialogService } from '../../utils/dialogService';
 
@@ -260,7 +260,7 @@ export const InspectionProductQRModal: React.FC<InspectionProductQRModalProps> =
                 </div>
                 <div>
                   <span className="text-slate-400 block text-[10px]">Tình trạng tự khai:</span>
-                  <span className="font-bold text-slate-700">{order.listing?.conditionGrade || 'Đã qua sử dụng'}</span>
+                  <span className="font-bold text-slate-700">{formatConditionGrade(order.listing?.conditionGrade, 'vi') || 'Đã qua sử dụng'}</span>
                 </div>
                 <div>
                   <span className="text-slate-400 block text-[10px]">Ngày xác nhận đơn:</span>

@@ -13,6 +13,7 @@ import { getOrderAllShipments } from '../../../utils/orders/shipmentCache';
 import { resolveInspectionCenter } from '../../../utils/orderUtils';
 import { translations } from '../../../utils/translations';
 import { getOrderSellerAddress, getOrderBuyerAddress } from '../../../pages/inspection-center/dispatch/orderContacts';
+import { span } from 'motion/react-client';
 
 interface Props {
   order: EscrowOrder;
@@ -224,17 +225,16 @@ export function OrderDeliveryJourney({
 
         const trangWarehouse = 'Student Station Coffee, Đường Quảng Trường Sáng Tạo, Phường Đông Hòa, Thành phố Dĩ An, BI 00084, Việt Nam';
 
-        const realSellerAddress =
-          (!isBadSellerAddr(resolvedOrderSellerAddress) ? resolvedOrderSellerAddress : null) ||
+        const pendingWarehouseAddress = lang === 'vi' ? 'Kho người bán (Đang cập nhật địa chỉ)' : 'Seller warehouse (address pending)';
+        const realSellerAddress = isAtHome
+          ? (!isBadSellerAddr(resolvedOrderSellerAddress) ? resolvedOrderSellerAddress : null) ||
           (!isBadSellerAddr(detailInspectionDto?.sellerAddress) ? detailInspectionDto?.sellerAddress : null) ||
           (!isBadSellerAddr(detailModalOrder.sellerAddress) ? detailModalOrder.sellerAddress : null) ||
           ((isModalInspFailed || isModalRejected) && !isBadSellerAddr(modalReturnShipment?.receiverAddress) ? modalReturnShipment?.receiverAddress : null) ||
-          (!isAtHome && !isBadSellerAddr(modalInboundShipment?.senderAddress) ? modalInboundShipment?.senderAddress : null) ||
           (!isBadSellerAddr((detailModalOrder as any).sellerLocation) ? (detailModalOrder as any).sellerLocation : null) ||
           (!isBadSellerAddr(detailModalOrder.listing?.sellerAddress) ? detailModalOrder.listing?.sellerAddress : null) ||
-          (isTrangSeller ? trangWarehouse : null) ||
-          (!isBadSellerAddr(resolvedOrderSellerAddress) ? resolvedOrderSellerAddress : null) ||
-          'Kho người bán (Đang cập nhật địa chỉ)';
+          (isTrangSeller ? trangWarehouse : pendingWarehouseAddress)
+          : modalInboundShipment?.senderAddress?.trim() || detailInspectionDto?.sellerAddress?.trim() || pendingWarehouseAddress;
 
         const realHubAddress =
           modalInboundShipment?.receiverAddress ||
@@ -297,7 +297,7 @@ export function OrderDeliveryJourney({
               <div className="text-xs font-bold text-[#24263e] uppercase tracking-wider flex items-center justify-between flex-wrap gap-2">
                 <div className="flex items-center gap-1.5">
                   <ShieldCheck className="w-4 h-4 text-orange-600" />
-                  <span>Quy trình Kiểm định tại nhà & Giao hàng (On-Site Verify)</span>
+                  <span>Quy trình Kiểm định tại nhà & Giao hàng</span>
                 </div>
                 <span className="text-[10px] font-bold text-orange-800 bg-orange-50 px-2 py-0.5 rounded-md border border-orange-200">
                   Kiểm Định Tận Nhà
@@ -679,9 +679,8 @@ export function OrderDeliveryJourney({
                             Sẵn sàng giao hàng
                           </span>
                         ) : (
-                          <span className="text-[11px] font-sans font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                            Kích hoạt sau khi ĐẠT
-                          </span>
+                          <span></span>
+
                         )}
                       </span>
                     </div>
@@ -745,7 +744,7 @@ export function OrderDeliveryJourney({
                                   ? 'KTV đã kiểm định ĐẠT chuẩn. Đang chờ người mua xác nhận mua hàng trước khi điều phối bưu tá.'
                                   : isModalInspPassed
                                     ? 'Sản phẩm kiểm định ĐẠT chuẩn. Tài xế Lalamove sẽ nhận hàng từ người bán và phát thẳng đến người mua.'
-                                    : 'Tài xế Lalamove nhận hàng tại nhà người bán và phát thẳng đến người mua sau khi niêm phong tem.'}
+                                    : 'Tài xế Lalamove nhận hàng tại nhà người bán và phát thẳng đến người mua.'}
                     </span>
                   </div>
                 </div>
@@ -760,7 +759,7 @@ export function OrderDeliveryJourney({
             <div className="text-xs font-bold text-[#24263e] uppercase tracking-wider flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-1.5">
                 <Truck className="w-4 h-4 text-blue-600" />
-                <span>Hành trình giao nhận 2 chặng (Verify Then Ship)</span>
+                <span>Hành trình giao nhận 2 chặng</span>
               </div>
               <span className="text-[10px] font-bold text-blue-800 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">
                 Kiểm Định Hub Lab
@@ -780,12 +779,11 @@ export function OrderDeliveryJourney({
                       {modalInboundShipment?.orderCode ? (
                         <span className="text-blue-700 font-bold">Lalamove #{modalInboundShipment.orderCode}</span>
                       ) : (
-                        <span className={`text-[11px] font-sans font-medium px-2 py-0.5 rounded border ${
-                          isModalWaitingFeePayment || isModalWaitingSellerApproval || isModalWaitingBuyerApproval
-                            ? 'text-amber-800 bg-amber-50 border-amber-300 font-semibold'
-                            : isOrderSellerConfirmed(detailModalOrder)
-                              ? 'text-blue-700 bg-blue-50 border-blue-200'
-                              : 'text-amber-700 bg-amber-50 border-amber-200'
+                        <span className={`text-[11px] font-sans font-medium px-2 py-0.5 rounded border ${isModalWaitingFeePayment || isModalWaitingSellerApproval || isModalWaitingBuyerApproval
+                          ? 'text-amber-800 bg-amber-50 border-amber-300 font-semibold'
+                          : isOrderSellerConfirmed(detailModalOrder)
+                            ? 'text-blue-700 bg-blue-50 border-blue-200'
+                            : 'text-amber-700 bg-amber-50 border-amber-200'
                           }`}>
                           {detailInboundLabel || (
                             isModalWaitingFeePayment
@@ -855,7 +853,7 @@ export function OrderDeliveryJourney({
                           ? 'Đang chờ xác nhận yêu cầu kiểm định từ các bên.'
                           : 'Awaiting approval from parties.')
                         : (detailModalOrder.shippingLegs[0]?.timeline[detailModalOrder.shippingLegs[0].timeline.length - 1]?.description ||
-                           (lang === 'vi' ? 'Khởi tạo đơn hàng kiểm định Hub. Chờ bưu tá Lalamove chuyển kiện hàng về Hub.' : 'Hub inspection shipment created. Awaiting Lalamove pickup.'))}
+                          (lang === 'vi' ? 'Khởi tạo đơn hàng kiểm định Hub. Chờ bưu tá Lalamove chuyển kiện hàng về Hub.' : 'Hub inspection shipment created. Awaiting Lalamove pickup.'))}
                   </span>
                 </div>
               </div>
@@ -911,7 +909,7 @@ export function OrderDeliveryJourney({
                                 : 'text-slate-500 bg-slate-100 border-slate-200'
                           }`}>
                           {isModalInspFailed
-                            ? 'Kích hoạt hoàn trả'
+                            ? 'Đơn kiểm định không đạt'
                             : isModalRejected
                               ? 'Người mua từ chối • Hoàn trả'
                               : isModalPendingDecision
@@ -936,7 +934,9 @@ export function OrderDeliveryJourney({
                         {isModalInspFailed || isModalRejected ? 'Hoàn trả về:' : 'Giao đến:'}
                       </span>
                       <span className="font-semibold text-slate-800 break-words">
-                        {isModalInspFailed || isModalRejected ? realSellerAddress : realBuyerAddress}
+                        {isModalInspFailed || isModalRejected
+                          ? modalReturnShipment?.receiverAddress?.trim() || realSellerAddress
+                          : realBuyerAddress}
                       </span>
                     </div>
                   </div>

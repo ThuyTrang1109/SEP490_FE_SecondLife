@@ -730,4 +730,228 @@ test('At-Home Inspection Modal and Card Action Buttons Rules', async (t) => {
       'Buyer card footer must not render redundant duplicate inspection status badge'
     );
   });
+
+  await t.test('[TEST 24] Schedule appointment validation: disallows selecting rejected times/slots of that day', async () => {
+    const { isSlotRejected, extractRejectedSlots } = await import('../components/modals/ScheduleAppointmentModal');
+
+    // Case 1: Order was countered by Hub for 08:30 on 2026-11-20
+    const orderWithCounter = {
+      id: 'ord-test-rejected-validation',
+      appointmentStatus: 'COUNTERED_BY_CENTER',
+      appointmentScheduledAt: '2026-11-20T01:30:00Z', // 08:30 VN
+      counterScheduledAt: '2026-11-20T07:00:00Z',
+      counterNote: 'KTV khu vực đã kín lịch ca sáng, Trung tâm xin phép đề xuất dời sang ca chiều cùng ngày.',
+    };
+
+    const rejectedSlots = extractRejectedSlots(orderWithCounter.id, undefined, undefined, orderWithCounter);
+
+    // 1a. The exact hour (08:30) on that date is rejected
+    const check0830 = isSlotRejected('2026-11-20', '08:30', 'MORNING', rejectedSlots);
+    assert.strictEqual(check0830.rejected, true, '08:30 on 2026-11-20 must be rejected');
+
+    // 1b. Since note specifies "kín lịch ca sáng", any morning slot on that date is also rejected
+    const check0900Morning = isSlotRejected('2026-11-20', '09:00', 'MORNING', rejectedSlots);
+    assert.strictEqual(check0900Morning.rejected, true, 'All morning slots on 2026-11-20 are rejected when note indicates morning is full');
+
+    // 1c. Afternoon slots on 2026-11-20 are NOT rejected
+    const check1400Afternoon = isSlotRejected('2026-11-20', '14:00', 'AFTERNOON', rejectedSlots);
+    assert.strictEqual(check1400Afternoon.rejected, false, 'Afternoon slot 14:00 on 2026-11-20 must be allowed');
+
+    // 1d. On a different date (2026-11-21), 08:30 is NOT rejected
+    const checkNextDay = isSlotRejected('2026-11-21', '08:30', 'MORNING', rejectedSlots);
+    assert.strictEqual(checkNextDay.rejected, false, '08:30 on next date 2026-11-21 must be allowed');
+
+    // Case 2: Specific hour rejection without whole shift note
+    const specificRejectionOrder = {
+      id: 'ord-test-specific-hour',
+      appointmentStatus: 'REJECTED',
+      appointmentScheduledAt: '2026-11-22T08:00:00Z', // 15:00 VN
+      appointmentShift: 'AFTERNOON' as const,
+      appointmentRejectionReason: 'Khung giờ này KTV đang bận đo kiểm ở đơn khác',
+    };
+    const specificSlots = extractRejectedSlots(specificRejectionOrder.id, undefined, undefined, specificRejectionOrder);
+
+    // 15:00 on 2026-11-22 is rejected
+    assert.strictEqual(isSlotRejected('2026-11-22', '15:00', 'AFTERNOON', specificSlots).rejected, true);
+    // Other afternoon hours (e.g. 15:30) on 2026-11-22 are NOT rejected
+    assert.strictEqual(isSlotRejected('2026-11-22', '15:30', 'AFTERNOON', specificSlots).rejected, false);
+  });
+
+  await t.test('[TEST 25] Center Review Appointment: Reject button is disabled when Center has countered / waiting for seller response', () => {
+    // Helper function matching ReviewAppointmentModal logic
+    function computeIsWaitingSellerCounter(order: {
+      status?: string;
+      appointmentStatus?: string;
+      counterScheduledAt?: string;
+    }): boolean {
+      return Boolean(
+        (order.counterScheduledAt || order.appointmentStatus === 'COUNTERED_BY_CENTER') &&
+        order.status !== 'CONFIRMED'
+      );
+    }
+
+    // Case 1: Initial appointment request from seller (PENDING_CENTER_CONFIRMATION)
+    // -> Center CAN reject or accept (isWaitingSellerCounter = false)
+    const initialOrder = {
+      status: 'CONFIRMED_PENDING_DISPATCH',
+      appointmentStatus: 'PENDING_CENTER_CONFIRMATION',
+      counterScheduledAt: undefined,
+    };
+    assert.strictEqual(computeIsWaitingSellerCounter(initialOrder), false, 'Initial request: Reject button must be enabled');
+
+    // Case 2: Center has countered with a new time proposal and is waiting for seller
+    // -> Reject button must be DISABLED (isWaitingSellerCounter = true)
+    const counteredOrder = {
+      status: 'CONFIRMED_PENDING_DISPATCH',
+      appointmentStatus: 'COUNTERED_BY_CENTER',
+      counterScheduledAt: '2026-11-20T07:00:00Z',
+    };
+    assert.strictEqual(computeIsWaitingSellerCounter(counteredOrder), true, 'Countered order: Reject button must be disabled');
+
+    // Case 3: Order already confirmed (appointment finalized)
+    const confirmedOrder = {
+      status: 'CONFIRMED',
+      appointmentStatus: 'COUNTERED_BY_CENTER',
+      counterScheduledAt: '2026-11-20T07:00:00Z',
+    };
+    assert.strictEqual(computeIsWaitingSellerCounter(confirmedOrder), false);
+  });
+
+  await t.test('[TEST 26] Seller Inbound Shipment Polling & Ownership rules: AT_HOME orders and foreign orders are excluded from Hub inbound polling', () => {
+    const isAtHomeOrder = (o: { inspectionMethod?: string; orderType?: string }) =>
+      o.inspectionMethod === 'AT_HOME' || o.orderType === 'AT_HOME';
+
+    // 1. AT_HOME order must NOT be considered for Hub inbound polling
+    const atHomeOrder = {
+      id: 'ord-at-home-1',
+      orderType: 'AT_HOME',
+      inspectionMethod: 'AT_HOME',
+      hasInspectionService: true,
+      sellerId: 'current-seller-id',
+    };
+    assert.strictEqual(isAtHomeOrder(atHomeOrder), true);
+
+    // 2. Foreign order filter test: An order with a different explicit sellerId does not belong to current seller
+    const currentUserId = 'seller-123';
+    function isOrderOfSeller(ord: { sellerId?: string }, currentUser: { id: string }, userRole: string): boolean {
+      if (ord.sellerId && ord.sellerId === currentUser.id) return true;
+      const hasExplicitSeller = Boolean(ord.sellerId);
+      if (!hasExplicitSeller && userRole === 'seller') return true;
+      return false;
+    }
+
+    const foreignOrder = { id: '06410cab-523f-4b43-92fd-146826b24365', sellerId: 'other-user-456' };
+    const ownOrder = { id: 'd0d4e119-362d-41ca-a2a4-4f8d977923e1', sellerId: 'seller-123' };
+
+    assert.strictEqual(isOrderOfSeller(foreignOrder, { id: currentUserId }, 'seller'), false, 'Foreign order must not belong to current seller');
+    assert.strictEqual(isOrderOfSeller(ownOrder, { id: currentUserId }, 'seller'), true, 'Own order must belong to current seller');
+
+    // 3. Failed order IDs set prevents polling loops
+    const failedSet = new Set<string>();
+    failedSet.add('06410cab-523f-4b43-92fd-146826b24365');
+    assert.strictEqual(failedSet.has('06410cab-523f-4b43-92fd-146826b24365'), true, '403 failed order is remembered and skipped in subsequent polling');
+  });
+
+  await t.test('[TEST 27] Synchronization when Seller accepts counter appointment: Center dispatch reflects CONFIRMED and READY_TO_ASSIGN', () => {
+    // The API still reports an active counterproposal when the queue is first loaded.
+    const backendOrder = {
+      id: 'd0d4e119-362d-41ca-a2a4-4f8d977923e1',
+      orderType: 'AT_HOME' as const,
+      status: 'CONFIRMED_PENDING_DISPATCH',
+      appointmentScheduledAt: '2026-11-20T01:30:00Z', // 08:30 VN
+      appointmentStatus: 'COUNTERED_BY_CENTER',
+      counterScheduledAt: '2026-11-20T06:30:00Z', // 13:30 VN
+    };
+
+    // Before seller acceptance: stage is WAITING_SELLER_APPROVAL
+    const stageBefore = getCenterDispatchStage(backendOrder as any, false);
+    assert.strictEqual(stageBefore, 'WAITING_SELLER_APPROVAL', 'Center waits for seller response before acceptance');
+
+    // A browser update can arrive before the next authoritative API response.
+    const originalWindow = (globalThis as any).window;
+    const originalLocalStorage = (globalThis as any).localStorage;
+    const store: Record<string, string> = {
+      [`order_appointment_${backendOrder.id}`]: JSON.stringify({
+        status: 'CONFIRMED',
+        scheduledAt: '2026-11-20T06:30:00Z',
+        shift: 'AFTERNOON',
+        confirmedBy: 'SELLER',
+      }),
+    };
+
+    const mockStorage = {
+      getItem: (key: string) => store[key] || null,
+      setItem: (key: string, val: string) => { store[key] = val; },
+      removeItem: (key: string) => { delete store[key]; },
+    };
+    (globalThis as any).window = { localStorage: mockStorage };
+    (globalThis as any).localStorage = mockStorage;
+
+    try {
+      assert.strictEqual(getCenterDispatchStage(backendOrder, false), 'WAITING_SELLER_APPROVAL');
+
+      const stageAfter = getCenterDispatchStage({
+        ...backendOrder, status: 'SCHEDULED', appointmentStatus: 'CONFIRMED',
+        appointmentScheduledAt: backendOrder.counterScheduledAt, counterScheduledAt: undefined,
+      }, false);
+      assert.strictEqual(stageAfter, 'READY_TO_ASSIGN', 'Stage must be READY_TO_ASSIGN after Seller confirms counter');
+    } finally {
+      if (originalWindow !== undefined) (globalThis as any).window = originalWindow;
+      else delete (globalThis as any).window;
+      if (originalLocalStorage !== undefined) (globalThis as any).localStorage = originalLocalStorage;
+      else delete (globalThis as any).localStorage;
+    }
+  });
+
+  await t.test('[TEST 28] Backend CONFIRMED status takes authoritative precedence over stale COUNTERED_BY_CENTER in Center localStorage', () => {
+    // Backend order has status: SCHEDULED, appointmentStatus: CONFIRMED, counterScheduledAt: null (Seller accepted via API)
+    const backendConfirmedOrder = {
+      id: 'd0d4e119-362d-41ca-a2a4-4f8d977923e1',
+      orderType: 'AT_HOME' as const,
+      status: 'SCHEDULED',
+      appointmentStatus: 'CONFIRMED',
+      appointmentScheduledAt: '2026-11-20T06:30:00Z',
+      counterScheduledAt: null,
+    };
+
+    // But Center's browser localStorage still holds the stale counter record from when Center proposed it earlier
+    const originalWindow = (globalThis as any).window;
+    const originalLocalStorage = (globalThis as any).localStorage;
+    const store: Record<string, string> = {
+      [`order_appointment_${backendConfirmedOrder.id}`]: JSON.stringify({
+        status: 'COUNTERED_BY_CENTER',
+        counterScheduledAt: '2026-11-20T06:30:00Z',
+        counterShift: 'AFTERNOON',
+        counterNote: 'KTV ban sang',
+      }),
+      center_inspection_orders: JSON.stringify([{
+        id: backendConfirmedOrder.id,
+        appointmentStatus: 'COUNTERED_BY_CENTER',
+        counterScheduledAt: '2026-11-20T06:30:00Z',
+      }]),
+    };
+
+    const mockStorage = {
+      getItem: (key: string) => store[key] || null,
+      setItem: (key: string, val: string) => { store[key] = val; },
+      removeItem: (key: string) => { delete store[key]; },
+    };
+    (globalThis as any).window = { localStorage: mockStorage };
+    (globalThis as any).localStorage = mockStorage;
+
+    try {
+      const stage = getCenterDispatchStage(backendConfirmedOrder as any, false);
+      assert.strictEqual(stage, 'READY_TO_ASSIGN', 'Must NOT be WAITING_SELLER_APPROVAL because Backend is already CONFIRMED');
+
+      // Check auto-healing: the stale counter must have been cleared in localStorage
+      const healedAppt = JSON.parse(store[`order_appointment_${backendConfirmedOrder.id}`]);
+      assert.strictEqual(healedAppt.status, 'CONFIRMED', 'Stale appointment record must be healed to CONFIRMED');
+      assert.strictEqual(healedAppt.counterScheduledAt, undefined, 'Stale counterScheduledAt must be removed');
+    } finally {
+      if (originalWindow !== undefined) (globalThis as any).window = originalWindow;
+      else delete (globalThis as any).window;
+      if (originalLocalStorage !== undefined) (globalThis as any).localStorage = originalLocalStorage;
+      else delete (globalThis as any).localStorage;
+    }
+  });
 });

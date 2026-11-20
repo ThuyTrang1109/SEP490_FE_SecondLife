@@ -3,7 +3,7 @@ import type { EscrowOrder, ShipmentBackend } from '../../types';
 import { ApiError, isUserIdle } from '../../services/apiClient';
 import { notificationWsClient } from '../../services/notificationWsClient';
 import { shippingService } from '../../services/shippingService';
-import { getLatestInboundShipment } from '../../utils/inspectionCenterData';
+import { getHubReturnState, getLatestInboundShipment } from '../../utils/inspectionCenterData';
 import { getInspectionPurchaseDecision } from '../../utils/inspectionPurchase';
 import { getOrderAllShipments, isHubInboundInProgress } from '../../utils/orders/shipmentCache';
 
@@ -42,7 +42,10 @@ export function useOrderInboundShipments({
     return map;
   });
   const [inboundLoadingOrders, setInboundLoadingOrders] = useState<ReadonlySet<string>>(new Set());
+  const [sellerReturnShipments, setSellerReturnShipments] = useState<ReadonlyMap<string, ShipmentBackend | null>>(new Map());
   const [, setDeliveryCacheVersion] = useState(0);
+
+  const failedInboundOrderIdsRef = React.useRef<Set<string>>(new Set());
 
   const saveSellerInboundShipment = React.useCallback((orderId: string, shipment: ShipmentBackend | null) => {
     if (typeof window !== 'undefined' && orderId) {
@@ -75,25 +78,48 @@ export function useOrderInboundShipments({
     });
   }, []);
 
+  const saveSellerReturnShipment = React.useCallback((orderId: string, shipment: ShipmentBackend | null) => {
+    setSellerReturnShipments((previous) => {
+      const current = previous.get(orderId);
+      if (previous.has(orderId) && current?.shipmentId === shipment?.shipmentId &&
+        current?.status === shipment?.status && current?.providerStatus === shipment?.providerStatus &&
+        current?.orderCode === shipment?.orderCode) return previous;
+      return new Map(previous).set(orderId, shipment);
+    });
+  }, []);
+
+  const isAtHomeOrder = (o: EscrowOrder) =>
+    o.inspectionMethod === 'AT_HOME' || (o as any).orderType === 'AT_HOME';
+
   const sellerInboundOrderKey = userId
-    ? userOrders
-      .filter((order) => order.id !== trackingOrderId && order.id !== createShipmentOrderId &&
-        order.inspectionMethod !== 'AT_HOME' && isHubInboundInProgress(order))
-      .map((order) => order.id).sort().join(',')
+    ? Array.from(
+        new Set(
+          userOrders
+            .filter((order) => order.id !== trackingOrderId && order.id !== createShipmentOrderId &&
+              !isAtHomeOrder(order) && isHubInboundInProgress(order))
+            .map((order) => order.id)
+        )
+      ).sort().join(',')
     : '';
-  const atHomeDeliveryKey = JSON.stringify(userId ? userOrders
-    .filter((order) => order.id !== trackingOrderId && order.id !== createShipmentOrderId &&
-      order.inspectionMethod === 'AT_HOME' && !order.shippingDeliveredAt &&
-      !['COMPLETED_RELEASED', 'DELIVERED_INSPECTION_WINDOW', 'CANCELLED', 'REFUNDED_TO_BUYER'].includes(order.escrowStatus) &&
-      (getInspectionPurchaseDecision(order) === 'accepted' || order.inspectionStatus === 'DELIVERING_TO_BUYER'))
-    .map(({ id, linkedOrderId, inspectionOrderId }) => ({ id, purchaseId: linkedOrderId || id, inspectionOrderId }))
-    : []);
+
+  const atHomeDeliveryKey = JSON.stringify(userId ? Array.from(
+    new Map(
+      userOrders
+        .filter((order) => order.id !== trackingOrderId && order.id !== createShipmentOrderId &&
+          isAtHomeOrder(order) && !order.shippingDeliveredAt &&
+          !['COMPLETED_RELEASED', 'DELIVERED_INSPECTION_WINDOW', 'CANCELLED', 'REFUNDED_TO_BUYER'].includes(order.escrowStatus) &&
+          (getInspectionPurchaseDecision(order) === 'accepted' || order.inspectionStatus === 'DELIVERING_TO_BUYER'))
+        .map(({ id, linkedOrderId, inspectionOrderId }) => [id, { id, purchaseId: linkedOrderId || id, inspectionOrderId }])
+    ).values()
+  ) : []);
 
   const prevUserIdForInboundRef = React.useRef<string | null>(userId || null);
   React.useEffect(() => {
     const currentId = userId || null;
     if (prevUserIdForInboundRef.current && currentId && prevUserIdForInboundRef.current !== currentId) {
       setSellerInboundShipments(new Map());
+      setSellerReturnShipments(new Map());
+      failedInboundOrderIdsRef.current.clear();
     }
     prevUserIdForInboundRef.current = currentId;
   }, [userId]);
@@ -101,7 +127,21 @@ export function useOrderInboundShipments({
   React.useEffect(() => {
     const inboundIds = sellerInboundOrderKey ? sellerInboundOrderKey.split(',') : [];
     const atHomeOrders: Array<{ id: string; purchaseId: string; inspectionOrderId?: string | null }> = JSON.parse(atHomeDeliveryKey);
-    const targets = [...inboundIds.map((id) => ({ id, purchaseId: null, inspectionOrderId: null })), ...atHomeOrders];
+    const seenTargetIds = new Set<string>();
+    const targets: Array<{ id: string; purchaseId: string | null; inspectionOrderId?: string | null }> = [];
+    for (const id of inboundIds) {
+      if (!seenTargetIds.has(id)) {
+        seenTargetIds.add(id);
+        targets.push({ id, purchaseId: null, inspectionOrderId: null });
+      }
+    }
+    for (const ath of atHomeOrders) {
+      if (!seenTargetIds.has(ath.id)) {
+        seenTargetIds.add(ath.id);
+        targets.push(ath);
+      }
+    }
+
     if (targets.length === 0) {
       setInboundLoadingOrders(new Set());
       return;
@@ -121,6 +161,12 @@ export function useOrderInboundShipments({
       const read = async () => {
         while (!controller.signal.aborted && !document.hidden && nextIndex < targets.length) {
           const { id: orderId, purchaseId, inspectionOrderId } = targets[nextIndex++];
+
+          // Bỏ qua các đơn hàng đã bị 403 Forbidden hoặc 404 để không call lặp vô hạn
+          if (failedInboundOrderIdsRef.current.has(orderId)) {
+            continue;
+          }
+
           try {
             if (purchaseId) {
               const shipments = await shippingService.getOrderShipments(purchaseId, {
@@ -153,10 +199,15 @@ export function useOrderInboundShipments({
                 } catch { }
               }
               saveSellerInboundShipment(orderId, getLatestInboundShipment(shipments));
+              saveSellerReturnShipment(orderId, getHubReturnState(shipments).shipment);
             }
           } catch (error) {
-            if (!purchaseId && !controller.signal.aborted && error instanceof ApiError && [403, 404].includes(error.status)) {
-              saveSellerInboundShipment(orderId, null);
+            if (!controller.signal.aborted && error instanceof ApiError && [403, 404].includes(error.status)) {
+              failedInboundOrderIdsRef.current.add(orderId);
+              if (!purchaseId) {
+                saveSellerInboundShipment(orderId, null);
+                saveSellerReturnShipment(orderId, null);
+              }
             }
           } finally {
             if (!controller.signal.aborted) {
@@ -182,10 +233,10 @@ export function useOrderInboundShipments({
     const timer = window.setInterval(refresh, intervalMs);
     document.addEventListener('visibilitychange', refresh);
 
-    // Lắng nghe sự kiện cập nhật đơn hàng/vận đơn qua WebSocket để refresh ngay lập tức
+    // Lắng nghe sự kiện cập nhật đơn hàng/vận đơn qua WebSocket để refresh
     const unsubWs = notificationWsClient.subscribeListener((notification) => {
-      const ref = String(notification.referenceType || '').toUpperCase();
-      if (!ref || ref === 'SHIPMENT' || ref === 'INSPECTION_ORDER' || ref === 'ORDER') {
+      const ref = String(notification?.referenceType || '').toUpperCase();
+      if (ref === 'SHIPMENT' || ref === 'INSPECTION_ORDER') {
         void refresh();
       }
     });
@@ -196,7 +247,7 @@ export function useOrderInboundShipments({
       document.removeEventListener('visibilitychange', refresh);
       unsubWs();
     };
-  }, [userId, sellerInboundOrderKey, atHomeDeliveryKey, saveSellerInboundShipment]);
+  }, [userId, sellerInboundOrderKey, atHomeDeliveryKey, saveSellerInboundShipment, saveSellerReturnShipment]);
 
   const getOrderInboundShipment = React.useCallback((order: EscrowOrder | null | undefined): ShipmentBackend | null => {
     if (!order?.id) return null;
@@ -221,5 +272,5 @@ export function useOrderInboundShipments({
     }
     return null;
   }, [sellerInboundShipments, detailOrderId, detailShipments]);
-  return { getOrderInboundShipment, saveSellerInboundShipment, inboundLoadingOrders, sellerInboundShipments };
+  return { getOrderInboundShipment, saveSellerInboundShipment, inboundLoadingOrders, sellerInboundShipments, sellerReturnShipments };
 }

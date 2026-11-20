@@ -1,6 +1,5 @@
 import { ClipboardList, ChevronDown, Loader2, Eye, Truck, RotateCcw } from 'lucide-react';
 import React, { type ReactNode } from 'react';
-import { LalamoveProgress } from '../../../components/common/LalamoveProgress';
 import { CenterInspectionFees, CenterInspectionFeeStatus } from '../../../components/inspection/CenterInspectionFees';
 import { InspectionCashShipmentStatus } from '../../../components/inspection/InspectionCashShipmentStatus';
 import { InspectionOrderDto } from '../../../services';
@@ -36,15 +35,11 @@ interface Props {
     | 'bookingReturnId'
     | 'buyerShipments'
     | 'deniedShipmentOrders'
-    | 'expandedBuyerOrderId'
-    | 'expandedInboundOrderId'
     | 'handleBookBuyerDelivery'
     | 'handleOpenShipmentModal'
     | 'hubReturns'
     | 'inboundShipments'
     | 'isOrderReceivedAtHub'
-    | 'setExpandedBuyerOrderId'
-    | 'setExpandedInboundOrderId'
     | 'setReturnQuoteOrder'
   >;
   orderHistory: Pick<ReturnType<typeof useCenterOrderHistory>,
@@ -71,15 +66,11 @@ export function CenterOrders({
     bookingReturnId,
     buyerShipments,
     deniedShipmentOrders,
-    expandedBuyerOrderId,
-    expandedInboundOrderId,
     handleBookBuyerDelivery,
     handleOpenShipmentModal,
     hubReturns,
     inboundShipments,
     isOrderReceivedAtHub,
-    setExpandedBuyerOrderId,
-    setExpandedInboundOrderId,
     setReturnQuoteOrder,
   } = shipments;
   const { expandedFeeOrderId, feeFilter, orderHistoryRows, setExpandedFeeOrderId, setFeeFilter } = orderHistory;
@@ -172,10 +163,7 @@ export function CenterOrders({
                 const returnShipment = returnState?.shipment;
                 const canBookReturn = canBookCenterReturn(ord, currentUser?.id, currentUser?.role, returnState);
 
-                const isExpandedBuyer = expandedBuyerOrderId === ord.id;
                 const isExpandedFees = expandedFeeOrderId === ord.id;
-                const hasAnyExpanded = isExpandedFees || isExpandedBuyer;
-                const buyerProgressId = `buyer-progress-${ord.id}`;
                 const feeDetailsId = `fee-details-${ord.id}`;
                 const hasInboundInfo = !isWaitingSellerToHub && isAtCenter && (shipment || progress || shouldTrackInboundShipment(ord) || canViewInbound || isInboundDelivered);
 
@@ -183,7 +171,7 @@ export function CenterOrders({
                   <React.Fragment key={ord.id}>
                     <tr
                       role="row"
-                      className={`grid grid-cols-2 transition md:grid-cols-3 xl:table-row ${hasAnyExpanded
+                      className={`grid grid-cols-2 transition md:grid-cols-3 xl:table-row ${isExpandedFees
                         ? 'bg-amber-50/30 border-l-4 border-l-[#c34c36] shadow-xs'
                         : 'hover:bg-slate-50/60'
                         }`}
@@ -363,20 +351,10 @@ export function CenterOrders({
                                 <div className="flex flex-wrap items-center gap-2">
                                   <button
                                     type="button"
-                                    onClick={() => void handleOpenShipmentModal(ord)}
+                                    onClick={() => void handleOpenShipmentModal(ord, 'CENTER_TO_BUYER')}
                                     className="font-bold text-teal-800 hover:underline cursor-pointer"
                                   >
                                     Chi tiết vận đơn
-                                  </button>
-                                  <button
-                                    type="button"
-                                    aria-expanded={isExpandedBuyer}
-                                    aria-controls={isExpandedBuyer ? buyerProgressId : undefined}
-                                    onClick={() => setExpandedBuyerOrderId(isExpandedBuyer ? null : ord.id)}
-                                    className="inline-flex items-center gap-1 font-bold text-teal-800 hover:underline cursor-pointer"
-                                  >
-                                    {isExpandedBuyer ? 'Ẩn tiến trình' : 'Xem tiến trình giao hàng'}
-                                    <ChevronDown aria-hidden="true" className={`h-3 w-3 transition-transform ${isExpandedBuyer ? 'rotate-180' : ''}`} />
                                   </button>
                                 </div>
                               </div>
@@ -433,35 +411,7 @@ export function CenterOrders({
                     )}
 
 
-                    {/* Dòng mở rộng: Tiến trình Chặng Giao Hàng (Hub → Người mua) */}
-                    {buyerShipment && isExpandedBuyer && (
-                      <tr role="row" id={buyerProgressId} className="block xl:table-row animate-fadeIn">
-                        <td role="cell" colSpan={7} className="block bg-teal-50/30 px-4 py-3 xl:table-cell border-l-4 border-l-teal-600 border-b-2 border-b-teal-200">
-                          <div className="rounded-2xl border-2 border-teal-400/60 bg-white p-4 shadow-sm ring-4 ring-teal-500/10 space-y-3">
-                            <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-teal-100 text-xs font-bold text-teal-900">
-                              <span className="flex items-center gap-2">
-                                <span className="w-2.5 h-2.5 rounded-full bg-teal-600 animate-pulse" />
-                                <Truck className="h-4 w-4 text-teal-600" />
-                                <span>Lộ trình giao hàng của đơn #{ord.id.slice(0, 8)}: Hub ➔ Khách Mua ({ord.buyerName || 'Khách mua'})</span>
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => setExpandedBuyerOrderId(null)}
-                                className="px-2.5 py-1 rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-700 text-[11px] font-bold transition cursor-pointer"
-                              >
-                                ✕ Đóng tiến trình
-                              </button>
-                            </div>
-                            <LalamoveProgress
-                              title="Tiến trình vận chuyển giao hàng Lalamove (Hub → Khách mua)"
-                              routeBadge="Chặng Giao Hàng: Hub ➔ Buyer"
-                              currentStep={getInboundShipmentProgress(buyerShipment).step}
-                              completeCurrentStep={buyerShipment.status === 'DELIVERED'}
-                            />
-                          </div>
-                        </td>
-                      </tr>
-                    )}
+
                   </React.Fragment>
                 );
               })

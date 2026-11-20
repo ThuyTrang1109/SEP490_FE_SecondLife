@@ -6,6 +6,14 @@ import { inspectorService } from '../../services/inspectorService';
 import { saveScopedLocalNotification } from '../../utils/notificationStorage';
 import { INSPECTION_SHIFT_HOURS, isInspectionTimeInShift, type InspectionShift } from '../../utils/inspectionAppointmentTime';
 
+export interface RejectedAppointmentSlot {
+  date: string; // YYYY-MM-DD
+  time?: string; // HH:mm
+  shift?: InspectionShift;
+  isEntireShift?: boolean;
+  reason?: string;
+}
+
 interface ScheduleAppointmentModalProps {
   orderId: string;
   orderCode?: string;
@@ -18,12 +26,174 @@ interface ScheduleAppointmentModalProps {
   readOnly?: boolean;
   initialScheduledAt?: string;
   initialNote?: string;
+  order?: any;
+  rejectedSlots?: RejectedAppointmentSlot[];
 }
 
 export type { InspectionShift } from '../../utils/inspectionAppointmentTime';
 
 export const MORNING_SLOTS = ['08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30'];
 export const AFTERNOON_SLOTS = ['13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30'];
+
+export function extractRejectedSlots(
+  orderId: string,
+  linkedOrderId?: string,
+  inspectionOrderId?: string,
+  order?: any,
+  passedRejectedSlots?: RejectedAppointmentSlot[]
+): RejectedAppointmentSlot[] {
+  const result: RejectedAppointmentSlot[] = [];
+  const pad = (n: number) => String(n).padStart(2, '0');
+
+  const addSlot = (dateStr: string, timeStr?: string, shiftStr?: InspectionShift, isEntireShift?: boolean, reason?: string) => {
+    if (!dateStr) return;
+    const exists = result.some(
+      (s) => s.date === dateStr &&
+             (isEntireShift ? s.isEntireShift && s.shift === shiftStr : s.time === timeStr)
+    );
+    if (!exists) {
+      result.push({
+        date: dateStr,
+        time: timeStr,
+        shift: shiftStr,
+        isEntireShift: Boolean(isEntireShift),
+        reason: reason || undefined,
+      });
+    }
+  };
+
+  const toLocalSlot = (scheduledAt?: string | null) => {
+    if (!scheduledAt) return undefined;
+    const d = new Date(scheduledAt);
+    if (isNaN(d.getTime())) return undefined;
+    const shift: InspectionShift = d.getHours() >= 13 ? 'AFTERNOON' : 'MORNING';
+    return {
+      date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+      time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+      shift,
+    };
+  };
+
+  const addShiftsFromReason = (date: string, reason: string) => {
+    if (/(?:kín\s*(?:lịch\s*)?ca\s*sáng|hết\s*(?:lịch\s*|chỗ\s*)?ca\s*sáng|bận\s*ca\s*sáng)/i.test(reason)) {
+      addSlot(date, undefined, 'MORNING', true, reason);
+    }
+    if (/(?:kín\s*(?:lịch\s*)?ca\s*chiều|hết\s*(?:lịch\s*|chỗ\s*)?ca\s*chiều|bận\s*ca\s*chiều)/i.test(reason)) {
+      addSlot(date, undefined, 'AFTERNOON', true, reason);
+    }
+  };
+
+  const addRejectedTime = (scheduledAt?: string | null, reason?: string) => {
+    const slot = toLocalSlot(scheduledAt);
+    if (!slot) return;
+    if (reason) addShiftsFromReason(slot.date, reason);
+    addSlot(slot.date, slot.time, slot.shift, false, reason);
+  };
+
+  const inspection = order?.inspectionOrder;
+  const appointmentStatus = order?.appointmentStatus || inspection?.appointmentStatus;
+  const canUseCounter = !appointmentStatus || appointmentStatus === 'COUNTERED_BY_CENTER';
+  let proposedSlot = canUseCounter ? toLocalSlot(order?.counterScheduledAt || inspection?.counterScheduledAt) : undefined;
+
+  for (const slot of passedRejectedSlots ?? []) {
+    if (!slot?.date) continue;
+    if (slot.isEntireShift) addSlot(slot.date, undefined, slot.shift, true, slot.reason);
+    if (slot.time) addSlot(slot.date, slot.time, slot.shift, false, slot.reason);
+  }
+
+  if (order) {
+    const isCountered = appointmentStatus === 'COUNTERED_BY_CENTER' || Boolean(proposedSlot);
+    const rejectionReason = order.appointmentRejectionReason || inspection?.appointmentRejectionReason;
+    const isRejected = appointmentStatus === 'REJECTED' || Boolean(rejectionReason);
+    if (isCountered || isRejected) {
+      const reason = isCountered ? order.counterNote || inspection?.counterNote : rejectionReason;
+      addRejectedTime(order.appointmentScheduledAt || inspection?.appointmentScheduledAt || order.scheduledAt, reason);
+    }
+  }
+
+  if (typeof window !== 'undefined') {
+    const targetIds = new Set([orderId, linkedOrderId, inspectionOrderId, order?.id, order?.linkedOrderId, inspection?.id].filter(Boolean));
+
+    for (const tid of targetIds) {
+      try {
+        const rawList = localStorage.getItem(`order_rejected_slots_${tid}`);
+        if (rawList) {
+          const list = JSON.parse(rawList);
+          if (Array.isArray(list)) {
+            list.forEach((item: any) => {
+              if (!item?.date) return;
+              if (item.isEntireShift) {
+                // Older entries stored the rejected appointment's shift, even if the note named another shift.
+                if (item.time && item.reason) addShiftsFromReason(item.date, item.reason);
+                else addSlot(item.date, undefined, item.shift, true, item.reason);
+              }
+              if (item.time) addSlot(item.date, item.time, item.shift, false, item.reason);
+            });
+          }
+        }
+      } catch {}
+
+      try {
+        const rawAppt = localStorage.getItem(`order_appointment_${tid}`);
+        if (rawAppt) {
+          const parsed = JSON.parse(rawAppt);
+          if (canUseCounter && (parsed.status === 'COUNTERED_BY_CENTER' || parsed.counterScheduledAt)) {
+            proposedSlot ??= toLocalSlot(parsed.counterScheduledAt);
+            if (parsed.scheduledAt && parsed.scheduledAt !== parsed.counterScheduledAt) {
+              addRejectedTime(parsed.scheduledAt, parsed.counterNote);
+            }
+          }
+        }
+      } catch {}
+
+      try {
+        const rawRej = localStorage.getItem(`order_appointment_rejection_${tid}`);
+        if (rawRej) {
+          const rej = JSON.parse(rawRej);
+          if (rej.previousScheduledAt) {
+            addRejectedTime(rej.previousScheduledAt, rej.reason);
+          }
+        }
+      } catch {}
+    }
+  }
+
+  // A current proposal confirms one slot in that shift. It overrides a full-shift flag
+  // for the same date, while other individually rejected times remain blocked.
+  if (!proposedSlot) return result;
+  const { date, time, shift } = proposedSlot;
+  return result.filter((slot) => slot.date !== date || (
+    !(slot.isEntireShift && slot.shift === shift) && slot.time?.slice(0, 5) !== time
+  ));
+}
+
+export function isSlotRejected(
+  date: string,
+  time: string,
+  shift: InspectionShift,
+  rejectedSlots: RejectedAppointmentSlot[]
+): { rejected: boolean; reason?: string } {
+  if (!date || !time) return { rejected: false };
+  const normalizedTime = time.slice(0, 5);
+
+  for (const r of rejectedSlots) {
+    if (r.date === date) {
+      if (r.isEntireShift && r.shift === shift) {
+        return {
+          rejected: true,
+          reason: r.reason || `Ca ${shift === 'MORNING' ? 'sáng' : 'chiều'} ngày này đã kín lịch KTV`,
+        };
+      }
+      if (r.time && r.time.slice(0, 5) === normalizedTime) {
+        return {
+          rejected: true,
+          reason: r.reason || 'Khung giờ này đã bị Trung tâm kiểm định từ chối trước đó',
+        };
+      }
+    }
+  }
+  return { rejected: false };
+}
 
 export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> = ({
   orderId,
@@ -37,6 +207,8 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
   readOnly = false,
   initialScheduledAt = '',
   initialNote = '',
+  order,
+  rejectedSlots,
 }) => {
   // Form states
   const [selectedDate, setSelectedDate] = useState<string>('');
@@ -45,6 +217,7 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
   const [note, setNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [allRejectedSlots, setAllRejectedSlots] = useState<RejectedAppointmentSlot[]>([]);
   const dateInputRef = useRef<HTMLInputElement>(null);
 
   const formatDateDisplayVN = (isoDate: string) => {
@@ -102,7 +275,14 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
       }
     } catch {}
 
+    const extractedRejected = extractRejectedSlots(orderId, linkedOrderId, inspectionOrderId, order, rejectedSlots);
+    setAllRejectedSlots(extractedRejected);
+
     const pad = (n: number) => String(n).padStart(2, '0');
+
+    let resolvedDate = tomorrowStr;
+    let resolvedShift: InspectionShift = 'MORNING';
+    let resolvedTime = '09:00';
 
     if (initDateStr) {
       try {
@@ -113,53 +293,87 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
           const minutes = d.getMinutes();
           const timePart = `${pad(hours)}:${pad(minutes)}`;
 
-          // If date is in the past or today, push it forward to tomorrow
           if (datePart < tomorrowStr) {
-            setSelectedDate(tomorrowStr);
-            setSelectedShift('MORNING');
-            setSelectedTime('09:00');
+            resolvedDate = tomorrowStr;
+            resolvedShift = 'MORNING';
+            resolvedTime = '09:00';
           } else {
-            setSelectedDate(datePart);
-            setSelectedTime(timePart);
-
-            if (hours >= 13) {
-              setSelectedShift('AFTERNOON');
-            } else {
-              setSelectedShift('MORNING');
-            }
+            resolvedDate = datePart;
+            resolvedTime = timePart;
+            resolvedShift = hours >= 13 ? 'AFTERNOON' : 'MORNING';
           }
-        } else {
-          setSelectedDate(tomorrowStr);
-          setSelectedShift('MORNING');
-          setSelectedTime('09:00');
         }
-      } catch {
-        setSelectedDate(tomorrowStr);
-        setSelectedShift('MORNING');
-        setSelectedTime('09:00');
-      }
-    } else {
-      // Default to tomorrow morning
-      setSelectedDate(tomorrowStr);
-      setSelectedShift('MORNING');
-      setSelectedTime('09:00');
+      } catch {}
     }
 
+    // Validation: Không cho chọn lại những giờ đã bị từ chối của ngày hôm đó!
+    if (isSlotRejected(resolvedDate, resolvedTime, resolvedShift, extractedRejected).rejected) {
+      const shiftsToTry: InspectionShift[] = [resolvedShift, resolvedShift === 'MORNING' ? 'AFTERNOON' : 'MORNING'];
+      let found: { shift: InspectionShift; time: string } | null = null;
+      for (const s of shiftsToTry) {
+        const slots = s === 'MORNING' ? MORNING_SLOTS : AFTERNOON_SLOTS;
+        for (const slot of slots) {
+          if (!isSlotRejected(resolvedDate, slot, s, extractedRejected).rejected) {
+            found = { shift: s, time: slot };
+            break;
+          }
+        }
+        if (found) break;
+      }
+      if (found) {
+        resolvedShift = found.shift;
+        resolvedTime = found.time;
+      }
+    }
+
+    setSelectedDate(resolvedDate);
+    setSelectedShift(resolvedShift);
+    setSelectedTime(resolvedTime);
     setNote(initNoteStr || '');
     setErrorMessage(null);
-  }, [isOpen, orderId, initialScheduledAt, initialNote, tomorrowStr]);
+  }, [isOpen, orderId, linkedOrderId, inspectionOrderId, initialScheduledAt, initialNote, tomorrowStr, order, rejectedSlots]);
 
   if (!isOpen) return null;
 
-  // Handle shift change
+  // Handle shift change - tự động bỏ qua các giờ đã bị từ chối
   const handleShiftSelect = (shift: InspectionShift) => {
     setSelectedShift(shift);
-    if (shift === 'MORNING') {
-      setSelectedTime('09:00');
+    const slots = shift === 'MORNING' ? MORNING_SLOTS : AFTERNOON_SLOTS;
+    const defaultTime = shift === 'MORNING' ? '09:00' : '14:00';
+    if (!isSlotRejected(selectedDate, defaultTime, shift, allRejectedSlots).rejected) {
+      setSelectedTime(defaultTime);
     } else {
-      setSelectedTime('14:00');
+      const firstAvail = slots.find((slot) => !isSlotRejected(selectedDate, slot, shift, allRejectedSlots).rejected);
+      if (firstAvail) {
+        setSelectedTime(firstAvail);
+      } else {
+        setSelectedTime(defaultTime);
+      }
     }
     setErrorMessage(null);
+  };
+
+  const handleDateChange = (newDate: string) => {
+    setSelectedDate(newDate);
+    setErrorMessage(null);
+    if (isSlotRejected(newDate, selectedTime, selectedShift, allRejectedSlots).rejected) {
+      const shiftsToTry: InspectionShift[] = [selectedShift, selectedShift === 'MORNING' ? 'AFTERNOON' : 'MORNING'];
+      let found: { shift: InspectionShift; time: string } | null = null;
+      for (const s of shiftsToTry) {
+        const slots = s === 'MORNING' ? MORNING_SLOTS : AFTERNOON_SLOTS;
+        for (const slot of slots) {
+          if (!isSlotRejected(newDate, slot, s, allRejectedSlots).rejected) {
+            found = { shift: s, time: slot };
+            break;
+          }
+        }
+        if (found) break;
+      }
+      if (found) {
+        setSelectedShift(found.shift);
+        setSelectedTime(found.time);
+      }
+    }
   };
 
   const syncAppointmentToOrdersAndNotify = (scheduledDate: Date, noteText: string, shift: InspectionShift) => {
@@ -385,6 +599,17 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
       return;
     }
 
+    // Validation: Chặn không cho chọn lại những giờ đã bị Trung tâm từ chối của ngày hôm đó!
+    const slotCheck = isSlotRejected(selectedDate, selectedTime, selectedShift, allRejectedSlots);
+    if (slotCheck.rejected) {
+      setErrorMessage(
+        lang === 'vi'
+          ? `Khung giờ ${selectedTime} ngày ${formatDateDisplayVN(selectedDate)} đã bị Trung tâm kiểm định từ chối trước đó (${slotCheck.reason || 'KTV không thể tiếp nhận'}). Vui lòng chọn khung giờ hoặc ngày khác!`
+          : `Time slot ${selectedTime} on ${formatDateDisplayVN(selectedDate)} was previously rejected. Please select another time!`
+      );
+      return;
+    }
+
     const detectedShift = selectedShift;
 
     setIsSubmitting(true);
@@ -395,27 +620,49 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
     if (inspectionOrderId) targetIds.add(inspectionOrderId);
 
     try {
+      let apiSuccess = false;
+      let lastApiError: any = null;
+
       try {
+        console.log('[ScheduleAppointmentModal] Calling inspectorService.scheduleAppointment:', {
+          targetInspectionId,
+          scheduledAt: scheduledDate.toISOString(),
+          note: note.trim() || undefined,
+          detectedShift,
+        });
         await inspectorService.scheduleAppointment(
           targetInspectionId,
           scheduledDate.toISOString(),
           note.trim() || undefined,
           detectedShift
         );
+        apiSuccess = true;
       } catch (err: any) {
+        lastApiError = err;
+        console.warn('[ScheduleAppointmentModal] Primary schedule appointment call failed:', err);
         if (targetInspectionId !== orderId) {
           try {
+            console.log('[ScheduleAppointmentModal] Retrying with orderId fallback:', orderId);
             await inspectorService.scheduleAppointment(
               orderId,
               scheduledDate.toISOString(),
               note.trim() || undefined,
               detectedShift
             );
+            apiSuccess = true;
           } catch (e2) {
-            console.warn('Backend schedule appointment error, fallback to local cache:', e2);
+            lastApiError = e2;
+            console.warn('[ScheduleAppointmentModal] Fallback schedule appointment call failed:', e2);
           }
-        } else {
-          console.warn('Backend schedule appointment error, fallback to local cache:', err);
+        }
+      }
+
+      // If backend call failed with an actual API error (400, 403, 404, 409, 500), display the error to user!
+      if (!apiSuccess && lastApiError) {
+        const isNetworkDown = lastApiError.message?.includes('Không thể kết nối đến Backend Server');
+        if (!isNetworkDown) {
+          setErrorMessage(lastApiError.message || 'Lỗi gửi lịch hẹn lên máy chủ. Vui lòng kiểm tra lại quyền hoặc trạng thái đơn.');
+          return;
         }
       }
 
@@ -460,6 +707,10 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
   const currentSlots = selectedShift === 'MORNING' ? MORNING_SLOTS : AFTERNOON_SLOTS;
   const shiftHours = INSPECTION_SHIFT_HOURS[selectedShift];
   const isSelectedTimeValid = isInspectionTimeInShift(selectedTime, selectedShift);
+  const rejectedTimesOnSelectedDate = allRejectedSlots.filter((r) => r.date === selectedDate);
+  const isMorningFullOnDate = rejectedTimesOnSelectedDate.some((r) => r.isEntireShift && r.shift === 'MORNING');
+  const isAfternoonFullOnDate = rejectedTimesOnSelectedDate.some((r) => r.isEntireShift && r.shift === 'AFTERNOON');
+  const isCurrentTimeRejected = isSlotRejected(selectedDate, selectedTime, selectedShift, allRejectedSlots).rejected;
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-4 bg-black/70 backdrop-blur-xs animate-fadeIn">
@@ -633,8 +884,7 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
                       min={tomorrowStr}
                       value={selectedDate}
                       onChange={(e) => {
-                        setSelectedDate(e.target.value);
-                        setErrorMessage(null);
+                        handleDateChange(e.target.value);
                       }}
                       onClick={(e) => {
                         try {
@@ -663,7 +913,10 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
                           : 'border-gray-200 hover:border-gray-300 bg-white text-slate-700'
                       }`}
                     >
-                      <span className="text-[11px] font-black leading-none">Ca Sáng</span>
+                      <span className="text-[11px] font-black leading-none flex items-center gap-1">
+                        <span>Ca Sáng</span>
+                        {isMorningFullOnDate && <span className="text-[9px] text-rose-500 font-bold">(Kín)</span>}
+                      </span>
                       <span className={`text-[10px] font-medium leading-none mt-1 ${selectedShift === 'MORNING' ? 'text-amber-100' : 'text-slate-400'}`}>
                         08h - 12h
                       </span>
@@ -678,7 +931,10 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
                           : 'border-gray-200 hover:border-gray-300 bg-white text-slate-700'
                       }`}
                     >
-                      <span className="text-[11px] font-black leading-none">Ca Chiều</span>
+                      <span className="text-[11px] font-black leading-none flex items-center gap-1">
+                        <span>Ca Chiều</span>
+                        {isAfternoonFullOnDate && <span className="text-[9px] text-rose-500 font-bold">(Kín)</span>}
+                      </span>
                       <span className={`text-[10px] font-medium leading-none mt-1 ${selectedShift === 'AFTERNOON' ? 'text-orange-100' : 'text-slate-400'}`}>
                         13h - 17h
                       </span>
@@ -687,6 +943,23 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
                 </div>
               </div>
 
+              {/* Thông báo các khung giờ / ca đã bị từ chối của ngày đã chọn */}
+              {rejectedTimesOnSelectedDate.length > 0 && (
+                <div className="p-2.5 rounded-xl bg-orange-50/90 border border-orange-200 text-xs text-orange-950 flex items-start gap-2 animate-fadeIn">
+                  <AlertCircle className="w-4 h-4 text-orange-600 shrink-0 mt-0.5" />
+                  <div className="leading-snug">
+                    <span className="font-bold">Lưu ý ngày {formatDateDisplayVN(selectedDate)}:</span>{' '}
+                    <span>
+                      {isMorningFullOnDate
+                        ? 'Trung tâm kiểm định đã thông báo KTV kín lịch ca sáng. Vui lòng chọn ca chiều hoặc ngày khác.'
+                        : isAfternoonFullOnDate
+                          ? 'Trung tâm kiểm định đã thông báo KTV kín lịch ca chiều. Vui lòng chọn ca sáng hoặc ngày khác.'
+                          : `Các khung giờ đã bị từ chối (${rejectedTimesOnSelectedDate.map((r) => r.time).filter(Boolean).join(', ')}) không thể chọn lại. Vui lòng chọn khung giờ khác còn trống.`}
+                    </span>
+                  </div>
+                </div>
+              )}
+
               {/* Step 3: Quick time slots & Custom time */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between text-xs">
@@ -694,7 +967,7 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
                     {lang === 'vi' ? '3. Khung giờ KTV có mặt *' : '3. Estimated Arrival Time *'}
                   </span>
                   <span className="text-[11px] font-mono font-bold text-amber-800 bg-amber-100/80 px-2 py-0.5 rounded">
-                    {isSelectedTimeValid ? 'Đã chọn' : 'Giờ không hợp lệ'}: {selectedTime?.slice(0, 5) || '--:--'}
+                    {isSelectedTimeValid && !isCurrentTimeRejected ? 'Đã chọn' : isCurrentTimeRejected ? 'Đã bị từ chối' : 'Giờ không hợp lệ'}: {selectedTime?.slice(0, 5) || '--:--'}
                   </span>
                 </div>
 
@@ -702,21 +975,37 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
                 <div className="grid grid-cols-4 gap-1.5">
                   {currentSlots.map((slot) => {
                     const isSelected = selectedTime?.slice(0, 5) === slot;
+                    const { rejected: isRejectedSlot, reason: slotRejReason } = isSlotRejected(
+                      selectedDate,
+                      slot,
+                      selectedShift,
+                      allRejectedSlots
+                    );
                     return (
                       <button
                         key={slot}
                         type="button"
+                        disabled={isRejectedSlot}
                         onClick={() => {
+                          if (isRejectedSlot) return;
                           setSelectedTime(slot);
                           setErrorMessage(null);
                         }}
-                        className={`py-1 px-1.5 rounded-lg text-xs font-bold border transition cursor-pointer text-center ${
-                          isSelected
-                            ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
-                            : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                        title={isRejectedSlot ? slotRejReason || 'Khung giờ này đã bị từ chối cho ngày này' : undefined}
+                        className={`py-1 px-1.5 rounded-lg text-xs font-bold border transition text-center relative ${
+                          isRejectedSlot
+                            ? 'bg-slate-100 text-slate-400 border-slate-200 line-through cursor-not-allowed opacity-60'
+                            : isSelected
+                              ? 'bg-amber-600 text-white border-amber-600 shadow-xs cursor-pointer'
+                              : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200 cursor-pointer'
                         }`}
                       >
-                        {slot}
+                        <span>{slot}</span>
+                        {isRejectedSlot && (
+                          <span className="block text-[8px] text-rose-500 font-bold no-underline leading-none">
+                            Từ chối
+                          </span>
+                        )}
                       </button>
                     );
                   })}
@@ -732,8 +1021,8 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
                       max={shiftHours.max}
                       value={selectedTime}
                       aria-label={lang === 'vi' ? 'Chỉnh giờ chi tiết' : 'Custom appointment time'}
-                      aria-invalid={!isSelectedTimeValid}
-                      aria-describedby={!isSelectedTimeValid ? 'appointment-time-error' : undefined}
+                      aria-invalid={!isSelectedTimeValid || isCurrentTimeRejected}
+                      aria-describedby={!isSelectedTimeValid || isCurrentTimeRejected ? 'appointment-time-error' : undefined}
                       onChange={(e) => {
                         setSelectedTime(e.target.value);
                         setErrorMessage(null);
@@ -745,6 +1034,14 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
                     ({shiftHours.min} - {shiftHours.max})
                   </span>
                 </div>
+                {isCurrentTimeRejected && (
+                  <p role="alert" className="text-[11px] font-bold text-rose-600 flex items-center gap-1">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>
+                      Khung giờ {selectedTime} ngày {formatDateDisplayVN(selectedDate)} đã bị Trung tâm kiểm định từ chối trước đó.
+                    </span>
+                  </p>
+                )}
                 {!isSelectedTimeValid && (
                   <p id="appointment-time-error" role="alert" className="text-[11px] font-medium text-rose-700">
                     {lang === 'vi'
@@ -780,7 +1077,7 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
               </button>
               <button
                 type="submit"
-                disabled={isSubmitting || !isSelectedTimeValid}
+                disabled={isSubmitting || !isSelectedTimeValid || isCurrentTimeRejected}
                 className="px-4.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm hover:shadow transition disabled:opacity-50 cursor-pointer active:scale-95"
               >
                 {isSubmitting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}

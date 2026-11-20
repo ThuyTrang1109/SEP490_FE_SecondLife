@@ -1217,7 +1217,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     },
     {
       id: 'customers' as AdminTab,
-      label: lang === 'vi' ? 'QUẢN LÝ KHÁCH HÀNG' : 'CUSTOMERS',
+      label: lang === 'vi' ? 'QUẢN LÝ NGƯỜI DÙNG' : 'CUSTOMERS',
       icon: Users,
       badge: backendUsers.length || null
     },
@@ -1485,8 +1485,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         {/* MAIN WORKSPACE CONTENT */}
         <div
           className={`flex-1 min-w-0 ${activeTab === 'system-wallet'
-              ? 'h-[calc(100vh-3.25rem)] sm:h-[calc(100vh-3.5rem)] flex flex-col overflow-hidden p-2 sm:p-3'
-              : 'p-4 sm:p-6 space-y-5'
+            ? 'h-[calc(100vh-3.25rem)] sm:h-[calc(100vh-3.5rem)] flex flex-col overflow-hidden p-2 sm:p-3'
+            : 'p-4 sm:p-6 space-y-5'
             }`}
         >
           {/* Page Title & Breadcrumb Header */}

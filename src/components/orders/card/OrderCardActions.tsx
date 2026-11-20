@@ -451,11 +451,11 @@ export function OrderCardActions({
                 !hasInspection &&
                 !isAtHome &&
                 (ord.carrierPickedUpAt ||
-                ord.backendStatus === 'SHIPPED' ||
-                ord.backendStatus === 'DELIVERED' ||
-                (ord.escrowStatus as string) === 'SHIPPED_TO_BUYER' ||
-                (ord.escrowStatus as string) === 'DELIVERED_INSPECTION_WINDOW' ||
-                (ord.escrowStatus as string) === 'COMPLETED_RELEASED') && (
+                  ord.backendStatus === 'SHIPPED' ||
+                  ord.backendStatus === 'DELIVERED' ||
+                  (ord.escrowStatus as string) === 'SHIPPED_TO_BUYER' ||
+                  (ord.escrowStatus as string) === 'DELIVERED_INSPECTION_WINDOW' ||
+                  (ord.escrowStatus as string) === 'COMPLETED_RELEASED') && (
                   <>
                     <span className="inline-flex items-center gap-1 text-xs font-bold text-blue-700 bg-blue-50 px-2.5 py-1.5 rounded-xl border border-blue-200 whitespace-nowrap shrink-0">
                       <Truck className="w-3.5 h-3.5 text-blue-600" />
@@ -567,17 +567,17 @@ export function OrderCardActions({
               {/* Buyer tracking is available outside the inspection and purchase-decision stages, or when inspection order is passed and shipment is created */}
               {!isAtHome && (!hasInspection || ord.carrierPickedUpAt || (ord.escrowStatus as string) === 'DELIVERING_TO_BUYER' || (ord as any).backendStatus === 'SHIPPED') &&
                 isOrderPacked(ord) && !buyerInspectionStage && !isOrderUnpaid(ord) && ord.escrowStatus !== 'CANCELLED' && ord.escrowStatus !== 'REFUNDED_TO_BUYER' && ord.backendStatus !== 'CANCELLED' && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setTrackingOrder(ord);
-                  }}
-                  className="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
-                >
-                  <Truck className="w-3.5 h-3.5 text-blue-600" />
-                  <span>{lang === 'vi' ? 'Theo Dõi Lalamove' : 'Lalamove Tracking'}</span>
-                </button>
-              )}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setTrackingOrder(ord);
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
+                  >
+                    <Truck className="w-3.5 h-3.5 text-blue-600" />
+                    <span>{lang === 'vi' ? 'Theo Dõi Lalamove' : 'Lalamove Tracking'}</span>
+                  </button>
+                )}
 
               {/* Inspection Certificate Button for Buyer (ONLY when inspection passed and already decided/completed) */}
               {hasInspection && (ord.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' || ord.escrowStatus === 'SHIPPED_TO_BUYER' || ord.escrowStatus === 'COMPLETED_RELEASED') && (
@@ -741,7 +741,7 @@ export function OrderCardActions({
                   title="Xác nhận đã nhận máy an toàn"
                 >
                   <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>{confirmingReceiptIds.has(ord.id) ? (lang === 'vi' ? 'Đang xử lý...' : 'Processing...') : (lang === 'vi' ? 'Đã Nhận Hàng' : 'Confirm Delivery')}</span>
+                  <span>{confirmingReceiptIds.has(ord.id) ? (lang === 'vi' ? 'Đang xử lý...' : 'Processing...') : (lang === 'vi' ? 'Xác nhận đơn hàng' : 'Confirm Delivery')}</span>
                 </button>
               ) : !buyerInspectionStage && !isOrderReceiptConfirmed(ord) && !isAtHome && isOrderInTransitToBuyer(ord) ? (
                 <button

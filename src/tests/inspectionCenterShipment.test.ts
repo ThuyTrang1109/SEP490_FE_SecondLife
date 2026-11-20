@@ -4,9 +4,12 @@ import { createElement, type ComponentProps } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { LalamoveProgress } from '../components/common/LalamoveProgress';
 import { CenterShipmentModal } from '../pages/inspection-center/orders/CenterShipmentModal';
+import { CenterOrderStatusBadge } from '../pages/inspection-center/orders/CenterOrderStatusBadge';
+import { CenterDispatch } from '../pages/inspection-center/dispatch/CenterDispatch';
 import { useCenterOrders } from '../pages/inspection-center/orders/useCenterOrders';
+import { useCenterShipments } from '../pages/inspection-center/orders/useCenterShipments';
 import type { EscrowOrder, ShipmentBackend, UserProfile } from '../types';
-import { canReadCenterInspectionShipments, filterCenterApiOrders, getCenterDispatchStage, getInboundShipmentProgress, getLatestInboundShipment, shouldTrackCenterInspectionShipments, shouldTrackInboundShipment } from '../utils/inspectionCenterData';
+import { canReadCenterInspectionShipments, filterCenterApiOrders, getCenterDispatchStage, getInboundShipmentProgress, getLatestInboundShipment, hasCenterReceivedInbound, shouldTrackCenterInspectionShipments, shouldTrackInboundShipment } from '../utils/inspectionCenterData';
 import { canBookHubBuyerDelivery, getHubBuyerShipmentLabel, getLatestInspectionShipment, isPaidHubBuyerDelivery } from '../utils/inspectionCenterData';
 import { canAppealInspection, getHubReturnProgress, getHubReturnState, getReturnReserveMessage, isCenterReturnEligible, shouldSyncHubReturnOnOpen } from '../utils/inspectionCenterData';
 import { isExpiredInspectionPurchase } from '../utils/inspectionPurchase';
@@ -48,7 +51,7 @@ test('dispatch only includes orders in the operational queue', () => {
 
 test('dispatch distinguishes ready assignments and assigned orders', () => {
   const order = { status: 'SHIPPING_TO_CENTER', orderType: 'AT_CENTER' };
-  assert.equal(getCenterDispatchStage(order, false), 'READY_TO_ASSIGN');
+  assert.equal(getCenterDispatchStage(order, false), 'WAITING_HUB_RECEIPT');
   assert.equal(getCenterDispatchStage(order, true), 'READY_TO_ASSIGN');
   assert.equal(getCenterDispatchStage({ ...order, status: 'INSPECTING', inspectorId: 'ktv' }, true), 'ASSIGNED');
   assert.equal(getCenterDispatchStage({ status: 'CONFIRMED_PENDING_DISPATCH', orderType: 'AT_HOME' }, false), 'WAITING_SELLER_APPOINTMENT');
@@ -68,6 +71,57 @@ function shipment(id: string, leg: string, status: string, providerStatus: strin
     deliveredAt: null,
   };
 }
+
+test('center history and dispatch wait for the inbound delivery before showing Hub receipt', () => {
+  const order = { id: 'inspection-order', postId: 'post', status: 'CONFIRMED_PENDING_DISPATCH', orderType: 'AT_CENTER', inspectionCenterId: 'center-a' };
+  function ReceiptPreview() {
+    const { isOrderReceivedAtHub } = useCenterShipments({
+      currentUser: { id: 'center-a' } as UserProfile, loadingShipmentsRef: { current: false },
+      loadOrders: async () => {}, showNotice: () => {}, showOrderShipments: false, isDispatchTab: true, trackedOrders: [order],
+    });
+    return createElement('span', null, String(isOrderReceivedAtHub(order)));
+  }
+  assert.equal(renderToStaticMarkup(createElement(ReceiptPreview)), '<span>false</span>');
+
+  const render = (inbound?: ShipmentBackend) => {
+    const inboundShipments = new Map<string, ShipmentBackend>();
+    if (inbound) inboundShipments.set(order.id, inbound);
+    const received = hasCenterReceivedInbound(order, inbound);
+    const stage = getCenterDispatchStage(order, received)!;
+    const renderStatusBadge = () => createElement(CenterOrderStatusBadge, {
+      order, inboundShipments, buyerShipments: new Map(), deniedShipmentOrders: new Set<string>(),
+      currentUser: { id: 'center-a' } as UserProfile, isOrderReceivedAtHub: () => received, showOrderShipments: true,
+    });
+    const rows = [{ order, stage }];
+    const historyBadge = renderToStaticMarkup(renderStatusBadge());
+    const dispatch = renderToStaticMarkup(createElement(CenterDispatch, {
+      isLoadingOrders: false, renderStatusBadge, handleOpenAssign: () => {},
+      handleOpenReviewAppointment: () => {}, handleReceivePackageAtHub: () => {},
+      dispatch: {
+        dispatchFilter: 'ALL', dispatchOrders: rows, filteredOrders: rows, orderMethodFilter: 'ALL', searchTerm: '',
+        setDispatchFilter: () => {}, setOrderMethodFilter: () => {}, setSearchTerm: () => {},
+      },
+    }));
+    return { historyBadge, dispatch };
+  };
+
+  const awaitingShipment = render();
+  assert.match(awaitingShipment.historyBadge, /Chờ người bán gửi hàng đến Hub/);
+  assert.match(awaitingShipment.dispatch, /Chờ người bán gửi hàng đến Hub/);
+  assert.match(awaitingShipment.dispatch, /<button[^>]*disabled/);
+  assert.doesNotMatch(awaitingShipment.dispatch, /Giao task|Đã Nhận Hàng/);
+
+  const shipping = render(shipment('inbound', 'SELLER_TO_CENTER', 'PICKED_UP'));
+  assert.match(shipping.historyBadge, /Đang giao hàng đến Hub/);
+  assert.match(shipping.dispatch, /<button[^>]*disabled/);
+
+  const received = render(shipment('inbound', 'SELLER_TO_CENTER', 'DELIVERED'));
+  assert.match(received.historyBadge, /Đã Nhận Hàng • Chờ Giao KTV/);
+  assert.match(received.dispatch, /Giao task/);
+  assert.doesNotMatch(received.dispatch, /<button[^>]*disabled/);
+  assert.equal(hasCenterReceivedInbound(order, shipment('other-leg', 'CENTER_TO_BUYER', 'DELIVERED')), false);
+  assert.equal(hasCenterReceivedInbound(order, shipment('cancelled', 'SELLER_TO_CENTER', 'CANCELLED', 'COMPLETED')), false);
+});
 
 test('a zero reserve still permits the assigned center to start a settled Hub return', () => {
   const order = { id: 'inspection', postId: 'post', orderType: 'AT_CENTER', status: 'FAILED', inspectionCenterId: 'a', feeSettledAt: 'settled', returnShippingReserveFee: 0 };

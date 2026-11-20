@@ -272,7 +272,7 @@ export function ChecklistEditorModal({ catalogItems, categories, checklist, pric
           {/* Technical Description / ISO Reference */}
           <div>
             <label className="block font-bold text-slate-700 mb-1">
-              Căn cứ kỹ thuật & Mô tả đo lường (Quy chuẩn TCVN / ISO 17025)
+              Căn cứ kỹ thuật & Mô tả đo lường.
             </label>
             <textarea
               rows={2}

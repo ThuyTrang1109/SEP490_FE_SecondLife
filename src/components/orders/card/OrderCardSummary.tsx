@@ -4,7 +4,7 @@ import type { EscrowOrder, Language } from '../../../types';
 import type { OrderAppointment } from '../../../utils/orders/orderAppointments';
 import type { OrderCheck } from '../../../types/orders/orderTypes';
 import type { ReactNode } from 'react';
-import { formatVND } from '../../../utils/translations';
+import { formatConditionGrade, formatVND } from '../../../utils/translations';
 import { getSortableOrderTimestamp } from '../../../utils/orderUtils';
 import { resolveListingCategory } from '../../../utils/catalogCache';
 import { formatOrderCancellationReason } from '../../../utils/inspectionPurchase';
@@ -104,7 +104,9 @@ export function OrderCardSummary({
               <span>•</span>
               <span>
                 {lang === 'vi' ? 'Tình trạng:' : 'Condition:'}{' '}
-                <strong className="text-slate-800">{ord.listing.conditionGrade}</strong>
+                <strong className="text-slate-800">
+                  {formatConditionGrade(ord.listing.conditionGrade || (ord.listing as any).itemCondition, lang)}
+                </strong>
               </span>
               <span>•</span>
               <span>{lang === 'vi' ? 'Số lượng: 1' : 'Qty: 1'}</span>

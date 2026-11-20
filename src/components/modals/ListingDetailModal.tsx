@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { Listing, Language, ProductReview, UserProfile, SellerPostDetailDto } from '../../types';
 import { translations, formatVND } from '../../utils/translations';
-import { cleanFullAddress, extractWardAndCity, getSavedSellerAddress } from '../../utils/addressUtils';
+import { cleanFullAddress, extractWardAndCity } from '../../utils/addressUtils';
 import { getBoughtListingIds, getResolvedPostParcel } from '../../utils/orderUtils';
 import { soundFx } from '../../utils/soundEffects';
 import { reviewService } from '../../data/mockReviews';
@@ -118,32 +118,12 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
   const effectiveStatus = (sellerDetail?.status || activeDetail?.status || listing.backendStatus || listing.status || 'ACTIVE').toUpperCase();
   const effectiveRejectionReason = sellerDetail?.rejectionReason ?? listing.rejectionReason;
   const effectiveCreditCharged = sellerDetail?.listingCreditCharged ?? listing.listingCreditCharged;
-  const savedAddr = getSavedSellerAddress();
-  const currentSellerAddr = user?.pickupAddress || user?.address || savedAddr.address;
-  const currentSellerWard = user?.wardName || user?.ward || savedAddr.wardName;
-  const currentSellerProv = user?.provinceName || user?.province || savedAddr.provinceName;
-
   const effectiveSellerAddress = cleanFullAddress(
-    (isOwnListing && currentSellerAddr)
-      ? currentSellerAddr
-      : (activeDetail?.sellerAddress || activeDetail?.user?.address || listing.sellerAddress || listing.location)
+    activeDetail ? activeDetail.sellerAddress ?? activeDetail.user?.address ?? '' : listing.sellerAddress ?? ''
   );
-
-  const displaySellerLocation = React.useMemo(() => {
-    if (isOwnListing && (currentSellerAddr || currentSellerWard || currentSellerProv)) {
-      const loc = extractWardAndCity(currentSellerAddr, currentSellerWard, currentSellerProv);
-      if (loc) {
-        return loc.replace(/Thành phố Hồ Chí Minh/gi, 'TP. HCM').replace(/Thành phố Hà Nội/gi, 'Hà Nội');
-      }
-    }
-    const raw = effectiveSellerAddress || listing.sellerAddress || listing.location;
-    if (!raw) return '';
-    const wardAndCity = extractWardAndCity(raw);
-    if (wardAndCity) {
-      return wardAndCity.replace(/Thành phố Hồ Chí Minh/gi, 'TP. HCM').replace(/Thành phố Hà Nội/gi, 'Hà Nội');
-    }
-    return cleanFullAddress(raw);
-  }, [isOwnListing, currentSellerAddr, currentSellerWard, currentSellerProv, effectiveSellerAddress, listing.sellerAddress, listing.location]);
+  const sellerLocation = extractWardAndCity(effectiveSellerAddress);
+  const displaySellerLocation = (sellerLocation || effectiveSellerAddress)
+    .replace(/Thành phố Hồ Chí Minh/gi, 'TP. HCM').replace(/Thành phố Hà Nội/gi, 'Hà Nội');
 
   const canDisassemble = React.useMemo(() => {
     if (activeDetail?.canDisassemble !== undefined) return Boolean(activeDetail.canDisassemble);
@@ -213,7 +193,8 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
       shippingLength: effectiveLength,
       shippingWidth: effectiveWidth,
       shippingHeight: effectiveHeight,
-      sellerAddress: effectiveSellerAddress || listing.sellerAddress,
+      sellerAddress: effectiveSellerAddress,
+      location: sellerLocation,
       sellerName: activeDetail.sellerName || listing.sellerName,
       sellerAvatar: activeDetail.sellerAvatar || listing.sellerAvatar,
       sellerId: activeDetail.sellerId || listing.sellerId,
@@ -225,7 +206,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
       },
       photoGallery: galleryImages.length > 0 ? galleryImages : listing.photoGallery,
     };
-  }, [listing, activeDetail, effectiveWeight, effectiveLength, effectiveWidth, effectiveHeight, effectiveSellerAddress, galleryImages]);
+  }, [listing, activeDetail, effectiveWeight, effectiveLength, effectiveWidth, effectiveHeight, effectiveSellerAddress, sellerLocation, galleryImages]);
 
   const [activePhotoIndex, setActivePhotoIndex] = useState<number>(0);
 
@@ -577,12 +558,12 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                           </span>
                           <span>•</span>
                           <span>{totalSellerEvaluated} {lang === 'vi' ? 'đánh giá' : 'reviews'}</span>
-                          {(effectiveSellerAddress || listing.sellerAddress || listing.location) && (
+                          {displaySellerLocation && (
                             <>
                               <span>•</span>
                               <span className="flex items-center gap-0.5 text-slate-600 font-medium">
                                 <MapPin className="w-2.5 h-2.5 text-[#c34c36]" />
-                                <span>{displaySellerLocation || (lang === 'vi' ? 'Chưa cập nhật địa chỉ' : 'Address not updated')}</span>
+                                <span>{displaySellerLocation}</span>
                               </span>
                             </>
                           )}

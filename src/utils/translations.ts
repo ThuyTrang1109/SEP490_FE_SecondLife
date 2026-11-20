@@ -92,12 +92,12 @@ export const translations = {
     inspectionPass: 'ĐẠT CHUẨN XÁC THỰC',
     inspectionFail: 'KHÔNG ĐẠT - CHỜ XỬ LÝ HOÀN TRẢ',
     confirmReceipt: 'Xác nhận nhận hàng',
-    openDispute: 'Khiếu nại / Trả hàng nếu có sai khác',
+    openDispute: 'Khiếu nại / Trả hàng',
     inspectionWindowNotice: 'Bạn có 48 giờ để dùng thử trước khi tiền tự động giải ngân cho người bán.',
 
     // Multi-stage photo history
-    multiStageTitle: 'Lịch sử ảnh 2 giai đoạn đối chiếu (Chống tráo hàng)',
-    multiStageTitle2Stage: 'Lịch sử ảnh đối chiếu (Chống tráo hàng)',
+    multiStageTitle: 'Lịch sử ảnh 2 giai đoạn đối chiếu',
+    multiStageTitle2Stage: 'Lịch sử ảnh đối chiếu',
     stageListing: '1. Ảnh người bán đăng',
     stageInspection: '2. Ảnh trung tâm kiểm định',
     stageHandover: '3. Ảnh lúc đóng gói & bàn giao',
@@ -245,4 +245,42 @@ export const translations = {
 
 export function formatVND(amount: number) {
   return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
+}
+
+export function formatConditionGrade(
+  grade?: string | null,
+  lang: Language = 'vi'
+): string {
+  if (!grade) return '';
+  const trimmed = String(grade).trim();
+  if (!trimmed) return '';
+
+  const clean = trimmed.toUpperCase().replace(/[-_]/g, ' ').trim();
+
+  if (lang === 'en') {
+    if (clean === 'LIKE NEW' || clean === 'LIKENEW' || clean === 'NHƯ MỚI') return 'Like New';
+    if (clean === 'GOOD' || clean === 'USED GOOD' || clean === 'TỐT') return 'Good';
+    if (clean === 'FAIR' || clean === 'USED FAIR' || clean === 'KHÁ') return 'Fair';
+    if (clean === 'NEW' || clean === 'BRAND NEW' || clean === 'MỚI 100%' || clean === 'MỚI') return 'New';
+    if (clean === 'POOR' || clean === 'CŨ' || clean === 'KÉM') return 'Poor';
+    if (clean === 'USED' || clean === 'ĐÃ QUA SỬ DỤNG') return 'Used';
+    return trimmed;
+  }
+
+  // lang === 'vi'
+  if (clean === 'FAIR' || clean === 'USED FAIR') return 'Khá';
+  if (clean === 'GOOD' || clean === 'USED GOOD') return 'Tốt';
+  if (clean === 'LIKE NEW' || clean === 'LIKENEW') return 'Như mới';
+  if (clean === 'NEW' || clean === 'BRAND NEW') return 'Mới 100%';
+  if (clean === 'POOR') return 'Trung bình / Cũ';
+  if (clean === 'USED') return 'Đã qua sử dụng';
+
+  // Handle strings with percentages or extra info like "Fair (90%)", "Good (95%)", "Like New (99%)"
+  if (/^FAIR\b/i.test(trimmed)) return trimmed.replace(/^fair/i, 'Khá');
+  if (/^GOOD\b/i.test(trimmed)) return trimmed.replace(/^good/i, 'Tốt');
+  if (/^LIKE\s*NEW\b/i.test(trimmed)) return trimmed.replace(/^like\s*new/i, 'Như mới');
+  if (/^NEW\b/i.test(trimmed)) return trimmed.replace(/^new/i, 'Mới 100%');
+  if (/^POOR\b/i.test(trimmed)) return trimmed.replace(/^poor/i, 'Trung bình');
+
+  return trimmed;
 }

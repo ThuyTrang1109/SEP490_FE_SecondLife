@@ -72,7 +72,7 @@ import {
   suggestVehicle
 } from '../services';
 import { parseQuestionItem, splitCompoundQuestion, getStandardProductQuestions } from '../utils/questionParser';
-import { extractWardAndCity, getSavedSellerAddress, cleanFullAddress } from '../utils/addressUtils';
+import { extractWardAndCity, cleanFullAddress } from '../utils/addressUtils';
 import { savePostMetadata, extractSellerOriginalPrice } from '../utils/catalogCache';
 import { translateSystemNotification } from '../utils/systemNotificationTranslator';
 import { MarkdownDescriptionEditor, MarkdownContent } from '../components/common/MarkdownDescription';
@@ -244,66 +244,15 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   // Basic Form State
   const [title, setTitle] = useState('');
   const [isSuggestingTitle, setIsSuggestingTitle] = useState(false);
-  const [sellerLocation, setSellerLocation] = useState<string>('');
-
-  // Lấy thông tin địa chỉ người bán đang hoạt động (Ưu tiên Profile người bán hiện tại)
-  const currentSellerFullAddress = useMemo(() => {
-    return (
-      currentUser?.pickupAddress ||
-      currentUser?.address ||
-      getSavedSellerAddress().address ||
-      ''
-    );
-  }, [currentUser]);
-
-  const currentSellerWard = useMemo(() => {
-    return (
-      currentUser?.wardName ||
-      currentUser?.ward ||
-      getSavedSellerAddress().wardName ||
-      ''
-    );
-  }, [currentUser]);
-
-  const currentSellerProv = useMemo(() => {
-    return (
-      currentUser?.provinceName ||
-      currentUser?.province ||
-      getSavedSellerAddress().provinceName ||
-      ''
-    );
-  }, [currentUser]);
-
-  // Khu vực hiển thị trên tin đăng: Luôn đồng bộ chuẩn xác với địa chỉ hiện tại của người bán
-  const effectiveDisplayLocation = useMemo(() => {
-    if (currentSellerFullAddress || currentSellerWard || currentSellerProv) {
-      const loc = extractWardAndCity(currentSellerFullAddress, currentSellerWard, currentSellerProv);
-      if (loc) return loc;
-    }
-    return sellerLocation || 'Hà Nội';
-  }, [currentSellerFullAddress, currentSellerWard, currentSellerProv, sellerLocation]);
-
   const [pickupCoords, setPickupCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [pickupAddressDisplay, setPickupAddressDisplay] = useState<string>('');
   const [isLoadingPickup, setIsLoadingPickup] = useState<boolean>(false);
 
-  // Lấy địa chỉ của người bán từ hồ sơ hoặc địa chỉ kho đã lưu
   useEffect(() => {
     let isMounted = true;
     const resolveSellerLocation = async () => {
-      // 1. ƯU TIÊN HÀNG ĐẦU: Lấy từ currentUser profile hiện tại hoặc localStorage đã cập nhật của người bán
-      if (currentSellerFullAddress || currentSellerWard || currentSellerProv) {
-        const userLoc = extractWardAndCity(
-          currentSellerFullAddress,
-          currentSellerWard,
-          currentSellerProv
-        );
-        if (userLoc) {
-          setSellerLocation(userLoc);
-        }
-      }
-
-      // 2. Lấy thông tin kho bưu tá và tọa độ GPS từ BE qua GET /api/v1/shipping/pickup-address
+      setPickupAddressDisplay('');
+      setPickupCoords(null);
       try {
         setIsLoadingPickup(true);
         const [pickupRes, obRes] = await Promise.allSettled([
@@ -319,17 +268,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           pa = obRes.value.pickupAddress;
         }
 
-        if (pa) {
-          const loc = extractWardAndCity(pa.address, pa.wardName, pa.provinceName);
-          if (loc && !sellerLocation) {
-            setSellerLocation(loc);
-          }
-          if (pa.address) {
-            setPickupAddressDisplay(pa.address);
-          }
+        if (pa?.address) {
+          setPickupAddressDisplay(pa.address);
           const lat = typeof pa.latitude === 'number' ? pa.latitude : Number(pa.latitude);
           const lng = typeof pa.longitude === 'number' ? pa.longitude : Number(pa.longitude);
           if (
+            pa.latitude != null &&
+            pa.longitude != null &&
             Number.isFinite(lat) &&
             Number.isFinite(lng) &&
             lat >= -90 &&
@@ -355,7 +300,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [currentUser, currentSellerFullAddress, currentSellerWard, currentSellerProv]);
+  }, [currentUser?.id, currentUser?.pickupAddress]);
 
   type CatalogState =
     | { status: 'idle' }
@@ -1160,10 +1105,6 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       } else if (initialDraft.photos) {
         const p = initialDraft.photos;
         setPhotoPreviews([p.front, p.back, p.screenOrDetails, p.accessoriesOrBox, p.serialOrReceipt, p.extraDetail].filter(Boolean) as string[]);
-      }
-      // Chỉ lấy location từ initialDraft nếu người bán chưa cập nhật địa chỉ cá nhân
-      if (!currentSellerFullAddress && initialDraft.location) {
-        setSellerLocation(initialDraft.location);
       }
       if (initialDraft.categoryId) {
         setSelectedCategoryId(initialDraft.categoryId);
@@ -3089,9 +3030,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       canDisassemble
     });
 
-    // Địa chỉ của sản phẩm được cập nhật theo địa chỉ người bán (chỉ lấy phường và thành phố)
-    const finalLocation = effectiveDisplayLocation;
-    const finalSellerAddress = cleanFullAddress(currentSellerFullAddress) || finalLocation;
+    const finalSellerAddress = cleanFullAddress(pickupAddressDisplay);
+    const finalLocation = extractWardAndCity(finalSellerAddress);
 
     const newListing: Listing = {
       id: postId,

@@ -1,9 +1,58 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { InspectionOrderDto } from '../services/inspectorService';
-import { getInspectionApprovalMessage, getInspectionRemoteMediaUrl, getInspectionReportMedia, getInspectionStageOne, getInspectionStageTwo, isInspectionProofImage } from '../utils/inspectionDecisionData';
+import type { EscrowOrder, UserProfile } from '../types';
+import { getInspectionApprovalMessage, getInspectionBuyerDestination, getInspectionDecisionStatus, getInspectionRemoteMediaUrl, getInspectionReportMedia, getInspectionStageOne, getInspectionStageTwo, isInspectionProofImage } from '../utils/inspectionDecisionData';
 
 const order: InspectionOrderDto = { id: 'inspection', postId: 'post', status: 'PASSED' };
+const buyer: UserProfile = {
+  id: 'buyer', role: 'buyer', name: 'Người mua', email: 'buyer@example.com',
+  phone: '090 123 4567', address: '12 Đường A, Phường B', latitude: 10.8, longitude: 106.7,
+};
+
+test('the inspection verdict takes precedence over cancellation on the order summary', () => {
+  const summary = { status: 'CANCELLED', inspectionStatus: 'CANCELLED' };
+  assert.deepEqual(getInspectionDecisionStatus(summary, { status: 'FAILED' }), {
+    status: 'FAILED', isFailed: true, isCancellationStatus: false,
+  });
+  assert.deepEqual(getInspectionDecisionStatus({ inspectionStatus: 'INSPECTION_FAILED' }), {
+    status: 'INSPECTION_FAILED', isFailed: true, isCancellationStatus: false,
+  });
+  assert.deepEqual(getInspectionDecisionStatus({ inspectionStatus: 'FAILED', escrowStatus: 'INSPECTION_FAILED' }, { status: 'CANCELLED' }), {
+    status: 'CANCELLED', isFailed: false, isCancellationStatus: true,
+  });
+});
+
+test('stage two uses the saved buyer recipient and pin before the profile address', () => {
+  const saved = {
+    name: 'Người nhận', phone: '+84 901 234 567', address: '43 Đường C, Phường D',
+    latitude: 10.9, longitude: 106.8,
+  };
+  const inspection = { ...order, buyerId: buyer.id, buyerAddress: buyer.address, buyerDeliveryAddress: saved };
+  assert.deepEqual(getInspectionBuyerDestination(inspection, null, buyer), { ...saved, phone: '+84901234567' });
+  assert.deepEqual(getInspectionBuyerDestination({
+    ...inspection, buyerDeliveryAddress: { ...saved, address: null },
+  }, null, buyer), { ...saved, address: '', phone: '+84901234567' });
+});
+
+test('stage two can load a saved JSON destination and never combines an order address with a different profile pin', () => {
+  const inspection = { ...order, buyerId: buyer.id, buyerAddress: '43 Đường C, Phường D' };
+  const legacy = { deliveryAddress: '{"address":"4 Đường E","latitude":10.4,"longitude":106.4}' } as EscrowOrder;
+  assert.deepEqual(getInspectionBuyerDestination(inspection, legacy, buyer), {
+    name: buyer.name, phone: '0901234567', address: '4 Đường E', latitude: 10.4, longitude: 106.4,
+  });
+  assert.deepEqual(getInspectionBuyerDestination(inspection, null, buyer), {
+    name: buyer.name, phone: '0901234567', address: inspection.buyerAddress,
+  });
+});
+
+test('stage two ignores a city-only fallback and never uses a different signed-in account', () => {
+  const inspection = { ...order, buyerId: buyer.id, buyerAddress: 'TP. Hồ Chí Minh' };
+  assert.equal(getInspectionBuyerDestination(inspection, null, {
+    ...buyer, address: '', latitude: undefined, longitude: undefined,
+  }), null);
+  assert.equal(getInspectionBuyerDestination(inspection, null, { ...buyer, id: 'seller', role: 'seller' }), null);
+});
 
 test('inspection details distinguish proposal review and fee payment from active inspection', () => {
   const waitingForSeller = getInspectionApprovalMessage('WAITING_SELLER_APPROVAL', true);

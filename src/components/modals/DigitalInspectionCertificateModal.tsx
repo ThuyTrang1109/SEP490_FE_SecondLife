@@ -280,7 +280,7 @@ export const DigitalInspectionCertificateModal: React.FC<DigitalInspectionCertif
           title: item.title || item.itemTitle || item.name || `Tiêu chuẩn kiểm định #${idx + 1}`,
           category: item.category || resolveListingCategory(order.listing),
           standard: item.testedValue
-            ? `Chỉ số đo đạc thực tế: ${item.testedValue}`
+            ? `Đánh giá của kiểm tra viên: ${item.testedValue}`
             : (item.inspectorNote || item.description || item.notes || (itemPassed ? 'Đạt quy chuẩn kỹ thuật phòng Lab ISO/IEC 17025' : 'Không đạt tiêu chuẩn kiểm định kỹ thuật')),
           status: itemPassed ? 'PASSED' : 'FAILED',
         };
@@ -594,12 +594,7 @@ export const DigitalInspectionCertificateModal: React.FC<DigitalInspectionCertif
                     <strong className="text-slate-800">{realModel}</strong>
                   </div>
                 )}
-                {tamperSealId && (
-                  <div>
-                    <span className="text-slate-400 text-[10px] print:text-[8.5px] block">Mã niêm phong (Seal):</span>
-                    <strong className="font-mono text-emerald-700">{tamperSealId}</strong>
-                  </div>
-                )}
+
                 <div>
                   <span className="text-slate-400 text-[10px] print:text-[8.5px] block">Địa điểm kiểm định:</span>
                   <strong className="text-slate-800">{hubName}</strong>

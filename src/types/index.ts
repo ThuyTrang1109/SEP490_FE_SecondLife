@@ -263,6 +263,7 @@ export interface EscrowOrder {
   status?: OrderBackendStatus | string | null;
   shippingQuoteId?: string;
   shippingDeliveredAt?: string;
+  returnShipment?: ShipmentBackend | null;
   deliveryAddress?: any;
   sellerConfirmedAt?: string | null;
   confirmationDeadline?: string | null;

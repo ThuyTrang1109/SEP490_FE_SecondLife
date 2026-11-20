@@ -371,6 +371,17 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
   const [reputationHistoryItems, setReputationHistoryItems] = useState<ReputationHistoryDto[]>([]);
   const [isLoadingReputationHistory, setIsLoadingReputationHistory] = useState(false);
   const [isReloadingReputation, setIsReloadingReputation] = useState(false);
+  const [showViolationWarning, setShowViolationWarning] = useState(true);
+
+  useEffect(() => {
+    if (myReputation?.sellingRestricted || myReputation?.warningCode) {
+      setShowViolationWarning(true);
+      const timer = setTimeout(() => {
+        setShowViolationWarning(false);
+      }, 15000);
+      return () => clearTimeout(timer);
+    }
+  }, [myReputation?.sellingRestricted, myReputation?.warningCode]);
 
   const handleRefreshReputation = async () => {
     setIsReloadingReputation(true);
@@ -809,8 +820,8 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
 
   return (
     <div className="space-y-8 pb-16 text-[#24263e]">
-      {/* eKYC Verification Status Banner */}
-      {myVerification && (
+      {/* eKYC Verification Status Banner (Ẩn khi đã duyệt APPROVED thành công) */}
+      {myVerification && myVerification.status !== 'APPROVED' && (
         <div className={`p-4 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-xs ${
           myVerification.status === 'APPROVED' ? 'bg-emerald-50 border-emerald-200 text-emerald-900' :
           myVerification.status === 'NEEDS_REVIEW' ? 'bg-amber-50 border-amber-200 text-amber-900' :
@@ -902,40 +913,40 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       )}
 
       {/* Top Banner */}
-      <div className="bg-[#fce5da] text-[#24263e] rounded-3xl p-6 sm:p-8 shadow-xl border border-[#24263e]/15 space-y-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="flex items-center gap-4">
-            <div className="relative">
+      <div className="bg-[#fce5da] text-[#24263e] rounded-2xl p-4 sm:p-5 shadow-md border border-[#24263e]/15 space-y-3.5">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="relative shrink-0">
               <UserAvatar
                 src={currentUser?.avatar}
                 name={currentUser?.name}
-                className="w-16 h-16 rounded-2xl border-2 border-[#24263e]/20 shadow-md"
+                className="w-12 h-12 rounded-xl border-2 border-[#24263e]/20 shadow-sm"
                 role="seller"
               />
               <div
-                className="absolute -bottom-1 -right-1 bg-[#24263e] text-white p-1 rounded-full text-xs shadow-xs"
+                className="absolute -bottom-1 -right-1 bg-[#24263e] text-white p-0.5 rounded-full text-xs shadow-xs"
                 title={lang === 'vi' ? 'Đã xác minh eKYC' : 'eKYC Verified'}
               >
-                <ShieldCheck className="w-3.5 h-3.5" />
+                <ShieldCheck className="w-3 h-3" />
               </div>
             </div>
 
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-xl sm:text-2xl font-black text-[#24263e]">
+                <h1 className="text-lg sm:text-xl font-black text-[#24263e]">
                   {currentUser?.name || currentUser?.email?.split('@')[0] || 'Người Bán SecondLife'}
                 </h1>
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white/80 border border-[#24263e]/15 text-[#24263e] text-[11px] font-bold shadow-xs">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/80 border border-[#24263e]/15 text-[#24263e] text-[10px] font-bold shadow-xs">
                   <CheckCircle2 className={`w-3 h-3 ${myVerification?.status === 'APPROVED' ? 'text-emerald-600' : 'text-amber-500'}`} />
                   {myVerification?.status === 'APPROVED' ? (lang === 'vi' ? 'Đã xác minh eKYC' : 'eKYC Verified') : (lang === 'vi' ? 'Chưa xác minh eKYC' : 'Unverified')}
                 </span>
                 <button
                   type="button"
                   onClick={handleOpenReputationHistory}
-                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#24263e] hover:bg-[#c34c36] text-white text-[11px] font-black shadow-xs transition cursor-pointer"
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#24263e] hover:bg-[#c34c36] text-white text-[10px] font-bold shadow-xs transition cursor-pointer"
                   title="Bấm để xem chi tiết chỉ số và lịch sử uy tín"
                 >
-                  <Award className="w-3.5 h-3.5 text-amber-300" />
+                  <Award className="w-3 h-3 text-amber-300" />
                   <span>
                     {myReputation?.assessmentStatus === 'NO_TRANSACTIONS'
                       ? 'Chưa có đơn (Mới)'
@@ -946,25 +957,25 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                       : 'Chưa có điểm'}
                   </span>
                   {myReputation?.sellingRestricted && (
-                    <span className="px-1.5 py-0.2 rounded text-[9px] bg-rose-500 text-white font-bold animate-pulse">
+                    <span className="px-1 py-0.2 rounded text-[9px] bg-rose-500 text-white font-bold animate-pulse">
                       Hạn chế
                     </span>
                   )}
-                  <History className="w-3 h-3 text-slate-300 ml-0.5" />
+                  <History className="w-2.5 h-2.5 text-slate-300 ml-0.5" />
                 </button>
                 <button
                   type="button"
                   onClick={handleOpenVerificationHistory}
-                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/90 hover:bg-white text-[#24263e] text-[11px] font-black shadow-xs transition cursor-pointer border border-[#24263e]/15"
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white/90 hover:bg-white text-[#24263e] text-[10px] font-bold shadow-xs transition cursor-pointer border border-[#24263e]/15"
                   title="Bấm để xem lịch sử nộp hồ sơ eKYC"
                 >
-                  <ShieldCheck className="w-3.5 h-3.5 text-[#c34c36]" />
+                  <ShieldCheck className="w-3 h-3 text-[#c34c36]" />
                   <span>{lang === 'vi' ? 'Lịch Sử eKYC' : 'eKYC History'}</span>
                 </button>
               </div>
-              <p className="text-xs text-[#24263e]/80 mt-1 flex items-center gap-3 font-semibold flex-wrap">
+              <p className="text-[11px] text-[#24263e]/80 mt-0.5 flex items-center gap-2.5 font-semibold flex-wrap">
                 <span className="flex items-center gap-1 text-[#24263e] font-bold">
-                  <Star className="w-3.5 h-3.5 fill-[#c34c36] text-[#c34c36]" />
+                  <Star className="w-3 h-3 fill-[#c34c36] text-[#c34c36]" />
                   {sellerAverageRatingText}
                 </span>
                 <span>•</span>
@@ -975,60 +986,70 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => onCreateListing()}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#c34c36] hover:bg-[#a83d2a] text-white font-black text-xs shadow-md transition cursor-pointer"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#c34c36] hover:bg-[#a83d2a] text-white font-bold text-xs shadow-sm transition cursor-pointer"
             >
-              <PlusCircle className="w-4 h-4" />
+              <PlusCircle className="w-3.5 h-3.5" />
               <span>{lang === 'vi' ? 'Đăng Bán Đồ Gia Dụng Mới (AI)' : 'Post New Appliance (AI)'}</span>
             </button>
             <button
               onClick={() => setIsSellerReviewsOpen(true)}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/80 hover:bg-white text-[#24263e] border border-[#24263e]/15 font-bold text-xs transition cursor-pointer shadow-xs"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/80 hover:bg-white text-[#24263e] border border-[#24263e]/15 font-bold text-xs transition cursor-pointer shadow-xs"
             >
-              <Star className="w-4 h-4 text-amber-500 fill-amber-400" />
-              <span>{lang === 'vi' ? `Xem Đánh Giá Của Khách Hàng (${sellerReviewCount})` : `Customer Reviews (${sellerReviewCount})`}</span>
+              <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
+              <span>{lang === 'vi' ? `Đánh Giá (${sellerReviewCount})` : `Reviews (${sellerReviewCount})`}</span>
             </button>
             {onViewOrders && (
               <button
                 onClick={onViewOrders}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/80 hover:bg-white text-[#24263e] border border-[#24263e]/15 font-bold text-xs transition cursor-pointer shadow-xs"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/80 hover:bg-white text-[#24263e] border border-[#24263e]/15 font-bold text-xs transition cursor-pointer shadow-xs"
               >
-                <Clock className="w-4 h-4 text-emerald-800" />
-                <span>{lang === 'vi' ? 'Quản Lý Đơn Bán Hàng' : 'Manage Sales Orders'}</span>
+                <Clock className="w-3.5 h-3.5 text-emerald-800" />
+                <span>{lang === 'vi' ? 'Quản Lý Đơn' : 'Orders'}</span>
               </button>
             )}
             <button
               onClick={() => setIsPayoutModalOpen(true)}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/80 hover:bg-white text-[#24263e] border border-[#24263e]/15 font-bold text-xs transition cursor-pointer shadow-xs"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/80 hover:bg-white text-[#24263e] border border-[#24263e]/15 font-bold text-xs transition cursor-pointer shadow-xs"
             >
-              <Wallet className="w-4 h-4 text-[#24263e]" />
-              <span>{lang === 'vi' ? 'Rút Tiền Ví Doanh Thu' : 'Withdraw Revenue'}</span>
+              <Wallet className="w-3.5 h-3.5 text-[#24263e]" />
+              <span>{lang === 'vi' ? 'Rút Tiền Ví' : 'Withdraw'}</span>
             </button>
           </div>
         </div>
 
-        {/* Cảnh báo hạn chế bán hàng hoặc cảnh báo vi phạm uy tín theo tài liệu BE */}
-        {myReputation?.sellingRestricted ? (
-          <div className="bg-rose-50 border border-rose-300 text-rose-900 p-4 rounded-2xl flex items-start gap-3 shadow-xs animate-fadeIn mt-4">
-            <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
-            <div className="flex-1 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-sm text-rose-900">
-                  Tài khoản đang bị hạn chế bán hàng (Selling Restricted)
+        {/* Cảnh báo hạn chế bán hàng hoặc cảnh báo vi phạm uy tín theo tài liệu BE (tự động tắt sau 15s) */}
+        {showViolationWarning && (myReputation?.sellingRestricted ? (
+          <div className="bg-rose-50 border border-rose-300 text-rose-900 p-2.5 sm:p-3 rounded-xl flex items-center justify-between gap-3 shadow-xs animate-fadeIn text-xs">
+            <div className="flex items-center gap-2 min-w-0">
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+              <div className="truncate">
+                <span className="font-bold text-rose-900 mr-2">
+                  Tài khoản đang bị hạn chế bán hàng:
                 </span>
-                <button
-                  type="button"
-                  onClick={handleOpenReputationHistory}
-                  className="text-xs font-bold text-rose-700 underline hover:text-rose-900 cursor-pointer"
-                >
-                  Xem lý do & lịch sử
-                </button>
+                <span className="text-rose-700 text-[11px]">
+                  Quyền đăng bán bị tạm khóa do vi phạm hoặc điểm phạt.
+                </span>
               </div>
-              <p className="mt-1 text-rose-700 leading-relaxed">
-                Quyền đăng bán sản phẩm mới đang tạm thời bị khóa do điểm phạt hoặc vi phạm quy chế sàn. Bạn vẫn có thể tiếp tục thực hiện và hoàn tất các đơn hàng đang xử lý. Vui lòng liên hệ Quản trị viên để được hỗ trợ gỡ hạn chế.
-              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleOpenReputationHistory}
+                className="text-xs font-bold text-rose-700 underline hover:text-rose-900 cursor-pointer"
+              >
+                Xem chi tiết
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowViolationWarning(false)}
+                className="text-rose-500 hover:text-rose-800 p-1 text-xs"
+                title="Đóng thông báo"
+              >
+                ✕
+              </button>
             </div>
           </div>
         ) : myReputation?.warningCode ? (
@@ -1036,82 +1057,92 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             const warnMeta = getReputationWarningMeta(myReputation.warningCode);
             if (!warnMeta) return null;
             return (
-              <div className={`p-3.5 rounded-2xl border flex items-start gap-3 shadow-xs animate-fadeIn mt-4 ${warnMeta.badgeClass}`}>
-                <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
-                <div className="flex-1 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-sm">{warnMeta.title}</span>
-                    <button
-                      type="button"
-                      onClick={handleOpenReputationHistory}
-                      className="text-[11px] font-bold underline hover:opacity-80 cursor-pointer"
-                    >
-                      Chi tiết uy tín
-                    </button>
+              <div className={`p-2.5 sm:p-3 rounded-xl border flex items-center justify-between gap-3 shadow-xs animate-fadeIn text-xs ${warnMeta.badgeClass}`}>
+                <div className="flex items-center gap-2 min-w-0">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <div className="truncate">
+                    <span className="font-bold mr-2">{warnMeta.title}:</span>
+                    <span className="opacity-90 text-[11px]">{warnMeta.desc}</span>
                   </div>
-                  <p className="mt-0.5 opacity-90">{warnMeta.desc}</p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleOpenReputationHistory}
+                    className="text-[11px] font-bold underline hover:opacity-80 cursor-pointer"
+                  >
+                    Chi tiết uy tín
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowViolationWarning(false)}
+                    className="opacity-70 hover:opacity-100 p-1 text-xs"
+                    title="Đóng thông báo"
+                  >
+                    ✕
+                  </button>
                 </div>
               </div>
             );
           })()
-        ) : null}
+        ) : null)}
 
-        {/* Financial Metrics Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-4 border-t border-[#24263e]/15">
-          <div className="bg-[#FFFFFF] text-[#24263e] rounded-2xl p-4 border border-gray-200 shadow-sm space-y-1">
-            <div className="text-xs text-[#24263e]/70 flex items-center justify-between">
-              <span>{lang === 'vi' ? 'Số dư ví khả dụng' : 'Available wallet balance'}</span>
-              <Wallet className="w-4 h-4 text-[#24263e]" />
+        {/* Financial Metrics Cards (gọn gàng, thanh thoát) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2 border-t border-[#24263e]/15">
+          <div className="bg-[#FFFFFF] text-[#24263e] rounded-xl p-3 border border-gray-200 shadow-xs space-y-0.5">
+            <div className="text-[11px] text-[#24263e]/70 flex items-center justify-between font-medium">
+              <span>{lang === 'vi' ? 'Số dư ví khả dụng' : 'Available balance'}</span>
+              <Wallet className="w-3.5 h-3.5 text-[#24263e]" />
             </div>
-            <div className="text-2xl font-black text-[#24263e]">
+            <div className="text-xl font-black text-[#24263e] tracking-tight">
               {formatVND(totalEarnings)}
             </div>
-            <div className="text-[11px] text-[#24263e]/60">
-              {lang === 'vi' ? 'Có thể rút về Ngân hàng ngay' : 'Can withdraw to bank immediately'}
+            <div className="text-[10px] text-[#24263e]/60">
+              {lang === 'vi' ? 'Có thể rút về Ngân hàng ngay' : 'Can withdraw to bank'}
             </div>
           </div>
 
-          <div className="bg-[#FFFFFF] text-[#24263e] rounded-2xl p-4 border border-gray-200 shadow-sm space-y-1">
-            <div className="text-xs text-[#24263e]/70 flex items-center justify-between">
+          <div className="bg-[#FFFFFF] text-[#24263e] rounded-xl p-3 border border-gray-200 shadow-xs space-y-0.5">
+            <div className="text-[11px] text-[#24263e]/70 flex items-center justify-between font-medium">
               <span>{lang === 'vi' ? 'Đang đóng băng Escrow' : 'Held in Escrow'}</span>
-              <Clock className="w-4 h-4 text-gray-400" />
+              <Clock className="w-3.5 h-3.5 text-gray-400" />
             </div>
-            <div className="text-2xl font-black text-[#24263e]">
+            <div className="text-xl font-black text-[#24263e] tracking-tight">
               {formatVND(pendingEscrow)}
             </div>
-            <div className="text-[11px] text-[#24263e]/60">
-              {lang === 'vi' ? 'Giải ngân sau khi Buyer nhận hàng' : 'Released after buyer confirms delivery'}
+            <div className="text-[10px] text-[#24263e]/60">
+              {lang === 'vi' ? 'Giải ngân khi Buyer nhận hàng' : 'Released after confirmation'}
             </div>
           </div>
 
-          <div className="bg-[#FFFFFF] text-[#24263e] rounded-2xl p-4 border border-gray-200 shadow-sm space-y-1">
-            <div className="text-xs text-[#24263e]/70 flex items-center justify-between">
-              <span>{lang === 'vi' ? 'Điểm Tín Dụng (Credits)' : 'Active Credits'}</span>
-              <Coins className="w-4 h-4 text-amber-500" />
+          <div className="bg-[#FFFFFF] text-[#24263e] rounded-xl p-3 border border-gray-200 shadow-xs space-y-0.5">
+            <div className="text-[11px] text-[#24263e]/70 flex items-center justify-between font-medium">
+              <span>{lang === 'vi' ? 'Điểm Tín Dụng' : 'Active Credits'}</span>
+              <Coins className="w-3.5 h-3.5 text-amber-500" />
             </div>
-            <div className="flex flex-wrap items-baseline gap-2">
-              <span className="text-2xl font-black text-[#24263e]">
+            <div className="flex flex-wrap items-baseline gap-1.5">
+              <span className="text-xl font-black text-[#24263e]">
                 {creditBalance ? creditBalance.postCredits : (currentUser as any)?.postCredits ?? 0}
               </span>
-              <span className="text-xs font-bold text-slate-500">Đăng tin</span>
+              <span className="text-[11px] font-bold text-slate-500">Đăng tin</span>
               <span className="text-slate-300">•</span>
-              <span className="text-lg font-black text-emerald-600">
+              <span className="text-base font-black text-emerald-600">
                 {creditBalance ? creditBalance.valuationCredits : (currentUser as any)?.valuationCredits ?? 0}
               </span>
-              <span className="text-xs font-bold text-slate-500">Định giá</span>
+              <span className="text-[11px] font-bold text-slate-500">Định giá</span>
               <span className="text-slate-300">•</span>
-              <span className="text-lg font-black text-blue-600">
+              <span className="text-base font-black text-blue-600">
                 {creditBalance ? creditBalance.chatCredits : (currentUser as any)?.chatCredits ?? 0}
               </span>
-              <span className="text-xs font-bold text-slate-500">Chat AI</span>
+              <span className="text-[11px] font-bold text-slate-500">Chat AI</span>
             </div>
-            <div className="pt-1 flex items-center justify-between">
+            <div className="pt-0.5 flex items-center justify-between">
               <button
                 type="button"
                 onClick={handleOpenCreditLedger}
-                className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 transition cursor-pointer"
+                className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 transition cursor-pointer"
               >
-                <History className="w-3 h-3" />
+                <History className="w-2.5 h-2.5" />
                 <span>Xem sổ cái điểm</span>
               </button>
             </div>
@@ -1119,24 +1150,24 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
 
           <div
             onClick={handleOpenReputationHistory}
-            className="bg-[#FFFFFF] text-[#24263e] rounded-2xl p-4 border border-gray-200 shadow-sm space-y-1 hover:border-[#c34c36]/40 transition cursor-pointer group"
+            className="bg-[#FFFFFF] text-[#24263e] rounded-xl p-3 border border-gray-200 shadow-xs space-y-0.5 hover:border-[#c34c36]/40 transition cursor-pointer group"
             title="Bấm để xem bảng chỉ số uy tín và lịch sử"
           >
-            <div className="text-xs text-[#24263e]/70 flex items-center justify-between">
-              <span className="font-bold flex items-center gap-1.5">
-                <Award className="w-4 h-4 text-amber-500" />
+            <div className="text-[11px] text-[#24263e]/70 flex items-center justify-between font-medium">
+              <span className="font-bold flex items-center gap-1">
+                <Award className="w-3.5 h-3.5 text-amber-500" />
                 <span>{lang === 'vi' ? 'Uy Tín Giao Dịch' : 'Seller Reputation'}</span>
               </span>
               {(() => {
                 const statusMeta = getAssessmentStatusMeta(myReputation?.assessmentStatus);
                 return (
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${statusMeta.badgeClass}`}>
+                  <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold border ${statusMeta.badgeClass}`}>
                     {statusMeta.shortLabel}
                   </span>
                 );
               })()}
             </div>
-            <div className="text-2xl font-black text-[#24263e] flex items-baseline gap-1">
+            <div className="text-xl font-black text-[#24263e] flex items-baseline gap-1">
               <span>
                 {myReputation?.score !== null && myReputation?.score !== undefined
                   ? myReputation.score
@@ -1148,15 +1179,15 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                 <span className="text-xs font-bold text-slate-400">/ 100</span>
               )}
             </div>
-            <div className="text-[11px] text-[#24263e]/60 flex items-center justify-between pt-0.5">
-              <span>
+            <div className="text-[10px] text-[#24263e]/60 flex items-center justify-between pt-0.5">
+              <span className="truncate">
                 {myReputation?.evaluatedOrders
                   ? `${myReputation.goodTransactions} thành công • ${myReputation.badTransactions} lỗi SELLER`
                   : lang === 'vi'
                   ? 'Bấm xem chi tiết & lịch sử'
                   : 'Click to view audit trail'}
               </span>
-              <span className="text-xs font-bold text-[#c34c36] group-hover:translate-x-0.5 transition-transform">→</span>
+              <span className="text-xs font-bold text-[#c34c36] group-hover:translate-x-0.5 transition-transform ml-1">→</span>
             </div>
           </div>
         </div>

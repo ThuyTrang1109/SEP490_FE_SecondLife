@@ -27,8 +27,6 @@ import {
 import { adminOrderService, AdminOrderResponse, AdminOrderStatsResponse } from '../../services/adminOrderService';
 import { formatVND } from '../../utils/translations';
 import { Language, UserProfile } from '../../types';
-import { InspectionCashReviewPanel } from '../inspection/InspectionCashReviewPanel';
-import { canReviewInspectionCash } from '../../utils/inspectionCashShipping';
 
 interface AdminOrdersTabProps {
   lang?: Language;
@@ -51,9 +49,6 @@ export const AdminOrdersTab: React.FC<AdminOrdersTabProps> = ({
   lang = 'vi',
   currentUser,
 }) => {
-  // Sub-tabs: 'orders-list' | 'inspection-cash'
-  const [subTab, setSubTab] = useState<'orders-list' | 'inspection-cash'>('orders-list');
-
   // Orders State from Database
   const [orders, setOrders] = useState<AdminOrderResponse[]>([]);
   const [stats, setStats] = useState<AdminOrderStatsResponse | null>(null);
@@ -297,47 +292,18 @@ export const AdminOrdersTab: React.FC<AdminOrdersTabProps> = ({
           </div>
 
           {/* Sub-tab Navigation */}
-          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200 self-start md:self-auto">
-            <button
-              onClick={() => setSubTab('orders-list')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 ${
-                subTab === 'orders-list'
-                  ? 'bg-white text-[#24263e] shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Package className="w-4 h-4 text-[#e07a5f]" />
-              <span>{lang === 'vi' ? 'Danh Sách Đơn Hàng' : 'Orders List'}</span>
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-200 text-slate-800 font-mono">
-                {totalCount}
-              </span>
-            </button>
-            <button
-              onClick={() => setSubTab('inspection-cash')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 ${
-                subTab === 'inspection-cash'
-                  ? 'bg-white text-[#24263e] shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Truck className="w-4 h-4 text-amber-600" />
-              <span>{lang === 'vi' ? 'Hoàn ứng cước kiểm định' : 'Cash Shipping Review'}</span>
-            </button>
+          {/* Total Orders Badge */}
+          <div className="flex items-center gap-2 px-3.5 py-2 bg-slate-100 rounded-xl border border-slate-200 self-start md:self-auto text-xs font-bold text-slate-700">
+            <Package className="w-4 h-4 text-[#e07a5f]" />
+            <span>{lang === 'vi' ? 'Danh Sách Đơn Hàng' : 'Orders List'}</span>
+            <span className="px-2 py-0.5 rounded-full text-[11px] bg-white text-slate-800 font-mono shadow-2xs">
+              {totalCount}
+            </span>
           </div>
         </div>
       </div>
 
-      {/* 2. Sub-tab: Inspection Cash Shipping Review */}
-      {subTab === 'inspection-cash' && (
-        <div className="max-w-4xl">
-          <InspectionCashReviewPanel allowManualConfirmation={canReviewInspectionCash(currentUser)} />
-        </div>
-      )}
-
-      {/* 3. Sub-tab: Orders List */}
-      {subTab === 'orders-list' && (
-        <>
-          {/* KHUNG ĐẦU: 6 Thẻ Thống Kê Chuẩn 100% Theo Cơ Sở Dữ Liệu */}
+      {/* KHUNG ĐẦU: 6 Thẻ Thống Kê Chuẩn 100% Theo Cơ Sở Dữ Liệu */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
             {/* Card 1: Tổng đơn */}
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs hover:border-slate-300 transition">
@@ -804,8 +770,6 @@ export const AdminOrdersTab: React.FC<AdminOrdersTabProps> = ({
               </div>
             </div>
           </div>
-        </>
-      )}
 
       {/* 4. Modal Chi Tiết Đơn Hàng (Order Detail Modal) */}
       {isDetailModalOpen && selectedOrder && (

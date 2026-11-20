@@ -106,8 +106,6 @@ import { WithdrawalsTab } from '../components/admin/WithdrawalsTab';
 import { PermissionsTab } from '../components/admin/PermissionsTab';
 import { PackageFormModal, PackageFormData } from '../components/admin/PackageFormModal';
 
-import { InspectionCashReviewPanel } from '../components/inspection/InspectionCashReviewPanel';
-import { canReviewInspectionCash } from '../utils/inspectionCashShipping';
 import { AdminInspectionFundsModal } from '../components/admin/AdminInspectionFundsModal';
 import { AdminInspectionFundsTab } from '../components/admin/AdminInspectionFundsTab';
 import { AdminOrdersTab } from '../components/admin/AdminOrdersTab';

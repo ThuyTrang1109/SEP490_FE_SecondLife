@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { ShieldCheck, Sparkles, MapPin, Star, CheckCircle2 } from 'lucide-react';
 import { Listing, Language } from '../../types';
 import { formatVND } from '../../utils/translations';
@@ -7,6 +7,7 @@ import { extractWardAndCity } from '../../utils/addressUtils';
 import { extractSellerOriginalPrice } from '../../utils/catalogCache';
 import { isListingInspectionPassed } from '../../utils/listingInspection';
 import { reviewService } from '../../data/mockReviews';
+import { reputationService, SellerReputationDto } from '../../services';
 
 interface ProductCard3DProps {
   item: Listing;
@@ -67,30 +68,69 @@ export const ProductCard3D: React.FC<ProductCard3DProps> = ({
     setRotateY(0);
   };
 
-  // Lấy dữ liệu đánh giá thực tế từ kho lưu trữ review thật
+  const [sellerRep, setSellerRep] = useState<SellerReputationDto | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    if (item.sellerId && item.sellerId !== 'me' && item.sellerId !== 'current-user') {
+      reputationService.getSellerReputation(item.sellerId).then((rep) => {
+        if (mounted && rep) setSellerRep(rep);
+      });
+    }
+    return () => {
+      mounted = false;
+    };
+  }, [item.sellerId]);
+
+  // Lấy dữ liệu đánh giá thực tế từ hệ thống uy tín BE & kho review thật
   const { realRating, reviewCount } = useMemo(() => {
     const sellerReviews = item.sellerId ? reviewService.getReviewsBySeller(item.sellerId) : [];
     const listingReviews = item.id ? reviewService.getReviewsByListing(item.id) : [];
     const effectiveReviews = sellerReviews.length > 0 ? sellerReviews : listingReviews;
+    const evaluatedFromRep = Number(sellerRep?.evaluatedOrders ?? 0);
+
     if (effectiveReviews.length > 0) {
       const avg = effectiveReviews.reduce((sum, r) => sum + r.rating, 0) / effectiveReviews.length;
       return {
-        realRating: avg % 1 === 0 ? avg.toFixed(1) : avg.toFixed(1),
-        reviewCount: effectiveReviews.length
+        realRating: avg.toFixed(1),
+        reviewCount: Math.max(effectiveReviews.length, evaluatedFromRep)
       };
     }
+
+    if (evaluatedFromRep > 0) {
+      const txScore =
+        sellerRep?.transactionScore !== undefined && sellerRep?.transactionScore !== null
+          ? Number(sellerRep.transactionScore)
+          : (Number(sellerRep?.goodTransactions ?? 0) / evaluatedFromRep) * 100;
+      const starRating = Math.max(0, Math.min(5, txScore / 20));
+      return {
+        realRating: starRating.toFixed(1),
+        reviewCount: evaluatedFromRep
+      };
+    }
+
+    if (item.sellerRating && item.sellerRating > 0) {
+      return {
+        realRating: Number(item.sellerRating).toFixed(1),
+        reviewCount: Number(item.sellerCompletedOrders ?? 0)
+      };
+    }
+
     return {
       realRating: null,
       reviewCount: 0
     };
-  }, [item.sellerId, item.id]);
+  }, [item.sellerId, item.id, item.sellerRating, item.sellerCompletedOrders, sellerRep]);
 
   const effectiveTrustScore = useMemo(() => {
-    if (item.sellerTrustScore !== undefined && item.sellerTrustScore !== null && item.sellerTrustScore > 0) {
+    if (sellerRep && sellerRep.score !== undefined && sellerRep.score !== null) {
+      return sellerRep.score;
+    }
+    if (item.sellerTrustScore !== undefined && item.sellerTrustScore !== null) {
       return item.sellerTrustScore;
     }
-    return 100; // Điểm uy tín khởi đầu chuẩn sàn SecondLife
-  }, [item.sellerTrustScore]);
+    return null;
+  }, [sellerRep, item.sellerTrustScore]);
 
   return (
     <div
@@ -232,13 +272,15 @@ export const ProductCard3D: React.FC<ProductCard3DProps> = ({
                   <span className="text-[9.5px]">{lang === 'vi' ? 'Mới' : 'New'}</span>
                 </span>
               )}
-              <span
-                className="inline-flex items-center gap-0.5 font-bold text-[#24263e] bg-slate-100 px-1.5 py-0.5 rounded"
-                title={lang === 'vi' ? 'Điểm uy tín người bán' : 'Seller trust score'}
-              >
-                <ShieldCheck className="w-2.5 h-2.5 text-emerald-600" />
-                <span>{effectiveTrustScore}đ</span>
-              </span>
+              {effectiveTrustScore !== null && (
+                <span
+                  className="inline-flex items-center gap-0.5 font-bold text-[#24263e] bg-slate-100 px-1.5 py-0.5 rounded"
+                  title={lang === 'vi' ? 'Điểm uy tín người bán' : 'Seller trust score'}
+                >
+                  <ShieldCheck className="w-2.5 h-2.5 text-emerald-600" />
+                  <span>{effectiveTrustScore}/100</span>
+                </span>
+              )}
             </div>
           </div>
         </div>

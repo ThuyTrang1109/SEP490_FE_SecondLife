@@ -348,12 +348,21 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
 
   // Seller Reputation State (GET /api/v1/seller/reputation/me & /history)
   const [myReputation, setMyReputation] = useState<SellerReputationDto | null>(null);
+  const [isReputationHistoryOpen, setIsReputationHistoryOpen] = useState(false);
+  const [reputationHistoryItems, setReputationHistoryItems] = useState<ReputationHistoryDto[]>([]);
+  const [isLoadingReputationHistory, setIsLoadingReputationHistory] = useState(false);
+  const [isReloadingReputation, setIsReloadingReputation] = useState(false);
+  const [showViolationWarning, setShowViolationWarning] = useState(true);
+
   const sellerReviewCount = useMemo(() => {
     const sellerId = currentUser?.id;
-    if (!sellerId) return (currentUser as any)?.reviewCount ?? 0;
-    const directReviews = reviewService.getReviewsBySeller(sellerId).length;
-    return directReviews > 0 ? directReviews : ((currentUser as any)?.reviewCount ?? 0);
-  }, [currentUser?.id, (currentUser as any)?.reviewCount]);
+    const directReviews = sellerId ? reviewService.getReviewsBySeller(sellerId).length : 0;
+    const evaluatedFromRep = Number(myReputation?.evaluatedOrders ?? 0);
+    if (evaluatedFromRep > 0 || directReviews > 0) {
+      return Math.max(evaluatedFromRep, directReviews);
+    }
+    return Number((currentUser as any)?.reviewCount ?? 0);
+  }, [currentUser?.id, (currentUser as any)?.reviewCount, myReputation?.evaluatedOrders]);
 
   const sellerAverageRatingText = useMemo(() => {
     const sellerId = currentUser?.id;
@@ -362,17 +371,34 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       const avg = directReviews.reduce((sum, r) => sum + r.rating, 0) / directReviews.length;
       return `${avg.toFixed(1)} / 5.0`;
     }
+    const evaluated = Number(myReputation?.evaluatedOrders ?? 0);
+    if (evaluated > 0) {
+      const txScore =
+        myReputation?.transactionScore !== undefined && myReputation?.transactionScore !== null
+          ? Number(myReputation.transactionScore)
+          : (Number(myReputation?.goodTransactions ?? 0) / evaluated) * 100;
+      const starRating = Math.max(0, Math.min(5, txScore / 20));
+      return `${starRating.toFixed(1)} / 5.0`;
+    }
     if (currentUser?.sellerRating && currentUser.sellerRating > 0) {
       return `${currentUser.sellerRating.toFixed(1)} / 5.0`;
     }
     return lang === 'vi' ? 'Chưa có đánh giá' : 'No ratings yet';
-  }, [currentUser?.id, currentUser?.sellerRating, lang]);
+  }, [currentUser?.id, currentUser?.sellerRating, myReputation, lang]);
 
-  const [isReputationHistoryOpen, setIsReputationHistoryOpen] = useState(false);
-  const [reputationHistoryItems, setReputationHistoryItems] = useState<ReputationHistoryDto[]>([]);
-  const [isLoadingReputationHistory, setIsLoadingReputationHistory] = useState(false);
-  const [isReloadingReputation, setIsReloadingReputation] = useState(false);
-  const [showViolationWarning, setShowViolationWarning] = useState(true);
+  const sellerResponseRateText = useMemo(() => {
+    const evaluated = Number(myReputation?.evaluatedOrders ?? 0);
+    if (evaluated > 0) {
+      if (myReputation?.nonFulfillmentRate !== undefined && myReputation?.nonFulfillmentRate !== null) {
+        const fulfillmentRate = Math.max(0, Math.min(100, Math.round(100 - Number(myReputation.nonFulfillmentRate))));
+        return lang === 'vi' ? `Tỷ lệ hoàn tất ${fulfillmentRate}%` : `${fulfillmentRate}% fulfillment`;
+      }
+      const good = Number(myReputation?.goodTransactions ?? 0);
+      const successRate = Math.max(0, Math.min(100, Math.round((good / evaluated) * 100)));
+      return lang === 'vi' ? `Tỷ lệ thành công ${successRate}%` : `${successRate}% success`;
+    }
+    return lang === 'vi' ? 'Chưa có giao dịch' : 'No transactions yet';
+  }, [myReputation, lang]);
 
   useEffect(() => {
     if (myReputation?.sellingRestricted || myReputation?.warningCode) {
@@ -556,6 +582,12 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       reputationService.getMyReputation()
         .then((rep) => {
           if (rep) setMyReputation(rep);
+        })
+        .catch(() => { });
+
+      reputationService.getMyReputationHistory(0, 50)
+        .then((res) => {
+          if (res?.items) setReputationHistoryItems(res.items);
         })
         .catch(() => { });
 
@@ -998,7 +1030,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                 <span className="text-slate-400">•</span>
                 <span className="flex items-center gap-1 text-slate-700 font-semibold">
                   <Sparkles className="w-3.5 h-3.5 text-sky-600" />
-                  <span>{lang === 'vi' ? 'Tỷ lệ phản hồi 100%' : '100% response'}</span>
+                  <span>{sellerResponseRateText}</span>
                 </span>
               </div>
             </div>

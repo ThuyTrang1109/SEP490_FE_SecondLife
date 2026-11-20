@@ -6,6 +6,19 @@ export const mockSellerTrustProfiles: Record<string, SellerTrustProfile> = {};
 
 const REVIEWS_STORAGE_KEY = 'secondlife_customer_reviews';
 
+const LEGACY_MOCK_PREFIXES = ['rev-hitachi', 'rev-nam', 'rev-mai', 'rev-thang', 'rev-noicom', 'rev-panasonic', 'rev-yson', 'rev-dyson', 'rev-lg', 'rev-bosch', 'rev-daikin'];
+
+function isLegacyMockReview(r: any): boolean {
+  if (!r || typeof r !== 'object') return true;
+  const id = String(r.id || '');
+  const listingId = String(r.listingId || '');
+  const sellerId = String(r.sellerId || '');
+  if (LEGACY_MOCK_PREFIXES.some((prefix) => id.startsWith(prefix))) return true;
+  if (listingId.startsWith('listing-')) return true;
+  if (sellerId.startsWith('user-')) return true;
+  return false;
+}
+
 export const reviewService = {
   getAllReviews(): ProductReview[] {
     try {
@@ -13,7 +26,15 @@ export const reviewService = {
       if (stored && stored !== 'undefined' && stored !== 'null' && stored.trim() !== '') {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed)) {
-          return parsed;
+          const cleaned = parsed.filter((r) => !isLegacyMockReview(r));
+          if (cleaned.length !== parsed.length) {
+            try {
+              localStorage.setItem(REVIEWS_STORAGE_KEY, JSON.stringify(cleaned));
+            } catch {
+              // Ignore storage error
+            }
+          }
+          return cleaned;
         }
       }
     } catch {

@@ -20,6 +20,7 @@ export * from './healthService';
 export * from './walletService';
 export * from './negotiationService';
 export * from './orderService';
+export * from './adminOrderService';
 export * from './staffListingService';
 export * from './shippingService';
 export * from './adminCatalogService';

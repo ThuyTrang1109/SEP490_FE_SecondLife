@@ -192,11 +192,10 @@ const ReportEvidenceItem: React.FC<{
     <button
       type="button"
       onClick={handleClick}
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border transition cursor-pointer text-xs font-bold shadow-2xs group ${
-        hasError
-          ? 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100'
-          : 'bg-white border-indigo-200 text-indigo-700 hover:bg-indigo-50/80 hover:border-indigo-400'
-      }`}
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border transition cursor-pointer text-xs font-bold shadow-2xs group ${hasError
+        ? 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100'
+        : 'bg-white border-indigo-200 text-indigo-700 hover:bg-indigo-50/80 hover:border-indigo-400'
+        }`}
       title={hasError ? 'Bấm để thử tải lại ảnh' : 'Bấm để xem ảnh phóng to'}
     >
       {loading ? (
@@ -605,7 +604,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
     },
     {
       id: 'disputes' as StaffTab,
-      label: 'TRANH CHẤP & BẰNG CHỨNG ❌',
+      label: 'TRANH CHẤP & BẰNG CHỨNG',
       icon: Scale,
       badge: disputes.length,
       badgeColor: 'bg-[#c34c36] text-white'
@@ -619,7 +618,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
     },
     {
       id: 'payouts' as StaffTab,
-      label: 'QUẢN LÝ THANH TOÁN & HOLD ❌',
+      label: 'QUẢN LÝ THANH TOÁN & HOLD',
       icon: Wallet,
       badge: payouts.filter((p) => p.status === 'HOLD').length,
       badgeColor: 'bg-amber-700 text-white'
@@ -632,7 +631,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
     },
     {
       id: 'restrict-users' as StaffTab,
-      label: 'CẢNH BÁO & HẠN CHẾ USER ❌',
+      label: 'CẢNH BÁO & HẠN CHẾ USER',
       icon: UserX,
       badge: restrictedUsers.length,
       badgeColor: 'bg-slate-700 text-white'

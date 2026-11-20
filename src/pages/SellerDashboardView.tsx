@@ -823,16 +823,13 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       {/* eKYC Verification Status Banner (Ẩn khi đã duyệt APPROVED thành công) */}
       {myVerification && myVerification.status !== 'APPROVED' && (
         <div className={`p-4 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-xs ${
-          myVerification.status === 'APPROVED' ? 'bg-emerald-50 border-emerald-200 text-emerald-900' :
           myVerification.status === 'NEEDS_REVIEW' ? 'bg-amber-50 border-amber-200 text-amber-900' :
           myVerification.status === 'RESUBMIT_REQUIRED' ? 'bg-orange-50 border-orange-200 text-orange-950' :
           myVerification.status === 'REJECTED' ? 'bg-rose-50 border-rose-200 text-rose-900' :
           'bg-blue-50 border-blue-200 text-blue-900'
         }`}>
           <div className="flex items-center gap-3">
-            {myVerification.status === 'APPROVED' ? (
-              <ShieldCheck className="w-6 h-6 text-emerald-600 shrink-0" />
-            ) : myVerification.status === 'NEEDS_REVIEW' ? (
+            {myVerification.status === 'NEEDS_REVIEW' ? (
               <Clock className="w-6 h-6 text-amber-600 shrink-0" />
             ) : myVerification.status === 'RESUBMIT_REQUIRED' ? (
               <AlertCircle className="w-6 h-6 text-orange-600 shrink-0" />
@@ -843,16 +840,12 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             )}
             <div>
               <div className="font-bold text-sm">
-                {myVerification.status === 'APPROVED' && (lang === 'vi' ? 'Xác thực thành công! Tài khoản người bán đã kích hoạt.' : 'eKYC Verified! Seller account active.')}
                 {myVerification.status === 'NEEDS_REVIEW' && (lang === 'vi' ? 'Đang chờ Quản trị viên duyệt' : 'Pending Admin Review')}
                 {(myVerification.status === 'EKYC_PENDING' || myVerification.status === 'SUBMITTED' || myVerification.status === 'PENDING') && (lang === 'vi' ? 'Đang đối soát eKYC' : 'eKYC Verification In Progress')}
                 {myVerification.status === 'RESUBMIT_REQUIRED' && (lang === 'vi' ? 'Cần chụp lại ảnh' : 'Resubmission Required')}
                 {myVerification.status === 'REJECTED' && (lang === 'vi' ? 'Hồ sơ bị từ chối' : 'Verification Rejected')}
               </div>
               <div className="mt-0.5 text-[11px] leading-relaxed">
-                {myVerification.status === 'APPROVED' && (
-                  <span>{lang === 'vi' ? 'Tất cả các tin đăng của bạn sẽ hiển thị huy hiệu Người Bán Uy Tín & Đã Kiểm Định.' : 'All your listings will display the Verified Seller badge.'}</span>
-                )}
                 {myVerification.status === 'NEEDS_REVIEW' && (
                   <span>{lang === 'vi' ? `Hồ sơ đang được chuyên viên thẩm định thủ công trong 24h. Mã CCCD: ${myVerification.documentNumber}` : `Application is under manual review within 24h. ID: ${myVerification.documentNumber}`}</span>
                 )}

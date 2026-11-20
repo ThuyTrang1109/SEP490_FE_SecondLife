@@ -1039,7 +1039,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
                     <h3 className="font-extrabold text-sm text-slate-900 uppercase">
-                      1. XEM XÉT TIN ĐĂNG & TIN CÓ DẤU HIỆU NGHI VẤN
+                      XEM XÉT TIN ĐĂNG & TIN CÓ DẤU HIỆU NGHI VẤN
                     </h3>
                     <p className="text-xs text-slate-500">
                       Thẩm định tính xác thực thông tin, hình ảnh và cảnh báo bất thường giá định giá từ AI
@@ -1226,7 +1226,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
                     <h3 className="font-extrabold text-sm text-slate-900 uppercase">
-                      4. XỬ LÝ CÁC BÁO CÁO & YÊU CẦU HỖ TRỢ
+                      XỬ LÝ CÁC BÁO CÁO & YÊU CẦU HỖ TRỢ
                     </h3>
                     <p className="text-xs text-slate-500">
                       Tiếp nhận báo cáo vi phạm cộng đồng và giải đáp các ticket hỗ trợ của người dùng
@@ -1383,7 +1383,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
               <div className="bg-white rounded-xl p-4 shadow-xs border border-slate-200 border-t-4 border-t-[#c34c36]">
                 <div className="mb-4">
                   <h3 className="font-extrabold text-sm text-slate-900 uppercase">
-                    5. GIẢI QUYẾT TRANH CHẤP & VẬN HÀNH HOÀN HÀNG (DISPUTE WORKSPACE)
+                    GIẢI QUYẾT TRANH CHẤP & VẬN HÀNH HOÀN HÀNG (DISPUTE WORKSPACE)
                   </h3>
                   <p className="text-xs text-slate-500">
                     Phân xử khiếu nại giữa Người Mua & Người Bán, đối chiếu bằng chứng hai bên, tạo chuyến hoàn Lalamove và quyết toán hoàn tiền/phí.
@@ -1402,7 +1402,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
               <div className="bg-white rounded-xl p-4 shadow-xs border border-slate-200 border-t-4 border-t-rose-600 space-y-4">
                 <div>
                   <h3 className="font-extrabold text-sm text-slate-900 uppercase">
-                    6. XEM XÉT CÁC YÊU CẦU HOÀN TIỀN (REFUND REQUESTS)
+                    XEM XÉT CÁC YÊU CẦU HOÀN TIỀN (REFUND REQUESTS)
                   </h3>
                   <p className="text-xs text-slate-500">
                     Thẩm định yêu cầu hoàn tiền của người mua trong cửa sổ đổi trả/kiểm định và giải ngân hoàn tiền Escrow
@@ -1464,7 +1464,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
               <div className="bg-white rounded-xl p-4 shadow-xs border border-slate-200 border-t-4 border-t-amber-600 space-y-4">
                 <div>
                   <h3 className="font-extrabold text-sm text-slate-900 uppercase">
-                    7. XEM XÉT / PHÊ DUYỆT / TẠM GIỮ KHOẢN THANH TOÁN (CASE CÓ TRANH CHẤP)
+                    XEM XÉT / PHÊ DUYỆT / TẠM GIỮ KHOẢN THANH TOÁN (CASE CÓ TRANH CHẤP)
                   </h3>
                   <p className="text-xs text-slate-500">
                     Kiểm soát dòng tiền giải ngân người bán, tạm giữ (HOLD) các đơn hàng phát sinh tranh chấp hoặc nghi vấn
@@ -1534,7 +1534,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
               <div className="bg-white rounded-xl p-4 shadow-xs border border-slate-200 border-t-4 border-t-sky-600 space-y-4">
                 <div>
                   <h3 className="font-extrabold text-sm text-slate-900 uppercase">
-                    9. GIÁM SÁT CÁC GIAO DỊCH (REALTIME ESCROW MONITORING)
+                    GIÁM SÁT CÁC GIAO DỊCH (REALTIME ESCROW MONITORING)
                   </h3>
                   <p className="text-xs text-slate-500">
                     Theo dõi lưu lượng ký quỹ, giải ngân và luồng tiền bảo lãnh thanh toán qua cổng ngân hàng
@@ -1662,7 +1662,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
               <div className="bg-white rounded-xl p-4 shadow-xs border border-slate-200 border-t-4 border-t-slate-800 space-y-4">
                 <div>
                   <h3 className="font-extrabold text-sm text-slate-900 uppercase">
-                    10. CẢNH BÁO NGƯỜI DÙNG VÀ ÁP DỤNG HẠN CHẾ TẠM THỜI (KHI ĐƯỢC CẤP QUYỀN)
+                    CẢNH BÁO NGƯỜI DÙNG VÀ ÁP DỤNG HẠN CHẾ TẠM THỜI (KHI ĐƯỢC CẤP QUYỀN)
                   </h3>
                   <p className="text-xs text-slate-500">
                     Xử lý chế tài các tài khoản spam, cố tình giao dịch ngoài sàn hoặc vi phạm chính sách kiểm định
@@ -1725,10 +1725,10 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                           onChange={(e) => setRestrictLevel(e.target.value as any)}
                           className="w-full p-2.5 bg-white border border-slate-300 rounded-lg text-xs font-bold focus:outline-none focus:border-[#24263e]"
                         >
-                          <option value="WARN">1. Gửi Cảnh Cáo Chính Thức</option>
-                          <option value="LOCK_POST">2. Tạm Khóa Đăng Tin (7 Ngày)</option>
-                          <option value="LOCK_ESCROW">3. Tạm Ngưng Rút Tiền Escrow</option>
-                          <option value="SUSPEND">4. Tạm Đình Chỉ Tài Khoản (14 Ngày)</option>
+                          <option value="WARN">Gửi Cảnh Cáo Chính Thức</option>
+                          <option value="LOCK_POST">Tạm Khóa Đăng Tin (7 Ngày)</option>
+                          <option value="LOCK_ESCROW">Tạm Ngưng Rút Tiền Escrow</option>
+                          <option value="SUSPEND">Tạm Đình Chỉ Tài Khoản (14 Ngày)</option>
                         </select>
                       </div>
                       <div>

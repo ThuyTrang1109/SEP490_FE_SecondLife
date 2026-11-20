@@ -23,7 +23,10 @@ import {
   Trash2,
   FileText,
   Sliders,
-  RotateCcw
+  RotateCcw,
+  Sparkles,
+  ChevronRight,
+  PackageCheck
 } from 'lucide-react';
 import { Listing, Language, UserProfile, ItemBackend } from '../types';
 import { itemService } from '../services/itemService';
@@ -362,11 +365,12 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
     if (currentUser?.sellerRating && currentUser.sellerRating > 0) {
       return `${currentUser.sellerRating.toFixed(1)} / 5.0`;
     }
-    if (myReputation?.score !== undefined && myReputation?.score !== null && (myReputation.evaluatedOrders ?? 0) > 0) {
+    if (myReputation?.score && myReputation.score > 0) {
       return `${(myReputation.score / 20).toFixed(1)} / 5.0`;
     }
     return lang === 'vi' ? 'Chưa có đánh giá' : 'No ratings yet';
-  }, [currentUser?.id, currentUser?.sellerRating, myReputation, lang]);
+  }, [currentUser?.id, currentUser?.sellerRating, myReputation?.score, lang]);
+
   const [isReputationHistoryOpen, setIsReputationHistoryOpen] = useState(false);
   const [reputationHistoryItems, setReputationHistoryItems] = useState<ReputationHistoryDto[]>([]);
   const [isLoadingReputationHistory, setIsLoadingReputationHistory] = useState(false);
@@ -761,6 +765,18 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
     currentUser?.name,
   ]);
 
+  // Đơn hoàn thành thực tế của người bán (đồng bộ từ myReputation.goodTransactions hoặc currentUser)
+  const completedOrdersCount = useMemo(() => {
+    if (myReputation?.goodTransactions !== undefined && myReputation?.goodTransactions !== null && myReputation.goodTransactions > 0) {
+      return myReputation.goodTransactions;
+    }
+    if (currentUser?.completedOrdersCount !== undefined && currentUser?.completedOrdersCount !== null && currentUser.completedOrdersCount > 0) {
+      return currentUser.completedOrdersCount;
+    }
+    const soldListingsCount = combinedListings.filter((l) => l.status === 'sold' || (l as any).backendStatus === 'SOLD').length;
+    return soldListingsCount > 0 ? soldListingsCount : (myReputation?.goodTransactions ?? 0);
+  }, [myReputation?.goodTransactions, currentUser?.completedOrdersCount, combinedListings]);
+
   const filteredListings = React.useMemo(() => {
     const list = combinedListings.filter((l) => {
       if (filterStatus === 'ALL') return true;
@@ -924,58 +940,76 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
               </div>
             </div>
 
-            <div>
+            <div className="space-y-1.5">
               <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="text-lg sm:text-xl font-black text-[#24263e]">
                   {currentUser?.name || currentUser?.email?.split('@')[0] || 'Người Bán SecondLife'}
                 </h1>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/80 border border-[#24263e]/15 text-[#24263e] text-[10px] font-bold shadow-xs">
-                  <CheckCircle2 className={`w-3 h-3 ${myVerification?.status === 'APPROVED' ? 'text-emerald-600' : 'text-amber-500'}`} />
-                  {myVerification?.status === 'APPROVED' ? (lang === 'vi' ? 'Đã xác minh eKYC' : 'eKYC Verified') : (lang === 'vi' ? 'Chưa xác minh eKYC' : 'Unverified')}
-                </span>
-                <button
-                  type="button"
-                  onClick={handleOpenReputationHistory}
-                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#24263e] hover:bg-[#c34c36] text-white text-[10px] font-bold shadow-xs transition cursor-pointer"
-                  title="Bấm để xem chi tiết chỉ số và lịch sử uy tín"
-                >
-                  <Award className="w-3 h-3 text-amber-300" />
-                  <span>
-                    {myReputation?.assessmentStatus === 'NO_TRANSACTIONS'
-                      ? 'Chưa có đơn (Mới)'
-                      : myReputation?.score !== undefined && myReputation?.score !== null
-                      ? `${myReputation.score}/100 Điểm Uy Tín`
-                      : currentUser?.trustScore
-                      ? `${currentUser.trustScore}/100 Điểm Uy Tín`
-                      : 'Chưa có điểm'}
-                  </span>
-                  {myReputation?.sellingRestricted && (
-                    <span className="px-1 py-0.2 rounded text-[9px] bg-rose-500 text-white font-bold animate-pulse">
-                      Hạn chế
-                    </span>
-                  )}
-                  <History className="w-2.5 h-2.5 text-slate-300 ml-0.5" />
-                </button>
                 <button
                   type="button"
                   onClick={handleOpenVerificationHistory}
-                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white/90 hover:bg-white text-[#24263e] text-[10px] font-bold shadow-xs transition cursor-pointer border border-[#24263e]/15"
-                  title="Bấm để xem lịch sử nộp hồ sơ eKYC"
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white/90 hover:bg-white border border-[#24263e]/15 text-[#24263e] text-[11px] font-bold shadow-2xs transition cursor-pointer"
+                  title={lang === 'vi' ? 'Đã xác minh eKYC - Bấm để xem lịch sử nộp hồ sơ' : 'eKYC Verified - Click to view history'}
                 >
-                  <ShieldCheck className="w-3 h-3 text-[#c34c36]" />
-                  <span>{lang === 'vi' ? 'Lịch Sử eKYC' : 'eKYC History'}</span>
+                  <CheckCircle2 className={`w-3.5 h-3.5 ${myVerification?.status === 'APPROVED' ? 'text-emerald-600' : 'text-amber-500'}`} />
+                  <span>{myVerification?.status === 'APPROVED' ? (lang === 'vi' ? 'Đã xác minh eKYC' : 'eKYC Verified') : (lang === 'vi' ? 'Chưa xác minh eKYC' : 'Unverified')}</span>
                 </button>
               </div>
-              <p className="text-[11px] text-[#24263e]/80 mt-0.5 flex items-center gap-2.5 font-semibold flex-wrap">
-                <span className="flex items-center gap-1 text-[#24263e] font-bold">
-                  <Star className="w-3 h-3 fill-[#c34c36] text-[#c34c36]" />
-                  {sellerAverageRatingText}
+
+              {/* Dải chỉ số uy tín & bán hàng: Bố cục đẹp, thanh thoát, trực quan */}
+              <div className="flex items-center gap-2 flex-wrap text-xs">
+                {/* Điểm Uy Tín - Thiết kế nổi bật, trang nhã, mở lịch sử chi tiết khi click */}
+                <button
+                  type="button"
+                  onClick={handleOpenReputationHistory}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white hover:bg-slate-50 border border-[#24263e]/20 text-[#24263e] text-xs font-bold shadow-2xs transition cursor-pointer group"
+                  title="Bấm để xem chi tiết chỉ số và lịch sử uy tín"
+                >
+                  <Award className="w-3.5 h-3.5 text-amber-500 group-hover:scale-110 transition-transform" />
+                  <span className="font-mono font-black text-[13px] text-[#24263e]">
+                    {myReputation?.assessmentStatus === 'NO_TRANSACTIONS'
+                      ? 'Chưa có đơn'
+                      : myReputation?.score !== undefined && myReputation?.score !== null
+                      ? `${myReputation.score}/100`
+                      : currentUser?.trustScore
+                      ? `${currentUser.trustScore}/100`
+                      : '—'}
+                  </span>
+                  <span className="text-[11px] font-bold text-slate-600">Điểm Uy Tín</span>
+                  {myReputation?.sellingRestricted && (
+                    <span className="px-1.5 py-0.2 rounded text-[9px] bg-rose-500 text-white font-bold animate-pulse">
+                      Hạn chế
+                    </span>
+                  )}
+                  <ChevronRight className="w-3 h-3 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+                </button>
+
+                {/* Đơn hoàn thành - hiển thị chính xác số đơn thực tế */}
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/80 border border-[#24263e]/15 text-xs font-bold text-[#24263e] shadow-2xs">
+                  <PackageCheck className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>{completedOrdersCount} {lang === 'vi' ? 'đơn hoàn thành' : 'completed orders'}</span>
                 </span>
-                <span>•</span>
-                <span>{filteredListings.filter((l) => l.status === 'sold').length} {lang === 'vi' ? 'đơn hoàn thành' : 'completed orders'}</span>
-                <span>•</span>
-                <span>{lang === 'vi' ? 'Tỷ lệ phản hồi 100%' : '100% response rate'}</span>
-              </p>
+
+                {/* Đánh giá khách hàng */}
+                <button
+                  type="button"
+                  onClick={() => setIsSellerReviewsOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/80 hover:bg-white border border-[#24263e]/15 text-xs font-bold text-[#24263e] shadow-2xs transition cursor-pointer"
+                  title="Bấm để xem đánh giá khách hàng"
+                >
+                  <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-500" />
+                  <span>{sellerAverageRatingText}</span>
+                  {sellerReviewCount > 0 && (
+                    <span className="text-slate-500 text-[11px]">({sellerReviewCount})</span>
+                  )}
+                </button>
+
+                {/* Tỷ lệ phản hồi */}
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/80 border border-[#24263e]/15 text-xs font-bold text-[#24263e] shadow-2xs">
+                  <Sparkles className="w-3 h-3 text-sky-600" />
+                  <span>{lang === 'vi' ? 'Tỷ lệ phản hồi 100%' : '100% response'}</span>
+                </span>
+              </div>
             </div>
           </div>
 

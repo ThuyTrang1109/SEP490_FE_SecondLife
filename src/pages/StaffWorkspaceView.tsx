@@ -1,6 +1,7 @@
 import { usePanelTab, useBrowserLocation, navigatePath } from '../app/router/browser';
 import { resolveAppRoute, panelPaths } from '../app/router/paths';
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { ResizableSidebarControls } from '../components/common/ResizableSidebarControls';
 import {
   LayoutDashboard,
   FileCheck,
@@ -107,8 +108,20 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
 }) => {
   const [activeTab, setActiveTab] = usePanelTab<StaffTab>('staff', 'overview');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(256);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
+  const userDropdownRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (userDropdownRef.current && !userDropdownRef.current.contains(e.target as Node)) {
+        setShowUserDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
   const [searchQuery, setSearchQuery] = useState('');
   const [actionNotice, setActionNotice] = useState<string | null>(null);
 
@@ -586,58 +599,141 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
 
   return (
     <div className="min-h-screen bg-[#faf8f5] text-[#24263e] flex flex-col font-sans">
-      {/* 1. OPERATIONS SUB-TOOLBAR */}
-      <div className="bg-[#1e2034] text-white h-12 flex items-center justify-between px-3 sm:px-4 border-b border-white/10 shrink-0 sticky top-16 z-40 shadow-xs">
-        {/* Left: Section badge + Toggle menu */}
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => {
-              setIsSidebarCollapsed(!isSidebarCollapsed);
-              setIsMobileSidebarOpen(!isMobileSidebarOpen);
-            }}
-            className="p-1.5 rounded-lg text-white hover:bg-white/10 transition cursor-pointer"
-            title={lang === 'vi' ? 'Đóng / Mở danh mục nghiệp vụ' : 'Toggle menu'}
+      {/* 1. TOP NAVIGATION BAR */}
+      <header className="bg-[#24263e] text-white h-13 sm:h-14 flex items-center justify-between px-3 sm:px-4 border-b border-white/10 shrink-0 sticky top-0 z-40 shadow-sm w-full">
+        {/* Left: Brand Logo + Sidebar Toggle + Quick Home */}
+        <div className="flex items-center gap-2 sm:gap-4">
+          {/* Logo Brand */}
+          <div
+            onClick={() => setActiveTab('overview')}
+            className="flex items-center gap-2.5 font-black tracking-tight text-white cursor-pointer select-none pr-3 sm:pr-4 border-r border-white/15"
           >
-            <Menu className="w-4 h-4" />
-          </button>
-
-          <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 rounded text-[10px] font-black bg-[#cea981] text-[#2b1d16] uppercase tracking-wider">
-              Staff Workspace
-            </span>
-            <span className="font-bold text-xs sm:text-sm text-white/90 hidden sm:inline">
-              {lang === 'vi' ? 'Bàn Làm Việc Nghiệp Vụ Vận Hành & Kiểm Duyệt' : 'Operations & Moderation Hub'}
+            <div className="logo-badge bg-white p-1 rounded-lg shadow-xs border border-white/80 flex items-center justify-center shrink-0">
+              <img
+                src={logoImg}
+                alt="SecondLife Logo"
+                className="h-7 sm:h-8 w-auto object-contain"
+              />
+            </div>
+            <span className="font-black text-sm sm:text-base tracking-wider uppercase text-white hidden xs:inline">
+              STAFF WORKSPACE
             </span>
           </div>
-        </div>
 
-        {/* Right: Quick link back to User Marketplace + Live Status */}
-        <div className="flex items-center gap-3">
+          {/* Mobile navigation trigger */}
+          <button
+            type="button"
+            onClick={() => {
+              setIsSidebarCollapsed(false);
+              setIsMobileSidebarOpen((open) => !open);
+            }}
+            className="p-1.5 rounded-lg text-white hover:bg-white/10 transition cursor-pointer md:hidden"
+            aria-expanded={isMobileSidebarOpen}
+            aria-label={lang === 'vi' ? 'Đóng / Mở menu' : 'Toggle menu'}
+          >
+            <Menu className="w-5 h-5" aria-hidden="true" />
+          </button>
+
+          {/* Quick link back to User Marketplace */}
           <button
             onClick={() => onViewWebsite?.()}
-            className="flex items-center gap-1.5 px-3 py-1 bg-white/10 hover:bg-white/15 text-white border border-white/10 rounded-lg text-xs font-bold transition cursor-pointer shadow-xs"
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1 bg-white/10 hover:bg-white/15 text-white border border-white/10 rounded-lg text-xs font-bold transition cursor-pointer shadow-xs"
             title={lang === 'vi' ? 'Quay lại sàn đồ cũ của người dùng' : 'Back to marketplace'}
           >
             <ShoppingBag className="w-3.5 h-3.5 text-[#cea981]" />
             <span>{lang === 'vi' ? 'Về Sàn Đồ Cũ (Người Dùng)' : 'View Marketplace'}</span>
           </button>
+        </div>
 
+        {/* Right: Online status & Staff Profile */}
+        <div className="flex items-center gap-3">
           <div className="hidden md:flex items-center gap-1.5 text-xs text-emerald-400 font-bold bg-emerald-950/40 px-2.5 py-1 rounded-full border border-emerald-500/20">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
             <span>{lang === 'vi' ? 'Trực Tuyến' : 'Online'}</span>
           </div>
+
+          <div className="relative" ref={userDropdownRef}>
+            <button
+              onClick={() => setShowUserDropdown(!showUserDropdown)}
+              className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl hover:bg-white/10 transition cursor-pointer"
+              title={lang === 'vi' ? 'Hồ sơ nhân viên' : 'Staff Profile'}
+            >
+              <div className="w-7 h-7 rounded-full bg-white p-0.5 flex items-center justify-center shadow-xs border border-white/20">
+                <UserAvatar
+                  src={currentUser?.avatar}
+                  name={currentUser?.name}
+                  className="w-full h-full rounded-full object-cover"
+                />
+              </div>
+              <span className="text-xs font-black text-white hidden sm:inline">{currentUser?.name || 'Staff'}</span>
+              <ChevronDown className="w-3.5 h-3.5 text-white hidden sm:inline" />
+            </button>
+
+            {/* User Dropdown */}
+            {showUserDropdown && (
+              <div className="absolute right-0 mt-2 w-56 bg-white text-[#24263e] rounded-2xl shadow-2xl border border-gray-200 py-1.5 z-50 text-xs animate-in fade-in">
+                <div className="px-3.5 py-2.5 border-b border-gray-100">
+                  <p className="font-black text-[#24263e] text-xs truncate">
+                    {currentUser?.name || (lang === 'vi' ? 'Nhân Viên Vận Hành' : 'Staff Operator')}
+                  </p>
+                  <p className="text-[11px] text-gray-500 font-medium truncate">{currentUser?.email || 'staff@secondlife.vn'}</p>
+                  <span className="inline-block mt-1 px-2 py-0.5 rounded-md bg-[#c34c36]/10 text-[#c34c36] font-extrabold text-[10px]">
+                    {lang === 'vi' ? 'Quyền: Điều Phối & Kiểm Duyệt' : 'Role: Staff'}
+                  </span>
+                </div>
+                <div className="p-1 space-y-0.5">
+                  <button
+                    onClick={() => {
+                      setShowUserDropdown(false);
+                      onOpenProfile?.();
+                    }}
+                    className="w-full text-left px-3 py-2 hover:bg-slate-100 rounded-xl flex items-center gap-2 text-[#24263e] font-bold cursor-pointer transition"
+                  >
+                    <User className="w-3.5 h-3.5 text-[#c34c36]" />
+                    <span>{lang === 'vi' ? 'Hồ Sơ Cá Nhân' : 'Staff Profile'}</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowUserDropdown(false);
+                      onViewWebsite?.();
+                    }}
+                    className="w-full text-left px-3 py-2 hover:bg-slate-100 rounded-xl flex items-center gap-2 text-[#24263e] font-bold cursor-pointer transition sm:hidden"
+                  >
+                    <ShoppingBag className="w-3.5 h-3.5 text-[#c34c36]" />
+                    <span>{lang === 'vi' ? 'Về Sàn Đồ Cũ' : 'Marketplace'}</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowUserDropdown(false);
+                      onLogout?.();
+                    }}
+                    className="w-full text-left px-3 py-2 hover:bg-rose-50 rounded-xl text-rose-600 flex items-center gap-2 cursor-pointer font-bold transition"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>{lang === 'vi' ? 'Đăng Xuất' : 'Log Out'}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      </header>
 
       {/* 2. BODY CONTAINER: SIDEBAR + MAIN WORKSPACE */}
       <div className="flex-1 flex relative">
         {/* LEFT SIDEBAR */}
         <aside
-          className={`bg-[#fce5da] text-[#24263e] border-r border-[#24263e]/15 transition-all duration-300 flex flex-col shrink-0 select-none z-30 sticky top-28 h-[calc(100vh-7rem)] ${isSidebarCollapsed ? 'w-16' : 'w-60 sm:w-64'
-            } ${isMobileSidebarOpen ? 'fixed inset-y-28 left-0 shadow-2xl block' : 'hidden md:flex'}`}
+          style={{ width: isSidebarCollapsed ? 64 : sidebarWidth }}
+          className={`bg-[#fce5da] text-[#24263e] border-r border-[#24263e]/15 max-w-[85vw] flex-col shrink-0 select-none z-30 top-13 sm:top-14 h-[calc(100vh-3.25rem)] sm:h-[calc(100vh-3.5rem)] md:sticky md:flex ${
+            isMobileSidebarOpen ? 'fixed left-0 flex shadow-2xl md:shadow-none' : 'hidden'
+          }`}
         >
           {/* User Block */}
-          <div className="p-3.5 sm:p-4 border-b border-[#24263e]/15 flex items-center gap-3">
+          <div
+            onClick={() => onOpenProfile?.()}
+            className={`p-3.5 sm:p-4 border-b border-[#24263e]/15 flex items-center gap-3 cursor-pointer hover:bg-black/5 transition ${isSidebarCollapsed ? '' : 'md:pr-11'}`}
+            title={lang === 'vi' ? 'Xem hồ sơ cá nhân' : 'View profile'}
+          >
             <div className="relative shrink-0">
               <UserAvatar
                 src={currentUser?.avatar}
@@ -656,6 +752,14 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
               </div>
             )}
           </div>
+
+          <ResizableSidebarControls
+            width={sidebarWidth}
+            collapsed={isSidebarCollapsed}
+            onResize={setSidebarWidth}
+            onToggle={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
+            lang={lang}
+          />
 
           {/* Section Label */}
           <div className="px-4 pt-3.5 pb-1.5 text-[10px] font-black text-[#24263e]/80 uppercase tracking-wider">
@@ -746,7 +850,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
               </button>
               <ChevronRight className="w-3 h-3 text-slate-400" />
               <span className="font-semibold text-slate-800 capitalize">
-                {activeTab === 'overview' ? 'Dashboard' : activeTab}
+                {activeTab === 'overview' ? 'Dashboard' : navItems.find((n) => n.id === activeTab)?.label || activeTab}
               </span>
             </div>
           </div>

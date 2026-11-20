@@ -2644,7 +2644,8 @@ export default function App() {
       {/* Navigation */}
       {activeTab !== 'admin-dashboard' &&
         activeTab !== 'inspection-center' &&
-        activeTab !== 'inspection-hub' && (
+        activeTab !== 'inspection-hub' &&
+        activeTab !== 'staff-workspace' && (
           <Navbar
             currentRole={currentRole}
             onRoleChange={handleRoleChange}

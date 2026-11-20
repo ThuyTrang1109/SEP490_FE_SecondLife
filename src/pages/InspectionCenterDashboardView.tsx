@@ -50,7 +50,6 @@ interface InspectionCenterDashboardViewProps {
   currentUser?: UserProfile | null;
   lang?: Language;
   onNavigate?: (tab: string) => void;
-  onOpenProfile?: () => void;
   onLogout?: () => void;
   onViewWebsite?: () => void;
 }
@@ -59,7 +58,6 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
   initialOrders = [],
   currentUser,
   lang = 'vi',
-  onOpenProfile,
   onLogout,
 }) => {
   // --- Active Sub-Tab (Khôi phục từ URL param ?subtab= hoặc sessionStorage khi F5) ---
@@ -219,7 +217,6 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
         isLoadingOrders={isLoadingOrders}
         lang={lang}
         onLogout={onLogout}
-        onOpenProfile={onOpenProfile}
         setActionNotice={setActionNotice}
         setActiveTab={setActiveTab}
         stats={stats}

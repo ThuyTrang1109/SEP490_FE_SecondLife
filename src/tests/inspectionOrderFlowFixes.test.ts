@@ -371,26 +371,12 @@ test('Inspection Order Flow and Address Resolution Fixes', async (t) => {
     assert.equal(resEn.badge, 'Fee Pending');
   });
 
-  await t.test('9. SHIPPING_TO_CENTER: Seller card actions never show "Đã Đóng Gói • Chờ Tài Xế Lấy" or "Theo Dõi Lalamove" in footer', () => {
-    // Logic replicate from OrderCardActions
-    const checkSellerCardFooter = (ord: any) => {
-      const rawStatus = String(ord.backendStatus || ord.inspectionStatus || ord.status || '').toUpperCase();
-      const isPendingApprovalOrFeeInAction = ['WAITING_SELLER_APPROVAL', 'WAITING_BUYER_APPROVAL', 'WAITING_FEE_PAYMENT', 'PENDING'].includes(rawStatus);
-      const isAtHome = ord.inspectionMethod === 'AT_HOME';
-      const hasInspection = Boolean(ord.hasInspectionService || ord.inspectionMethod);
-      const isOrderPacked = true;
-
-      // Phase 3: Packed & Waiting for Driver
-      const showPackedWaitingDriver = !isPendingApprovalOrFeeInAction &&
-        !hasInspection &&
-        !isAtHome &&
-        isOrderPacked;
-
-      // Phase 4: In Transit
-      const showInTransitDirect = !isPendingApprovalOrFeeInAction &&
-        !hasInspection &&
-        !isAtHome &&
-        Boolean(ord.carrierPickedUpAt || ord.backendStatus === 'SHIPPED');
+  await t.test('9. Card & Modal Footer: Never shows redundant "Đã Đóng Gói • Chờ Tài Xế Lấy" or "Theo Dõi Lalamove" in card/modal footer for direct or hub orders', () => {
+    // Logic replicate from OrderCardActions: Direct orders no longer render Phase 3 or Phase 4 in footer
+    const checkSellerCardFooter = (_ord: any) => {
+      // Phase 3 & 4 removed from footer for direct orders (top status badge & detail modal handle it)
+      const showPackedWaitingDriver = false;
+      const showInTransitDirect = false;
 
       return { showPackedWaitingDriver, showInTransitDirect };
     };
@@ -409,7 +395,7 @@ test('Inspection Order Flow and Address Resolution Fixes', async (t) => {
     assert.equal(footerHub.showPackedWaitingDriver, false, 'Hub order in transit must NOT show "Đã Đóng Gói • Chờ Tài Xế Lấy"');
     assert.equal(footerHub.showInTransitDirect, false, 'Hub order in transit must NOT show Phase 4 direct badge');
 
-    // Direct order (without inspection) DOES show Phase 3 when packed
+    // Direct order (without inspection) also does NOT show Phase 3 or 4 badges in card footer
     const directOrder = {
       id: 'direct-order-1',
       backendStatus: 'PROCESSING',
@@ -418,7 +404,7 @@ test('Inspection Order Flow and Address Resolution Fixes', async (t) => {
       sellerConfirmedAt: '2026-11-17T07:30:00Z',
     };
     const footerDirect = checkSellerCardFooter(directOrder);
-    assert.equal(footerDirect.showPackedWaitingDriver, true, 'Direct order must show "Đã Đóng Gói • Chờ Tài Xế Lấy"');
+    assert.equal(footerDirect.showPackedWaitingDriver, false, 'Direct order must NOT show redundant "Đã Đóng Gói • Chờ Tài Xế Lấy" on card footer');
   });
 
   await t.test('10. INSPECTING status: Hides all "ĐÃ ĐẾN HUB KIỂM ĐỊNH" badges on Decision View and unifies Stage 2 label', () => {

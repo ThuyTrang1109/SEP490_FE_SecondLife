@@ -260,13 +260,17 @@ export function canBookCenterBuyerDelivery(
     canBookHubBuyerDelivery(shipment);
 }
 
-export function isHubReturnCase(order?: Pick<InspectionOrderDto, 'orderType' | 'status'> | null) {
-  return order?.orderType === 'AT_CENTER' && ['FAILED', 'CANCELLED'].includes(order.status);
+export function isHubReturnCase(order?: Pick<InspectionOrderDto, 'orderType' | 'status' | 'inspectionScope'> | null) {
+  if (order?.orderType !== 'AT_CENTER') return false;
+  if (['FAILED', 'CANCELLED'].includes(order.status)) return true;
+  if (order.inspectionScope === 'PRE_LISTING' && order.status === 'COMPLETED') return true;
+  return false;
 }
 
 export function isCenterReturnEligible(order: InspectionOrderDto, centerId?: string, role?: string) {
+  const isPreListingCompleted = order.inspectionScope === 'PRE_LISTING' && order.status === 'COMPLETED';
   return role?.toLowerCase() === 'inspection_center' && Boolean(centerId && centerId === order.inspectionCenterId) &&
-    isHubReturnCase(order) && Boolean(order.feeSettledAt) && order.returnShippingReserveFee != null &&
+    isHubReturnCase(order) && (Boolean(order.feeSettledAt) || isPreListingCompleted) && order.returnShippingReserveFee != null &&
     order.finalPaymentPaidAt == null;
 }
 
@@ -295,8 +299,9 @@ export function canBookCenterReturn(
   role: string | undefined,
   state: ReturnType<typeof getHubReturnState> | undefined,
 ) {
+  const isPreListingCompleted = order.inspectionScope === 'PRE_LISTING' && order.status === 'COMPLETED';
   return isCenterReturnEligible(order, centerId, role) &&
-    (order.status === 'FAILED' || getInspectionPurchaseDecision(null, order) === 'rejected') &&
+    (order.status === 'FAILED' || isPreListingCompleted || getInspectionPurchaseDecision(null, order) === 'rejected') &&
     state?.received === true && canBookHubBuyerDelivery(state.shipment);
 }
 

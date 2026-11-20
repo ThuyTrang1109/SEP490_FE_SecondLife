@@ -42,7 +42,7 @@ export function OrderDetailProduct({
                 </div>
               </div>
               {cancelInfo.code && (
-                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-lg bg-rose-100 text-rose-800 border border-rose-200">
+                <span className="text-[11px] font-sans font-medium px-2 py-0.5 rounded-lg bg-rose-100 text-rose-800 border border-rose-200">
                   {cancelInfo.code}
                 </span>
               )}

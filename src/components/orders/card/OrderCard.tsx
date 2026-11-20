@@ -1,6 +1,6 @@
 import type { OrderAppointment } from '../../../utils/orders/orderAppointments';
 import type { BuyerInspectionStage, OrderCheck } from '../../../types/orders/orderTypes';
-import { Clock } from 'lucide-react';
+import { AlertTriangle, Clock } from 'lucide-react';
 import type { EscrowOrder, Language, ShipmentBackend } from '../../../types';
 import type { ReactNode } from 'react';
 import { formatVND } from '../../../utils/translations';
@@ -97,7 +97,9 @@ export function OrderCard({
                 ? (lang === 'vi'
                   ? (payoutData?.source === 'settlement' ? 'Thực nhận về ví:' : `Dự kiến thực nhận (phí sàn${payoutData?.ratePercent != null ? ` ${payoutData.ratePercent}%` : ''}):`)
                   : (payoutData?.source === 'settlement' ? 'Net payout:' : `Estimated payout (platform fee${payoutData?.ratePercent != null ? ` ${payoutData.ratePercent}%` : ''}):`))
-                : (lang === 'vi' ? 'Thành tiền (đã bao gồm phí kiểm định & bảo lãnh):' : 'Total (incl. inspection & escrow guarantee):')}
+                : (hasInspection
+                  ? (lang === 'vi' ? 'Thành tiền (đã bao gồm phí kiểm định & bảo lãnh):' : 'Total (incl. inspection & escrow guarantee):')
+                  : (lang === 'vi' ? 'Thành tiền (đã bao gồm cước vận chuyển & bảo lãnh Escrow):' : 'Total (incl. shipping & escrow guarantee):'))}
             </span>
             <span className={`text-base sm:text-lg font-black ${orderIsSeller ? 'text-emerald-600' : 'text-[#24263e]'}`}>
               {orderIsSeller
@@ -116,20 +118,51 @@ export function OrderCard({
           buyerInspectionStage={buyerInspectionStage}
         />
       </div>
-      {/* 48h Auto-release notice banner on the order card */}
-      {!buyerInspectionStage && ord.shippingDeliveredAt && !isOrderReceiptConfirmed(ord) && ord.escrowStatus !== 'COMPLETED_RELEASED' && (ord.escrowStatus as any) !== 'RELEASED' && (ord as any).backendStatus !== 'COMPLETED' && ord.escrowStatus !== 'DISPUTED' && (
-        <div className="mt-3 mx-4 sm:mx-6 mb-3 p-3 rounded-xl bg-amber-50/90 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5">
-          <Clock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-          <div>
-            <span className="font-bold">
-              Đã giao thành công lúc {new Date(ord.shippingDeliveredAt).toLocaleString('vi-VN')}
-            </span>
-            <p className="text-[11px] text-amber-800 mt-0.5">
-              Hệ thống sẽ <strong>tự động giải ngân</strong> cho người bán sau 48 giờ kể từ khi giao thành công. Người mua có thể nhấn <strong>"Đã Nhận Hàng"</strong> để giải ngân ngay lập tức, hoặc gửi khiếu nại nếu sản phẩm có sai sót.
-            </p>
-          </div>
-        </div>
-      )}
+      {(() => {
+        const isDisputed = Boolean(
+          ord.escrowStatus === 'DISPUTED' ||
+          (ord.escrowStatus as any) === 'FROZEN' ||
+          ord.backendEscrowStatus === 'FROZEN' ||
+          (ord as any).status === 'DISPUTED' ||
+          (ord as any).backendStatus === 'DISPUTED' ||
+          (typeof window !== 'undefined' && ord.id && localStorage.getItem(`order_disputed_${ord.id}`) === 'true')
+        );
+
+        if (isDisputed) {
+          return (
+            <div className="mt-3 mx-4 sm:mx-6 mb-3 p-3 rounded-xl bg-amber-50/90 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5 animate-fadeIn">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold">
+                  Quỹ Escrow đang tạm đóng băng do khiếu nại / tranh chấp
+                </span>
+                <p className="text-[11px] text-amber-800 mt-0.5">
+                  Quy trình tự động đối soát và giải ngân 48h đã được tạm dừng. Ban quản trị SecondLife đang tiếp nhận và xem xét chứng cứ để phân định quyền lợi cho các bên.
+                </p>
+              </div>
+            </div>
+          );
+        }
+
+        {/* 48h Auto-release notice banner on the order card */}
+        if (!buyerInspectionStage && ord.shippingDeliveredAt && !isOrderReceiptConfirmed(ord) && ord.escrowStatus !== 'COMPLETED_RELEASED' && (ord.escrowStatus as any) !== 'RELEASED' && (ord as any).backendStatus !== 'COMPLETED') {
+          return (
+            <div className="mt-3 mx-4 sm:mx-6 mb-3 p-3 rounded-xl bg-amber-50/90 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5">
+              <Clock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold">
+                  Đã giao thành công lúc {new Date(ord.shippingDeliveredAt).toLocaleString('vi-VN')}
+                </span>
+                <p className="text-[11px] text-amber-800 mt-0.5">
+                  Hệ thống sẽ <strong>tự động giải ngân</strong> cho người bán sau 48 giờ kể từ khi giao thành công. Người mua có thể nhấn <strong>"Đã Nhận Hàng"</strong> để giải ngân ngay lập tức, hoặc gửi khiếu nại nếu sản phẩm có sai sót.
+                </p>
+              </div>
+            </div>
+          );
+        }
+
+        return null;
+      })()}
     </div>
   );
 }

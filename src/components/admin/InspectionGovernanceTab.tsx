@@ -58,7 +58,7 @@ interface InspectionGovernanceTabProps {
 }
 
 export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = ({ currentUser }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'checklist_proposals' | 'proposals' | 'travel_tiers' | 'return_shipping_policy'>('checklist_proposals');
+  const [activeSubTab, setActiveSubTab] = useState<'checklist_proposals' | 'proposals' | 'travel_tiers' | 'return_shipping_policy' | 'high_value_policy'>('checklist_proposals');
 
   // Return Shipping Reserve Policy state
   const [policyMarkupPercentage, setPolicyMarkupPercentage] = useState<number>(20);
@@ -67,6 +67,15 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
   const [isLoadingPolicy, setIsLoadingPolicy] = useState<boolean>(false);
   const [isSavingPolicy, setIsSavingPolicy] = useState<boolean>(false);
   const [policyValidationError, setPolicyValidationError] = useState<string | null>(null);
+
+  // High Value Policy state (Ngưỡng giá bắt buộc kiểm định trước khi đăng)
+  const [thresholdPrice, setThresholdPrice] = useState<number>(10000000);
+  const [inputThresholdPrice, setInputThresholdPrice] = useState<string>('10000000');
+  const [isEditingThreshold, setIsEditingThreshold] = useState<boolean>(false);
+  const [isLoadingThreshold, setIsLoadingThreshold] = useState<boolean>(false);
+  const [isSavingThreshold, setIsSavingThreshold] = useState<boolean>(false);
+  const [thresholdValidationError, setThresholdValidationError] = useState<string | null>(null);
+  const [thresholdVersion, setThresholdVersion] = useState<number>(1);
 
   // Checklist Proposals state (Item + Level L1-L4 + Search + Pricing)
   const [checklistProposals, setChecklistProposals] = useState<InspectionChecklistResponse[]>([]);
@@ -108,6 +117,23 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
         .finally(() => {
           setIsLoadingPolicy(false);
         });
+    } else if (activeSubTab === 'high_value_policy') {
+      setIsEditingThreshold(false);
+      setThresholdValidationError(null);
+      setIsLoadingThreshold(true);
+      inspectorService.getAdminHighValueInspectionPolicy()
+        .then((res) => {
+          const val = typeof res?.thresholdPrice === 'number' && res.thresholdPrice > 0 ? res.thresholdPrice : 10000000;
+          setThresholdPrice(val);
+          setInputThresholdPrice(String(val));
+          if (res?.version) setThresholdVersion(res.version);
+        })
+        .catch((err) => {
+          console.warn('Failed to load high value inspection policy:', err);
+        })
+        .finally(() => {
+          setIsLoadingThreshold(false);
+        });
     }
   }, [activeSubTab]);
 
@@ -144,6 +170,37 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
     }
   };
 
+  const handleSaveThreshold = async () => {
+    setThresholdValidationError(null);
+    const trimmed = inputThresholdPrice.trim().replace(/\D/g, '');
+    const num = parseInt(trimmed, 10);
+    if (isNaN(num) || num <= 0) {
+      setThresholdValidationError('Ngưỡng giá bắt buộc kiểm định phải là số tiền VND lớn hơn 0.');
+      return;
+    }
+
+    setIsSavingThreshold(true);
+    try {
+      const res = await inspectorService.updateAdminHighValueInspectionPolicy(num);
+      const updatedVal = typeof res?.thresholdPrice === 'number' ? res.thresholdPrice : num;
+      setThresholdPrice(updatedVal);
+      setInputThresholdPrice(String(updatedVal));
+      if (res?.version) setThresholdVersion(res.version);
+      setIsEditingThreshold(false);
+      setFeedback({
+        type: 'success',
+        message: `Đã lưu thành công ngưỡng giá bắt buộc kiểm định: ${formatVND(updatedVal)}. Sản phẩm có giá cao hơn ngưỡng này phải kiểm định trước khi đăng.`
+      });
+    } catch (err: any) {
+      setFeedback({
+        type: 'error',
+        message: err?.message || 'Không thể lưu ngưỡng giá kiểm định.'
+      });
+    } finally {
+      setIsSavingThreshold(false);
+    }
+  };
+
   // Selected Checklist Proposal for Detail Modal
   const [viewingChecklistProposal, setViewingChecklistProposal] = useState<InspectionChecklistResponse | null>(null);
 
@@ -157,6 +214,20 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
 
   // Permissions
   const hasFeeManagePermission = canManageInspectionFee(currentUser);
+  const hasAdminConfigPermission = useMemo(() => {
+    if (!currentUser) return false;
+    const role = (currentUser.role || '').toUpperCase();
+    if (role === 'ADMIN') {
+      const authorities: string[] = Array.isArray(currentUser.authorities)
+        ? currentUser.authorities.map((a: any) => (typeof a === 'string' ? a : a.authority || ''))
+        : Array.isArray(currentUser.permissions)
+          ? currentUser.permissions
+          : [];
+      if (authorities.length === 0) return true;
+      return authorities.includes('ADMIN_CONFIG_MANAGE') || authorities.includes('ROLE_ADMIN');
+    }
+    return false;
+  }, [currentUser]);
 
   // Proposals state
   const [proposals, setProposals] = useState<InspectionFeeProposalResponse[]>([]);
@@ -710,8 +781,8 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
         </div>
       </div>
 
-      {/* Balanced 4-Column Navigation Tab Bar */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 bg-slate-100/90 p-1.5 rounded-2xl border border-slate-200/60">
+      {/* Balanced 5-Column Navigation Tab Bar */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 bg-slate-100/90 p-1.5 rounded-2xl border border-slate-200/60">
         <button
           type="button"
           onClick={() => setActiveSubTab('checklist_proposals')}
@@ -769,10 +840,26 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
             }`}
         >
           <RotateCcw className="w-4 h-4 text-purple-600 shrink-0" />
-          <span className="truncate">Dự Phòng Cước Trả Hàng</span>
+          <span className="truncate">Dự Phòng Trả Hàng</span>
           <span className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ${activeSubTab === 'return_shipping_policy' ? 'bg-purple-100 text-purple-800' : 'bg-slate-200 text-slate-600'
             }`}>
             {policyMarkupPercentage}%
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('high_value_policy')}
+          className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${activeSubTab === 'high_value_policy'
+            ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
+            : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+            }`}
+        >
+          <ShieldCheck className="w-4 h-4 text-cyan-600 shrink-0" />
+          <span className="truncate">Ngưỡng Giá Bắt Buộc</span>
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ${activeSubTab === 'high_value_policy' ? 'bg-cyan-100 text-cyan-800' : 'bg-slate-200 text-slate-600'
+            }`}>
+            {formatVND(thresholdPrice)}
           </span>
         </button>
       </div>
@@ -1988,6 +2075,228 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
               <p className="text-[10px] text-slate-500 italic leading-relaxed">
                 ↳ Khoản dự phòng 36.000đ sẽ được hoàn lại ví nếu người mua mua tiếp sau kiểm định ĐẠT, hoặc hoàn phần dư sau khi đối soát cước trả hàng thực tế.
               </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===================================================================== */}
+      {/* TAB 5: NGƯỠNG GIÁ BẮT BUỘC KIỂM ĐỊNH (HIGH VALUE POLICY)              */}
+      {/* ===================================================================== */}
+      {activeSubTab === 'high_value_policy' && (
+        <div className="space-y-5 animate-fadeIn">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-100">
+            <div>
+              <h3 className="text-sm sm:text-base font-black text-slate-900 tracking-tight flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-cyan-600" />
+                <span>Cấu Hình Ngưỡng Giá Bắt Buộc Kiểm Định Trước Khi Đăng</span>
+              </h3>
+              <p className="text-xs text-slate-500 font-medium">
+                Sản phẩm có giá cao hơn ngưỡng này phải kiểm định trước khi đăng.
+              </p>
+            </div>
+
+            {hasAdminConfigPermission && (
+              <div className="flex items-center gap-2 shrink-0">
+                {isEditingThreshold ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsEditingThreshold(false);
+                        setInputThresholdPrice(String(thresholdPrice));
+                        setThresholdValidationError(null);
+                      }}
+                      disabled={isSavingThreshold}
+                      className="px-3.5 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-bold transition cursor-pointer"
+                    >
+                      Hủy Bỏ
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveThreshold}
+                      disabled={isSavingThreshold || isLoadingThreshold}
+                      className="px-4 py-1.5 rounded-xl bg-cyan-700 hover:bg-cyan-800 text-white text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-2xs disabled:opacity-50"
+                    >
+                      {isSavingThreshold ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Đang lưu...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Save className="w-3.5 h-3.5" />
+                          <span>Lưu Cấu Hình</span>
+                        </>
+                      )}
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsEditingThreshold(true);
+                      setInputThresholdPrice(String(thresholdPrice));
+                      setThresholdValidationError(null);
+                    }}
+                    disabled={isLoadingThreshold}
+                    className="px-4 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                  >
+                    <Edit2 className="w-4 h-4" />
+                    <span>Chỉnh Sửa</span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+            {/* Form cấu hình ngưỡng giá */}
+            <div className="lg:col-span-2 bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <span className="text-xs font-bold text-slate-700">Ngưỡng giá hiện hành:</span>
+                <div className="text-right">
+                  <span className="text-xl font-black text-cyan-800 bg-cyan-50 px-3 py-1 rounded-xl border border-cyan-200">
+                    {isLoadingThreshold ? '...' : formatVND(thresholdPrice)}
+                  </span>
+                  {thresholdVersion && (
+                    <span className="text-[10px] text-slate-400 block mt-1">Phiên bản chính sách: v{thresholdVersion}</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-800 block">
+                    {isEditingThreshold ? 'Cập nhật ngưỡng giá bắt buộc kiểm định (VND):' : 'Ngưỡng giá kiểm định bắt buộc (VND):'}
+                  </label>
+                  {!isEditingThreshold && hasAdminConfigPermission && (
+                    <span className="text-[11px] font-semibold text-slate-400">
+                      (Chế độ chỉ xem — bấm Chỉnh Sửa để thay đổi)
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div className="relative flex-1">
+                    <input
+                      type="number"
+                      min={1000}
+                      step={100000}
+                      disabled={!isEditingThreshold || !hasAdminConfigPermission || isSavingThreshold || isLoadingThreshold}
+                      value={isEditingThreshold ? inputThresholdPrice : thresholdPrice}
+                      onChange={(e) => {
+                        setInputThresholdPrice(e.target.value);
+                        if (thresholdValidationError) setThresholdValidationError(null);
+                      }}
+                      placeholder="Ví dụ: 10000000..."
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-300 text-sm font-bold text-slate-900 focus:border-cyan-600 focus:ring-2 focus:ring-cyan-600/15 outline-none transition disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
+                    />
+                    <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
+                      VND
+                    </span>
+                  </div>
+
+                  {!isEditingThreshold ? (
+                    hasAdminConfigPermission && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsEditingThreshold(true);
+                          setInputThresholdPrice(String(thresholdPrice));
+                          setThresholdValidationError(null);
+                        }}
+                        disabled={isLoadingThreshold}
+                        className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-xs disabled:opacity-50 shrink-0"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                        <span>Chỉnh Sửa</span>
+                      </button>
+                    )
+                  ) : (
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsEditingThreshold(false);
+                          setInputThresholdPrice(String(thresholdPrice));
+                          setThresholdValidationError(null);
+                        }}
+                        disabled={isSavingThreshold}
+                        className="px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-bold transition cursor-pointer"
+                      >
+                        Hủy
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSaveThreshold}
+                        disabled={isSavingThreshold || isLoadingThreshold}
+                        className="px-5 py-2.5 rounded-xl bg-cyan-700 hover:bg-cyan-800 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
+                      >
+                        {isSavingThreshold ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <span>Đang lưu...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Save className="w-4 h-4" />
+                            <span>Lưu Ngưỡng Giá</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {isEditingThreshold && inputThresholdPrice && !isNaN(Number(inputThresholdPrice)) && (
+                  <p className="text-[11px] text-cyan-800 font-medium italic">
+                    Hiển thị tiền tệ: <strong>{formatVND(Number(inputThresholdPrice))}</strong>
+                  </p>
+                )}
+
+                {thresholdValidationError && (
+                  <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-bold flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                    <span>{thresholdValidationError}</span>
+                  </div>
+                )}
+
+                <div className="p-3.5 bg-cyan-50/70 border border-cyan-200/80 rounded-2xl text-xs text-cyan-950 space-y-1">
+                  <span className="font-bold block">Quy tắc áp dụng chính sách giá trị cao:</span>
+                  <p>
+                    Sản phẩm có giá cao hơn ngưỡng này phải kiểm định trước khi đăng.
+                    Khi người bán gửi bài đăng (POST /submit/{'{postId}'}), hệ thống sẽ tự động chuyển sang trạng thái chờ kiểm định (PENDING_INSPECTION).
+                  </p>
+                </div>
+              </div>
+
+              {!hasAdminConfigPermission && (
+                <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-800 text-xs flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
+                  <span>Chỉ tài khoản Quản trị viên có quyền <code className="font-mono font-bold">ADMIN_CONFIG_MANAGE</code> mới được thay đổi ngưỡng giá.</span>
+                </div>
+              )}
+            </div>
+
+            {/* Hướng dẫn & Lưu ý chính sách */}
+            <div className="bg-slate-50/80 rounded-3xl p-6 border border-slate-200/80 space-y-3 text-xs">
+              <span className="font-bold text-slate-900 block text-sm">
+                Lưu ý quản trị & Quyền hạn
+              </span>
+              <p className="text-slate-600 leading-relaxed">
+                Ngưỡng giá này áp dụng ngay lập tức cho tất cả các bài đăng mới được gửi duyệt sau thời điểm lưu.
+              </p>
+              <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-1.5">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-slate-500">Quyền yêu cầu:</span>
+                  <span className="font-mono font-bold text-slate-800">ADMIN_CONFIG_MANAGE</span>
+                </div>
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-slate-500">Đối tượng chịu phí:</span>
+                  <span className="font-bold text-slate-800">Người bán (100%)</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>

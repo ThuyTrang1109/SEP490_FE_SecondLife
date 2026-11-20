@@ -331,9 +331,40 @@ export interface ProposeTravelTiersRequest {
   tiers: InspectionTravelTierDto[];
 }
 
+export interface HighValueInspectionPolicyResponse {
+  thresholdPrice: number;
+  currency: string;
+  version: number;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+export interface HighValueInspectionPolicyRequest {
+  thresholdPrice: number;
+}
+
+export interface PreListingInspectionQuoteRequest {
+  orderType: 'AT_HOME' | 'AT_CENTER';
+  inspectionCenterId?: string | null;
+}
+
+export interface PreListingInspectionQuoteResponse {
+  quoteId: string;
+  expiresAt: string;
+  orderType: 'AT_HOME' | 'AT_CENTER';
+  quote: InspectionQuoteResponse;
+}
+
+export interface PreListingInspectionConfirmRequest {
+  quoteId: string;
+  sellerConsentZin: boolean;
+}
+
 export interface InspectionOrderDto {
   id: string;
   postId: string;
+  preListingQuoteId?: string | null;
+  inspectionScope?: 'TRANSACTION' | 'PRE_LISTING' | string;
   inspectionCenterId?: string | null;
   inspectionCenterName?: string | null;
   postTitle?: string;
@@ -399,6 +430,7 @@ export interface InspectionOrderDto {
   counterShift?: 'MORNING' | 'AFTERNOON';
   counterNote?: string;
   appointmentRejectionReason?: string;
+  homeCheckedInAt?: string | null;
   checklistResultJson?: string;
   videoProofUrl?: string;
   unboxingVideoUrl?: string;
@@ -736,10 +768,13 @@ export const inspectorService = {
 
   /**
    * Buyer hoặc Seller nộp phí kiểm định từ Ví vào Escrow.
-   * Hạn đóng phí thực tế do Backend trả về qua paymentDeadline (BE cấp 12h cho đơn mới chuyển sang WAITING_FEE_PAYMENT, đơn cũ trong DB có thể mang hạn 6h).
+   * Hỗ trợ nộp phí cho đơn thông thường hoặc đơn kiểm định trước khi đăng (Pre-Listing) kèm preListingQuoteId.
    */
-  async payInspectionFee(orderId: string): Promise<InspectionOrderDto> {
-    const res = await request<InspectionOrderDto>(`/inspection/orders/${orderId}/pay-fee`, {
+  async payInspectionFee(orderId: string, preListingQuoteId?: string): Promise<InspectionOrderDto> {
+    const url = preListingQuoteId
+      ? `/inspection/orders/${orderId}/pay-fee?preListingQuoteId=${encodeURIComponent(preListingQuoteId)}`
+      : `/inspection/orders/${orderId}/pay-fee`;
+    const res = await request<InspectionOrderDto>(url, {
       method: 'POST',
       requiresAuth: true,
     });
@@ -1692,6 +1727,86 @@ export const inspectorService = {
     });
     const data = (res as any)?.data ?? res;
     return data as ReturnShippingPolicyResponse;
+  },
+
+  /**
+   * Lấy cấu hình ngưỡng giá bắt buộc kiểm định trước khi đăng (Public/Seller)
+   * GET /api/v1/inspection/high-value-policy
+   */
+  async getHighValueInspectionPolicy(): Promise<HighValueInspectionPolicyResponse> {
+    const res = await request<HighValueInspectionPolicyResponse>('/inspection/high-value-policy', {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    const data = (res as any)?.data ?? res;
+    return data as HighValueInspectionPolicyResponse;
+  },
+
+  /**
+   * Lấy cấu hình ngưỡng giá bắt buộc kiểm định trước khi đăng (Admin)
+   * GET /api/v1/admin/inspection/high-value-policy
+   */
+  async getAdminHighValueInspectionPolicy(): Promise<HighValueInspectionPolicyResponse> {
+    const res = await request<HighValueInspectionPolicyResponse>('/admin/inspection/high-value-policy', {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    const data = (res as any)?.data ?? res;
+    return data as HighValueInspectionPolicyResponse;
+  },
+
+  /**
+   * Cập nhật ngưỡng giá bắt buộc kiểm định trước khi đăng (Admin)
+   * PUT /api/v1/admin/inspection/high-value-policy
+   */
+  async updateAdminHighValueInspectionPolicy(thresholdPrice: number): Promise<HighValueInspectionPolicyResponse> {
+    const res = await request<HighValueInspectionPolicyResponse>('/admin/inspection/high-value-policy', {
+      method: 'PUT',
+      body: JSON.stringify({ thresholdPrice }),
+      requiresAuth: true,
+    });
+    const data = (res as any)?.data ?? res;
+    return data as HighValueInspectionPolicyResponse;
+  },
+
+  /**
+   * Lấy báo giá kiểm định bắt buộc trước khi đăng (Pre-Listing Inspection Quote)
+   * POST /api/v1/inspection/posts/{postId}/pre-listing/quote
+   */
+  async getPreListingQuote(
+    postId: string,
+    payload: PreListingInspectionQuoteRequest
+  ): Promise<PreListingInspectionQuoteResponse> {
+    const res = await request<PreListingInspectionQuoteResponse>(
+      `/inspection/posts/${encodeURIComponent(postId)}/pre-listing/quote`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+        requiresAuth: true,
+      }
+    );
+    const data = (res as any)?.data ?? res;
+    return data as PreListingInspectionQuoteResponse;
+  },
+
+  /**
+   * Chốt báo giá kiểm định bắt buộc trước khi đăng (Pre-Listing Inspection Confirm)
+   * POST /api/v1/inspection/posts/{postId}/pre-listing/confirm
+   */
+  async confirmPreListingQuote(
+    postId: string,
+    payload: PreListingInspectionConfirmRequest
+  ): Promise<InspectionOrderDto> {
+    const res = await request<InspectionOrderDto>(
+      `/inspection/posts/${encodeURIComponent(postId)}/pre-listing/confirm`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+        requiresAuth: true,
+      }
+    );
+    const data = (res as any)?.data ?? res;
+    return data as InspectionOrderDto;
   },
 
   /**

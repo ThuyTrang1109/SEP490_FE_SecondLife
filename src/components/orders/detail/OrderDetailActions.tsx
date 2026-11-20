@@ -117,6 +117,14 @@ export function OrderDetailActions({
     String((detailModalOrder as any).inspectionStatus || '').toUpperCase() === 'DELIVERING_TO_BUYER' ||
     String((detailModalOrder as any).inspectionOrder?.status || '').toUpperCase() === 'DELIVERING_TO_BUYER'
   );
+  const isDisputed = Boolean(
+    detailModalOrder.escrowStatus === 'DISPUTED' ||
+    (detailModalOrder.escrowStatus as any) === 'FROZEN' ||
+    detailModalOrder.backendEscrowStatus === 'FROZEN' ||
+    (detailModalOrder as any).status === 'DISPUTED' ||
+    (detailModalOrder as any).backendStatus === 'DISPUTED' ||
+    (typeof window !== 'undefined' && detailModalOrder.id && localStorage.getItem(`order_disputed_${detailModalOrder.id}`) === 'true')
+  );
   const showInboundFooterStatus = detailInboundProgress?.step !== 3 || !detailHasHubBuyerShipment;
   const showInboundFooterTracking = (!detailHasInspection || (detailModalOrder.escrowStatus as string) === 'DELIVERING_TO_BUYER') &&
     (detailHasInboundTracking || isShipmentCreatedForOrder(detailModalOrder));
@@ -128,21 +136,28 @@ export function OrderDetailActions({
         detailModalOrder.inspectionStatus === 'FAILED' ||
         detailModalOrder.escrowStatus === 'INSPECTION_FAILED' ||
         (!isOrderCancelledOrRefunded(detailModalOrder) && (
-          isOrderSeller(detailModalOrder) ||
-          (!isOrderSeller(detailModalOrder) && (
-            detailModalOrder.escrowStatus === 'INSPECTION_PASSED' ||
-            (detailModalOrder as any).backendStatus === 'PASSED' ||
-            detailHasInspection ||
-            (detailModalOrder.inspectionMethod === 'AT_HOME' || (detailModalOrder as any).orderType === 'AT_HOME') ||
-            Boolean(
-              (detailModalOrder.carrierPickedUpAt ||
-                (detailModalOrder.backendStatus as any) === 'SHIPPED' ||
-                (detailModalOrder.backendStatus as any) === 'DELIVERED' ||
-                (detailModalOrder.escrowStatus as string) === 'SHIPPED_TO_BUYER' ||
-                (detailModalOrder.escrowStatus as string) === 'DELIVERED_INSPECTION_WINDOW') &&
-              !isOrderReceiptConfirmed(detailModalOrder)
-            )
-          ))
+          detailHasInspection ? (
+            isOrderSeller(detailModalOrder) ||
+            (!isOrderSeller(detailModalOrder) && (
+              detailModalOrder.escrowStatus === 'INSPECTION_PASSED' ||
+              (detailModalOrder as any).backendStatus === 'PASSED' ||
+              (detailModalOrder.inspectionMethod === 'AT_HOME' || (detailModalOrder as any).orderType === 'AT_HOME') ||
+              Boolean(
+                (detailModalOrder.carrierPickedUpAt ||
+                  (detailModalOrder.backendStatus as any) === 'SHIPPED' ||
+                  (detailModalOrder.backendStatus as any) === 'DELIVERED' ||
+                  (detailModalOrder.escrowStatus as string) === 'SHIPPED_TO_BUYER' ||
+                  (detailModalOrder.escrowStatus as string) === 'DELIVERED_INSPECTION_WINDOW') &&
+                !isOrderReceiptConfirmed(detailModalOrder)
+              )
+            ))
+          ) : (
+            // Đơn mua trực tiếp (không kiểm định): Chỉ hiện footer khi có hành động cần thực hiện
+            // Người bán: Chờ xác nhận đơn HOẶC đã xác nhận nhưng chưa tạo vận đơn / đóng gói
+            (isOrderSeller(detailModalOrder) && !isOrderReceiptConfirmed(detailModalOrder) && (!isOrderSellerConfirmed(detailModalOrder) || !isOrderPacked(detailModalOrder))) ||
+            // Người mua: Khi hàng đã giao đến người mua và có thể khiếu nại nếu có vấn đề
+            (!isOrderSeller(detailModalOrder) && !isOrderReceiptConfirmed(detailModalOrder) && isOrderDeliveredToBuyer(detailModalOrder))
+          )
         ))
       ) && (
           <div className="px-6 sm:px-7 py-3.5 sm:py-4 border-t border-gray-100 bg-slate-50/95 backdrop-blur-xs shrink-0 flex flex-wrap items-center justify-between gap-3 z-10">
@@ -150,29 +165,11 @@ export function OrderDetailActions({
               {renderInspectionDecision(detailModalOrder, () => setDetailModalOrder(null))}
               {!isOrderCancelledOrRefunded(detailModalOrder) &&
                 detailModalOrder.escrowStatus !== 'COMPLETED_RELEASED' &&
-                detailModalOrder.escrowStatus !== 'DISPUTED' && (
+                !isDisputed && (
                   <>
                     {/* Seller Action Buttons */}
                     {isOrderSeller(detailModalOrder) && (
-                      isOrderReceiptConfirmed(detailModalOrder) ? (
-                        detailHasInspection ? null : (
-                          <div className="flex flex-col sm:flex-row items-stretch gap-2 flex-1">
-                            <div className="py-2.5 px-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shrink-0">
-                              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                              <span>{lang === 'vi' ? 'Đã Nhận Tiền Vào Ví (Đã Giải Ngân)' : 'Funds Credited to Wallet'}</span>
-                            </div>
-                            {!detailHasInspection && (
-                              <button
-                                onClick={() => setTrackingOrder(detailModalOrder)}
-                                className="flex-1 py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
-                              >
-                                <Truck className="w-4 h-4 text-white" />
-                                <span>{lang === 'vi' ? 'Theo Dõi Vận Đơn Lalamove' : 'Lalamove Tracking'}</span>
-                              </button>
-                            )}
-                          </div>
-                        )
-                      ) : isOrderCancelledOrRefunded(detailModalOrder) ? (
+                      isOrderReceiptConfirmed(detailModalOrder) ? null : isOrderCancelledOrRefunded(detailModalOrder) ? (
                         <div className="py-2.5 px-4 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl font-bold text-xs flex items-center justify-center gap-2 flex-1">
                           <XCircle className="w-4 h-4 text-rose-600" />
                           <span>{lang === 'vi' ? 'Đơn Hàng Đã Bị Hủy • Dừng Mọi Thao Tác' : 'Order Cancelled'}</span>
@@ -484,22 +481,11 @@ export function OrderDetailActions({
                                 })()}
 
                                 {/* Nút Xem / In Mã QR Dán Sản Phẩm trong Modal Chi Tiết */}
-
-
-                                {!detailHasInspection && isShipmentCreatedForOrder(detailModalOrder) && (
-                                  <button
-                                    onClick={() => setTrackingOrder(detailModalOrder)}
-                                    className="py-2.5 px-4 bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 rounded-xl font-bold text-xs sm:text-sm shadow-xs transition flex items-center justify-center gap-2 cursor-pointer"
-                                  >
-                                    <Truck className="w-4 h-4 text-blue-600" />
-                                    <span>{lang === 'vi' ? 'Theo Dõi Lalamove' : 'Lalamove Tracking'}</span>
-                                  </button>
-                                )}
                               </div>
                             )}
 
-                          {/* GIAI ĐOẠN 3: Đã đóng gói • Chờ Shipper đến lấy (Kiểm định tại nhà quản lý theo dõi trong Bước 2) */}
-                          {!detailIsAtHome && (!detailHasInspection || detailHasInboundTracking) &&
+                          {/* GIAI ĐOẠN 3: Đã đóng gói • Chờ Shipper đến lấy (Kiểm định tại Hub) */}
+                          {!detailIsAtHome && detailHasInspection && detailHasInboundTracking &&
                             (detailHasInboundTracking || (isOrderPacked(detailModalOrder) &&
                               !isOrderReceiptConfirmed(detailModalOrder) &&
                               detailModalOrder.backendStatus !== 'COMPLETED' &&
@@ -548,8 +534,8 @@ export function OrderDetailActions({
                               </div>
                             )}
 
-                          {/* GIAI ĐOẠN 4: Đang giao hàng (Kiểm định tại nhà quản lý theo dõi trong Bước 2) */}
-                          {!detailIsAtHome && !detailHasInboundTracking && (detailModalOrder.carrierPickedUpAt ||
+                          {/* GIAI ĐOẠN 4: Đang giao hàng (Từ Hub đến Người Mua - Kiểm định) */}
+                          {!detailIsAtHome && detailHasInspection && !detailHasInboundTracking && (detailModalOrder.carrierPickedUpAt ||
                             detailModalOrder.backendStatus === 'SHIPPED' ||
                             detailModalOrder.backendStatus === 'DELIVERED' ||
                             (detailModalOrder.escrowStatus as string) === 'SHIPPED_TO_BUYER' ||
@@ -565,7 +551,7 @@ export function OrderDetailActions({
                                   </span>
                                 </span>
 
-                                {(!detailHasInspection || (detailModalOrder.escrowStatus as string) === 'DELIVERING_TO_BUYER') && (
+                                {(detailModalOrder.escrowStatus as string) === 'DELIVERING_TO_BUYER' && (
                                   <button
                                     onClick={() => setTrackingOrder(detailModalOrder)}
                                     className="flex-1 py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
@@ -688,11 +674,12 @@ export function OrderDetailActions({
 
 
 
-                    {/* Chỉ Người Mua (Buyer) mới có nút Khiếu Nại Trả Hàng khi đơn đã giao thành công và CHƯA xác nhận */}
+                    {/* Chỉ Người Mua (Buyer) mới có nút Khiếu Nại Trả Hàng khi đơn đã giao thành công và CHƯA xác nhận và KHÔNG đang khiếu nại */}
                     {!isOrderSeller(detailModalOrder) &&
                       !detailBuyerInspectionStage &&
                       !isOrderReceiptConfirmed(detailModalOrder) &&
-                      isOrderDeliveredToBuyer(detailModalOrder) && (
+                      isOrderDeliveredToBuyer(detailModalOrder) &&
+                      !isDisputed && (
                         <button
                           onClick={() => {
                             if (onOpenDispute) {
@@ -708,6 +695,13 @@ export function OrderDetailActions({
                           <span>{t.openDispute}</span>
                         </button>
                       )}
+
+                    {isDisputed && (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold whitespace-nowrap">
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                        <span>{lang === 'vi' ? 'Quỹ Escrow Tạm Đóng Băng Do Khiếu Nại' : 'Escrow Frozen Due to Dispute'}</span>
+                      </span>
+                    )}
                   </>
                 )}
             </div>

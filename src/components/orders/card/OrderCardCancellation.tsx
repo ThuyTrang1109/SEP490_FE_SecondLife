@@ -28,7 +28,7 @@ export function OrderCardCancellation({
                 <span>{lang === 'vi' ? 'Đơn Hàng Đã Bị Hủy & Hoàn Tiền' : 'Order Cancelled & Refunded'}</span>
               </div>
               {cancelInfo.code && (
-                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-rose-100 text-rose-800 border border-rose-200">
+                <span className="text-[11px] font-sans font-medium px-2 py-0.5 rounded-lg bg-rose-100 text-rose-800 border border-rose-200">
                   {cancelInfo.code}
                 </span>
               )}
@@ -38,7 +38,7 @@ export function OrderCardCancellation({
               {cancelInfo.reason}
             </p>
             <p className="text-[11px] text-rose-600 pl-6 italic">
-              {lang === 'vi' ? 'Toàn bộ tiền ký quỹ Escrow đã hoàn trả cho người mua. Vận chuyển Lalamove đã dừng.' : 'Escrow funds refunded. Carrier dispatch deactivated.'}
+              {lang === 'vi' ? 'Toàn bộ tiền ký quỹ Escrow đã hoàn trả cho người mua.' : 'Escrow funds refunded. Carrier dispatch deactivated.'}
             </p>
           </div>
         );

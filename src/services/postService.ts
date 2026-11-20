@@ -146,6 +146,10 @@ export interface PostSubmitResponse {
   message?: string;
   reviewReason?: string;
   duplicateMatches?: string[];
+  inspectionOrderId?: string | null;
+  inspectionThreshold?: number | null;
+  inspectionPolicyVersion?: number | null;
+  nextAction?: 'SELECT_INSPECTION_METHOD' | 'WAIT_FOR_LISTING_REVIEW' | 'PAY_INSPECTION_FEE' | 'TRACK_INSPECTION' | 'TRACK_INSPECTION_RETURN' | string | null;
 }
 
 const postDetailCache = new Map<string, { data: any; timestamp: number }>();

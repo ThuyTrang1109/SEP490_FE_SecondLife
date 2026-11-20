@@ -630,7 +630,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         : orderService.getOrderCommission(target.orderId).then(getCommissionPayout);
       void load.then((payout) => {
         if (active && payout) setPayoutDataMap((previous) => ({ ...previous, [target.rowId]: payout }));
-      }).catch(() => {});
+      }).catch(() => { });
     }
     return () => { active = false; };
   }, [sellerFinanceRequests, currentUser?.id]);
@@ -644,11 +644,14 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     detailModalOrder?.inspectionCenterId ||
     (detailModalOrder && detailModalOrder.inspectionFeeVnd > 0)
   );
+  const sellerPostId = detailModalOrder && currentUser?.id && detailModalOrder.sellerId === currentUser.id &&
+    !isOrderWithInspection(detailModalOrder) ? detailModalOrder.listingId : undefined;
   const {
     detailShipments, setDetailShipments, isLoadingDetailShipments,
     detailInspectionDto, setDetailInspectionDto,
     expandedDetailLeg1, setExpandedDetailLeg1, expandedDetailLeg2, setExpandedDetailLeg2,
-  } = useOrderDetailData(detailOrderId, detailIsInspection, setApptTick, detailLinkedOrderId);
+    sellerPostPhotos,
+  } = useOrderDetailData(detailOrderId, detailIsInspection, setApptTick, detailLinkedOrderId, sellerPostId);
   const [trackingShipmentId, setTrackingShipmentId] = useState<string | undefined>(undefined);
 
   // Lalamove Shipping Modals state
@@ -1322,7 +1325,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                   {inHubInspectionCount} {lang === 'vi' ? 'Thiết Bị' : 'Items'}
                 </div>
                 <div className="text-[10px] text-slate-400 mt-0.5">
-                  {lang === 'vi' ? 'Test 48 bước & dán NFC' : '48-step test & NFC seal'}
+                  {lang === 'vi' ? 'Kiểm tra sản phẩm' : 'Test products'}
                 </div>
               </div>
 
@@ -1748,6 +1751,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
           <OrderDetailPhotos
             order={detailModalOrder}
             detailInspectionDto={detailInspectionDto}
+            sellerPostPhotos={sellerPostPhotos}
             activePhotoStage={activePhotoStage}
             setActivePhotoStage={setActivePhotoStage}
             lang={lang}
@@ -1944,6 +1948,19 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                 : `Dispute filed successfully for order #${reportingOrder.id.slice(0, 8)}! Funds are frozen in Escrow.`
             );
             setTimeout(() => setInspectionActionNotice(null), 8000);
+            if (reportingOrder?.id) {
+              try {
+                localStorage.setItem(`order_disputed_${reportingOrder.id}`, 'true');
+              } catch { }
+            }
+            if (detailModalOrder && detailModalOrder.id === reportingOrder.id) {
+              setDetailModalOrder({
+                ...detailModalOrder,
+                escrowStatus: 'DISPUTED',
+                status: 'DISPUTED',
+                backendStatus: 'DISPUTED' as any,
+              });
+            }
             onRefreshOrders?.();
           }}
         />

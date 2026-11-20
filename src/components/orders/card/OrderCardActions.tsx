@@ -1,4 +1,4 @@
-import { Award, Calendar, Check, CheckCircle2, Clock, Eye, MessageSquare, PackageCheck, QrCode, Star, Truck, Wallet, Wrench, X, XCircle } from 'lucide-react';
+import { AlertTriangle, Award, Calendar, Check, CheckCircle2, Clock, Eye, MessageSquare, PackageCheck, QrCode, Star, Truck, Wallet, Wrench, X, XCircle } from 'lucide-react';
 import type { BuyerInspectionStage, CancelOrder, ConfirmDialogState, OrderCheck } from '../../../types/orders/orderTypes';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import type { EscrowOrder, Language, Listing } from '../../../types';
@@ -108,6 +108,14 @@ export function OrderCardActions({
     String((ord as any).status || '').toUpperCase() === 'DELIVERING_TO_BUYER' ||
     String((ord as any).inspectionStatus || '').toUpperCase() === 'DELIVERING_TO_BUYER' ||
     String((ord as any).inspectionOrder?.status || '').toUpperCase() === 'DELIVERING_TO_BUYER'
+  );
+  const isDisputed = Boolean(
+    ord.escrowStatus === 'DISPUTED' ||
+    (ord.escrowStatus as any) === 'FROZEN' ||
+    ord.backendEscrowStatus === 'FROZEN' ||
+    (ord as any).status === 'DISPUTED' ||
+    (ord as any).backendStatus === 'DISPUTED' ||
+    (typeof window !== 'undefined' && ord.id && localStorage.getItem(`order_disputed_${ord.id}`) === 'true')
   );
 
   return (
@@ -409,80 +417,6 @@ export function OrderCardActions({
                   </>
                 )}
 
-              {/* GIAI ĐOẠN 3: ĐÃ ĐÓNG GÓI • CHỜ SHIPPER ĐẾN LẤY (CHỈ DÀNH CHO ĐƠN TRỰC TIẾP KHÔNG KIỂM ĐỊNH) */}
-              {!isPendingApprovalOrFeeInAction &&
-                !hasInspection &&
-                !isAtHome &&
-                isOrderPacked(ord) &&
-                !isOrderReceiptConfirmed(ord) &&
-                ord.backendStatus !== 'COMPLETED' &&
-                !ord.shippingDeliveredAt &&
-                !ord.carrierPickedUpAt &&
-                ord.backendStatus !== 'SHIPPED' &&
-                ord.backendStatus !== 'DELIVERED' &&
-                (ord.escrowStatus as string) !== 'SHIPPED_TO_BUYER' &&
-                (ord.escrowStatus as string) !== 'DELIVERED_INSPECTION_WINDOW' &&
-                (ord.escrowStatus as string) !== 'COMPLETED_RELEASED' && (
-                  <>
-                    <span
-                      onClick={(e) => e.stopPropagation()}
-                      className="inline-flex items-center gap-1.5 text-xs font-bold text-teal-800 bg-teal-50 px-3 py-1.5 rounded-xl border border-teal-200 whitespace-nowrap shrink-0 shadow-xs cursor-default select-none pointer-events-none"
-                    >
-                      <PackageCheck className="w-4 h-4 text-teal-600" />
-                      <span>{lang === 'vi' ? 'Đã Đóng Gói • Chờ Tài Xế Lấy' : 'Packed • Waiting for Carrier'}</span>
-                    </span>
-                    {(hasActiveShipment || isOrderPacked(ord)) && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setTrackingOrder(ord);
-                        }}
-                        className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
-                      >
-                        <Truck className="w-3.5 h-3.5 text-white" />
-                        <span>{lang === 'vi' ? 'Theo Dõi Lalamove' : 'Lalamove Tracking'}</span>
-                      </button>
-                    )}
-                  </>
-                )}
-
-              {/* GIAI ĐOẠN 4: ĐANG GIAO HÀNG (Hoặc đã hoàn thành) (CHỈ DÀNH CHO ĐƠN TRỰC TIẾP KHÔNG KIỂM ĐỊNH) */}
-              {!isPendingApprovalOrFeeInAction &&
-                !hasInspection &&
-                !isAtHome &&
-                (ord.carrierPickedUpAt ||
-                  ord.backendStatus === 'SHIPPED' ||
-                  ord.backendStatus === 'DELIVERED' ||
-                  (ord.escrowStatus as string) === 'SHIPPED_TO_BUYER' ||
-                  (ord.escrowStatus as string) === 'DELIVERED_INSPECTION_WINDOW' ||
-                  (ord.escrowStatus as string) === 'COMPLETED_RELEASED') && (
-                  <>
-                    <span className="inline-flex items-center gap-1 text-xs font-bold text-blue-700 bg-blue-50 px-2.5 py-1.5 rounded-xl border border-blue-200 whitespace-nowrap shrink-0">
-                      <Truck className="w-3.5 h-3.5 text-blue-600" />
-                      <span>
-                        {ord.backendStatus === 'DELIVERED' || (ord.escrowStatus as string) === 'COMPLETED_RELEASED'
-                          ? (lang === 'vi' ? 'Đã Giao Thành Công' : 'Delivered')
-                          : (lang === 'vi' ? 'Đang Giao Hàng' : 'In Transit')}
-                      </span>
-                    </span>
-
-                    {(hasActiveShipment || isOrderPacked(ord)) && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setTrackingOrder(ord);
-                        }}
-                        className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
-                      >
-                        <Truck className="w-3.5 h-3.5 text-white" />
-                        <span>{lang === 'vi' ? 'Theo Dõi Lalamove' : 'Lalamove Tracking'}</span>
-                      </button>
-                    )}
-                  </>
-                )}
-
-
-
               {/* Completed: Escrow released notice */}
               {!hasInspection && ord.escrowStatus === 'COMPLETED_RELEASED' && (
                 <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-xl border border-emerald-200 whitespace-nowrap shrink-0">
@@ -564,8 +498,8 @@ export function OrderCardActions({
                 })()
               )}
 
-              {/* Buyer tracking is available outside the inspection and purchase-decision stages, or when inspection order is passed and shipment is created */}
-              {!isAtHome && (!hasInspection || ord.carrierPickedUpAt || (ord.escrowStatus as string) === 'DELIVERING_TO_BUYER' || (ord as any).backendStatus === 'SHIPPED') &&
+              {/* Buyer tracking on card is only for inspection orders (direct orders track inside detail modal) */}
+              {hasInspection && !isAtHome && (ord.carrierPickedUpAt || (ord.escrowStatus as string) === 'DELIVERING_TO_BUYER' || (ord as any).backendStatus === 'SHIPPED') &&
                 isOrderPacked(ord) && !buyerInspectionStage && !isOrderUnpaid(ord) && ord.escrowStatus !== 'CANCELLED' && ord.escrowStatus !== 'REFUNDED_TO_BUYER' && ord.backendStatus !== 'CANCELLED' && (
                   <button
                     onClick={(e) => {
@@ -705,8 +639,8 @@ export function OrderCardActions({
                 })()
               )}
 
-              {/* Nút Đã Nhận Hàng (Giải Ngân): Chỉ hiện khi đơn đã thực sự giao thành công đến Người mua và chưa xác nhận */}
-              {!buyerInspectionStage && !isOrderReceiptConfirmed(ord) && isOrderDeliveredToBuyer(ord) ? (
+              {/* Nút Đã Nhận Hàng (Giải Ngân): Chỉ hiện khi đơn đã thực sự giao thành công đến Người mua, chưa xác nhận và không có khiếu nại tranh chấp */}
+              {!buyerInspectionStage && !isOrderReceiptConfirmed(ord) && isOrderDeliveredToBuyer(ord) && !isDisputed ? (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -743,7 +677,7 @@ export function OrderCardActions({
                   <CheckCircle2 className="w-3.5 h-3.5" />
                   <span>{confirmingReceiptIds.has(ord.id) ? (lang === 'vi' ? 'Đang xử lý...' : 'Processing...') : (lang === 'vi' ? 'Xác nhận đơn hàng' : 'Confirm Delivery')}</span>
                 </button>
-              ) : !buyerInspectionStage && !isOrderReceiptConfirmed(ord) && !isAtHome && isOrderInTransitToBuyer(ord) ? (
+              ) : hasInspection && !buyerInspectionStage && !isOrderReceiptConfirmed(ord) && !isAtHome && isOrderInTransitToBuyer(ord) && !isDisputed ? (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -757,8 +691,8 @@ export function OrderCardActions({
                 </button>
               ) : null}
 
-              {/* Leave Product Review button for delivered / completed orders */}
-              {!buyerInspectionStage && (isOrderReceiptConfirmed(ord) || ord.escrowStatus === 'COMPLETED_RELEASED' || ord.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' || ord.backendStatus === 'DELIVERED') && (
+              {/* Leave Product Review button for delivered / completed orders (ẩn khi đang có khiếu nại tranh chấp) */}
+              {!buyerInspectionStage && !isDisputed && (isOrderReceiptConfirmed(ord) || ord.escrowStatus === 'COMPLETED_RELEASED' || ord.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' || ord.backendStatus === 'DELIVERED') && (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();

@@ -57,7 +57,6 @@ import {
   CheckSquare,
   FileCheck,
   Menu,
-  User,
   Home,
   Truck,
   LogOut
@@ -78,7 +77,6 @@ interface InspectorPortalViewProps {
   onCompleteInspection: (orderId: string, verdict: 'PASS' | 'FAIL', tamperSeal: string, summary: string, meta?: any) => void;
   lang: Language;
   onNavigate?: (tab: string) => void;
-  onOpenProfile?: () => void;
   onLogout?: () => void;
   onViewWebsite?: () => void;
 }
@@ -92,7 +90,6 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
   onCompleteInspection,
   lang,
   onNavigate,
-  onOpenProfile,
   onLogout,
   onViewWebsite,
 }) => {
@@ -813,12 +810,12 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
             <span>ISO/IEC 17025 • {stationCode}</span>
           </div>
 
-          {/* User Profile Button */}
+          {/* Account Menu */}
           <div className="relative" ref={userDropdownRef}>
             <button
               onClick={() => setShowUserDropdown(!showUserDropdown)}
               className="flex items-center gap-2 px-2 py-1.5 rounded-xl hover:bg-white/10 transition cursor-pointer"
-              title="Hồ sơ kỹ thuật viên"
+              title={lang === 'vi' ? 'Menu tài khoản' : 'Account menu'}
             >
               <div className="w-7 h-7 rounded-full bg-white p-0.5 flex items-center justify-center shadow-xs border border-white/20">
                 {currentUser?.avatar ? (
@@ -854,17 +851,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                     </span>
                   </div>
                 </div>
-                <div className="p-1 space-y-0.5">
-                  <button
-                    onClick={() => {
-                      setShowUserDropdown(false);
-                      onOpenProfile?.();
-                    }}
-                    className="w-full text-left px-3 py-2 hover:bg-slate-100 rounded-xl flex items-center gap-2 text-[#24263e] font-bold cursor-pointer transition"
-                  >
-                    <User className="w-3.5 h-3.5 text-[#c34c36]" />
-                    <span>Hồ Sơ Cá Nhân</span>
-                  </button>
+                <div className="p-1">
                   <button
                     onClick={() => {
                       setShowUserDropdown(false);
@@ -893,9 +880,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
         >
           {/* User Block with Live Online indicator */}
           <div
-            onClick={() => onOpenProfile?.()}
-            className={`p-3.5 sm:p-4 border-b border-[#24263e]/15 flex items-center gap-3 cursor-pointer hover:bg-black/5 transition ${isSidebarCollapsed ? '' : 'md:pr-11'}`}
-            title="Xem hồ sơ cá nhân"
+            className={`p-3.5 sm:p-4 border-b border-[#24263e]/15 flex items-center gap-3 ${isSidebarCollapsed ? '' : 'md:pr-11'}`}
           >
             <div className="relative shrink-0">
               <div className="w-10 h-10 rounded-full bg-white p-0.5 border border-[#24263e]/20 overflow-hidden flex items-center justify-center">

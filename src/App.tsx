@@ -2967,7 +2967,6 @@ export default function App() {
                   currentUser={currentUser}
                   lang={lang}
                   onNavigate={setActiveTab}
-                  onOpenProfile={openProfile}
                   onLogout={() => setIsLogoutModalOpen(true)}
                   onViewWebsite={() => setActiveTab('home')}
                 />
@@ -2981,7 +2980,6 @@ export default function App() {
                     currentUser={currentUser}
                     lang={lang}
                     onNavigate={setActiveTab}
-                    onOpenProfile={openProfile}
                     onLogout={() => setIsLogoutModalOpen(true)}
                     onViewWebsite={() => setActiveTab('home')}
                   />
@@ -2992,7 +2990,6 @@ export default function App() {
                     onCompleteInspection={handleCompleteInspection}
                     lang={lang}
                     onNavigate={setActiveTab}
-                    onOpenProfile={openProfile}
                     onLogout={() => setIsLogoutModalOpen(true)}
                     onViewWebsite={() => setActiveTab('home')}
                   />
@@ -3005,7 +3002,6 @@ export default function App() {
                   orders={orders}
                   lang={lang}
                   currentUser={currentUser}
-                  onOpenProfile={openProfile}
                   onLogout={() => setIsLogoutModalOpen(true)}
                   onViewWebsite={() => setActiveTab('home')}
                 />
@@ -3019,7 +3015,6 @@ export default function App() {
                   onResolveDispute={handleResolveDispute}
                   lang={lang}
                   currentUser={currentUser}
-                  onOpenProfile={openProfile}
                   onLogout={() => setIsLogoutModalOpen(true)}
                   onOpenListingDetail={(listing) => openProduct(listing)}
                 />
@@ -3202,8 +3197,13 @@ export default function App() {
             itemTitle={reportingOrderForDispute.listing?.title}
             onNavigateToDisputes={() => handleTabChange('disputes')}
             onSuccess={() => {
+              if (reportingOrderForDispute?.id) {
+                try {
+                  localStorage.setItem(`order_disputed_${reportingOrderForDispute.id}`, 'true');
+                } catch { }
+              }
               setOrders((prev) =>
-                prev.map((o) => (o.id === reportingOrderForDispute.id ? { ...o, escrowStatus: 'DISPUTED' } : o))
+                prev.map((o) => (o.id === reportingOrderForDispute.id ? { ...o, escrowStatus: 'DISPUTED', status: 'DISPUTED', backendStatus: 'DISPUTED' as any } : o))
               );
               loadUserOrders(true);
             }}

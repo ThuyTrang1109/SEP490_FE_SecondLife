@@ -52,6 +52,7 @@ import { numberToVietnameseWords, formatVndInput, cleanVndInput, handleVndInputC
 import {
   mediaService,
   postService,
+  inspectorService,
   categoryService,
   itemService,
   aiChatService,
@@ -76,6 +77,7 @@ import { extractWardAndCity, cleanFullAddress } from '../utils/addressUtils';
 import { savePostMetadata, extractSellerOriginalPrice } from '../utils/catalogCache';
 import { translateSystemNotification } from '../utils/systemNotificationTranslator';
 import { MarkdownDescriptionEditor, MarkdownContent } from '../components/common/MarkdownDescription';
+import { PreListingInspectionWorkflow } from '../components/listing/PreListingInspectionWorkflow';
 
 
 
@@ -1886,6 +1888,30 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   const [showMismatchModal, setShowMismatchModal] = useState<boolean>(false);
   const [showAiScanConfirmModal, setShowAiScanConfirmModal] = useState<boolean>(false);
 
+  // Pre-Listing High Value Inspection Policy & Workflow Modal
+  const [highValueThreshold, setHighValueThreshold] = useState<number>(10000000);
+  const [isPreListingWorkflowOpen, setIsPreListingWorkflowOpen] = useState<boolean>(false);
+  const [preListingOrderId, setPreListingOrderId] = useState<string | null>(null);
+  const [preListingNextAction, setPreListingNextAction] = useState<string | null>(null);
+
+  // Load high value inspection policy on mount
+  useEffect(() => {
+    let isMounted = true;
+    inspectorService
+      .getHighValueInspectionPolicy()
+      .then((policy) => {
+        if (isMounted && policy && typeof policy.thresholdPrice === 'number' && policy.thresholdPrice > 0) {
+          setHighValueThreshold(policy.thresholdPrice);
+        }
+      })
+      .catch((err) => {
+        console.warn('Failed to load high value inspection policy:', err);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   // Xử lý yêu cầu thoát/hủy đăng bài: Chặn khi đang đăng bài và mở cảnh báo xác nhận
   const handleRequestCancel = () => {
     if (isSubmittingPost) {
@@ -3236,6 +3262,17 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       }
 
       setSubmitResult(submitRes);
+      if (
+        submitRes.status === 'PENDING_INSPECTION' ||
+        submitRes.nextAction === 'SELECT_INSPECTION_METHOD' ||
+        submitRes.nextAction === 'PAY_INSPECTION_FEE' ||
+        submitRes.nextAction === 'TRACK_INSPECTION' ||
+        submitRes.nextAction === 'TRACK_INSPECTION_RETURN'
+      ) {
+        setPreListingOrderId(submitRes.inspectionOrderId || null);
+        setPreListingNextAction(submitRes.nextAction || 'SELECT_INSPECTION_METHOD');
+        setIsPreListingWorkflowOpen(true);
+      }
       try {
         localStorage.setItem(`post_parcel_${postId}`, JSON.stringify(parcel));
       } catch { }
@@ -5482,13 +5519,18 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               </p>
             )}
 
-            {/* High-value threshold notice (> 10,000,000 VND) */}
-            {finalPriceVnd >= 10000000 && (
+            {/* High-value threshold notice (> thresholdPrice VND) */}
+            {finalPriceVnd > highValueThreshold && (
               <div className="p-3.5 rounded-xl bg-cyan-50 border border-cyan-200 text-cyan-900 text-xs flex items-start gap-2.5">
                 <ShieldCheck className="w-4 h-4 text-cyan-700 shrink-0 mt-0.5" />
                 <div>
-                  <span className="font-bold block">Sản phẩm giá trị cao (từ 10.000.000 VND trở lên):</span>
-                  <span>Bài đăng sẽ tự động chuyển sang quy trình Kiểm định chất lượng của Kỹ thuật viên (PENDING_INSPECTION) trước khi hiển thị công khai trên Sàn. Chưa trừ credit LISTING cho tới khi kiểm định đạt chuẩn.</span>
+                  <span className="font-bold block">
+                    Sản phẩm giá trị cao (trên {formatVND(highValueThreshold)}):
+                  </span>
+                  <span>
+                    Sản phẩm có giá cao hơn ngưỡng này phải kiểm định trước khi đăng.
+                    Bài đăng sẽ tự động chuyển sang quy trình Kiểm định chất lượng của Kỹ thuật viên (PENDING_INSPECTION) trước khi hiển thị công khai trên Sàn. Chưa trừ credit LISTING cho tới khi kiểm định đạt chuẩn.
+                  </span>
                 </div>
               </div>
             )}
@@ -5738,22 +5780,27 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                       ? 'Đăng bài thành công! (ACTIVE)'
                       : submitResult.status === 'INSUFFICIENT_CREDIT'
                         ? 'Cần nạp thêm Credit để thanh toán phí kiểm định'
-                        : submitResult.status === 'PENDING_INSPECTION'
-                          ? 'Chờ kiểm định chất lượng trung tâm (PENDING_INSPECTION)'
-                          : submitResult.status === 'PENDING'
-                            ? 'Nghi ngờ trùng lặp - Chờ STAFF kiểm duyệt (PENDING)'
+                        : submitResult.status === 'PENDING_INSPECTION' ||
+                          submitResult.nextAction === 'SELECT_INSPECTION_METHOD' ||
+                          submitResult.nextAction === 'PAY_INSPECTION_FEE' ||
+                          submitResult.nextAction === 'TRACK_INSPECTION' ||
+                          submitResult.nextAction === 'TRACK_INSPECTION_RETURN'
+                          ? 'Kiểm định bắt buộc trước khi đăng (PENDING_INSPECTION)'
+                          : submitResult.status === 'PENDING' || submitResult.nextAction === 'WAIT_FOR_LISTING_REVIEW'
+                            ? 'Chờ staff kiểm duyệt bài đăng (PENDING)'
                             : 'Bài đăng bị từ chối (REJECTED)'}
                   </h4>
                   <p className="text-xs leading-relaxed">
                     {submitResult.message || (
                       submitResult.status === 'ACTIVE'
-                        ? 'Bài đăng của bạn đã được xuất bản công khai. Đã trừ 1 lượt LISTING.'
+                        ? 'Bài đăng của bạn đã được xuất bản công khai lên Sàn đồ cũ.'
                         : submitResult.status === 'INSUFFICIENT_CREDIT'
-                          ? 'Sản phẩm có giá trị > 10.000.000 đ bắt buộc phải qua kiểm định. Bạn chưa có đủ credit để thanh toán phí.'
-                          : submitResult.status === 'PENDING_INSPECTION'
-                            ? 'Sản phẩm có giá trị > 10 triệu đồng đang chờ Kỹ thuật viên trung tâm kiểm định tiếp nhận.'
-                            : submitResult.status === 'PENDING'
-                              ? 'Phát hiện hình ảnh hoặc nội dung trùng với bài đăng khác trên sàn. Nhân viên Staff sẽ đối soát thủ công.'
+                          ? `Sản phẩm có giá trị cao hơn ngưỡng bắt buộc phải qua kiểm định. Bạn chưa có đủ số dư để nộp phí.`
+                          : submitResult.status === 'PENDING_INSPECTION' ||
+                            submitResult.nextAction === 'SELECT_INSPECTION_METHOD'
+                            ? 'Sản phẩm có giá trị cao cần kiểm định trước khi hiển thị công khai. Vui lòng chọn hình thức kiểm định.'
+                            : submitResult.status === 'PENDING' || submitResult.nextAction === 'WAIT_FOR_LISTING_REVIEW'
+                              ? `Bài đăng đang chờ nhân viên kiểm duyệt nội dung trước khi xuất bản.${submitResult.inspectionRequired ? ' Lưu ý: Sản phẩm có yêu cầu kiểm định bắt buộc, sau khi nhân viên duyệt nội dung bạn sẽ tiến hành chọn hình thức kiểm định.' : ''}`
                               : (submitResult.reviewReason || 'Bài đăng không đạt tiêu chuẩn nội dung của sàn. Không trừ credit.')
                     )}
                   </p>
@@ -5924,6 +5971,30 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                     >
                       Hoàn tất & Về Sàn đồ cũ
                     </button>
+                    {(submitResult.status === 'PENDING_INSPECTION' ||
+                      submitResult.nextAction === 'SELECT_INSPECTION_METHOD' ||
+                      submitResult.nextAction === 'PAY_INSPECTION_FEE' ||
+                      submitResult.nextAction === 'TRACK_INSPECTION' ||
+                      submitResult.nextAction === 'TRACK_INSPECTION_RETURN') && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPreListingOrderId(submitResult.inspectionOrderId || null);
+                          setPreListingNextAction(submitResult.nextAction || 'SELECT_INSPECTION_METHOD');
+                          setIsPreListingWorkflowOpen(true);
+                        }}
+                        className="px-5 py-1.5 rounded-xl bg-cyan-700 hover:bg-cyan-800 text-white text-xs font-black transition flex items-center gap-1.5 shadow-md cursor-pointer animate-pulse"
+                      >
+                        <ShieldCheck className="w-4 h-4 text-cyan-200" />
+                        <span>
+                          {submitResult.nextAction === 'PAY_INSPECTION_FEE'
+                            ? 'Thanh toán phí kiểm định'
+                            : submitResult.nextAction === 'TRACK_INSPECTION' || submitResult.nextAction === 'TRACK_INSPECTION_RETURN'
+                            ? 'Theo dõi tiến độ kiểm định'
+                            : 'Chọn hình thức kiểm định ngay'}
+                        </span>
+                      </button>
+                    )}
                   </>
                 )}
               </div>
@@ -6589,6 +6660,27 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Quy trình Kiểm định bắt buộc trước khi đăng (Pre-Listing Inspection Workflow) */}
+      {isPreListingWorkflowOpen && postId && (
+        <div className="fixed inset-0 z-[150] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-fadeIn">
+          <div className="my-8 w-full max-w-2xl">
+            <PreListingInspectionWorkflow
+              postId={postId}
+              postTitle={title || 'Bài đăng sản phẩm'}
+              postPrice={finalPriceVnd}
+              initialInspectionOrderId={preListingOrderId}
+              initialNextAction={preListingNextAction}
+              onClose={() => setIsPreListingWorkflowOpen(false)}
+              onPostActivated={() => {
+                setIsPreListingWorkflowOpen(false);
+                handleFinishAndExit();
+              }}
+              lang={lang}
+            />
           </div>
         </div>
       )}

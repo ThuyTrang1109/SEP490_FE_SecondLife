@@ -39,12 +39,17 @@ export function createSellerOrderActions({
       subMessage: lang === 'vi'
         ? 'Sản phẩm sẽ được mở lại hiển thị trên sàn để người mua khác có thể tiếp tục xem và đặt mua.'
         : 'The listing will be reopened on the marketplace.',
+      requireReasonInput: true,
+      reasonLabel: lang === 'vi' ? 'Lý do từ chối kiểm định' : 'Reason for rejection',
+      reasonPlaceholder: lang === 'vi'
+        ? 'Nhập lý do cụ thể (bắt buộc trên 10 ký tự và dưới 100 ký tự)...'
+        : 'Enter specific reason (required between 11 and 99 characters)...',
       confirmText: lang === 'vi' ? 'Từ chối kiểm định' : 'Reject Inspection',
       cancelText: lang === 'vi' ? 'Đóng' : 'Cancel',
       variant: 'danger',
       iconType: 'alert',
-      onConfirm: async () => {
-        await handleRespondInspection(ord.id, 'REJECT', 'Người bán từ chối kiểm định');
+      onConfirm: async (customReason?: string) => {
+        await handleRespondInspection(ord.id, 'REJECT', customReason?.trim() || 'Người bán từ chối kiểm định');
         setConfirmDialog(null);
       }
     });

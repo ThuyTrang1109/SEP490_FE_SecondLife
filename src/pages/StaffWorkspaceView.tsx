@@ -62,7 +62,6 @@ interface StaffWorkspaceViewProps {
   lang?: Language;
   onViewWebsite?: () => void;
   currentUser?: UserProfile | null;
-  onOpenProfile?: () => void;
   onLogout?: () => void;
 }
 
@@ -102,7 +101,6 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
   lang = 'vi',
   onViewWebsite,
   currentUser,
-  onOpenProfile,
   onLogout,
 }) => {
   const [activeTab, setActiveTab] = usePanelTab<StaffTab>('staff', 'overview');

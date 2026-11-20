@@ -226,10 +226,10 @@ export function OrderFeeBreakdown({
                 <span>{t.shippingFee} (Vận chuyển Lalamove):</span>
                 <span className="font-semibold text-[#24263e]">{formatVND(detailModalOrder.shippingFeeVnd)}</span>
               </div>
-              <div className="flex justify-between text-[#24263e]/70">
-                <span>{t.platformFee}:</span>
+              {/* <div className="flex justify-between text-[#24263e]/70">
+                <span>{t.platformFee}</span>
                 <span className="font-semibold text-[#24263e]">{formatVND(detailModalOrder.platformFeeVnd)}</span>
-              </div>
+              </div> */}
               <div className="pt-2 border-t border-gray-200 flex justify-between font-bold text-sm text-[#24263e]">
                 <span>{t.totalEscrow}:</span>
                 <span className="font-extrabold text-[#24263e]">

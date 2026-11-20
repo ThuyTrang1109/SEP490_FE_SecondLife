@@ -1261,10 +1261,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                         <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                         <span>Chuyến xe Lalamove đã hoàn tất giao hàng thành công!</span>
                       </div>
-                      <p className="text-[11px] text-emerald-800 leading-relaxed">
-                        Tín hiệu GPS trực tiếp đã được đóng tự động theo chính sách bảo mật của Lalamove sau khi tài xế giao hàng xong.
-                        Biên bản bàn giao và ảnh ký nhận (POD) đã được ghi nhận vào hồ sơ đơn hàng.
-                      </p>
+
                     </div>
                   ) : (
                     <span></span>

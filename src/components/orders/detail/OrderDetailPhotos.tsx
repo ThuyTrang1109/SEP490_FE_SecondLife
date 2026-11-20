@@ -8,14 +8,22 @@ import { translations } from '../../../utils/translations';
 interface Props {
   order: EscrowOrder;
   detailInspectionDto: InspectionOrderDto | null;
+  sellerPostPhotos?: string[];
   activePhotoStage: OrderPhotoStage;
   setActivePhotoStage: (stage: OrderPhotoStage) => void;
   lang: Language;
 }
 
+function uniquePhotoUrls(urls: string[]) {
+  return Array.from(new Set(urls
+    .filter((url) => typeof url === 'string' && url.trim().length > 0)
+    .map((url) => url.trim())));
+}
+
 export function OrderDetailPhotos({
   order: detailModalOrder,
   detailInspectionDto,
+  sellerPostPhotos,
   activePhotoStage,
   setActivePhotoStage,
   lang,
@@ -60,11 +68,8 @@ export function OrderDetailPhotos({
         if (detailModalOrder.multiStagePhotos?.listingPhotos && Array.isArray(detailModalOrder.multiStagePhotos.listingPhotos)) {
           rawListingPhotos.push(...detailModalOrder.multiStagePhotos.listingPhotos);
         }
-        const listingPhotos = Array.from(new Set(
-          rawListingPhotos
-            .filter((u): u is string => typeof u === 'string' && u.trim().length > 0)
-            .map((u) => u.trim())
-        ));
+        const postPhotos = uniquePhotoUrls(sellerPostPhotos ?? []);
+        const listingPhotos = postPhotos.length > 0 ? postPhotos : uniquePhotoUrls(rawListingPhotos);
 
         // 2. Hub Inspector photos (Giai đoạn 2 - Kiểm định Hub)
         const rawInspectorPhotos: string[] = [];
@@ -103,11 +108,7 @@ export function OrderDetailPhotos({
             }
           } catch { }
         }
-        const inspectorPhotos = Array.from(new Set(
-          rawInspectorPhotos
-            .filter((u): u is string => typeof u === 'string' && u.trim().length > 0)
-            .map((u) => u.trim())
-        ));
+        const inspectorPhotos = uniquePhotoUrls(rawInspectorPhotos);
 
         const currentPhotos = activePhotoStage === 'inspector' && hasInspection
           ? inspectorPhotos

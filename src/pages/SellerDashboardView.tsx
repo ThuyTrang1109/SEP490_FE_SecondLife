@@ -47,6 +47,7 @@ import { SellerReturnShippingFeesSection } from '../components/seller/SellerRetu
 import { isListingInspectionPassed } from '../utils/listingInspection';
 import { SellerDisputeResponseModal } from '../components/seller/SellerDisputeResponseModal';
 import { UserAvatar } from '../components/common/UserAvatar';
+import { PreListingInspectionWorkflow } from '../components/listing/PreListingInspectionWorkflow';
 
 interface SellerDashboardViewProps {
   listings: Listing[];
@@ -72,6 +73,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
   const [draftToDelete, setDraftToDelete] = useState<{ id: string; title: string } | null>(null);
   const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null);
   const [toastNotice, setToastNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [preListingPost, setPreListingPost] = useState<Listing | null>(null);
 
   const showToastNotice = (type: 'success' | 'error', message: string) => {
     setToastNotice({ type, message: translateSystemNotification(message) });
@@ -1291,7 +1293,9 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                   <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full ${
                     item.backendStatus === 'REJECTED'
                       ? 'bg-rose-600 text-white'
-                      : item.backendStatus === 'PENDING' || item.backendStatus === 'PENDING_INSPECTION'
+                      : item.backendStatus === 'PENDING_INSPECTION'
+                      ? 'bg-cyan-700 text-white'
+                      : item.backendStatus === 'PENDING'
                       ? 'bg-amber-500 text-white'
                       : item.backendStatus === 'DRAFT' || item.status === 'draft'
                       ? 'bg-slate-500 text-white'
@@ -1301,7 +1305,9 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                   }`}>
                     {item.backendStatus === 'REJECTED'
                       ? (lang === 'vi' ? '● Bị Từ Chối' : '● Rejected')
-                      : item.backendStatus === 'PENDING' || item.backendStatus === 'PENDING_INSPECTION'
+                      : item.backendStatus === 'PENDING_INSPECTION'
+                      ? (lang === 'vi' ? '● Chờ Kiểm Định (PRE_LISTING)' : '● Pending Inspection')
+                      : item.backendStatus === 'PENDING'
                       ? (lang === 'vi' ? '● Chờ Duyệt / Hub' : '● Pending Review')
                       : item.backendStatus === 'DRAFT' || item.status === 'draft'
                       ? (lang === 'vi' ? '● Bản Nháp' : '● Draft')
@@ -1346,7 +1352,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-gray-200 flex items-center justify-between gap-2">
+              <div className="pt-2 border-t border-gray-200 flex items-center justify-between gap-2 flex-wrap">
                 <button
                   onClick={() => handleOpenSellerPostDetail(item)}
                   disabled={loadingDetailPostId === item.id}
@@ -1359,6 +1365,17 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                   )}
                   <span>{lang === 'vi' ? 'Xem Chi Tiết' : 'View Details'}</span>
                 </button>
+                {item.backendStatus === 'PENDING_INSPECTION' && (
+                  <button
+                    type="button"
+                    onClick={() => setPreListingPost(item)}
+                    className="py-1.5 px-2.5 bg-cyan-700 hover:bg-cyan-800 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition shadow-xs animate-pulse"
+                    title={lang === 'vi' ? 'Tiếp tục quy trình kiểm định bắt buộc' : 'Resume mandatory inspection'}
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5 text-cyan-200" />
+                    <span>{lang === 'vi' ? 'Tiếp tục kiểm định' : 'Resume Inspection'}</span>
+                  </button>
+                )}
                 <button
                   onClick={() => onCreateListing(item)}
                   className="py-1.5 px-2 bg-[#FFFFFF] hover:bg-[#faf8f5] border border-gray-200 text-[#24263e] rounded-lg text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition"
@@ -2613,6 +2630,25 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
               <AlertTriangle className="w-4 h-4 text-white shrink-0" />
             )}
             <span>{translateSystemNotification(toastNotice.message)}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Tiếp tục Kiểm định bắt buộc trước khi đăng (Pre-Listing Workflow) */}
+      {preListingPost && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-fadeIn">
+          <div className="my-8 w-full max-w-2xl">
+            <PreListingInspectionWorkflow
+              postId={preListingPost.id}
+              postTitle={preListingPost.title}
+              postPrice={preListingPost.priceVnd}
+              onClose={() => setPreListingPost(null)}
+              onPostActivated={() => {
+                setPreListingPost(null);
+                fetchSellerData();
+              }}
+              lang={lang}
+            />
           </div>
         </div>
       )}

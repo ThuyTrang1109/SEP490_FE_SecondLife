@@ -39,11 +39,10 @@ export const ShowroomLobby3D: React.FC<ShowroomLobby3DProps> = ({
               soundFx.playChime();
               setApplianceType('fridge');
             }}
-            className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-              applianceType === 'fridge'
+            className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${applianceType === 'fridge'
                 ? 'bg-[#2b1d16] text-white shadow-md'
                 : 'text-[#2b1d16]/80 hover:text-[#2b1d16] hover:bg-white/60'
-            }`}
+              }`}
           >
             {lang === 'vi' ? 'Tủ Lạnh Hitachi' : 'Hitachi Fridge'}
           </button>
@@ -52,11 +51,10 @@ export const ShowroomLobby3D: React.FC<ShowroomLobby3DProps> = ({
               soundFx.playChime();
               setApplianceType('washer');
             }}
-            className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-              applianceType === 'washer'
+            className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${applianceType === 'washer'
                 ? 'bg-[#2b1d16] text-white shadow-md'
                 : 'text-[#2b1d16]/80 hover:text-[#2b1d16] hover:bg-white/60'
-            }`}
+              }`}
           >
             {lang === 'vi' ? 'Máy Giặt Electrolux' : 'Electrolux Washer'}
           </button>
@@ -65,9 +63,8 @@ export const ShowroomLobby3D: React.FC<ShowroomLobby3DProps> = ({
               soundFx.playChime();
               setAutoRotate((prev) => !prev);
             }}
-            className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-              autoRotate ? 'text-[#2b1d16] bg-white/80 shadow-xs' : 'text-[#2b1d16]/70 hover:text-[#2b1d16]'
-            }`}
+            className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${autoRotate ? 'text-[#2b1d16] bg-white/80 shadow-xs' : 'text-[#2b1d16]/70 hover:text-[#2b1d16]'
+              }`}
             title={lang === 'vi' ? 'Bật / tắt tự động xoay' : 'Toggle auto-rotate'}
           >
             <RefreshCw className={`w-3 h-3 ${autoRotate ? 'animate-spin' : ''}`} style={{ animationDuration: '6s' }} />
@@ -133,7 +130,7 @@ export const ShowroomLobby3D: React.FC<ShowroomLobby3DProps> = ({
               <div className="text-base font-black text-[#2b1d16]">
                 <CountUp to={3} duration={1.2} /> Hubs
               </div>
-              <div className="text-[11px] text-[#2b1d16]/75 font-bold">HN • ĐN • TP.HCM</div>
+              <div className="text-[11px] text-[#2b1d16]/75 font-bold">HN • TP.HCM</div>
             </div>
           </div>
         </div>

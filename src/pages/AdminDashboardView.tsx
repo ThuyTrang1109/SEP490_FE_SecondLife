@@ -94,7 +94,6 @@ import {
   ZoomIn,
   MapPin,
   BadgeCheck,
-  User,
   LogOut,
   Percent,
 } from 'lucide-react';
@@ -119,7 +118,6 @@ interface AdminDashboardViewProps {
   lang: Language;
   onViewWebsite?: () => void;
   currentUser?: UserProfile | null;
-  onOpenProfile?: () => void;
   onLogout?: () => void;
   onOpenListingDetail?: (listing: Listing) => void;
 }
@@ -171,7 +169,6 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   lang,
   onViewWebsite,
   currentUser,
-  onOpenProfile,
   onLogout,
   onOpenListingDetail
 }) => {
@@ -1299,12 +1296,12 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
         </div>
 
-        {/* Right: Admin Profile */}
+        {/* Right: Account Menu */}
         <div className="relative" ref={userDropdownRef}>
           <button
             onClick={() => setShowUserDropdown(!showUserDropdown)}
             className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl hover:bg-white/10 transition cursor-pointer"
-            title={lang === 'vi' ? 'Hồ sơ quản trị viên' : 'Admin Profile'}
+            title={lang === 'vi' ? 'Menu tài khoản' : 'Account menu'}
           >
             <div className="w-7 h-7 rounded-full bg-white p-0.5 flex items-center justify-center shadow-xs border border-white/20">
               {currentUser?.avatar ? (
@@ -1335,17 +1332,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   {lang === 'vi' ? 'Quyền: Toàn Quyền Admin' : 'Role: Super Admin'}
                 </span>
               </div>
-              <div className="p-1 space-y-0.5">
-                <button
-                  onClick={() => {
-                    setShowUserDropdown(false);
-                    onOpenProfile?.();
-                  }}
-                  className="w-full text-left px-3 py-2 hover:bg-slate-100 rounded-xl flex items-center gap-2 text-[#24263e] font-bold cursor-pointer transition"
-                >
-                  <User className="w-3.5 h-3.5 text-[#c34c36]" />
-                  <span>{lang === 'vi' ? 'Hồ Sơ Cá Nhân' : 'Admin Profile'}</span>
-                </button>
+              <div className="p-1">
                 <button
                   onClick={() => {
                     setShowUserDropdown(false);
@@ -1371,9 +1358,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         >
           {/* User Block */}
           <div
-            onClick={() => onOpenProfile?.()}
-            className={`p-3.5 sm:p-4 border-b border-[#24263e]/15 flex items-center gap-3 cursor-pointer hover:bg-black/5 transition ${isSidebarCollapsed ? '' : 'md:pr-11'}`}
-            title={lang === 'vi' ? 'Xem hồ sơ cá nhân' : 'View profile'}
+            className={`p-3.5 sm:p-4 border-b border-[#24263e]/15 flex items-center gap-3 ${isSidebarCollapsed ? '' : 'md:pr-11'}`}
           >
             <div className="relative shrink-0">
               <div className="w-10 h-10 rounded-full bg-white p-0.5 border border-[#24263e]/20 overflow-hidden flex items-center justify-center">

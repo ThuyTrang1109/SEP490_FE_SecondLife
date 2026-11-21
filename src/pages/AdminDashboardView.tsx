@@ -110,6 +110,7 @@ import { canReviewInspectionCash } from '../utils/inspectionCashShipping';
 import { AdminInspectionFundsModal } from '../components/admin/AdminInspectionFundsModal';
 import { AdminInspectionFundsTab } from '../components/admin/AdminInspectionFundsTab';
 import { AdminOrdersTab } from '../components/admin/AdminOrdersTab';
+import { SystemOverviewReportTab } from '../components/admin/SystemOverviewReportTab';
 
 interface AdminDashboardViewProps {
   orders: EscrowOrder[];
@@ -125,6 +126,7 @@ interface AdminDashboardViewProps {
 
 type AdminTab =
   | 'overview'
+  | 'system-report'
   | 'catalog-ai'
   | 'orders'
   | 'inspection-funds'
@@ -142,6 +144,7 @@ type AdminTab =
 
 export const VALID_ADMIN_TABS: AdminTab[] = [
   'overview',
+  'system-report',
   'catalog-ai',
   'orders',
   'inspection-funds',
@@ -1176,6 +1179,13 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       badge: null
     },
     {
+      id: 'system-report' as AdminTab,
+      label: lang === 'vi' ? 'BÁO CÁO TỔNG QUAN HỆ THỐNG' : 'SYSTEM OVERVIEW REPORT',
+      icon: BarChart3,
+      badge: 'Mới',
+      badgeColor: 'bg-[#c34c36] text-white'
+    },
+    {
       id: 'listings' as AdminTab,
       label: lang === 'vi' ? 'QUẢN LÝ BÀI ĐĂNG' : 'POSTS MANAGEMENT',
       icon: Tag,
@@ -1856,6 +1866,13 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
                   <div className="p-3 border-t border-slate-100 flex items-center justify-end gap-2">
                     <button
+                      onClick={() => setActiveTab('system-report')}
+                      className="px-3 py-1.5 rounded-lg border border-[#c34c36]/30 bg-[#fce5da]/50 hover:bg-[#fce5da] text-xs font-bold text-[#24263e] transition cursor-pointer flex items-center gap-1"
+                    >
+                      <BarChart3 className="w-3.5 h-3.5 text-[#c34c36]" />
+                      <span>Báo cáo tổng quan</span>
+                    </button>
+                    <button
                       onClick={() => setActiveTab('commission-rules')}
                       className="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-700 transition cursor-pointer"
                     >
@@ -1874,6 +1891,20 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             </div>
           )}
 
+
+          {/* ======================================================== */}
+          {/* TAB: SYSTEM OVERVIEW REPORT (BÁO CÁO TỔNG QUAN HỆ THỐNG)  */}
+          {/* ======================================================== */}
+          {activeTab === 'system-report' && (
+            <SystemOverviewReportTab
+              lang={lang}
+              initialListings={localListings}
+              initialOrders={localOrders}
+              initialUsers={backendUsers}
+              initialVerifications={backendVerifications}
+              onNavigateTab={(tabId) => setActiveTab(tabId as AdminTab)}
+            />
+          )}
 
           {/* ======================================================== */}
           {/* TAB: CATALOG & AI */}

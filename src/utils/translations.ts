@@ -79,7 +79,7 @@ export const translations = {
     itemAmount: 'Tiền hàng (Giữ trong Escrow)',
     inspectionFee: 'Phí kiểm định chứng nhận',
     shippingFee: 'Phí vận chuyển giao nhận',
-    platformFee: 'Phí dịch vụ nền tảng',
+    platformFee: '',
     totalEscrow: 'Tổng tiền phong tỏa Escrow',
     verifyThenShip: 'Quy trình "Kiểm định trước khi thanh toán"',
     whyInspection: 'Hàng gửi tới Trung tâm giám định SecondLife để chuyên gia mở máy, test linh kiện, dán tem niêm phong trước khi giao cho bạn (quá trình kiểm định tháo máy sẽ làm mất trạng thái zin nguyên bản).',

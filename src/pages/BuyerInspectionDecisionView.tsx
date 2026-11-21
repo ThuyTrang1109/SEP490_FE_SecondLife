@@ -53,7 +53,6 @@ import { getInspectionBuyerDestination, getInspectionDecisionStatus, getInspecti
 import { canAppealInspection, getHubReturnProgress, getHubReturnState, getReturnReserveMessage, isHubReturnCase, getInboundShipmentProgress, getLatestInboundShipment } from '../utils/inspectionCenterData';
 import { getOrderAllShipments } from '../utils/orders/shipmentCache';
 import { isOrderReceivedAtHub } from './ProductInspectionStationView';
-import { InspectionAppealModal } from '../components/inspection/InspectionAppealModal';
 import { LalamoveProgress } from '../components/common/LalamoveProgress';
 import { resolveInspectionCenter } from '../utils/orderUtils';
 
@@ -110,7 +109,6 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
   // Return shipment states
   const confirmRequestIdRef = React.useRef<string | null>(null);
   const [returnShipment, setReturnShipment] = useState<ShipmentBackend | null>(null);
-  const [showAppeal, setShowAppeal] = useState(false);
   const [createdLinkedOrderId, setCreatedLinkedOrderId] = useState<string | null>(null);
 
   // Modal states
@@ -492,15 +490,6 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
     ))
   );
   const canDecide = purchaseDecision === 'pending' && !isUserSeller;
-  const canAppeal = Boolean(isUserSeller && inspectionDto && canAppealInspection(inspectionDto, currentUser?.id));
-  const [, refreshAppealDeadline] = useState(0);
-
-  useEffect(() => {
-    if (!canAppeal || !inspectionDto?.appealDeadline) return;
-    const delay = Date.parse(inspectionDto.appealDeadline) - Date.now();
-    const timer = window.setTimeout(() => refreshAppealDeadline(Date.now()), Math.max(0, delay));
-    return () => window.clearTimeout(timer);
-  }, [canAppeal, inspectionDto?.appealDeadline]);
 
   useEffect(() => {
     if (!canDecide || !inspectionDto) return;
@@ -1332,16 +1321,6 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
 
       {/* Main Container */}
       <div className="w-full px-3 sm:px-5 lg:px-6 pt-6 space-y-6">
-
-        {canAppeal && inspectionDto && (
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900">
-            <p>Hạn khiếu nại {new Date(inspectionDto.appealDeadline!).toLocaleString('vi-VN')}</p>
-            <button type="button" onClick={() => setShowAppeal(true)} className="rounded-lg bg-amber-800 px-3 py-2 font-bold text-white">
-              Khiếu nại kết quả kiểm định
-            </button>
-            <InspectionAppealModal order={inspectionDto} isOpen={showAppeal} onClose={() => setShowAppeal(false)} onSuccess={setInspectionDto} />
-          </div>
-        )}
 
         {canDecide && timeLeft.isExpired && (
           <p role="status" className="rounded-2xl bg-amber-50 p-4 text-sm text-amber-900">

@@ -3040,11 +3040,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                           <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px]">
                             <span className="flex items-center gap-1 text-[10px] text-blue-700 font-bold">
                               <span>🏷️ {lang === 'vi' ? 'Đã bao gồm cước 2 chiều Lalamove' : 'Includes 2-way shipping'}</span>
-                              {atCenterShippingQuote?.expiresAt && !isAtCenterQuoteExpired && (
-                                <span className="text-[9px] font-normal text-slate-400">
-                                  (hạn: {new Date(atCenterShippingQuote.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
-                                </span>
-                              )}
                             </span>
                             {inspectionMethod === 'AT_CENTER' && (
                               <span className="inline-flex items-center gap-1 text-[10px] font-black text-blue-700 bg-blue-100/90 px-2 py-0.5 rounded-full border border-blue-300">
@@ -3683,18 +3678,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                           </strong>
                         </div>
                       </div>
-
-                      {ghnQuote.expiresAt && (
-                        <div className="flex items-center justify-between text-[10px] text-emerald-800 pt-1 border-t border-emerald-200/60">
-                          <span className="flex items-center gap-1 font-medium">
-                            <Clock className="w-3 h-3 text-emerald-600" />
-                            <span>Thời hạn báo giá:</span>
-                          </span>
-                          <span className="font-bold">
-                            {new Date(ghnQuote.expiresAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} ({new Date(ghnQuote.expiresAt).toLocaleDateString('vi-VN')})
-                          </span>
-                        </div>
-                      )}
                     </div>
                   )}
                 </div>
@@ -3707,7 +3690,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     <span>{lang === 'vi' ? 'Phương thức thanh toán bảo lãnh Escrow:' : 'Payment Method:'}</span>
                     <span className="text-emerald-700 font-bold lowercase">
                       {paymentMethod === 'WALLET'
-                        ? (lang === 'vi' ? 'Trừ trực tiếp số dư ví' : 'Direct wallet debit')
+                        ? (lang === 'vi' ? '' : 'Direct wallet debit')
                         : (lang === 'vi' ? 'Quét mã VietQR chuyển khoản' : 'VietQR Bank Transfer')}
                     </span>
                   </label>
@@ -3795,7 +3778,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                           </div>
                           <div>
                             <span className="text-xs font-black text-slate-900 block leading-tight">
-                              {lang === 'vi' ? 'Ví Tiền SecondLife (Ký Quỹ Escrow)' : 'SecondLife Wallet Escrow'}
+                              {lang === 'vi' ? 'Ví Tiền SecondLife' : 'SecondLife Wallet Escrow'}
                             </span>
                             <span className="text-xs text-slate-600 font-medium">
                               {lang === 'vi' ? 'Số dư hiện có: ' : 'Available Balance: '}
@@ -3912,12 +3895,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       ? (lang === 'vi' ? 'Chi tiết chi phí kiểm định' : 'Inspection Payment Details')
                       : (lang === 'vi' ? 'Chi tiết thanh toán đơn hàng & vận chuyển' : 'Payment Breakdown')}
                   </span>
-                  {deliveryOption === 'DIRECT' && ghnQuote?.expiresAt && (
-                    <span className="text-[10px] text-slate-500 font-normal lowercase flex items-center gap-1">
-                      <Clock className="w-3 h-3 text-slate-400" />
-                      báo giá hiệu lực đến: {new Date(ghnQuote.expiresAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  )}
                 </div>
 
                 {deliveryOption === 'DIRECT' ? (

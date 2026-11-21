@@ -670,3 +670,40 @@ test('AdminInspectionFundsView renders full Return Reserve details (actual fee, 
   assert.match(html, /Trạng thái hoàn trả tiền dư:/);
   assert.match(html, /Đang chuyển hoàn · Chờ quyết toán/);
 });
+
+test('resolveReturnReserveDetails handles interrupted/failed return shipment without deducting fee', () => {
+  const funds: AdminInspectionOrderFundsDTO = {
+    inspectionOrderId: '4ccca250-cb81-48b8-b7cb-57da72b06d2f',
+    totalCollected: 738_260,
+    unsettledCollectedAmount: 129_960,
+    collectionStatus: 'PAID',
+    returnReserve: {
+      plannedAmount: 129_960,
+      heldAmount: 129_960,
+      status: 'WAITING_FOR_RETURN_TRIP',
+    },
+    shipments: [
+      {
+        leg: 'CENTER_TO_SELLER',
+        actualFee: 111_500,
+        orderCode: '3633153980051981357',
+        status: 'FAILED',
+      },
+    ],
+  };
+
+  const details = resolveReturnReserveDetails(funds);
+  assert.equal(details.isInterruptedReturn, true);
+  assert.equal(details.surplusAmount, 129_960);
+  assert.equal(details.refundStatus, 'PENDING');
+  assert.match(details.refundStatusLabel, /Vận đơn hoàn đã hủy\/thất bại/);
+  assert.match(details.refundDescription, /chưa được tính \/ chưa bị trừ/);
+
+  const html = renderToStaticMarkup(createElement(AdminInspectionFundsView, {
+    inspectionOrderId: funds.inspectionOrderId,
+    funds,
+  }));
+  assert.match(html, /111\.500.*Tạm tính/);
+  assert.match(html, /Vận đơn thất bại \(Chưa trừ\)/);
+  assert.match(html, /Chưa trừ \(Vận đơn hủy\)/);
+});

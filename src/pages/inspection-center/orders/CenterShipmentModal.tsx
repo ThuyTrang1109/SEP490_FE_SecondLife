@@ -2,7 +2,15 @@ import { MapPin, RefreshCw, Loader2, Plus, Truck, Package } from 'lucide-react';
 import { LalamoveProgress } from '../../../components/common/LalamoveProgress';
 import { InspectionCashShipmentStatus } from '../../../components/inspection/InspectionCashShipmentStatus';
 import { UserProfile } from '../../../types';
-import { canBookCenterBuyerDelivery, canBookCenterReturn, getHubReturnProgress, getInboundShipmentProgress, getReturnReserveMessage } from '../../../utils/inspectionCenterData';
+import {
+  canBookCenterBuyerDelivery,
+  canBookCenterReturn,
+  canBookHubBuyerDelivery,
+  getHubReturnProgress,
+  getInboundShipmentProgress,
+  getReturnReserveMessage,
+  isShipmentInterrupted,
+} from '../../../utils/inspectionCenterData';
 import { resolveInspectionCenter } from '../../../utils/orderUtils';
 import { formatVND } from '../../../utils/translations';
 import type { useCenterProfile } from '../useCenterProfile';
@@ -133,10 +141,10 @@ export function CenterShipmentModal({ centerProfile, currentUser, shipmentModalO
                 closeShipmentModal();
                 setReturnQuoteOrder(shipmentModalOrder);
               }}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-amber-700 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-amber-800 disabled:opacity-60 cursor-pointer"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-amber-700 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-amber-800 disabled:opacity-60 cursor-pointer shadow-xs"
             >
               <Plus className="w-3.5 h-3.5" />
-              Tạo vận đơn trả người bán
+              {effectiveShipments.some((s) => s.leg === 'CENTER_TO_SELLER') ? 'Tạo lại vận đơn trả người bán' : 'Tạo vận đơn trả người bán'}
             </button>
           )}
           {canBookBuyerDelivery && (
@@ -144,10 +152,14 @@ export function CenterShipmentModal({ centerProfile, currentUser, shipmentModalO
               type="button"
               disabled={bookingBuyerOrderId !== null}
               onClick={() => void handleBookBuyerDelivery(shipmentModalOrder)}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-teal-700 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-teal-800 disabled:opacity-60 cursor-pointer"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-teal-700 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-teal-800 disabled:opacity-60 cursor-pointer shadow-xs"
             >
               <Plus className="w-3.5 h-3.5" />
-              {bookingBuyerOrderId === orderId ? 'Đang xử lý…' : 'Tạo vận đơn giao người mua'}
+              {bookingBuyerOrderId === orderId
+                ? 'Đang xử lý…'
+                : effectiveShipments.some((s) => s.leg === 'CENTER_TO_BUYER')
+                  ? 'Tạo lại vận đơn giao người mua'
+                  : 'Tạo vận đơn giao người mua'}
             </button>
           )}
         </div>
@@ -170,6 +182,7 @@ export function CenterShipmentModal({ centerProfile, currentUser, shipmentModalO
                 const isCenterToBuyer = s.leg === 'CENTER_TO_BUYER';
                 const isCenterToSeller = s.leg === 'CENTER_TO_SELLER';
                 const isSyncing = syncingShipments.has(s.shipmentId);
+                const isInterrupted = isShipmentInterrupted(s);
 
                 const legBadgeTitle = isSellerToCenter
                   ? 'Chặng 1: Người Bán ➔ Lab Hub'
@@ -196,7 +209,7 @@ export function CenterShipmentModal({ centerProfile, currentUser, shipmentModalO
                           {legBadgeTitle}
                         </span>
                       </div>
-                      <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${isInterrupted ? 'bg-rose-100 text-rose-800 border-rose-300' : 'bg-emerald-100 text-emerald-800 border-emerald-300'}`}>
                         {isCenterToSeller
                           ? getHubReturnProgress(s).label
                           : isSellerToCenter
@@ -252,6 +265,22 @@ export function CenterShipmentModal({ centerProfile, currentUser, shipmentModalO
                             </a>
                           )}
                           {s.lastError && <p className="text-rose-700">{s.lastError}</p>}
+                          {isInterrupted && canBookBuyerDelivery && (
+                            <div className="p-3 bg-teal-50 border border-teal-200 rounded-xl flex flex-wrap items-center justify-between gap-2 text-teal-900 mt-2">
+                              <div className="text-[11px]">
+                                <span className="font-bold">Vận đơn này đã bị hủy hoặc giao thất bại.</span> Bạn có thể đặt lại vận đơn mới để giao hàng cho người mua.
+                              </div>
+                              <button
+                                type="button"
+                                disabled={bookingBuyerOrderId !== null}
+                                onClick={() => void handleBookBuyerDelivery(shipmentModalOrder)}
+                                className="inline-flex items-center gap-1.5 rounded-lg bg-teal-700 hover:bg-teal-800 text-white px-3 py-1.5 text-xs font-bold shrink-0 transition cursor-pointer shadow-xs"
+                              >
+                                <RefreshCw className="w-3.5 h-3.5" />
+                                {bookingBuyerOrderId === orderId ? 'Đang xử lý…' : 'Tạo lại vận đơn giao người mua'}
+                              </button>
+                            </div>
+                          )}
                         </div>
                       );
                     })()}
@@ -270,6 +299,25 @@ export function CenterShipmentModal({ centerProfile, currentUser, shipmentModalO
                         {s.shareLink && <a href={s.shareLink} target="_blank" rel="noreferrer" className="font-bold text-blue-700 hover:underline">Theo dõi trên Lalamove</a>}
                         {s.status === 'CREATION_UNCERTAIN' && <p>Nhân viên hỗ trợ có thể đối soát với mã chuyến {s.shipmentId}.</p>}
                         {s.lastError && <p className="text-rose-700">{s.lastError}</p>}
+                        {isInterrupted && canBookReturn && (
+                          <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex flex-wrap items-center justify-between gap-2 text-amber-900 mt-2">
+                            <div className="text-[11px]">
+                              <span className="font-bold">Vận đơn này đã bị hủy hoặc giao thất bại.</span> Bạn có thể đặt lại vận đơn mới để trả hàng về cho người bán.
+                            </div>
+                            <button
+                              type="button"
+                              disabled={bookingReturnId !== null}
+                              onClick={() => {
+                                closeShipmentModal();
+                                setReturnQuoteOrder(shipmentModalOrder);
+                              }}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-amber-700 hover:bg-amber-800 text-white px-3 py-1.5 text-xs font-bold shrink-0 transition cursor-pointer shadow-xs"
+                            >
+                              <RefreshCw className="w-3.5 h-3.5" />
+                              Tạo lại vận đơn hoàn trả
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -354,7 +402,6 @@ export function CenterShipmentModal({ centerProfile, currentUser, shipmentModalO
 
                     {/* Driver & Carrier Details */}
                     <div className="p-2.5 rounded-xl bg-blue-50/70 border border-blue-200 text-blue-900 flex flex-wrap items-center justify-between gap-2 text-[11px]">
-
                       <div className="flex items-center gap-2">
                         {s.driverPlateNumber && <span className="font-mono font-bold bg-white px-2 py-0.5 rounded border border-blue-200">{s.driverPlateNumber}</span>}
                         <span className="text-[10px] text-blue-700 bg-blue-100/60 px-2 py-0.5 rounded font-semibold">Bạn có thể đồng bộ trạng thái đơn hàng mới nhất: </span>
@@ -370,6 +417,33 @@ export function CenterShipmentModal({ centerProfile, currentUser, shipmentModalO
                           <span>{isSyncing ? 'Đang đồng bộ…' : 'Đồng bộ'}</span>
                         </button>
                       </div>
+
+                      {isCenterToSeller && isInterrupted && canBookReturn && (
+                        // <button
+                        //   type="button"
+                        //   disabled={bookingReturnId !== null}
+                        //   onClick={() => {
+                        //     closeShipmentModal();
+                        //     setReturnQuoteOrder(shipmentModalOrder);
+                        //   }}
+                        //   className="px-2.5 py-1 rounded-lg bg-amber-700 hover:bg-amber-800 text-white font-bold text-[10px] flex items-center gap-1 cursor-pointer transition shadow-2xs"
+                        // >
+                        //   <RefreshCw className="w-2.5 h-2.5" />
+                        //   <span>Tạo lại vận đơn hoàn trả</span>
+                        // </button>
+                        <span></span>
+                      )}
+                      {isCenterToBuyer && isInterrupted && canBookBuyerDelivery && (
+                        <button
+                          type="button"
+                          disabled={bookingBuyerOrderId !== null}
+                          onClick={() => void handleBookBuyerDelivery(shipmentModalOrder)}
+                          className="px-2.5 py-1 rounded-lg bg-teal-700 hover:bg-teal-800 text-white font-bold text-[10px] flex items-center gap-1 cursor-pointer transition shadow-2xs"
+                        >
+                          <RefreshCw className="w-2.5 h-2.5" />
+                          <span>{bookingBuyerOrderId === orderId ? 'Đang xử lý…' : 'Tạo lại vận đơn giao người mua'}</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 );

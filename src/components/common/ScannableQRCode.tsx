@@ -6,19 +6,23 @@ interface ScannableQRCodeProps {
   size?: number;
   className?: string;
   title?: string;
+  allowRemoteFallback?: boolean;
 }
 
 export const ScannableQRCode: React.FC<ScannableQRCodeProps> = ({
   value,
   size = 160,
   className = '',
-  title = 'Quét mã QR để xác thực'
+  title = 'Quét mã QR để xác thực',
+  allowRemoteFallback = true,
 }) => {
   const [dataUrl, setDataUrl] = useState<string>('');
+  const [renderFailed, setRenderFailed] = useState(false);
 
   useEffect(() => {
+    setRenderFailed(false);
+    setDataUrl('');
     if (!value) {
-      setDataUrl('');
       return;
     }
 
@@ -38,15 +42,18 @@ export const ScannableQRCode: React.FC<ScannableQRCodeProps> = ({
       .catch((err) => {
         console.warn('Error generating QR Code:', err);
         // Fallback to QR server if local rendering fails
-        if (isSubscribed) {
+        if (!isSubscribed) return;
+        if (allowRemoteFallback) {
           setDataUrl(`https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(value)}`);
+        } else {
+          setRenderFailed(true);
         }
       });
 
     return () => {
       isSubscribed = false;
     };
-  }, [value, size]);
+  }, [value, size, allowRemoteFallback]);
 
   if (!value) {
     return (
@@ -65,7 +72,7 @@ export const ScannableQRCode: React.FC<ScannableQRCodeProps> = ({
         style={{ width: size, height: size }}
         className={`flex items-center justify-center bg-slate-50 rounded-lg border border-slate-200 animate-pulse text-slate-400 text-xs ${className}`}
       >
-        Đang tạo mã QR...
+        {renderFailed ? 'Không tạo được mã QR' : 'Đang tạo mã QR...'}
       </div>
     );
   }

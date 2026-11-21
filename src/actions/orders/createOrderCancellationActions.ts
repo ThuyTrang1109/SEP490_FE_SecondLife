@@ -42,21 +42,31 @@ export function createOrderCancellationActions({
         ? (hasInsp
           ? 'Yêu cầu kiểm định sẽ kết thúc và tiền ký quỹ (nếu có) sẽ được bảo toàn nguyên vẹn.'
           : (isSeller
-            ? 'Lý do: Người bán tạm hết hàng hoặc không thể chuẩn bị đơn hàng này (Hệ thống sẽ cập nhật trạng thái đơn sang Đã Hủy).'
+            ? undefined
             : 'Đơn hàng sẽ được hủy ngay lập tức và bảo toàn số dư ví của bạn.'))
         : undefined,
+      requireReasonInput: true,
+      reasonLabel: lang === 'vi'
+        ? (hasInsp ? 'Lý do hủy yêu cầu kiểm định' : 'Lý do hủy đơn hàng')
+        : (hasInsp ? 'Inspection cancellation reason' : 'Order cancellation reason'),
+      reasonPlaceholder: lang === 'vi'
+        ? 'Nhập lý do cụ thể (bắt buộc trên 10 ký tự và dưới 100 ký tự)...'
+        : 'Enter specific reason (required between 11 and 99 characters)...',
       confirmText: lang === 'vi' ? (hasInsp ? 'Xác Nhận Hủy Yêu Cầu' : 'Xác Nhận Hủy') : 'Confirm Cancel',
       cancelText: lang === 'vi' ? (hasInsp ? 'Giữ Yêu Cầu' : 'Giữ Đơn') : 'Keep',
       variant: 'warning',
       iconType: 'alert',
-      onConfirm: async () => {
+      onConfirm: async (customReason?: string) => {
         if (onCancelOrder) {
+          const finalReason = customReason?.trim() || (isSeller
+            ? 'Người bán hết hàng hoặc không thể chuẩn bị đơn hàng này.'
+            : 'Người mua yêu cầu hủy đơn do người bán chưa xác nhận.');
           const cancelPayload = isSeller ? {
             reasonCode: 'SELLER_OUT_OF_STOCK' as const,
-            reason: 'Người bán hết hàng hoặc không thể chuẩn bị đơn hàng này.',
+            reason: finalReason,
           } : {
             reasonCode: 'BUYER_REQUESTED' as const,
-            reason: 'Người mua yêu cầu hủy đơn do người bán chưa xác nhận.',
+            reason: finalReason,
           };
           onCancelOrder(ord.id, cancelPayload);
         }
@@ -82,11 +92,16 @@ export function createOrderCancellationActions({
       subMessage: lang === 'vi'
         ? 'Sau khi hủy, KTV sẽ không đến kiểm tra máy nữa và lịch hẹn (nếu có) sẽ bị hủy bỏ.'
         : 'Technician visit will be cancelled and order status updated.',
+      requireReasonInput: isSeller,
+      reasonLabel: lang === 'vi' ? 'Lý do hủy yêu cầu kiểm định' : 'Inspection cancellation reason',
+      reasonPlaceholder: lang === 'vi'
+        ? 'Nhập lý do cụ thể (bắt buộc trên 10 ký tự và dưới 100 ký tự)...'
+        : 'Enter specific reason (required between 11 and 99 characters)...',
       confirmText: lang === 'vi' ? 'Xác Nhận Hủy Kiểm Định' : 'Cancel Inspection',
       cancelText: lang === 'vi' ? 'Giữ Yêu Cầu' : 'Keep Request',
       variant: 'danger',
       iconType: 'alert',
-      onConfirm: async () => {
+      onConfirm: async (customReason?: string) => {
         try {
           localStorage.removeItem(`order_appointment_${ord.id}`);
           localStorage.removeItem(`order_assigned_inspector_${ord.id}`);
@@ -95,12 +110,15 @@ export function createOrderCancellationActions({
         } catch { }
 
         if (onCancelOrder) {
+          const finalReason = customReason?.trim() || (isSeller
+            ? 'Người bán hủy yêu cầu kiểm định trước khi KTV đến kiểm tra.'
+            : 'Người mua chủ động hủy yêu cầu kiểm định trước khi KTV thực hiện đo kiểm.');
           const cancelPayload = isSeller ? {
             reasonCode: 'SELLER_CANNOT_FULFILL' as const,
-            reason: 'Người bán hủy yêu cầu kiểm định trước khi KTV đến kiểm tra.',
+            reason: finalReason,
           } : {
             reasonCode: 'BUYER_REQUESTED' as const,
-            reason: 'Người mua chủ động hủy yêu cầu kiểm định trước khi KTV thực hiện đo kiểm.',
+            reason: finalReason,
           };
           onCancelOrder(ord.id, cancelPayload);
         }

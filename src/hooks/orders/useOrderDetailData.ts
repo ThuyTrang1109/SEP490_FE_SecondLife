@@ -1,6 +1,7 @@
 import React, { useState, type Dispatch, type SetStateAction } from 'react';
 import type { ShipmentBackend } from '../../types';
 import { inspectorService, type InspectionOrderDto } from '../../services/inspectorService';
+import { postService } from '../../services/postService';
 import { shippingService } from '../../services/shippingService';
 import { getOrderAllShipments } from '../../utils/orders/shipmentCache';
 
@@ -9,6 +10,7 @@ export function useOrderDetailData(
   detailIsInspection: boolean,
   setApptTick: Dispatch<SetStateAction<number>>,
   linkedOrderId?: string,
+  sellerPostId?: string,
 ) {
   const [detailShipments, setDetailShipments] = useState<ShipmentBackend[]>(() =>
     detailOrderId ? getOrderAllShipments(detailOrderId, linkedOrderId) : []
@@ -17,6 +19,26 @@ export function useOrderDetailData(
   const [detailInspectionDto, setDetailInspectionDto] = useState<InspectionOrderDto | null>(null);
   const [expandedDetailLeg1, setExpandedDetailLeg1] = useState(false);
   const [expandedDetailLeg2, setExpandedDetailLeg2] = useState(false);
+  const [sellerPostGallery, setSellerPostGallery] = useState<{ postId: string; imageUrls: string[] } | null>(null);
+
+  React.useEffect(() => {
+    if (!sellerPostId) {
+      setSellerPostGallery(null);
+      return;
+    }
+
+    let active = true;
+    void postService.getMyPostDetail(sellerPostId)
+      .then((post) => {
+        if (active && Array.isArray(post?.imageUrls)) {
+          setSellerPostGallery({ postId: sellerPostId, imageUrls: post.imageUrls });
+        }
+      })
+      .catch(() => {
+        // The order's existing images are still available if the listing cannot be loaded.
+      });
+    return () => { active = false; };
+  }, [sellerPostId]);
 
   React.useEffect(() => {
     if (!detailOrderId) {
@@ -172,5 +194,7 @@ export function useOrderDetailData(
     detailShipments, setDetailShipments, isLoadingDetailShipments,
     detailInspectionDto, setDetailInspectionDto,
     expandedDetailLeg1, setExpandedDetailLeg1, expandedDetailLeg2, setExpandedDetailLeg2,
+    sellerPostPhotos: sellerPostGallery && sellerPostGallery.postId === sellerPostId
+      ? sellerPostGallery.imageUrls : undefined,
   };
 }

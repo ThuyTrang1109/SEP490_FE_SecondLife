@@ -618,12 +618,6 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
                     : (lang === 'vi' ? '3. Báo giá kiểm định tại trung tâm' : '3. Center inspection fees')}
                 </span>
               </label>
-              {quoteExpiresAt && !isQuoteExpired && (
-                <span className="text-[10px] text-slate-400 font-medium">
-                  {lang === 'vi' ? 'Hạn báo giá:' : 'Valid until:'}{' '}
-                  {quoteExpiresAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </span>
-              )}
             </div>
 
             {loadingQuote && !quote ? (

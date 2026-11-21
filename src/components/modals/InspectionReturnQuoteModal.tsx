@@ -119,9 +119,6 @@ export function InspectionReturnQuoteModal({ orderId, title, booking, cashShippi
               {overReserve && (
                 <div className="flex flex-wrap justify-between gap-2"><dt>Cước vượt dự phòng</dt><dd className="font-bold text-rose-700">{formatVND(quote.shippingFee - quote.reserveFee)}</dd></div>
               )}
-              {quote.expiresAt && (
-                <div className="flex flex-wrap justify-between gap-2 text-xs text-slate-600"><dt>Báo giá hết hạn lúc</dt><dd>{new Date(quote.expiresAt).toLocaleString('vi-VN')}</dd></div>
-              )}
             </dl>
             {overReserve && <p role="alert" className="text-sm text-rose-800">Cần xử lý phần cước chênh lệch trước khi đặt chuyến.</p>}
           </>

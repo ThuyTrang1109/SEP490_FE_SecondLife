@@ -1,5 +1,5 @@
 import type { BuyerInspectionStage, OrderCheck } from '../../../types/orders/orderTypes';
-import { Clock, Receipt } from 'lucide-react';
+import { AlertTriangle, Clock, Receipt } from 'lucide-react';
 import type { EscrowOrder, OrderCommissionDTO, OrderSettlementDTO } from '../../../types';
 import { formatVND } from '../../../utils/translations';
 import { getCommissionPayout } from '../../../utils/orders/orderFinance';
@@ -28,10 +28,31 @@ export function OrderSettlement({
   if (isSeller === false) return null;
 
   const commissionPayout = orderCommission && getCommissionPayout(orderCommission);
+  const isDisputed = Boolean(
+    detailModalOrder.escrowStatus === 'DISPUTED' ||
+    (detailModalOrder.escrowStatus as any) === 'FROZEN' ||
+    detailModalOrder.backendEscrowStatus === 'FROZEN' ||
+    (detailModalOrder as any).status === 'DISPUTED' ||
+    (detailModalOrder as any).backendStatus === 'DISPUTED' ||
+    (typeof window !== 'undefined' && detailModalOrder.id && localStorage.getItem(`order_disputed_${detailModalOrder.id}`) === 'true')
+  );
+
   return (
     <>
+      {isDisputed && (
+        <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-1.5 animate-fadeIn">
+          <div className="flex items-center gap-2 font-bold text-amber-900">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>Quỹ Escrow Tạm Đóng Băng • Tạm Dừng Giải Ngân</span>
+          </div>
+          <p className="text-[11px] text-amber-800 leading-relaxed">
+            Đơn hàng hiện đang phát sinh khiếu nại / tranh chấp. Khoản thanh toán đang được bảo lưu an toàn trong Quỹ Escrow và quy trình tự động giải ngân sau 48h tạm ngưng cho đến khi tranh chấp được giải quyết.
+          </p>
+        </div>
+      )}
+
       {!isEscrowReleased && !detailBuyerInspectionStage && detailModalOrder.shippingDeliveredAt &&
-        !isOrderReceiptConfirmed(detailModalOrder) && detailModalOrder.escrowStatus !== 'DISPUTED' && (
+        !isOrderReceiptConfirmed(detailModalOrder) && !isDisputed && (
           <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-1.5">
             <div className="flex items-center gap-2 font-bold text-amber-900">
               <Clock className="w-4 h-4 text-amber-600 shrink-0" />
@@ -108,9 +129,6 @@ export function OrderSettlement({
               <span className="font-bold text-slate-800 flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
                 Chưa quyết toán giải ngân
-              </span>
-              <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-blue-100 text-blue-800">
-                {orderCommission.ruleName || orderCommission.ruleCode || 'Biểu phí chuẩn'}
               </span>
             </div>
             <div className="space-y-1.5 pt-1 border-t border-slate-200/80">

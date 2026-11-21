@@ -146,6 +146,10 @@ export interface PostSubmitResponse {
   message?: string;
   reviewReason?: string;
   duplicateMatches?: string[];
+  inspectionOrderId?: string | null;
+  inspectionThreshold?: number | null;
+  inspectionPolicyVersion?: number | null;
+  nextAction?: 'SELECT_INSPECTION_METHOD' | 'WAIT_FOR_LISTING_REVIEW' | 'PAY_INSPECTION_FEE' | 'TRACK_INSPECTION' | 'TRACK_INSPECTION_RETURN' | string | null;
 }
 
 const postDetailCache = new Map<string, { data: any; timestamp: number }>();
@@ -278,16 +282,17 @@ export const postService = {
    * Không giới hạn ACTIVE: chủ bài vẫn xem được RESERVED, PAYMENT_PENDING, SOLD, DRAFT, PENDING, REJECTED...
    * Response 200 trả trực tiếp PostDto không có lớp data/success bọc ngoài.
    */
-  async getMyPostDetail(postId: string): Promise<SellerPostDetailDto> {
+  async getMyPostDetail(postId: string, signal?: AbortSignal): Promise<SellerPostDetailDto> {
     try {
       const cleanId = String(postId || '').trim();
       const response = await request<SellerPostDetailDto>(`/v1/posts/my-posts/${encodeURIComponent(cleanId)}`, {
         method: 'GET',
         requiresAuth: true,
+        signal,
       });
       return (response as any)?.data || response;
     } catch (err: any) {
-      console.warn(`[postService] Lỗi lấy chi tiết bài đăng cá nhân ${postId}:`, err);
+      if (!signal?.aborted) console.warn(`[postService] Lỗi lấy chi tiết bài đăng cá nhân ${postId}:`, err);
       throw err;
     }
   },
@@ -571,6 +576,14 @@ export const postService = {
     const response = await request<PostSubmitResponse>(`/v1/posts/submit/${postId}`, {
       method: 'POST',
       body: JSON.stringify(payload),
+      requiresAuth: true,
+    });
+    return (response as any)?.data || response;
+  },
+
+  async publishInspectedPost(postId: string): Promise<SellerPostDetailDto> {
+    const response = await request<SellerPostDetailDto>(`/v1/posts/${encodeURIComponent(postId)}/publish-inspected`, {
+      method: 'POST',
       requiresAuth: true,
     });
     return (response as any)?.data || response;

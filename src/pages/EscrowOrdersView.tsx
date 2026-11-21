@@ -1,8 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { EscrowOrder, Language, UserRole, UserProfile } from '../types';
 import { EscrowOrderFilters, EscrowOrderPagination } from '../components/orders/EscrowOrderFilters';
-import { ORDER_FILTER_TABS, readOrderFeedQuery, type OrderFeedQuery, type OrderFilterTab } from '../utils/escrowOrderFilters';
-import type { OrderFeed } from '../services/orderFeedService';
+import { ORDER_FILTER_TABS, orderFeedSearch, readOrderFeedQuery, type OrderFeedQuery, type OrderFilterTab } from '../utils/escrowOrderFilters';
+import { getPreListingInspection, type OrderFeed } from '../services/orderFeedService';
+import { navigatePath } from '../app/router/browser';
+import { paths, pathForTab } from '../app/router/paths';
+import { PreListingInspectionWorkflow } from '../components/listing/PreListingInspectionWorkflow';
+import { PreListingInspectionOrderCard } from '../components/orders/PreListingInspectionOrderCard';
 import { formatVND } from '../utils/translations';
 import {
   ShieldCheck,
@@ -311,6 +315,22 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   } = useEscrowOrdersNavigation({
     filterQuery, currentRole: currentUser?.role, userRole, orders, routeOrder, isLoading,
   });
+  const isPreListingTab = activeTab === 'pre_listing';
+  const preListingRows = isPreListingTab
+    ? (filterResult?.items ?? []).flatMap((row) => {
+      const inspection = getPreListingInspection(row);
+      return inspection ? [{ inspection, imageUrl: row.postImageUrl }] : [];
+    })
+    : [];
+  const preListingDetail = userRole === 'seller' ? getPreListingInspection(filterResult?.detail) : null;
+  const preListingDetailId = preListingDetail?.id;
+
+  useEffect(() => {
+    if (activeTab === 'pre_listing' || filterQuery.filter === 'pre_listing' || preListingDetailId) {
+      navigatePath(pathForTab('seller-dashboard', 'seller') + '?tab=high_value_inspections', { replace: true });
+    }
+  }, [activeTab, filterQuery.filter, preListingDetailId]);
+
   const findOrderForAction = (id: string) =>
     orders.find((order) => order.id === id) ??
     (detailModalOrder?.id === id ? detailModalOrder : userOrders.find((order) => order.id === id));
@@ -615,25 +635,36 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   }, [financeOrderId, financeResource, financeRowId]);
 
   // Each order has its own commission snapshot; one order's rate cannot be applied to another.
-  const sellerFinanceRequests = JSON.stringify(orders.flatMap((order) => {
-    if (!isOrderSeller(order)) return [];
-    const lookup = getOrderFinanceLookup(order);
-    return lookup ? [{ rowId: order.id, ...lookup }] : [];
-  }));
+  const sellerFinanceRequests = React.useMemo(() => {
+    return userOrders.flatMap((order) => {
+      if (!isOrderSeller(order)) return [];
+      const lookup = getOrderFinanceLookup(order);
+      return lookup ? [{ rowId: order.id, ...lookup }] : [];
+    });
+  }, [userOrders, currentUser?.id]);
+
+  const sellerFinanceRequestsKey = JSON.stringify(sellerFinanceRequests);
+
   React.useEffect(() => {
     let active = true;
-    const requests: Array<{ rowId: string; orderId: string; resource: 'settlement' | 'commission' }> = JSON.parse(sellerFinanceRequests);
-    setPayoutDataMap({});
+    const requests: Array<{ rowId: string; orderId: string; resource: 'settlement' | 'commission' }> = JSON.parse(sellerFinanceRequestsKey);
     for (const target of requests) {
       const load = target.resource === 'settlement'
         ? orderService.getOrderSettlement(target.orderId).then(getSettlementPayout)
         : orderService.getOrderCommission(target.orderId).then(getCommissionPayout);
       void load.then((payout) => {
-        if (active && payout) setPayoutDataMap((previous) => ({ ...previous, [target.rowId]: payout }));
-      }).catch(() => {});
+        if (active && payout) {
+          setPayoutDataMap((previous) => {
+            if (previous[target.rowId]?.sellerPayout === payout.sellerPayout && previous[target.rowId]?.source === payout.source) {
+              return previous;
+            }
+            return { ...previous, [target.rowId]: payout };
+          });
+        }
+      }).catch(() => { });
     }
     return () => { active = false; };
-  }, [sellerFinanceRequests, currentUser?.id]);
+  }, [sellerFinanceRequestsKey, currentUser?.id]);
 
   // Real Backend Shipments for Detail Modal
   const detailOrderId = detailModalOrder?.id;
@@ -644,11 +675,14 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     detailModalOrder?.inspectionCenterId ||
     (detailModalOrder && detailModalOrder.inspectionFeeVnd > 0)
   );
+  const sellerPostId = detailModalOrder && currentUser?.id && detailModalOrder.sellerId === currentUser.id &&
+    !isOrderWithInspection(detailModalOrder) ? detailModalOrder.listingId : undefined;
   const {
     detailShipments, setDetailShipments, isLoadingDetailShipments,
     detailInspectionDto, setDetailInspectionDto,
     expandedDetailLeg1, setExpandedDetailLeg1, expandedDetailLeg2, setExpandedDetailLeg2,
-  } = useOrderDetailData(detailOrderId, detailIsInspection, setApptTick, detailLinkedOrderId);
+    sellerPostPhotos,
+  } = useOrderDetailData(detailOrderId, detailIsInspection, setApptTick, detailLinkedOrderId, sellerPostId);
   const [trackingShipmentId, setTrackingShipmentId] = useState<string | undefined>(undefined);
 
   // Lalamove Shipping Modals state
@@ -1177,12 +1211,63 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     setTimeout(() => setPickupConfirmedNotice(null), 5000);
   };
 
-  // Seller metrics
+  // Seller metrics: Tiền Chờ Giải Ngân (Escrow)
+  const isOrderPendingEscrow = React.useCallback((ord: EscrowOrder): boolean => {
+    if (!isOrderSeller(ord)) return false;
+
+    // Đơn hủy hoặc đã hoàn trả tiền về buyer -> Không còn tiền chờ giải ngân
+    if (isOrderCancelledOrRefunded(ord)) return false;
+    const status = String(ord.status || (ord as any).backendStatus || '').toUpperCase();
+    if (status === 'CANCELLED' || status === 'REFUNDED') return false;
+
+    const escrow = String(ord.escrowStatus || ord.backendEscrowStatus || '').toUpperCase();
+    if (escrow === 'REFUNDED_TO_BUYER' || escrow === 'REFUNDED') return false;
+
+    // Đơn đã giải ngân hoàn tất về ví người bán
+    if (escrow === 'COMPLETED_RELEASED' || escrow === 'RELEASED' || status === 'COMPLETED') {
+      return false;
+    }
+
+    // Đơn chưa thanh toán (chưa có tiền nộp vào Escrow)
+    if (escrow === 'AWAITING_PAYMENT' || escrow === 'PENDING') {
+      if (!ord.buyerPaidAt && !ord.finalPaymentPaidAt) {
+        return false;
+      }
+    }
+
+    return true;
+  }, [currentUser?.id]);
+
+  const getPendingOrderPayout = React.useCallback((ord: EscrowOrder): number => {
+    // 1. Dữ liệu đối soát thật từ API getOrderCommission / getOrderSettlement
+    const apiPayout = payoutDataMap[ord.id] || (ord.linkedOrderId ? payoutDataMap[ord.linkedOrderId] : undefined);
+    if (apiPayout?.sellerPayout != null && Number.isFinite(apiPayout.sellerPayout)) {
+      return apiPayout.sellerPayout;
+    }
+
+    // 2. Dữ liệu preview đối soát trả về từ API /orders/feed
+    if (ord.sellerCommissionPreview?.sellerPayout != null && Number.isFinite(ord.sellerCommissionPreview.sellerPayout)) {
+      return ord.sellerCommissionPreview.sellerPayout;
+    }
+
+    const preview = getInspectionPayoutPreview(ord);
+    if (preview?.sellerPayout != null && Number.isFinite(preview.sellerPayout)) {
+      return preview.sellerPayout;
+    }
+
+    // 3. Fallback từ giá trị sản phẩm trừ phí sàn
+    const price = Number(ord.itemPriceVnd || (ord as any).finalPrice || ord.listing?.priceVnd || (ord.listing as any)?.price || 0);
+    if (price > 0) {
+      const fee = Number(ord.platformFeeVnd ?? (price * 0.05));
+      return Math.max(0, price - fee);
+    }
+    return 0;
+  }, [payoutDataMap]);
+
   const pendingEscrowTotal = useMemo(() => {
-    const pending = userOrders.filter((o) => isOrderSeller(o) && o.escrowStatus !== 'COMPLETED_RELEASED' && o.escrowStatus !== 'REFUNDED_TO_BUYER');
-    if (pending.some((o) => payoutDataMap[o.id] === undefined)) return null;
-    return pending.reduce((sum, o) => sum + payoutDataMap[o.id].sellerPayout, 0);
-  }, [userOrders, payoutDataMap, orderPerspective, currentUser?.id]);
+    const pendingOrders = userOrders.filter(isOrderPendingEscrow);
+    return pendingOrders.reduce((sum, o) => sum + getPendingOrderPayout(o), 0);
+  }, [userOrders, isOrderPendingEscrow, getPendingOrderPayout]);
 
   const awaitingPickupCount = userOrders.filter((o) => o.escrowStatus === 'AWAITING_PAYMENT').length;
   const inHubInspectionCount = userOrders.filter(
@@ -1295,7 +1380,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                   {lang === 'vi' ? 'Tiền Chờ Giải Ngân (Escrow)' : 'Pending Escrow Payout'}
                 </div>
                 <div className="text-lg sm:text-xl font-black text-[#24263e] mt-0.5">
-                  {pendingEscrowTotal === null ? (lang === 'vi' ? 'Chưa có dữ liệu' : 'Unavailable') : formatVND(pendingEscrowTotal)}
+                  {formatVND(pendingEscrowTotal || 0)}
                 </div>
                 <div className="text-[10px] text-slate-400 mt-0.5">
                   {lang === 'vi' ? 'Tự động giải ngân sau giao' : 'Auto-released after delivery'}
@@ -1322,7 +1407,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                   {inHubInspectionCount} {lang === 'vi' ? 'Thiết Bị' : 'Items'}
                 </div>
                 <div className="text-[10px] text-slate-400 mt-0.5">
-                  {lang === 'vi' ? 'Test 48 bước & dán NFC' : '48-step test & NFC seal'}
+                  {lang === 'vi' ? 'Kiểm tra sản phẩm' : 'Test products'}
                 </div>
               </div>
 
@@ -1379,6 +1464,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         search={searchQuery}
         searching={searching}
         seller={isSeller}
+        showPreListing={false}
         loading={isLoading}
         onFilter={setActiveTab}
         onSearch={setSearchQuery}
@@ -1386,7 +1472,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       />
 
       {/* Seller Awaiting Fee Payment Banner */}
-      {isSeller && userOrders.some((o) => !isOrderCancelledOrRefunded(o) && isOrderSeller(o) && isPartyInspectionFeePending(o, true)) && (
+      {!isPreListingTab && isSeller && userOrders.some((o) => !isOrderCancelledOrRefunded(o) && isOrderSeller(o) && isPartyInspectionFeePending(o, true)) && (
         <div className="p-4 rounded-2xl bg-gradient-to-r from-orange-50 via-amber-50 to-orange-100/70 border-2 border-orange-300 text-orange-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md animate-fadeIn">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-amber-600 text-white flex items-center justify-center font-bold shrink-0 shadow-xs">
@@ -1417,7 +1503,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       )}
 
       {/* Seller Inspection Alert Banner */}
-      {isSeller && inHubInspectionCount > 0 && activeTab !== 'inspecting' && (
+      {!isPreListingTab && isSeller && inHubInspectionCount > 0 && activeTab !== 'inspecting' && (
         <div className="p-4 rounded-2xl bg-gradient-to-r from-purple-50 via-indigo-50 to-blue-50 border border-purple-200 text-purple-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs animate-fadeIn">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center font-bold shrink-0 shadow-xs">
@@ -1508,16 +1594,30 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
             </div>
           ))}
         </div>
-      ) : filterFailed && !filterResult ? null : orders.length === 0 ? (
+      ) : filterFailed && !filterResult ? null : isPreListingTab && preListingRows.length > 0 ? (
+        <div className="space-y-4" aria-busy={isLoading}>
+          {preListingRows.map(({ inspection, imageUrl }) => (
+            <PreListingInspectionOrderCard
+              key={inspection.id}
+              inspection={inspection}
+              imageUrl={imageUrl}
+              lang={lang}
+              onOpen={() => navigatePath(paths.orders('seller', inspection.id) + window.location.search)}
+            />
+          ))}
+        </div>
+      ) : orders.length === 0 ? (
         <div className="rounded-2xl border border-slate-200 bg-white px-6 py-12 text-center shadow-xs">
           <Package aria-hidden="true" className="mx-auto mb-3 size-10 text-slate-400" />
           <h3 className="text-base font-bold text-slate-900">
-            {lang === 'vi' ? 'Không tìm thấy đơn hàng' : 'No orders found'}
+            {isPreListingTab
+              ? (lang === 'vi' ? 'Không tìm thấy yêu cầu kiểm định trước đăng' : 'No pre-listing inspection requests found')
+              : (lang === 'vi' ? 'Không tìm thấy đơn hàng' : 'No orders found')}
           </h3>
-          {(filterQuery.q || activeTab !== 'all' || orderPerspective !== 'all') && (
+          {(filterQuery.q || (!isPreListingTab && activeTab !== 'all') || orderPerspective !== 'all') && (
             <button type="button" onClick={() => {
               setSearchQuery('');
-              updateQuery({ filter: 'all', perspective: 'all', q: '', page: 0 });
+              updateQuery({ filter: isPreListingTab ? 'pre_listing' : 'all', perspective: 'all', q: '', page: 0 });
             }} className="mt-3 cursor-pointer text-sm font-semibold text-[#ad432f] hover:underline">
               {lang === 'vi' ? 'Xóa bộ lọc' : 'Clear filters'}
             </button>
@@ -1626,8 +1726,27 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       {!searching && filterResult && filterResult.totalPages > 1 && (
         <EscrowOrderPagination lang={lang} page={filterResult.page} size={filterResult.size}
           totalPages={filterResult.totalPages} total={filterResult.totalElements}
+          preListing={isPreListingTab}
           onPage={(page) => updateQuery({ page })}
         />
+      )}
+
+      {isPreListingTab && preListingDetail && (
+        <div role="dialog" aria-modal="true"
+          aria-label={lang === 'vi' ? 'Kiểm định trước đăng' : 'Pre-listing inspection'}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-3 sm:p-4 backdrop-blur-xs animate-fadeIn">
+          <div className="w-full max-w-2xl max-h-[90vh] flex flex-col">
+            <PreListingInspectionWorkflow
+              key={preListingDetail.id}
+              postId={preListingDetail.postId}
+              postTitle={preListingDetail.postTitle}
+              postPrice={preListingDetail.postPrice}
+              initialInspectionOrderId={preListingDetail.id}
+              onClose={() => navigatePath(paths.orders('seller') + window.location.search)}
+              lang={lang}
+            />
+          </div>
+        </div>
       )}
 
       {detailModalOrder && (
@@ -1748,6 +1867,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
           <OrderDetailPhotos
             order={detailModalOrder}
             detailInspectionDto={detailInspectionDto}
+            sellerPostPhotos={sellerPostPhotos}
             activePhotoStage={activePhotoStage}
             setActivePhotoStage={setActivePhotoStage}
             lang={lang}
@@ -1944,6 +2064,19 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                 : `Dispute filed successfully for order #${reportingOrder.id.slice(0, 8)}! Funds are frozen in Escrow.`
             );
             setTimeout(() => setInspectionActionNotice(null), 8000);
+            if (reportingOrder?.id) {
+              try {
+                localStorage.setItem(`order_disputed_${reportingOrder.id}`, 'true');
+              } catch { }
+            }
+            if (detailModalOrder && detailModalOrder.id === reportingOrder.id) {
+              setDetailModalOrder({
+                ...detailModalOrder,
+                escrowStatus: 'DISPUTED',
+                status: 'DISPUTED',
+                backendStatus: 'DISPUTED' as any,
+              });
+            }
             onRefreshOrders?.();
           }}
         />

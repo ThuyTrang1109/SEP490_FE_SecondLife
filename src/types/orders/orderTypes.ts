@@ -18,5 +18,9 @@ export interface ConfirmDialogState {
   cancelText?: string;
   variant?: 'primary' | 'success' | 'warning' | 'danger';
   iconType?: 'check' | 'package' | 'truck' | 'alert';
-  onConfirm: () => void | Promise<void>;
+  requireReasonInput?: boolean;
+  reasonLabel?: string;
+  reasonPlaceholder?: string;
+  initialReason?: string;
+  onConfirm: (reason?: string) => void | Promise<void>;
 }

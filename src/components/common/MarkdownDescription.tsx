@@ -170,8 +170,8 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({
         level === 1
           ? 'text-sm font-black text-[#24263e] mt-2.5 mb-1'
           : level === 2
-          ? 'text-[13px] font-black text-[#24263e] mt-2.5 mb-1'
-          : 'text-xs font-extrabold text-[#24263e] mt-2 mb-0.5';
+            ? 'text-[13px] font-black text-[#24263e] mt-2.5 mb-1'
+            : 'text-xs font-extrabold text-[#24263e] mt-2 mb-0.5';
       blocks.push(
         <div key={`blk-${blockKey++}`} className={sizeCls}>
           {renderInlineMarkdown(headingText, `h-${blockKey}`)}
@@ -232,16 +232,14 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({
           {items.map((item, idx) => (
             <li
               key={idx}
-              className={`flex items-start gap-2 text-xs text-slate-700 leading-relaxed ${
-                item.nested ? 'pl-4' : ''
-              }`}
+              className={`flex items-start gap-2 text-xs text-slate-700 leading-relaxed ${item.nested ? 'pl-4' : ''
+                }`}
             >
               <span
-                className={`mt-1.5 rounded-full shrink-0 ${
-                  item.nested
+                className={`mt-1.5 rounded-full shrink-0 ${item.nested
                     ? 'w-1.5 h-1.5 border border-slate-400 bg-transparent'
                     : 'w-1.5 h-1.5 bg-[#c34c36]/85'
-                }`}
+                  }`}
               />
               <span className="flex-1 min-w-0">
                 {renderInlineMarkdown(item.text, `ul-${listKey}-${idx}`)}
@@ -451,9 +449,9 @@ export const MarkdownDescriptionEditor: React.FC<MarkdownDescriptionEditorProps>
 
     const formatted = selected
       ? selected
-          .split('\n')
-          .map((line) => (line.trim() ? `${linePrefix}${line}` : line))
-          .join('\n')
+        .split('\n')
+        .map((line) => (line.trim() ? `${linePrefix}${line}` : line))
+        .join('\n')
       : `${linePrefix}${sampleText}`;
 
     const nextValue = value.slice(0, start) + lead + formatted + value.slice(end);
@@ -479,11 +477,10 @@ export const MarkdownDescriptionEditor: React.FC<MarkdownDescriptionEditorProps>
   return (
     <div
       id="description-field-container"
-      className={`rounded-xl border overflow-hidden transition bg-slate-50 ${
-        hasError
+      className={`rounded-xl border overflow-hidden transition bg-slate-50 ${hasError
           ? 'border-rose-400 bg-rose-50/20 focus-within:border-rose-500'
           : 'border-gray-200 focus-within:border-[#c34c36]'
-      }`}
+        }`}
     >
       {/* Thanh công cụ xem hiển thị & chỉnh sửa */}
       <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-white border-b border-gray-200/80">
@@ -562,10 +559,10 @@ export const MarkdownDescriptionEditor: React.FC<MarkdownDescriptionEditorProps>
               <span>Bấm để chỉnh sửa</span>
             </button>
           )}
-          <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400 pl-1.5 border-l border-gray-200">
+          {/* <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400 pl-1.5 border-l border-gray-200">
             <FileCode2 className="w-3 h-3" />
             <span>.md</span>
-          </span>
+          </span> */}
         </div>
       </div>
 
@@ -600,9 +597,8 @@ export const MarkdownDescriptionEditor: React.FC<MarkdownDescriptionEditorProps>
             onChange(e.target.value);
           }}
           placeholder={placeholder}
-          className={`w-full px-4 py-3 bg-transparent text-xs leading-relaxed focus:outline-none resize-y ${
-            hasError ? 'text-rose-700' : 'text-slate-800'
-          }`}
+          className={`w-full px-4 py-3 bg-transparent text-xs leading-relaxed focus:outline-none resize-y ${hasError ? 'text-rose-700' : 'text-slate-800'
+            }`}
           autoFocus
         />
       )}

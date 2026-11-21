@@ -1138,6 +1138,16 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
       return;
     }
 
+    if (overallVerdict === 'PASS' && conditionScore <= 75) {
+      notify(`Để kết luận ĐẠT CHUẨN (PASS), Điểm Đánh Giá Chất Lượng Tổng Thể phải lớn hơn 75 điểm (hiện tại: ${conditionScore}/100).`, true);
+      return;
+    }
+
+    if (overallVerdict === 'FAIL' && conditionScore > 75) {
+      notify(`Để kết luận TỪ CHỐI (REJECTED), Điểm Đánh Giá Chất Lượng Tổng Thể phải nhỏ hơn hoặc bằng 75 điểm (hiện tại: ${conditionScore}/100).`, true);
+      return;
+    }
+
     // Với AT_CENTER: kiểm tra số lượng ảnh hợp lệ 1-10
     const validEvidencePhotoUrls = proofPhotos
       .map((url) => url.trim())
@@ -1435,11 +1445,13 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
           return maxReachedStepIndex > 3 || (proofPhotos.length >= 1 && proofPhotos.length <= 10);
         }
         return maxReachedStepIndex > 3 || proofPhotos.length > 0;
-      case 'verdict':
+      case 'verdict': {
+        const isScoreValid = overallVerdict === 'PASS' ? conditionScore > 75 : conditionScore <= 75;
         if (isAtCenterOrder) {
-          return Boolean(overallVerdict && (proofPhotos.length >= 1 || isDigitalSigned));
+          return Boolean(overallVerdict && isScoreValid && (proofPhotos.length >= 1 || isDigitalSigned));
         }
-        return Boolean(overallVerdict && isDigitalSigned);
+        return Boolean(overallVerdict && isScoreValid && isDigitalSigned);
+      }
       default:
         return false;
     }
@@ -2755,20 +2767,107 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                   </div>
 
                   {/* Quality score slider */}
-                  <div className="p-4 rounded-2xl bg-[#faf8f5] border border-gray-200 space-y-2 text-xs">
+                  <div className={`p-4 rounded-2xl border space-y-3 text-xs transition ${(overallVerdict === 'PASS' && conditionScore <= 75) || (overallVerdict === 'FAIL' && conditionScore > 75)
+                      ? 'bg-rose-50/40 border-rose-300 ring-1 ring-rose-200'
+                      : 'bg-[#faf8f5] border-gray-200'
+                    }`}>
                     <div className="flex justify-between items-center">
-                      <span className="font-bold text-gray-700">Điểm Đánh Giá Chất Lượng Tổng Thể:</span>
-                      <span className="font-mono font-black text-xl text-[#c34c36]">{conditionScore}/100</span>
+                      <div>
+                        <span className="font-bold text-gray-700">Điểm Đánh Giá Chất Lượng Tổng Thể:</span>
+                        <span className="block text-[11px] font-normal">
+                          {overallVerdict === 'PASS' ? (
+                            <span className="text-amber-700 font-semibold">Yêu cầu khi Đạt Chuẩn: Điểm số phải lớn hơn 75 (&gt; 75)</span>
+                          ) : (
+                            <span className="text-rose-700 font-semibold">Yêu cầu khi Từ Chối: Điểm số phải nhỏ hơn hoặc bằng 75 (≤ 75)</span>
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          disabled={isCompletedOrder}
+                          value={conditionScore}
+                          onChange={(e) => {
+                            const val = Math.min(100, Math.max(0, Number(e.target.value) || 0));
+                            setConditionScore(val);
+                          }}
+                          className={`w-20 px-2 py-1 text-center font-mono font-black text-xl rounded-lg border outline-none transition [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${(overallVerdict === 'PASS' && conditionScore <= 75) || (overallVerdict === 'FAIL' && conditionScore > 75)
+                              ? 'border-rose-400 text-rose-600 bg-white ring-1 ring-rose-300'
+                              : 'border-gray-300 text-[#c34c36] bg-white focus:border-[#c34c36]'
+                            } ${isCompletedOrder ? 'cursor-not-allowed opacity-60' : ''}`}
+                        />
+                        <span className="font-mono font-bold text-gray-500 text-sm">/ 100</span>
+                      </div>
                     </div>
+
                     <input
                       type="range"
-                      min="50"
+                      min="0"
                       max="100"
                       disabled={isCompletedOrder}
                       value={conditionScore}
                       onChange={(e) => setConditionScore(Number(e.target.value))}
-                      className={`w-full accent-[#c34c36] ${isCompletedOrder ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
+                      className={`w-full ${overallVerdict === 'FAIL' ? 'accent-red-600' : 'accent-[#c34c36]'} ${isCompletedOrder ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
                     />
+
+                    <div className="flex justify-between text-[11px] text-gray-400 font-mono">
+                      <span>0 (Kém / Hỏng)</span>
+                      <span className="text-amber-600 font-bold">Ngưỡng đạt: &gt; 75</span>
+                      <span>100 (Xuất sắc)</span>
+                    </div>
+
+                    {!isCompletedOrder && (
+                      <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                        <span className="text-[11px] text-gray-500 font-medium">Chọn nhanh:</span>
+                        {(overallVerdict === 'FAIL' ? [
+                          { score: 0, label: '0 (Kém / Hỏng)' },
+                          { score: 30, label: '30' },
+                          { score: 50, label: '50' },
+                          { score: 60, label: '60' },
+                          { score: 70, label: '70' },
+                          { score: 75, label: '75 (Tối đa)' },
+                        ] : [
+                          { score: 76, label: '76 (Vừa đạt)' },
+                          { score: 80, label: '80' },
+                          { score: 85, label: '85' },
+                          { score: 90, label: '90' },
+                          { score: 95, label: '95' },
+                          { score: 100, label: '100' },
+                        ]).map((preset) => (
+                          <button
+                            key={preset.score}
+                            type="button"
+                            onClick={() => setConditionScore(preset.score)}
+                            className={`px-2 py-0.5 rounded-lg text-[11px] font-bold border transition cursor-pointer ${conditionScore === preset.score
+                                ? overallVerdict === 'FAIL'
+                                  ? 'bg-red-600 text-white border-red-600'
+                                  : 'bg-[#c34c36] text-white border-[#c34c36]'
+                                : overallVerdict === 'FAIL'
+                                  ? 'bg-white text-gray-700 border-gray-200 hover:border-red-600'
+                                  : 'bg-white text-gray-700 border-gray-200 hover:border-[#c34c36]'
+                              }`}
+                          >
+                            {preset.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {overallVerdict === 'PASS' && conditionScore <= 75 && (
+                      <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold flex items-center gap-2 animate-fadeIn">
+                        <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                        <span>Kết luận ĐẠT CHUẨN (PASS) yêu cầu điểm chất lượng phải lớn hơn 75 (hiện tại: {conditionScore}/100). Vui lòng điều chỉnh lại điểm số.</span>
+                      </div>
+                    )}
+
+                    {overallVerdict === 'FAIL' && conditionScore > 75 && (
+                      <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold flex items-center gap-2 animate-fadeIn">
+                        <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                        <span>Kết luận TỪ CHỐI (REJECTED) yêu cầu điểm chất lượng không đạt (nhỏ hơn hoặc bằng 75 điểm, hiện tại: {conditionScore}/100). Vui lòng điều chỉnh lại điểm số.</span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Diagnostic notes */}
@@ -2794,9 +2893,9 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                         <div className="font-bold text-slate-900">Chữ Ký Số Kiểm Định Viên: {inspectorName}</div>
                         <div className="text-[11px] text-gray-500 font-mono">
                           {isAtCenterOrder ? (
-                            <span>Chứng thư số: SL-CA-2026-RSA4096 (Còn hiệu lực) • Hình thức: Kiểm định tại Lab Hub</span>
+                            <span>Chứng thư số: • Hình thức: Kiểm định tại Lab Hub</span>
                           ) : (
-                            <span>Chứng thư số: SL-CA-2026-RSA4096 (Còn hiệu lực) • Hình thức: Kiểm định tận nơi tại nhà</span>
+                            <span>Chứng thư số: • Hình thức: Kiểm định tận nơi tại nhà</span>
                           )}
                         </div>
                       </div>

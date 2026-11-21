@@ -1,6 +1,7 @@
 import type { InspectionOrderDto } from '../services/inspectorService';
 import type { EscrowOrder, ShippingQuoteResponseDto, UserProfile } from '../types';
 import { getInspectionTaskStage } from './inspectionTaskStatus';
+import { INSPECTION_NOTE_PHOTO_TAG } from './inspectionPurchase';
 
 export function getInspectionDecisionStatus(
   order?: Partial<Pick<EscrowOrder, 'inspectionStatus' | 'backendStatus' | 'status' | 'escrowStatus'>> | null,
@@ -140,9 +141,6 @@ export function isInspectionProofImage(url: string) {
   return false;
 }
 
-// The report API currently stores additional photo URLs in this note tag.
-const photoTag = /\[Photos:\s*(\[\s*(?:"(?:[^"\\]|\\.)*"(?:\s*,\s*"(?:[^"\\]|\\.)*")*)?\s*\])\s*\]/;
-
 /**
  * Kiểm tra xem chuỗi ghi chú có phải là ghi chú đề xuất chia phí hoặc ghi chú điều phối nội bộ hay không.
  * Các ghi chú này KHÔNG PHẢI là kết luận kỹ thuật của KTV và không được hiển thị như kết luận kiểm định.
@@ -168,7 +166,7 @@ export function getInspectionReportMedia(
   unavailableUrls?: ReadonlySet<string>,
 ) {
   const rawNote = order?.note || '';
-  const photoMatch = rawNote.match(photoTag);
+  const photoMatch = rawNote.match(INSPECTION_NOTE_PHOTO_TAG);
   let notePhotos: string[] = [];
   if (photoMatch) {
     try {

@@ -1,6 +1,6 @@
 export const ORDER_FILTER_TABS = [
   'all', 'awaiting_pickup', 'inspecting', 'shipping', 'delivered',
-  'completed', 'cancelled', 'disputed', 'with_inspection',
+  'completed', 'cancelled', 'disputed', 'with_inspection', 'pre_listing',
 ] as const;
 
 export type OrderFilterTab = typeof ORDER_FILTER_TABS[number];

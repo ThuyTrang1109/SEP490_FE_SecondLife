@@ -1002,24 +1002,38 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
 
                           {/* Chi tiết cộng tiền gì / trừ tiền gì */}
                           <div className="mt-1 space-y-0.5 text-[10px]">
-                            {item.breakdownItems.map(({ label, delta }) => (
+                            {item.breakdownItems.map(({ label, delta, formattedText }) => (
                               <div key={label} className="text-slate-500 font-sans">
                                 <span>{label}: </span>
                                 <strong
                                   className={
-                                    delta > 0
+                                    formattedText
+                                      ? formattedText.startsWith('+')
+                                        ? 'text-emerald-700 font-mono font-bold'
+                                        : 'text-slate-800 font-mono font-bold'
+                                      : delta > 0
                                       ? 'text-emerald-700 font-mono font-bold'
                                       : 'text-slate-800 font-mono font-bold'
                                   }
                                 >
-                                  {delta > 0 ? '+' : '-'}
-                                  {formatVND(Math.abs(delta))}
+                                  {formattedText ?? (
+                                    <>
+                                      {delta > 0 ? '+' : delta < 0 ? '-' : ''}
+                                      {formatVND(Math.abs(delta))}
+                                    </>
+                                  )}
                                 </strong>
                               </div>
                             ))}
                             {item.breakdownItems.length === 0 && (
-                              <div className="ml-auto max-w-[230px] whitespace-normal text-slate-500">
-                                {item.breakdownSummary}
+                              <div className="ml-auto max-w-[240px] whitespace-normal text-slate-500 space-y-0.5">
+                                {item.breakdownSummary
+                                  ? item.breakdownSummary
+                                      .split(/(?<=[.!?])\s+/)
+                                      .map((sentence, idx) => (
+                                        <div key={idx}>{sentence}</div>
+                                      ))
+                                  : null}
                               </div>
                             )}
                           </div>
@@ -1506,7 +1520,7 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
                     </div>
 
                     <div className="flex justify-between py-1 font-bold pt-1.5 text-slate-900">
-                      <span className="text-blue-900">Người bán thực nhận (Seller Payout):</span>
+                      <span className="text-blue-900">Người bán thực nhận:</span>
                       <strong className="font-mono text-blue-900 text-sm">
                         {selectedSellerPayout === null ? '—' : formatVND(selectedSellerPayout)}
                       </strong>
@@ -1514,35 +1528,7 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
                   </div>
                 </div>
 
-                {/* Thông tin truy vết sổ cái */}
-                <div className="p-3 bg-amber-50/50 border border-amber-200/70 rounded-xl space-y-1 text-[11px] text-amber-950">
-                  <div className="font-bold flex items-center justify-between">
-                    <span>Truy vết sổ cái ví hệ thống:</span>
-                    <span className="font-mono text-[10px] text-amber-800">
-                      {selectedItem?.createdAt
-                        ? new Date(selectedItem.createdAt).toLocaleString('vi-VN')
-                        : '---'}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-1 text-[10px] text-amber-900 pt-0.5">
-                    <div>
-                      <span>Số dư ký quỹ sau GD: </span>
-                      <strong className="font-mono">
-                        {selectedItem?.transaction.heldBalanceAfter !== undefined
-                          ? formatVND(selectedItem.transaction.heldBalanceAfter)
-                          : '---'}
-                      </strong>
-                    </div>
-                    <div>
-                      <span>Số dư hoa hồng sau GD: </span>
-                      <strong className="font-mono">
-                        {selectedItem?.transaction.revenueBalanceAfter !== undefined
-                          ? formatVND(selectedItem.transaction.revenueBalanceAfter)
-                          : '---'}
-                      </strong>
-                    </div>
-                  </div>
-                </div>
+
 
                 {/* Modal Footer */}
                 <div className="pt-2 flex justify-end">

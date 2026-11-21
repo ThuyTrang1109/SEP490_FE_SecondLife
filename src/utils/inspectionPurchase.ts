@@ -89,10 +89,13 @@ export interface ParsedInspectorVerdict {
   score?: string;
 }
 
+// Some reports embed a JSON array of evidence URLs in the note.
+export const INSPECTION_NOTE_PHOTO_TAG = /\[Photos:\s*(\[\s*(?:"(?:[^"\\]|\\.)*"(?:\s*,\s*"(?:[^"\\]|\\.)*")*)?\s*\])\s*\]/i;
+
 export function parseInspectorVerdictNote(rawNote?: string | null): ParsedInspectorVerdict {
   if (!rawNote) return { cleanText: '' };
 
-  let text = String(rawNote).trim();
+  let text = String(rawNote).replace(INSPECTION_NOTE_PHOTO_TAG, ' ').trim();
 
   // Extract Packaging: [Bao bì: ...]
   let packaging: string | undefined;
@@ -126,10 +129,8 @@ export function parseInspectorVerdictNote(rawNote?: string | null): ParsedInspec
     text = text.replace(scoreMatch[0], '').trim();
   }
 
-  // Remove [Tem: ...], [Photos: ...], and any other [Key: Value] tags
-  text = text.replace(/\[Tem:\s*[^\]]+\]/gi, '').trim();
-  text = text.replace(/\[Photos:\s*[^\]]+\]/gi, '').trim();
-  text = text.replace(/\[(Tem|Grade|Điểm|Bao bì|Phụ kiện|Photos):.*?\]/gi, '').trim();
+  // Remove remaining report tags, including older single-value photo tags.
+  text = text.replace(/\[(Tem|Grade|Điểm|Bao bì|Phụ kiện|Photos):[^\]]*\]/gi, '').trim();
   text = text.replace(/\[\s*\]/g, '').trim();
 
   return {
@@ -139,6 +140,15 @@ export function parseInspectorVerdictNote(rawNote?: string | null): ParsedInspec
     grade,
     score,
   };
+}
+
+export function formatInspectionFailureReason(rawNote?: string | null, lang: Language = 'vi'): string {
+  const { cleanText, packaging, accessories } = parseInspectorVerdictNote(rawNote);
+  return [
+    cleanText.replace(/^Kiểm định chất lượng đầu vào không đạt:\s*/i, ''),
+    packaging && `${lang === 'vi' ? 'Bao bì' : 'Packaging'}: ${packaging}`,
+    accessories && `${lang === 'vi' ? 'Phụ kiện' : 'Accessories'}: ${accessories}`,
+  ].filter(Boolean).join(' · ');
 }
 
 export function getCustomerInspectionStatus(status?: string | null, customerStatus?: string | null, inspectorId?: string | null) {

@@ -314,6 +314,7 @@ export const AdminInspectionFundsView: React.FC<AdminInspectionFundsViewProps> =
                 hasActualReturnFee,
                 returnShipmentCode,
                 returnShipmentStatus,
+                isInterruptedReturn,
                 splitPlan,
                 surplusAmount,
                 buyerSurplusShare,
@@ -357,11 +358,17 @@ export const AdminInspectionFundsView: React.FC<AdminInspectionFundsViewProps> =
                     <div className="p-2.5 rounded-lg bg-white border border-amber-100 shadow-2xs">
                       <span className="text-[10px] text-slate-500 block font-medium">Cước hoàn thực tế (Hub → Seller)</span>
                       <span className="font-bold font-mono text-slate-900 text-sm">
-                        {hasActualReturnFee ? formatVND(actualReturnFee) : 'Chưa phát sinh (0 đ)'}
+                        {isInterruptedReturn
+                          ? `${formatVND(actualReturnFee)} (Tạm tính)`
+                          : hasActualReturnFee
+                            ? formatVND(actualReturnFee)
+                            : 'Chưa phát sinh (0 đ)'}
                       </span>
                       <div className="text-[10px] text-slate-500 mt-0.5 truncate">
                         {returnShipmentCode ? (
-                          <span title={returnShipmentCode}>Mã: {returnShipmentCode}</span>
+                          <span title={returnShipmentCode} className={isInterruptedReturn ? 'text-rose-600 font-semibold' : ''}>
+                            Mã: {returnShipmentCode} {isInterruptedReturn ? '· Vận đơn thất bại (Chưa trừ)' : ''}
+                          </span>
                         ) : (
                           <span>{returnShipmentStatus ? resolveShipmentStatusLabel(returnShipmentStatus) : 'Chưa tạo chuyến hoàn'}</span>
                         )}
@@ -384,7 +391,7 @@ export const AdminInspectionFundsView: React.FC<AdminInspectionFundsViewProps> =
                         {formatVND(surplusAmount)}
                       </span>
                       <span className="text-[10px] text-emerald-700 block mt-0.5">
-                        {hasActualReturnFee ? 'Đã trừ cước hoàn' : 'Dự kiến hoàn trả'}
+                        {isInterruptedReturn ? 'Chưa trừ (Vận đơn hủy)' : hasActualReturnFee ? 'Đã trừ cước hoàn' : 'Dự kiến hoàn trả'}
                       </span>
                     </div>
                   </div>
@@ -515,7 +522,7 @@ export const AdminInspectionFundsView: React.FC<AdminInspectionFundsViewProps> =
                         <th className="p-2.5">Mã Lalamove / Đơn</th>
                         <th className="p-2.5">Trạng thái kiện</th>
                         <th className="p-2.5 text-right">Cước thực tế</th>
-                        <th className="p-2.5">Chi tiết tiền mặt (Sandbox)</th>
+                        
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">

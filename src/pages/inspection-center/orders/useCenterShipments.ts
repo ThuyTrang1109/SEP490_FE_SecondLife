@@ -12,6 +12,7 @@ import {
   getLatestInspectionShipment,
   hasCenterReceivedInbound,
   isPaidHubBuyerDelivery,
+  isShipmentInterrupted,
   getHubReturnProgress,
   getHubReturnState,
   isHubReturnCase,
@@ -113,7 +114,7 @@ export function useCenterShipments({ currentUser, loadingShipmentsRef, loadOrder
         if (controller.signal.aborted) return;
 
         if (isHubReturnCase(order) && returnVersion === returnBookingVersion.current) {
-          setHubReturns((previous) => new Map(previous).set(orderId, getHubReturnState(shipments)));
+          setHubReturns((previous) => new Map(previous).set(orderId, getHubReturnState(shipments, order.status)));
           if (returnModalOrderIdRef.current === orderId && modalRequest === shipmentModalRequestRef.current) {
             setInspectionShipments(shipments.filter((shipment) => shipment.leg === 'CENTER_TO_SELLER'));
           }
@@ -180,7 +181,8 @@ export function useCenterShipments({ currentUser, loadingShipmentsRef, loadOrder
     returnBookingRef.current = order.id;
     setBookingReturnId(order.id);
     try {
-      const key = `hub_return_request_${order.id}_${state?.shipment?.shipmentId || 'first'}`;
+      const isInterrupted = isShipmentInterrupted(state?.shipment);
+      const key = `hub_return_request_${order.id}_${state?.shipment?.shipmentId || 'first'}${isInterrupted ? `_retry_${state?.shipment?.status || 'interrupted'}` : ''}`;
       let requestId = returnRequestIds.current.get(key);
       if (!requestId) {
         try { requestId = localStorage.getItem(key) || undefined; } catch { }
@@ -216,7 +218,7 @@ export function useCenterShipments({ currentUser, loadingShipmentsRef, loadOrder
             }
           } catch { }
           returnBookingVersion.current++;
-          setHubReturns((previous) => new Map(previous).set(order.id, getHubReturnState(shipments)));
+          setHubReturns((previous) => new Map(previous).set(order.id, getHubReturnState(shipments, order.status)));
         } catch { }
         await loadOrders(true);
       }
@@ -399,7 +401,7 @@ export function useCenterShipments({ currentUser, loadingShipmentsRef, loadOrder
 
       setInspectionShipments(matchingShipments);
       if (returnDelivery) {
-        const returnState = getHubReturnState(list);
+        const returnState = getHubReturnState(list, ord.status);
         setHubReturns((previous) => new Map(previous).set(ord.id, returnState));
         if (shouldSyncHubReturnOnOpen(returnState.shipment)) {
           void handleSyncCenterShipment(ord.id, returnState.shipment, request);

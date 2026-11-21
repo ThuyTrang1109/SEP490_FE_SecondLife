@@ -104,8 +104,8 @@ export function fitsVehicle(
 ): boolean {
   if (!validParcel(parcel, catalog)) return false;
   if (parcel.weight < vehicle.minWeightGram
-      || parcel.weight > vehicle.maxWeightGram
-      || parcel.height > vehicle.maxHeightCm) return false;
+    || parcel.weight > vehicle.maxWeightGram
+    || parcel.height > vehicle.maxHeightCm) return false;
   const normal = parcel.length <= vehicle.maxLengthCm
     && parcel.width <= vehicle.maxWidthCm;
   const swapped = catalog.allowLengthWidthSwap
@@ -128,9 +128,9 @@ export async function getVehicleCatalog(
 ): Promise<VehicleCatalog> {
   const query = pickup
     ? '?' + new URLSearchParams({
-        latitude: String(pickup.latitude),
-        longitude: String(pickup.longitude),
-      }).toString()
+      latitude: String(pickup.latitude),
+      longitude: String(pickup.longitude),
+    }).toString()
     : '';
   const response = await request<VehicleCatalog>('/shipping/vehicles' + query, {
     method: 'GET',
@@ -714,7 +714,7 @@ export const shippingService = {
   async updateShippingPackage(postId: string, body: ShippingParcel): Promise<ShippingParcel> {
     try {
       localStorage.setItem(`post_parcel_${postId}`, JSON.stringify(body));
-    } catch {}
+    } catch { }
     const res = await request<ShippingParcel>(`/posts/${postId}/shipping-package`, {
       method: 'PUT',
       body: JSON.stringify(body),
@@ -775,7 +775,20 @@ export const shippingService = {
       body: JSON.stringify(body),
       requiresAuth: true,
     });
-    return ((res as any)?.data ?? res) as ShipmentBackend;
+    const created = ((res as any)?.data ?? res) as ShipmentBackend;
+    if (typeof window !== 'undefined' && created) {
+      try {
+        const key = `sl_insp_shipments_${inspectionId}`;
+        const existing = JSON.parse(localStorage.getItem(key) || '[]');
+        const createdId = created.shipmentId || (created as any).id;
+        const updated = Array.isArray(existing)
+          ? [created, ...existing.filter((s: any) => (s.shipmentId || s.id) !== createdId)]
+          : [created];
+        localStorage.setItem(key, JSON.stringify(updated));
+        window.dispatchEvent(new CustomEvent('secondlife_shipment_updated', { detail: { orderId: inspectionId, shipment: created } }));
+      } catch { }
+    }
+    return created;
   },
 
   /**
@@ -784,15 +797,23 @@ export const shippingService = {
    */
   async getInspectionShipments(
     inspectionId: string,
-    options?: Pick<RequestOptions, 'signal' | 'isBackground'>,
+    options?: Pick<RequestOptions, 'signal' | 'isBackground'> & { updateCache?: boolean },
   ): Promise<ShipmentBackend[]> {
+    const { updateCache = true, ...requestOptions } = options || {};
     const res = await request<ShipmentBackend[]>(`/inspection-orders/${inspectionId}/shipments`, {
-      ...options,
+      ...requestOptions,
       method: 'GET',
       requiresAuth: true,
     });
     const data = (res as any)?.data ?? res;
-    return Array.isArray(data) ? data : [];
+    const list = Array.isArray(data) ? data : [];
+    if (updateCache && typeof window !== 'undefined' && list.length > 0) {
+      try {
+        localStorage.setItem(`sl_insp_shipments_${inspectionId}`, JSON.stringify(list));
+        window.dispatchEvent(new CustomEvent('secondlife_shipment_updated', { detail: { orderId: inspectionId, shipments: list } }));
+      } catch { }
+    }
+    return list;
   },
 
   /**

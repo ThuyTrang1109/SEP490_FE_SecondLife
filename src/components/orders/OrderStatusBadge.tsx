@@ -96,6 +96,29 @@ export function OrderStatusBadge({
     );
   }
 
+  // 0.8. Kiểm tra đơn hàng đang bị khiếu nại / tranh chấp / đóng băng quỹ Escrow
+  const isDisputedOrder = Boolean(
+    s === 'DISPUTED' ||
+    s === 'FROZEN' ||
+    bStatus === 'DISPUTED' ||
+    bStatus === 'FROZEN' ||
+    orderItem?.escrowStatus === 'DISPUTED' ||
+    (orderItem?.escrowStatus as any) === 'FROZEN' ||
+    orderItem?.backendEscrowStatus === 'FROZEN' ||
+    (orderItem as any)?.status === 'DISPUTED' ||
+    (orderItem as any)?.backendStatus === 'DISPUTED' ||
+    (typeof window !== 'undefined' && orderItem?.id && localStorage.getItem(`order_disputed_${orderItem.id}`) === 'true')
+  );
+
+  if (isDisputedOrder) {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-500/15 text-amber-700 border border-amber-500/30">
+        <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+        <span>{lang === 'vi' ? 'Đang Tranh Chấp • Đóng Băng Escrow' : 'Disputed • Escrow Frozen'}</span>
+      </span>
+    );
+  }
+
   // 1. Kiểm tra đơn hàng đã hoàn tất / đã giải ngân
   const isReceiptConfirmed = Boolean(
     orderItem && (
@@ -609,6 +632,42 @@ export function OrderStatusBadge({
         </span>
       );
     }
+    if (!isInspectionOrder) {
+      const allShips = orderItem?.id ? getOrderAllShipments(orderItem.id, (orderItem as any).linkedOrderId) : [];
+      const directShip = allShips.find((sh) => (sh.leg === 'SELLER_TO_BUYER' || sh.leg === 'DELIVERY') && sh.status !== 'CANCELLED');
+      if (directShip) {
+        if (directShip.status === 'IN_TRANSIT' || directShip.status === 'DELIVERING' || directShip.providerStatus === 'ON_GOING' || directShip.providerStatus === 'PICKED_UP') {
+          return (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-500/15 text-blue-600 border border-blue-500/30">
+              <Truck className="w-3.5 h-3.5 text-blue-600" />
+              <span>{lang === 'vi' ? (isSellerForThisOrder ? 'Đang Giao Tới Người Mua' : 'Đang Giao Hàng Tới Bạn') : 'Delivering'}</span>
+            </span>
+          );
+        }
+        if (directShip.status === 'READY_TO_PICK' || directShip.status === 'PENDING' || directShip.providerStatus === 'ASSIGNING_DRIVER') {
+          return (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-300">
+              <Truck className="w-3.5 h-3.5 text-emerald-600" />
+              <span>{lang === 'vi' ? 'Đã tạo vận đơn • Chờ tài xế lấy hàng' : 'Shipment Created • Awaiting Driver Pickup'}</span>
+            </span>
+          );
+        }
+      }
+      return (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
+          <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />
+          <span>
+            {lang === 'vi'
+              ? isSellerForThisOrder
+                ? 'Đã Xác Nhận • Đang Chuẩn Bị Giao Hàng'
+                : 'Người Bán Đã Xác Nhận • Đang Chuẩn Bị Giao'
+              : isSellerForThisOrder
+                ? 'Confirmed • Preparing Delivery'
+                : 'Seller Confirmed • Preparing Delivery'}
+          </span>
+        </span>
+      );
+    }
     if (s === 'AWAITING_INSPECTION' || s === 'HELD_IN_ESCROW') {
       const isAtHome = isAtHomeOrderCheck(orderItem);
       const isArrived = orderItem?.id ? isInspectorArrivedForOrder(orderItem.id, orderItem) : false;
@@ -778,6 +837,22 @@ export function OrderStatusBadge({
             </span>
           );
         }
+        if (!isInspectionOrder) {
+          return (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
+              <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />
+              <span>
+                {lang === 'vi'
+                  ? isSellerForThisOrder
+                    ? 'Đã Xác Nhận • Đang Chuẩn Bị Giao Hàng'
+                    : 'Người Bán Đã Xác Nhận • Đang Chuẩn Bị Giao'
+                  : isSellerForThisOrder
+                    ? 'Confirmed • Preparing Delivery'
+                    : 'Seller Confirmed • Preparing Delivery'}
+              </span>
+            </span>
+          );
+        }
         const isSellerPaysAll = orderItem?.inspectionFeeSplit === 'SELLER_100' || (orderItem ? getPartyInspectionFee(orderItem, false) <= 0 : false);
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
@@ -903,9 +978,10 @@ export function OrderStatusBadge({
         </span>
       );
     case 'DISPUTED':
+    case 'FROZEN':
       return (
-        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-red-500/15 text-red-600 border border-red-500/30">
-          <AlertTriangle className="w-3.5 h-3.5" />
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-500/15 text-amber-700 border border-amber-500/30">
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
           <span>{lang === 'vi' ? 'Đang Tranh Chấp • Đóng Băng Escrow' : 'Disputed • Escrow Frozen'}</span>
         </span>
       );

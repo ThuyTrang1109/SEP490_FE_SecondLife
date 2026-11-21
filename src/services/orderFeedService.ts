@@ -39,6 +39,31 @@ export async function getOrderFeed(query: OrderFeedQuery, orderId?: string, sign
   return data;
 }
 
+export function getPreListingInspection(row?: OrderFeedItem | null): InspectionOrderDto | null {
+  return !row?.order && row?.inspection?.inspectionScope === 'PRE_LISTING' ? row.inspection : null;
+}
+
+export function hasPreListingInspectionResult(inspection?: InspectionOrderDto): boolean {
+  return inspection?.inspectionScope === 'PRE_LISTING' &&
+    ['PASSED', 'COMPLETED', 'FAILED', 'REJECTED'].includes(inspection.status);
+}
+
+export async function getSellerPreListingInspections(signal: AbortSignal) {
+  const latestByPost = new Map<string, InspectionOrderDto>();
+  for (let page = 0; !signal.aborted; page++) {
+    const feed = await getOrderFeed({ filter: 'pre_listing', perspective: 'seller', q: '', page }, undefined, signal);
+    // The feed is ordered by newest first, including attempts that are still in progress.
+    for (const row of feed.items) {
+      const inspection = getPreListingInspection(row);
+      if (inspection?.postId && !latestByPost.has(inspection.postId)) {
+        latestByPost.set(inspection.postId, inspection);
+      }
+    }
+    if (feed.page !== page || page + 1 >= feed.totalPages) break;
+  }
+  return latestByPost;
+}
+
 export function orderFeedItemToRaw({ order, inspection, ...metadata }: OrderFeedItem) {
   const ordAny = order as any;
   const merged = {

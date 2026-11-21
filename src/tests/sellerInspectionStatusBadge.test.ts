@@ -321,3 +321,46 @@ test('OrderStatusBadge keeps "Người mua từ chối mua • Chờ trung tâm 
   const textChild = rendered.props.children[1].props.children;
   assert.equal(textChild, 'Người mua từ chối mua • Chờ trung tâm hoàn hàng');
 });
+
+test('OrderStatusBadge renders "Đang Tranh Chấp • Đóng Băng Escrow" when delivered order is disputed for both seller and buyer', () => {
+  const disputedOrder: any = {
+    id: '4de60c8a-64cd-4c74-89bf-63b4cafc9500',
+    listingId: 'post-999',
+    sellerId: 'seller-trang',
+    buyerId: 'buyer-tuan',
+    status: 'DELIVERED',
+    backendStatus: 'DELIVERED',
+    escrowStatus: 'DISPUTED',
+    shippingDeliveredAt: '2026-11-20T12:00:00.000Z',
+  };
+
+  const baseProps: any = {
+    status: 'DISPUTED',
+    hasInspection: false,
+    orderItem: disputedOrder as EscrowOrder,
+    lang: 'vi',
+    isOrderCancelledOrRefunded: () => false,
+    isOrderReceiptConfirmed: () => false,
+    isOrderSellerConfirmed: () => true,
+    getOrderInboundShipment: () => null,
+    inboundLoadingOrders: new Set(),
+    isInspectorArrivedForOrder: () => false,
+    getOrderAppointment: () => null,
+    autoPaidOrderIds: new Set(),
+    isPartyInspectionFeePending: () => false,
+    getPartyInspectionFee: () => 0,
+    isPartyInspectionFeePaid: () => true,
+  };
+
+  // 1. Seller view
+  const sellerBadge = OrderStatusBadge({ ...baseProps, isSeller: true, isCurrentOrderSeller: true }) as any;
+  assert.ok(sellerBadge);
+  const sellerText = sellerBadge.props.children[1].props.children;
+  assert.equal(sellerText, 'Đang Tranh Chấp • Đóng Băng Escrow');
+
+  // 2. Buyer view
+  const buyerBadge = OrderStatusBadge({ ...baseProps, isSeller: false, isCurrentOrderSeller: false }) as any;
+  assert.ok(buyerBadge);
+  const buyerText = buyerBadge.props.children[1].props.children;
+  assert.equal(buyerText, 'Đang Tranh Chấp • Đóng Băng Escrow');
+});

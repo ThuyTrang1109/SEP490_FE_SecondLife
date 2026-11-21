@@ -7,6 +7,7 @@ import { UserProfile } from '../../../types';
 import {
   canBookCenterBuyerDelivery,
   canBookCenterReturn,
+  canBookHubBuyerDelivery,
   canReadCenterInspectionShipments,
   getHubBuyerShipmentLabel,
   getInboundShipmentProgress,
@@ -269,7 +270,7 @@ export function CenterOrders({
                                 Chặng Hoàn Trả: Hub → Người bán
                               </span>
                               {returnShipment ? (
-                                <span className="rounded-md bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900 border border-amber-300">
+                                <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold border ${canBookHubBuyerDelivery(returnShipment) ? 'bg-rose-100 text-rose-800 border-rose-300' : 'bg-amber-100 text-amber-900 border-amber-300'}`}>
                                   {getHubReturnProgress(returnShipment).label}
                                 </span>
                               ) : (
@@ -288,7 +289,7 @@ export function CenterOrders({
                                   className="inline-flex items-center gap-1.5 rounded-lg bg-amber-700 px-3 py-1.5 text-[11px] font-bold text-white shadow-xs hover:bg-amber-800 disabled:opacity-60 transition cursor-pointer"
                                 >
                                   <Truck className="h-3.5 w-3.5" />
-                                  {bookingReturnId === ord.id ? 'Đang xử lý…' : 'Tạo vận đơn trả Seller'}
+                                  {bookingReturnId === ord.id ? 'Đang xử lý…' : (returnShipment ? 'Tạo lại vận đơn trả hàng' : 'Tạo vận đơn trả hàng người bán')}
                                 </button>
                               </div>
                             )}
@@ -340,7 +341,7 @@ export function CenterOrders({
                                   className="inline-flex items-center gap-1.5 rounded-lg bg-teal-700 px-3 py-1.5 text-[11px] font-bold text-white shadow-xs hover:bg-teal-800 disabled:opacity-60 transition cursor-pointer"
                                 >
                                   <Truck className="h-3.5 w-3.5" />
-                                  {bookingBuyerOrderId === ord.id ? 'Đang xử lý…' : 'Tạo vận đơn giao người mua'}
+                                  {bookingBuyerOrderId === ord.id ? 'Đang xử lý…' : (buyerShipment ? 'Tạo lại vận đơn giao người mua' : 'Tạo vận đơn giao người mua')}
                                 </button>
                               </div>
                             ) : buyerShipment && (

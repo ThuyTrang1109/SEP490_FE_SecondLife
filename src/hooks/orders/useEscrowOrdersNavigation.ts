@@ -24,7 +24,12 @@ export function useEscrowOrdersNavigation({
     navigatePath(pathname + orderFeedSearch(search, { ...filterQuery, ...changes }));
   };
   const setActiveTab = (filter: OrderFilterTab) => updateQuery({ filter, page: 0, q: searchQuery.trim() });
-  const setOrderPerspective = (perspective: OrderPerspective) => updateQuery({ perspective, page: 0, q: searchQuery.trim() });
+  const setOrderPerspective = (perspective: OrderPerspective) => updateQuery({
+    perspective,
+    filter: perspective === 'buyer' && activeTab === 'pre_listing' ? 'all' : activeTab,
+    page: 0,
+    q: searchQuery.trim(),
+  });
 
   const [searchQuery, setSearchQuery] = useState(filterQuery.q);
   useEffect(() => setSearchQuery(filterQuery.q), [filterQuery.q]);

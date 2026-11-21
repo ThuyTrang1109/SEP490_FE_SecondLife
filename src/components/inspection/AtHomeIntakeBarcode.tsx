@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Barcode, Copy, Check, CheckCircle2, ShieldCheck, QrCode } from 'lucide-react';
+import { ScannableQRCode } from '../common/ScannableQRCode';
 
 export function getAtHomeIntakeCode(orderId: string): string {
   if (!orderId) return 'SL-ATHOME-00000000';
@@ -24,6 +25,7 @@ interface AtHomeIntakeBarcodeProps {
   compact?: boolean;
   appointmentTime?: string;
   inspectorName?: string;
+  format?: 'barcode' | 'qr';
 }
 
 export const AtHomeIntakeBarcode: React.FC<AtHomeIntakeBarcodeProps> = ({
@@ -33,10 +35,12 @@ export const AtHomeIntakeBarcode: React.FC<AtHomeIntakeBarcodeProps> = ({
   compact = false,
   appointmentTime,
   inspectorName,
+  format = 'barcode',
 }) => {
   const [copied, setCopied] = useState(false);
   const intakeCode = useMemo(() => getAtHomeIntakeCode(orderId), [orderId]);
-  const bars = useMemo(() => generateBarcodeBars(intakeCode), [intakeCode]);
+  const bars = useMemo(() => format === 'barcode' ? generateBarcodeBars(intakeCode) : [], [format, intakeCode]);
+  const isQr = format === 'qr';
 
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -78,10 +82,12 @@ export const AtHomeIntakeBarcode: React.FC<AtHomeIntakeBarcodeProps> = ({
       <div className="flex items-center justify-between gap-2 border-b border-amber-200/60 pb-2 flex-wrap">
         <div className="flex items-center gap-1.5 min-w-0">
           <div className="w-6 h-6 rounded-lg bg-amber-600 text-white flex items-center justify-center shrink-0">
-            <Barcode className="w-3.5 h-3.5" />
+            {isQr ? <QrCode className="w-3.5 h-3.5" /> : <Barcode className="w-3.5 h-3.5" />}
           </div>
           <span className="text-[11px] font-black uppercase text-amber-950 tracking-wider">
-            {lang === 'vi' ? 'Mã Vạch Tiếp Nhận KTV Tại Nhà' : 'At-Home Inspector Intake Barcode'}
+            {isQr
+              ? (lang === 'vi' ? 'Mã QR tiếp nhận kiểm định tại nhà' : 'At-home inspection check-in QR code')
+              : (lang === 'vi' ? 'Mã Vạch Tiếp Nhận KTV Tại Nhà' : 'At-Home Inspector Intake Barcode')}
           </span>
         </div>
         <span className="text-[10px] font-bold text-amber-800 bg-amber-100/90 px-2 py-0.5 rounded-md border border-amber-200/80 flex items-center gap-1 shrink-0">
@@ -92,15 +98,15 @@ export const AtHomeIntakeBarcode: React.FC<AtHomeIntakeBarcodeProps> = ({
 
       {/* Barcode Visualizer */}
       <div className="bg-white p-2.5 rounded-xl border border-gray-200/90 text-center shadow-2xs space-y-1">
-        <div className="h-10 w-full max-w-[260px] mx-auto flex items-center justify-center gap-[2.5px] overflow-hidden px-1">
-          {bars.map((width, i) => (
-            <div
-              key={i}
-              className="h-full bg-slate-900"
-              style={{ width: `${width}px` }}
-            />
-          ))}
-        </div>
+        {isQr ? (
+          <ScannableQRCode value={orderId} size={128} className="mx-auto" allowRemoteFallback={false} />
+        ) : (
+          <div className="h-10 w-full max-w-[260px] mx-auto flex items-center justify-center gap-[2.5px] overflow-hidden px-1">
+            {bars.map((width, i) => (
+              <div key={i} className="h-full bg-slate-900" style={{ width: `${width}px` }} />
+            ))}
+          </div>
+        )}
         <span className="font-mono text-xs text-slate-800 font-black tracking-[0.25em] block select-all">
           {intakeCode}
         </span>
@@ -140,9 +146,11 @@ export const AtHomeIntakeBarcode: React.FC<AtHomeIntakeBarcodeProps> = ({
 
       {/* Instructions for seller */}
       <p className="text-[10px] text-amber-900/75 leading-relaxed pt-0.5 italic">
-        {lang === 'vi'
-          ? '💡 Đưa mã vạch trên màn hình hoặc đọc mã tiếp nhận cho Kỹ thuật viên quét khi đến nhà. Thao tác này giúp xác thực đúng nhân sự kiểm định của SecondLife và bảo vệ bạn.'
-          : '💡 Show this barcode or provide the intake code to the technician upon arrival to verify authentic SecondLife staff.'}
+        {isQr
+          ? (lang === 'vi' ? 'Khi kỹ thuật viên đến, hãy đưa mã QR để quét hoặc đọc mã tiếp nhận để nhập.' : 'Show this QR code or provide the intake code to the technician on arrival.')
+          : (lang === 'vi'
+            ? '💡 Đưa mã vạch trên màn hình hoặc đọc mã tiếp nhận cho Kỹ thuật viên quét khi đến nhà. Thao tác này giúp xác thực đúng nhân sự kiểm định của SecondLife và bảo vệ bạn.'
+            : '💡 Show this barcode or provide the intake code to the technician upon arrival to verify authentic SecondLife staff.')}
       </p>
     </div>
   );

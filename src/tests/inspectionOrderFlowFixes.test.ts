@@ -503,4 +503,30 @@ test('Inspection Order Flow and Address Resolution Fixes', async (t) => {
     };
     assert.equal(isInspectorAssignmentLocked(completedOrder), true, 'Completed order is locked from changing KTV');
   });
+
+  test('Verdict PASS requires conditionScore > 75 and Verdict FAIL requires conditionScore <= 75', () => {
+    const validateVerdictScore = (verdict: 'PASS' | 'FAIL', score: number) => {
+      if (verdict === 'PASS' && score <= 75) {
+        return { valid: false, error: 'Để kết luận ĐẠT CHUẨN (PASS), Điểm Đánh Giá Chất Lượng Tổng Thể phải lớn hơn 75 điểm.' };
+      }
+      if (verdict === 'FAIL' && score > 75) {
+        return { valid: false, error: 'Để kết luận TỪ CHỐI (REJECTED), Điểm Đánh Giá Chất Lượng Tổng Thể phải nhỏ hơn hoặc bằng 75 điểm.' };
+      }
+      return { valid: true, error: null };
+    };
+
+    assert.equal(validateVerdictScore('PASS', 0).valid, false);
+    assert.equal(validateVerdictScore('PASS', 50).valid, false);
+    assert.equal(validateVerdictScore('PASS', 75).valid, false);
+    assert.equal(validateVerdictScore('PASS', 76).valid, true);
+    assert.equal(validateVerdictScore('PASS', 90).valid, true);
+    assert.equal(validateVerdictScore('PASS', 100).valid, true);
+
+    assert.equal(validateVerdictScore('FAIL', 0).valid, true);
+    assert.equal(validateVerdictScore('FAIL', 50).valid, true);
+    assert.equal(validateVerdictScore('FAIL', 70).valid, true);
+    assert.equal(validateVerdictScore('FAIL', 75).valid, true);
+    assert.equal(validateVerdictScore('FAIL', 76).valid, false);
+    assert.equal(validateVerdictScore('FAIL', 100).valid, false);
+  });
 });

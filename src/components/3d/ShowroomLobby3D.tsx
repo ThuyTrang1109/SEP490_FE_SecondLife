@@ -40,8 +40,8 @@ export const ShowroomLobby3D: React.FC<ShowroomLobby3DProps> = ({
               setApplianceType('fridge');
             }}
             className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${applianceType === 'fridge'
-                ? 'bg-[#2b1d16] text-white shadow-md'
-                : 'text-[#2b1d16]/80 hover:text-[#2b1d16] hover:bg-white/60'
+              ? 'bg-[#2b1d16] text-white shadow-md'
+              : 'text-[#2b1d16]/80 hover:text-[#2b1d16] hover:bg-white/60'
               }`}
           >
             {lang === 'vi' ? 'Tủ Lạnh Hitachi' : 'Hitachi Fridge'}
@@ -52,8 +52,8 @@ export const ShowroomLobby3D: React.FC<ShowroomLobby3DProps> = ({
               setApplianceType('washer');
             }}
             className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${applianceType === 'washer'
-                ? 'bg-[#2b1d16] text-white shadow-md'
-                : 'text-[#2b1d16]/80 hover:text-[#2b1d16] hover:bg-white/60'
+              ? 'bg-[#2b1d16] text-white shadow-md'
+              : 'text-[#2b1d16]/80 hover:text-[#2b1d16] hover:bg-white/60'
               }`}
           >
             {lang === 'vi' ? 'Máy Giặt Electrolux' : 'Electrolux Washer'}
@@ -102,7 +102,7 @@ export const ShowroomLobby3D: React.FC<ShowroomLobby3DProps> = ({
           <div className="flex flex-wrap items-center gap-2.5 pt-1">
             <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/70 text-[#2b1d16] text-xs font-bold border border-[#cea981]/40 backdrop-blur-md shadow-xs">
               <ShieldCheck className="w-3.5 h-3.5 text-[#2b1d16]" />
-              <span>{lang === 'vi' ? 'Kiểm định 100% phần cứng tại Hub' : '100% Hub Hardware Inspected'}</span>
+              <span>{lang === 'vi' ? 'Kiểm định sản phẩm uy tín tại trung tâm' : '100% Hub Hardware Inspected'}</span>
             </div>
           </div>
 

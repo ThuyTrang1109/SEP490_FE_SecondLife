@@ -1002,24 +1002,38 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
 
                           {/* Chi tiết cộng tiền gì / trừ tiền gì */}
                           <div className="mt-1 space-y-0.5 text-[10px]">
-                            {item.breakdownItems.map(({ label, delta }) => (
+                            {item.breakdownItems.map(({ label, delta, formattedText }) => (
                               <div key={label} className="text-slate-500 font-sans">
                                 <span>{label}: </span>
                                 <strong
                                   className={
-                                    delta > 0
+                                    formattedText
+                                      ? formattedText.startsWith('+')
+                                        ? 'text-emerald-700 font-mono font-bold'
+                                        : 'text-slate-800 font-mono font-bold'
+                                      : delta > 0
                                       ? 'text-emerald-700 font-mono font-bold'
                                       : 'text-slate-800 font-mono font-bold'
                                   }
                                 >
-                                  {delta > 0 ? '+' : '-'}
-                                  {formatVND(Math.abs(delta))}
+                                  {formattedText ?? (
+                                    <>
+                                      {delta > 0 ? '+' : delta < 0 ? '-' : ''}
+                                      {formatVND(Math.abs(delta))}
+                                    </>
+                                  )}
                                 </strong>
                               </div>
                             ))}
                             {item.breakdownItems.length === 0 && (
-                              <div className="ml-auto max-w-[230px] whitespace-normal text-slate-500">
-                                {item.breakdownSummary}
+                              <div className="ml-auto max-w-[240px] whitespace-normal text-slate-500 space-y-0.5">
+                                {item.breakdownSummary
+                                  ? item.breakdownSummary
+                                      .split(/(?<=[.!?])\s+/)
+                                      .map((sentence, idx) => (
+                                        <div key={idx}>{sentence}</div>
+                                      ))
+                                  : null}
                               </div>
                             )}
                           </div>

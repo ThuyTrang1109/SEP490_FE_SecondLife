@@ -345,7 +345,6 @@ export interface HighValueInspectionPolicyRequest {
 
 export interface PreListingInspectionQuoteRequest {
   orderType: 'AT_HOME' | 'AT_CENTER';
-  inspectionCenterId?: string | null;
 }
 
 export interface PreListingInspectionQuoteResponse {
@@ -1775,7 +1774,8 @@ export const inspectorService = {
    */
   async getPreListingQuote(
     postId: string,
-    payload: PreListingInspectionQuoteRequest
+    payload: PreListingInspectionQuoteRequest,
+    signal?: AbortSignal
   ): Promise<PreListingInspectionQuoteResponse> {
     const res = await request<PreListingInspectionQuoteResponse>(
       `/inspection/posts/${encodeURIComponent(postId)}/pre-listing/quote`,
@@ -1783,6 +1783,7 @@ export const inspectorService = {
         method: 'POST',
         body: JSON.stringify(payload),
         requiresAuth: true,
+        signal,
       }
     );
     const data = (res as any)?.data ?? res;

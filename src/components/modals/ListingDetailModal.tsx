@@ -21,7 +21,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { Listing, Language, ProductReview, UserProfile, SellerPostDetailDto } from '../../types';
-import { translations, formatVND } from '../../utils/translations';
+import { translations, formatConditionGrade, formatVND } from '../../utils/translations';
 import { cleanFullAddress, extractWardAndCity } from '../../utils/addressUtils';
 import { getBoughtListingIds, getResolvedPostParcel } from '../../utils/orderUtils';
 import { soundFx } from '../../utils/soundEffects';
@@ -29,6 +29,7 @@ import { reviewService } from '../../data/mockReviews';
 import { reputationService, postService, SellerReputationDto, getStoredUser, getAssessmentStatusMeta } from '../../services';
 import { UserReportModal } from './UserReportModal';
 import { isListingInspectionPassed } from '../../utils/listingInspection';
+import { formatInspectionFailureReason } from '../../utils/inspectionPurchase';
 import { resolveCategoryAndItem, extractSellerOriginalPrice, getPostMetadata } from '../../utils/catalogCache';
 import { MarkdownContent } from '../common/MarkdownDescription';
 
@@ -43,11 +44,12 @@ interface ListingDetailModalProps {
   lang: Language;
 }
 
-const cleanDisplayDescription = (desc?: string): string => {
+const cleanDisplayDescription = (desc: string | undefined, lang: Language): string => {
   if (!desc) return '';
   return desc
     .replace(/<!--(?:sl_orig_price|ORIGINAL_PRICE):\d+-->/gi, '')
     .replace(/^[-*•\s]*giá\s*(?:sản\s*phẩm\s*)?lúc\s*mua\s*(?:mới)?\s*[:=–-].*$/gmi, '')
+    .replace(/(https?:\/\/[^\s)]+)|\bUSED_GOOD\b/gi, (match, url?: string) => url ?? formatConditionGrade(match, lang))
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 };
@@ -71,6 +73,10 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
   const [sellerDetailError, setSellerDetailError] = useState<string | null>(null);
 
   const activeDetail = sellerDetail || publicDetail;
+  const declaredCondition = activeDetail?.itemCondition || listing.declaredConditionText;
+  const conditionLabel = declaredCondition === 'NEW'
+    ? (lang === 'vi' ? 'Hàng Mới / Nguyên Bản' : 'Brand New')
+    : formatConditionGrade(declaredCondition, lang);
 
   const isOwnListing = Boolean(
     user?.id && (
@@ -116,7 +122,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
       : (listing.shippingHeight != null && listing.shippingHeight > 0 ? listing.shippingHeight : fallbackParcel.height));
 
   const effectiveStatus = (sellerDetail?.status || activeDetail?.status || listing.backendStatus || listing.status || 'ACTIVE').toUpperCase();
-  const effectiveRejectionReason = sellerDetail?.rejectionReason ?? listing.rejectionReason;
+  const effectiveRejectionReason = formatInspectionFailureReason(sellerDetail?.rejectionReason ?? listing.rejectionReason, lang);
   const effectiveCreditCharged = sellerDetail?.listingCreditCharged ?? listing.listingCreditCharged;
   const effectiveSellerAddress = cleanFullAddress(
     activeDetail ? activeDetail.sellerAddress ?? activeDetail.user?.address ?? '' : listing.sellerAddress ?? ''
@@ -415,8 +421,8 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                           key={idx}
                           onClick={() => setActivePhotoIndex(idx)}
                           className={`relative rounded-lg overflow-hidden w-14 h-14 sm:w-16 sm:h-16 border transition-all cursor-pointer p-0.5 bg-slate-50 shrink-0 ${isSelected
-                              ? 'border-[#24263e] ring-2 ring-[#24263e]/40 shadow-xs scale-105'
-                              : 'border-gray-200 opacity-75 hover:opacity-100 hover:border-gray-300'
+                            ? 'border-[#24263e] ring-2 ring-[#24263e]/40 shadow-xs scale-105'
+                            : 'border-gray-200 opacity-75 hover:opacity-100 hover:border-gray-300'
                             }`}
                         >
                           <img
@@ -629,19 +635,23 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                       </span>
                       {/* Status badge */}
                       <span className={`text-[10px] font-black px-2 py-0.5 rounded-md shadow-2xs ${effectiveStatus === 'ACTIVE'
-                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                          : effectiveStatus === 'RESERVED' || effectiveStatus === 'PAYMENT_PENDING'
-                            ? 'bg-amber-100 text-amber-800 border border-amber-300'
-                            : effectiveStatus === 'SOLD'
-                              ? 'bg-indigo-100 text-indigo-800 border border-indigo-300'
-                              : effectiveStatus === 'REJECTED'
-                                ? 'bg-rose-100 text-rose-800 border border-rose-300'
-                                : effectiveStatus === 'DRAFT'
-                                  ? 'bg-slate-100 text-slate-700 border border-slate-300'
+                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                        : effectiveStatus === 'RESERVED' || effectiveStatus === 'PAYMENT_PENDING'
+                          ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                          : effectiveStatus === 'SOLD'
+                            ? 'bg-indigo-100 text-indigo-800 border border-indigo-300'
+                            : effectiveStatus === 'REJECTED'
+                              ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                              : effectiveStatus === 'DRAFT'
+                                ? 'bg-slate-100 text-slate-700 border border-slate-300'
+                                : effectiveStatus === 'PENDING_INSPECTION' || effectiveStatus === 'READY_TO_PUBLISH'
+                                  ? (isInspected || effectiveStatus === 'READY_TO_PUBLISH'
+                                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                    : 'bg-amber-100 text-amber-800 border border-amber-300')
                                   : 'bg-purple-100 text-purple-800 border border-purple-300'
                         }`}>
                         {effectiveStatus === 'ACTIVE'
-                          ? (lang === 'vi' ? '● Đang Niêm Yết' : '● Active')
+                          ? (lang === 'vi' ? '● Đang bán' : '● Active')
                           : effectiveStatus === 'RESERVED' || effectiveStatus === 'PAYMENT_PENDING'
                             ? (lang === 'vi' ? '● Đã Đặt Mua / Ký Quỹ' : '● Reserved')
                             : effectiveStatus === 'SOLD'
@@ -650,14 +660,28 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                                 ? (lang === 'vi' ? '● Bị Từ Chối' : '● Rejected')
                                 : effectiveStatus === 'DRAFT'
                                   ? (lang === 'vi' ? '● Bản Nháp' : '● Draft')
-                                  : (lang === 'vi' ? '● Chờ Duyệt Hub' : '● Pending')}
+                                  : effectiveStatus === 'READY_TO_PUBLISH'
+                                    ? (lang === 'vi' ? '● Sẵn sàng đăng bán' : '● Ready to publish')
+                                    : effectiveStatus === 'PENDING_INSPECTION'
+                                      ? (isInspected
+                                        ? (lang === 'vi' ? '● Đã kiểm định · Chờ nhận lại hàng' : '● Inspected · Awaiting return')
+                                        : (lang === 'vi' ? '● Chờ kiểm định' : '● Pending Inspection'))
+                                      : (lang === 'vi' ? '● Chờ Duyệt Hub' : '● Pending')}
                       </span>
                     </div>
 
                     {effectiveCreditCharged && (
                       <div className="text-[10.5px] text-emerald-700 font-semibold flex items-center gap-1 pt-0.5">
                         <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
-                        <span>{lang === 'vi' ? '✓ Đã trừ 1 lượt đăng bài (Listing credit)' : '✓ Listing credit charged'}</span>
+                        <span>{lang === 'vi' ? 'Đã trừ 1 lượt đăng bài' : 'Listing credit charged'}</span>
+                      </div>
+                    )}
+
+                    {effectiveStatus === 'PENDING_INSPECTION' && isInspected && (
+                      <div className="text-[10.5px] text-slate-600 font-medium pt-1 border-t border-blue-200/60 leading-snug">
+                        {lang === 'vi'
+                          ? 'Thiết bị đã đạt kiểm định. Bạn có thể tự đăng bán sau khi nhận lại hàng.'
+                          : 'Inspection passed. You can publish the listing once you receive the returned item.'}
                       </div>
                     )}
 
@@ -676,7 +700,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                         <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
                         <span>{lang === 'vi' ? 'Lý do kiểm duyệt từ chối:' : 'Rejection reason:'}</span>
                       </div>
-                      <p className="text-[11px] leading-relaxed text-rose-700 pl-5">
+                      <p className="break-words text-[11px] leading-relaxed text-rose-700 pl-5">
                         {effectiveRejectionReason}
                       </p>
                     </div>
@@ -854,9 +878,9 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
             <div className="bg-[#faf8f5] rounded-xl p-3 border border-gray-200 text-xs text-[#24263e] space-y-1.5 leading-relaxed">
               <div className="font-bold text-[#24263e] flex items-center gap-1 text-[11px] bg-white border border-[#24263e]/20 px-2 py-0.5 rounded-md w-fit shadow-xs">
                 <CheckCircle2 className="w-3 h-3 text-[#24263e]" />
-                <span>{activeDetail?.itemCondition ? (activeDetail.itemCondition === 'NEW' ? (lang === 'vi' ? 'Hàng Mới / Nguyên Bản' : 'Brand New') : activeDetail.itemCondition) : listing.declaredConditionText}</span>
+                <span>{conditionLabel}</span>
               </div>
-              <MarkdownContent content={cleanDisplayDescription(activeDetail?.description || listing.description)} />
+              <MarkdownContent content={cleanDisplayDescription(activeDetail?.description || listing.description, lang)} />
             </div>
           </div>
 
@@ -868,8 +892,8 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                   type="button"
                   onClick={() => setReviewsTab('product')}
                   className={`text-xs font-extrabold pb-0.5 transition cursor-pointer flex items-center gap-1 ${reviewsTab === 'product'
-                      ? 'text-[#24263e] border-b-2 border-[#c34c36]'
-                      : 'text-slate-400 hover:text-slate-600'
+                    ? 'text-[#24263e] border-b-2 border-[#c34c36]'
+                    : 'text-slate-400 hover:text-slate-600'
                     }`}
                 >
                   <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
@@ -880,8 +904,8 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                   type="button"
                   onClick={() => setReviewsTab('seller')}
                   className={`text-xs font-extrabold pb-0.5 transition cursor-pointer flex items-center gap-1 ${reviewsTab === 'seller'
-                      ? 'text-[#24263e] border-b-2 border-[#c34c36]'
-                      : 'text-slate-400 hover:text-slate-600'
+                    ? 'text-[#24263e] border-b-2 border-[#c34c36]'
+                    : 'text-slate-400 hover:text-slate-600'
                     }`}
                 >
                   <UserCheck className="w-3.5 h-3.5 text-[#c34c36]" />

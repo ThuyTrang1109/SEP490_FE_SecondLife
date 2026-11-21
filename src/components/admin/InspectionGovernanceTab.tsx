@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   FileText,
   Navigation,
@@ -28,7 +28,8 @@ import {
   DollarSign,
   Filter,
   Loader2,
-  Clock
+  Clock,
+  MapPin
 } from 'lucide-react';
 import {
   Language,
@@ -308,6 +309,123 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
     checklistActiveFilter,
   ]);
 
+  // Helper chuẩn hóa tiếng Việt để so sánh chính xác tuyệt đối
+  const normalizeVN = (str?: string | null) => {
+    if (!str) return '';
+    return str
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim();
+  };
+
+  const isHcmText = (str?: string | null) => {
+    if (!str) return false;
+    const s = normalizeVN(str);
+    return (
+      s.includes('ho chi minh') ||
+      s.includes('hcm') ||
+      s.includes('sai gon') ||
+      s.includes('saigon') ||
+      s.includes('tp.hcm') ||
+      s.includes('tphcm')
+    );
+  };
+
+  const isHanoiText = (str?: string | null) => {
+    if (!str) return false;
+    const s = normalizeVN(str);
+    return s.includes('ha noi') || s.includes('hanoi') || s.includes('hn');
+  };
+
+  // Nhận diện trung tâm Hà Nội và TP. Hồ Chí Minh từ danh mục trung tâm
+  const hanoiCenter = useMemo(() => {
+    return centers.find(
+      (c) => isHanoiText(c.city) || isHanoiText(c.name) || isHanoiText(c.address)
+    );
+  }, [centers]);
+
+  const hcmCenter = useMemo(() => {
+    return centers.find(
+      (c) => isHcmText(c.city) || isHcmText(c.name) || isHcmText(c.address)
+    );
+  }, [centers]);
+
+  const otherCenters = useMemo(() => {
+    return centers.filter((c) => c.id !== hanoiCenter?.id && c.id !== hcmCenter?.id);
+  }, [centers, hanoiCenter, hcmCenter]);
+
+  const isHanoiActive =
+    checklistCenterFilter === 'HANOI' || (Boolean(hanoiCenter) && checklistCenterFilter === hanoiCenter?.id);
+  const isHcmActive =
+    checklistCenterFilter === 'HCM' || (Boolean(hcmCenter) && checklistCenterFilter === hcmCenter?.id);
+
+  const getCenterDetails = useCallback(
+    (chk: InspectionChecklistResponse) => {
+      const centerId = chk.pricing?.inspectionCenterId || chk.createdById;
+      const centerNameFromPricing = chk.pricing?.inspectionCenterName;
+
+      // Tìm matchedCenter trong danh mục centers
+      const matchedCenter = centers.find(
+        (c) =>
+          (centerId && c.id && c.id.toLowerCase() === centerId.toLowerCase()) ||
+          (centerNameFromPricing && c.name && normalizeVN(c.name) === normalizeVN(centerNameFromPricing))
+      );
+
+      // Tổng hợp mọi văn bản liên quan đến trung tâm này
+      const checkTexts = [
+        centerNameFromPricing,
+        matchedCenter?.name,
+        matchedCenter?.city,
+        matchedCenter?.address,
+      ].filter(Boolean) as string[];
+
+      const isHcm =
+        checkTexts.some(isHcmText) ||
+        (Boolean(centerId) && Boolean(hcmCenter?.id) && centerId === hcmCenter?.id);
+      const isHanoi =
+        !isHcm &&
+        (checkTexts.some(isHanoiText) ||
+          (Boolean(centerId) && Boolean(hanoiCenter?.id) && centerId === hanoiCenter?.id));
+
+      let areaTitle = '';
+      let areaBadge = '';
+      let fullName = '';
+
+      if (isHcm) {
+        areaTitle = 'Thành phố HCM';
+        areaBadge = 'TP. HCM';
+        fullName = matchedCenter?.name || centerNameFromPricing || 'Trung Tâm Kiểm Định SecondLife TP. Hồ Chí Minh';
+        const norm = normalizeVN(fullName);
+        if (norm === 'trung tam kiem dinh' || norm === 'trung tam tac gia' || !fullName) {
+          fullName = 'Trung Tâm Kiểm Định SecondLife TP. Hồ Chí Minh';
+        }
+      } else if (isHanoi) {
+        areaTitle = 'Hà Nội';
+        areaBadge = 'Hà Nội';
+        fullName = matchedCenter?.name || centerNameFromPricing || 'Trung Tâm Kiểm Định SecondLife Hà Nội';
+        const norm = normalizeVN(fullName);
+        if (norm === 'trung tam kiem dinh' || norm === 'trung tam tac gia' || !fullName) {
+          fullName = 'Trung Tâm Kiểm Định SecondLife Hà Nội';
+        }
+      } else {
+        areaTitle = matchedCenter?.city || matchedCenter?.name || centerNameFromPricing || 'Trung tâm';
+        areaBadge = matchedCenter?.city || 'Khác';
+        fullName = matchedCenter?.name || centerNameFromPricing || 'Trung Tâm Kiểm Định';
+      }
+
+      return {
+        isHcm,
+        isHanoi,
+        areaTitle,
+        areaBadge,
+        cityName: areaTitle,
+        fullName,
+      };
+    },
+    [centers, hanoiCenter, hcmCenter]
+  );
+
   /**
    * Tự động bù đắp thông tin định giá (pricing enrichment fallback)
    * nếu Backend chưa trả trường pricing (do Backend chưa restart hoặc API cũ).
@@ -465,6 +583,25 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
         );
       }
 
+      if (ctr && ctr !== 'ALL') {
+        finalList = finalList.filter((c) => {
+          const info = getCenterDetails(c);
+          if (ctr === 'HANOI' || (hanoiCenter && ctr === hanoiCenter.id)) {
+            return (
+              info.isHanoi ||
+              Boolean(hanoiCenter && (c.createdById === hanoiCenter.id || c.pricing?.inspectionCenterId === hanoiCenter.id))
+            );
+          }
+          if (ctr === 'HCM' || (hcmCenter && ctr === hcmCenter.id)) {
+            return (
+              info.isHcm ||
+              Boolean(hcmCenter && (c.createdById === hcmCenter.id || c.pricing?.inspectionCenterId === hcmCenter.id))
+            );
+          }
+          return c.createdById === ctr || c.pricing?.inspectionCenterId === ctr;
+        });
+      }
+
       setChecklistProposals(finalList);
       setChecklistTotalPages(st === 'PENDING_APPROVAL' || st === 'APPROVED' ? Math.ceil(finalList.length / pageSize) || 1 : (data.totalPages || 1));
       setChecklistTotalElements(st === 'PENDING_APPROVAL' || st === 'APPROVED' ? finalList.length : (data.totalElements || rawList.length));
@@ -487,6 +624,42 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
     setChecklistStatusFilter(newStatus);
     setChecklistPage(0);
     loadChecklistProposals(0, { status: newStatus as any });
+  };
+
+  const handleChecklistCenterFilterChange = (key: string) => {
+    setChecklistCenterFilter(key);
+    setChecklistPage(0);
+
+    let inspectionCenterId: string | undefined = undefined;
+    let keywordOverride: string | undefined = undefined;
+
+    if (key === 'ALL') {
+      inspectionCenterId = undefined;
+    } else if (key === 'HANOI' || key === hanoiCenter?.id) {
+      if (hanoiCenter?.id && /^[0-9a-fA-F-]{36}$/.test(hanoiCenter.id)) {
+        inspectionCenterId = hanoiCenter.id;
+      } else {
+        keywordOverride = 'Hà Nội';
+      }
+    } else if (key === 'HCM' || key === hcmCenter?.id) {
+      if (hcmCenter?.id && /^[0-9a-fA-F-]{36}$/.test(hcmCenter.id)) {
+        inspectionCenterId = hcmCenter.id;
+      } else {
+        keywordOverride = 'Hồ Chí Minh';
+      }
+    } else {
+      if (/^[0-9a-fA-F-]{36}$/.test(key)) {
+        inspectionCenterId = key;
+      } else {
+        const found = centers.find((c) => c.id === key);
+        keywordOverride = found?.name || key;
+      }
+    }
+
+    loadChecklistProposals(0, {
+      inspectionCenterId,
+      keyword: keywordOverride ?? (checklistKeyword.trim() ? checklistKeyword.trim() : undefined),
+    });
   };
 
   const handleResetChecklistFilters = () => {
@@ -1019,6 +1192,82 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
               ))}
             </div>
 
+            {/* Quick Author Center filter pills (Trung Tâm Tác Giả: Hà Nội, TP. HCM) */}
+            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-200/60">
+              <span className="text-[11px] font-bold text-slate-600 mr-1 flex items-center gap-1">
+                <Building2 className="w-3.5 h-3.5 text-amber-600" />
+                <span>Trung tâm tác giả:</span>
+              </span>
+
+              <button
+                type="button"
+                onClick={() => handleChecklistCenterFilterChange('ALL')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer self-stretch flex items-center ${checklistCenterFilter === 'ALL'
+                  ? 'bg-slate-900 text-white shadow-2xs'
+                  : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/80'
+                  }`}
+              >
+                Tất cả trung tâm
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleChecklistCenterFilterChange(hanoiCenter?.id || 'HANOI')}
+                className={`px-3 py-1 rounded-lg text-left transition cursor-pointer border ${isHanoiActive
+                  ? 'bg-amber-600 text-white border-amber-600 shadow-2xs'
+                  : 'bg-white text-slate-700 hover:bg-amber-50/50 border-slate-200/80'
+                  }`}
+                title={hanoiCenter?.name || 'Trung Tâm Kiểm Định SecondLife Hà Nội'}
+              >
+                <div className="flex items-center gap-1 text-xs font-extrabold">
+                  <MapPin className={`w-3 h-3 shrink-0 ${isHanoiActive ? 'text-amber-200' : 'text-amber-600'}`} />
+                  <span>Hà Nội</span>
+                </div>
+                <div className={`text-[10px] font-medium leading-tight mt-0.5 ${isHanoiActive ? 'text-amber-100' : 'text-slate-500'}`}>
+                  {hanoiCenter?.name || 'Trung Tâm Kiểm Định SecondLife Hà Nội'}
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleChecklistCenterFilterChange(hcmCenter?.id || 'HCM')}
+                className={`px-3 py-1 rounded-lg text-left transition cursor-pointer border ${isHcmActive
+                  ? 'bg-orange-600 text-white border-orange-600 shadow-2xs'
+                  : 'bg-white text-slate-700 hover:bg-orange-50/50 border-slate-200/80'
+                  }`}
+                title={hcmCenter?.name || 'Trung Tâm Kiểm Định SecondLife TP. Hồ Chí Minh'}
+              >
+                <div className="flex items-center gap-1 text-xs font-extrabold">
+                  <MapPin className={`w-3 h-3 shrink-0 ${isHcmActive ? 'text-orange-200' : 'text-orange-600'}`} />
+                  <span>Thành phố HCM</span>
+                </div>
+                <div className={`text-[10px] font-medium leading-tight mt-0.5 ${isHcmActive ? 'text-orange-100' : 'text-slate-500'}`}>
+                  {hcmCenter?.name || 'Trung Tâm Kiểm Định SecondLife TP. Hồ Chí Minh'}
+                </div>
+              </button>
+
+              {otherCenters.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => handleChecklistCenterFilterChange(c.id)}
+                  className={`px-3 py-1 rounded-lg text-left transition cursor-pointer border ${checklistCenterFilter === c.id
+                    ? 'bg-slate-800 text-white border-slate-800 shadow-2xs'
+                    : 'bg-white text-slate-700 hover:bg-slate-100 border-slate-200/80'
+                    }`}
+                  title={c.name}
+                >
+                  <div className="flex items-center gap-1 text-xs font-bold">
+                    <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+                    <span>{c.city || c.name}</span>
+                  </div>
+                  <div className={`text-[10px] font-medium leading-tight mt-0.5 ${checklistCenterFilter === c.id ? 'text-slate-200' : 'text-slate-500'}`}>
+                    {c.name}
+                  </div>
+                </button>
+              ))}
+            </div>
+
             {/* Collapsible Advanced Filters */}
             {isFilterExpanded && (
               <div className="pt-3 border-t border-slate-200/80 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 animate-fadeIn">
@@ -1101,16 +1350,17 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                   </label>
                   <select
                     value={checklistCenterFilter}
-                    onChange={(e) => {
-                      const ctr = e.target.value;
-                      setChecklistCenterFilter(ctr);
-                      setChecklistPage(0);
-                      loadChecklistProposals(0, { inspectionCenterId: ctr !== 'ALL' ? ctr : undefined });
-                    }}
+                    onChange={(e) => handleChecklistCenterFilterChange(e.target.value)}
                     className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-hidden focus:border-amber-500"
                   >
                     <option value="ALL">-- Tất cả trung tâm --</option>
-                    {centers.map((c) => (
+                    <option value={hanoiCenter?.id || 'HANOI'}>
+                      Trung Tâm Kiểm Định SecondLife Hà Nội (Hà Nội)
+                    </option>
+                    <option value={hcmCenter?.id || 'HCM'}>
+                      Trung Tâm Kiểm Định SecondLife TP. Hồ Chí Minh (TP. HCM)
+                    </option>
+                    {otherCenters.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name}
                       </option>
@@ -1148,14 +1398,14 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold text-[11px] uppercase tracking-wider">
                   <th className="py-3 px-2 w-8 text-center">#</th>
-                  <th className="py-3 px-2.5 w-[18%]">Loại Thiết Bị & Danh Mục</th>
-                  <th className="py-3 px-1.5 w-[7%] text-center">Cấp Độ</th>
-                  <th className="py-3 px-2.5 w-[23%]">Bộ Tiêu Chuẩn</th>
-                  <th className="py-3 px-2 w-[13%]">Trung Tâm Tác Giả</th>
-                  <th className="py-3 px-2.5 w-[15%] text-right">Biểu Phí Cơ Sở</th>
+                  <th className="py-3 px-2.5 w-[16%]">Loại Thiết Bị & Danh Mục</th>
+                  <th className="py-3 px-1.5 w-[6%] text-center">Cấp Độ</th>
+                  <th className="py-3 px-2.5 w-[21%]">Bộ Tiêu Chuẩn</th>
+                  <th className="py-3 px-2.5 w-[18%]">Trung Tâm Tác Giả</th>
+                  <th className="py-3 px-2.5 w-[14%] text-right">Biểu Phí Cơ Sở</th>
                   <th className="py-3 px-1.5 w-[7%] text-center">Hiệu Lực</th>
                   <th className="py-3 px-1.5 w-[8%] text-center">Trạng Thái</th>
-                  <th className="py-3 px-2 w-[7%] text-center">Thao Tác</th>
+                  <th className="py-3 px-2 w-[6%] text-center">Thao Tác</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -1263,17 +1513,42 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                         </td>
 
                         {/* Trung Tâm Tác Giả */}
-                        <td className="py-2.5 px-2">
-                          <div
-                            className="font-bold text-slate-800 text-xs line-clamp-1"
-                            title={pricing?.inspectionCenterName || 'Trung tâm tác giả'}
-                          >
-                            {pricing?.inspectionCenterName || 'Trung tâm tác giả'}
-                          </div>
-                          <div className="text-[10px] text-slate-400 font-mono mt-0.5">
-                            {chk.createdAt ? new Date(chk.createdAt).toLocaleDateString('vi-VN') : '—'}
-                          </div>
-                        </td>
+                        {(() => {
+                          const centerInfo = getCenterDetails(chk);
+                          return (
+                            <td className="py-2.5 px-2.5">
+                              <div className="space-y-0.5">
+                                {/* Tên khu vực kèm huy hiệu thành phố */}
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-extrabold text-slate-900 text-xs">
+                                    {centerInfo.areaTitle}
+                                  </span>
+                                  <span className={`inline-flex items-center px-1.5 py-0.2 rounded-md text-[10px] font-bold border ${centerInfo.isHanoi
+                                    ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                    : centerInfo.isHcm
+                                      ? 'bg-orange-50 text-orange-800 border-orange-200'
+                                      : 'bg-slate-50 text-slate-700 border-slate-200'
+                                    }`}>
+                                    <MapPin className="w-2.5 h-2.5 mr-0.5 shrink-0" />
+                                    {centerInfo.areaBadge}
+                                  </span>
+                                </div>
+
+                                {/* Hiện ra tên đầy đủ dưới tên */}
+                                <div
+                                  className="text-[11px] text-slate-700 font-medium leading-snug break-words"
+                                  title={centerInfo.fullName}
+                                >
+                                  {centerInfo.fullName}
+                                </div>
+
+                                <div className="text-[10px] text-slate-400 font-mono pt-0.5">
+                                  {chk.createdAt ? new Date(chk.createdAt).toLocaleDateString('vi-VN') : '—'}
+                                </div>
+                              </div>
+                            </td>
+                          );
+                        })()}
 
                         {/* Biểu Phí Cơ Sở */}
                         <td className="py-2.5 px-2.5 text-right whitespace-nowrap">
@@ -1351,13 +1626,13 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                                   }
                                 >
                                   {pricing.unavailableReason === 'CHECKLIST_NOT_EFFECTIVE'
-                                    ? 'Chờ duyệt CL'
+                                    ? ''
                                     : pricing.unavailableReason === 'NO_APPROVED_LEVEL_FEE'
                                       ? 'Chưa duyệt giá'
                                       : pricing.unavailableReason === 'ITEM_NOT_CLASSIFIED'
                                         ? 'Chưa phân cấp'
                                         : pricing.unavailableReason === 'CENTER_UNAVAILABLE'
-                                          ? 'TT ngừng HĐ'
+                                          ? 'Trung tâm ngừng HĐ'
                                           : pricing.unavailableReason === 'ITEM_NOT_SELECTABLE'
                                             ? 'Item ngừng chọn'
                                             : pricing.unavailableReason}
@@ -2266,7 +2541,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                   <span className="font-bold block">Quy tắc áp dụng chính sách giá trị cao:</span>
                   <p>
                     Sản phẩm có giá cao hơn ngưỡng này phải kiểm định trước khi đăng.
-                    Khi người bán gửi bài đăng (POST /submit/{'{postId}'}), hệ thống sẽ tự động chuyển sang trạng thái chờ kiểm định (PENDING_INSPECTION).
+
                   </p>
                 </div>
               </div>
@@ -2668,9 +2943,20 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                     <Building2 className="w-4 h-4 text-amber-600" />
                     <span>Biểu Phí Kiểm Định Của Trung Tâm Tác Giả</span>
                   </div>
-                  <span className="text-[11px] text-slate-700 font-bold">
-                    {viewingChecklistProposal.pricing.inspectionCenterName || 'Trung tâm tác giả'}
-                  </span>
+                  {(() => {
+                    const centerInfo = getCenterDetails(viewingChecklistProposal);
+                    return (
+                      <div className="text-right">
+                        <span className="text-[11px] text-slate-900 font-bold block">
+                          {centerInfo.fullName}
+                        </span>
+                        <span className="text-[10px] text-amber-700 font-semibold flex items-center justify-end gap-1">
+                          <MapPin className="w-2.5 h-2.5 text-amber-600" />
+                          <span>Khu vực: {centerInfo.areaTitle}</span>
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs pt-0.5">

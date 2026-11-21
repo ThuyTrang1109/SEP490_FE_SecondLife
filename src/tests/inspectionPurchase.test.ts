@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buyerInspectionStageLabel, extractInspectionRejectionDetails, formatOrderCancellationReason, getBuyerInspectionStage, getCustomerInspectionStatus, getInspectionPurchaseDecision, inspectionPurchaseDecisionLabel, parseInspectorVerdictNote, shouldReadSellerHubReturn } from '../utils/inspectionPurchase';
+import { buyerInspectionStageLabel, extractInspectionRejectionDetails, formatInspectionFailureReason, formatOrderCancellationReason, getBuyerInspectionStage, getCustomerInspectionStatus, getInspectionPurchaseDecision, inspectionPurchaseDecisionLabel, parseInspectorVerdictNote, shouldReadSellerHubReturn } from '../utils/inspectionPurchase';
 
 test('the buyer only sees inspection status while the item is on its way to the hub or being inspected', () => {
   const order = { inspectionStatus: 'SHIPPING_TO_CENTER', shippingDeliveredAt: '2026-11-09T08:00:00Z' };
@@ -144,4 +144,16 @@ test('parseInspectorVerdictNote removes Tem tag and cleans up verdict note', () 
   // Verify empty fallback
   assert.equal(parseInspectorVerdictNote('').cleanText, '');
   assert.equal(parseInspectorVerdictNote(null).cleanText, '');
+});
+
+test('pre-listing failure reason shows findings and omits photo URLs and report metadata', () => {
+  const photos = ['https://example.com/proof/[front].jpg', 'https://example.com/proof/back.jpg'];
+  const report = `[Tem: SL-SEAL-2649345][Grade: Fair][Điểm: 70/100][Bao bì: Rách nặng / Móp méo] [Phụ kiện: ok] [Photos: ${JSON.stringify(photos)}]`;
+  assert.equal(formatInspectionFailureReason(report), 'Bao bì: Rách nặng / Móp méo · Phụ kiện: ok');
+  assert.equal(
+    formatInspectionFailureReason(`Kiểm định chất lượng đầu vào không đạt: ${report} Máy hút yếu.`),
+    'Máy hút yếu. · Bao bì: Rách nặng / Móp méo · Phụ kiện: ok',
+  );
+  assert.equal(formatInspectionFailureReason('Thiếu thông tin bảo hành'), 'Thiếu thông tin bảo hành');
+  assert.equal(formatInspectionFailureReason(`[Photos: ${JSON.stringify(photos)}]`), '');
 });

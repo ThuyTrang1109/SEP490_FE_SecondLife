@@ -301,6 +301,7 @@ export interface ReturnReserveDetails {
   hasActualReturnFee: boolean;
   returnShipmentCode: string | null;
   returnShipmentStatus: string | null;
+  isInterruptedReturn: boolean;
   splitPlan: FeeSplitPlanInfo;
   surplusAmount: number;
   buyerSurplusShare: number;
@@ -335,11 +336,14 @@ export function resolveReturnReserveDetails(funds?: AdminInspectionOrderFundsDTO
   const actualReturnFee = hasActualReturnFee ? Number(returnShipment!.actualFee) : 0;
   const returnShipmentCode = returnShipment?.orderCode || null;
   const returnShipmentStatus = returnShipment?.status || null;
+  const isInterruptedReturn = returnShipment != null &&
+    ['CANCELLED', 'CANCELED', 'FAILED', 'EXPIRED', 'REJECTED'].includes((returnShipmentStatus || '').toUpperCase());
 
   const splitPlan = resolveFeeSplitPlan(funds);
 
-  // If actual fee exceeds planned amount, surplus is 0
-  const surplusAmount = Math.max(0, plannedAmount - actualReturnFee);
+  // If actual fee exceeds planned amount, surplus is 0; if shipment interrupted/cancelled, cước hoàn chưa bị trừ
+  const effectiveReturnFee = isInterruptedReturn ? 0 : actualReturnFee;
+  const surplusAmount = Math.max(0, plannedAmount - effectiveReturnFee);
 
   let { buyer: buyerSurplusShare, seller: sellerSurplusShare } =
     splitInspectionFee(surplusAmount, splitPlan.buyerPercent);
@@ -365,12 +369,13 @@ export function resolveReturnReserveDetails(funds?: AdminInspectionOrderFundsDTO
   }
   const isUnused = status === 'REFUNDED_UNUSED';
   const isAwaitingConfirmation = status === 'AWAITING_CASH_CONFIRMATION';
-  const isExceeded = status === 'EXCEEDS_RESERVE' || (hasActualReturnFee && actualReturnFee > plannedAmount);
+  const isExceeded = status === 'EXCEEDS_RESERVE' || (!isInterruptedReturn && hasActualReturnFee && actualReturnFee > plannedAmount);
   const isProcessing =
-    status === 'RETURN_IN_PROGRESS' ||
+    (status === 'RETURN_IN_PROGRESS' ||
     status === 'AWAITING_ACTUAL_FEE' ||
     status === 'AWAITING_RECONCILIATION' ||
-    (returnShipment != null && !isSettled && !isUnused && !isExceeded);
+    (returnShipment != null && !isSettled && !isUnused && !isExceeded)) &&
+    !isInterruptedReturn;
 
   let refundStatus: ReturnReserveDetails['refundStatus'] = 'PENDING';
   let refundStatusLabel = 'Đang giữ bảo chứng';
@@ -410,6 +415,11 @@ export function resolveReturnReserveDetails(funds?: AdminInspectionOrderFundsDTO
     refundStatusLabel = 'Đang chuyển hoàn · Chờ quyết toán';
     refundStatusBadge = { bg: 'bg-sky-50', text: 'text-sky-800', border: 'border-sky-300' };
     refundDescription = `Đơn hoàn đang được vận chuyển về người bán. Sau khi đối soát cước thực tế${hasActualReturnFee ? ` (${formatVND(actualReturnFee)})` : ''}, số tiền dư dự kiến ${formatVND(surplusAmount)} sẽ được chia hoàn theo tỷ lệ ${splitPlan.label}.`;
+  } else if (isInterruptedReturn) {
+    refundStatus = 'PENDING';
+    refundStatusLabel = 'Vận đơn hoàn đã hủy/thất bại · Chờ tạo lại';
+    refundStatusBadge = { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200' };
+    refundDescription = `Vận đơn hoàn trả (#${returnShipmentCode || returnShipment?.shipmentId}) đã bị hủy hoặc giao thất bại nên khoản cước ${hasActualReturnFee ? `(${formatVND(actualReturnFee)}) ` : ''}chưa được tính / chưa bị trừ. Toàn bộ tiền dự phòng ${formatVND(heldAmount || plannedAmount)} vẫn đang được giữ nguyên 100% tại Escrow để chuẩn bị tạo lại chuyến hoàn mới.`;
   } else {
     refundStatus = 'PENDING';
     refundStatusLabel = 'Đang tạm giữ dự phòng cước hoàn';
@@ -425,6 +435,7 @@ export function resolveReturnReserveDetails(funds?: AdminInspectionOrderFundsDTO
     hasActualReturnFee,
     returnShipmentCode,
     returnShipmentStatus,
+    isInterruptedReturn,
     splitPlan,
     surplusAmount,
     buyerSurplusShare,

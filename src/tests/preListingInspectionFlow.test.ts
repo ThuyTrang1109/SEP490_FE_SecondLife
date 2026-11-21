@@ -1,13 +1,72 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { AtHomeIntakeBarcode } from '../components/inspection/AtHomeIntakeBarcode';
+import { PreListingAppointmentCounter } from '../components/listing/PreListingAppointmentCounter';
 import {
   isHubReturnCase,
   isCenterReturnEligible,
   canBookCenterReturn,
   getHubReturnState
 } from '../utils/inspectionCenterData';
+import { getPreListingHomeIntakeStage } from '../utils/inspectionTaskStatus';
 import { InspectionOrderDto } from '../services/inspectorService';
 import { ShipmentBackend } from '../types';
+
+test('seller can see and respond to the center’s pre-listing appointment proposal', () => {
+  const props = {
+    lang: 'vi' as const,
+    isSaving: false,
+    isRefreshing: false,
+    error: null,
+    onAccept: () => {},
+    onReschedule: () => {},
+  };
+  const order = {
+    appointmentScheduledAt: '2026-11-22T01:00:00Z',
+    counterScheduledAt: '2026-11-22T02:00:00Z',
+    counterNote: 'Kỹ thuật viên bận lịch cũ',
+  };
+  const render = (data: Parameters<typeof PreListingAppointmentCounter>[0]['order']) =>
+    renderToStaticMarkup(createElement(PreListingAppointmentCounter, { ...props, order: data }));
+  const proposal = render(order);
+
+  assert.match(proposal, /09:00/);
+  assert.doesNotMatch(proposal, /08:00/);
+  assert.match(proposal, /Kỹ thuật viên bận lịch cũ/);
+  assert.match(proposal, /Đồng ý lịch này/);
+  assert.match(proposal, /Hẹn lịch khác/);
+  assert.doesNotMatch(proposal, /<button[^>]*disabled=/);
+  assert.equal((render({}).match(/<button[^>]*disabled=/g) ?? []).length, 1);
+});
+
+test('seller sees the pre-listing home intake code after confirmation and technician assignment', () => {
+  const scheduled = {
+    id: 'aabbccdd-0000-4000-8000-000000000001',
+    orderType: 'AT_HOME',
+    status: 'SCHEDULED',
+    appointmentStatus: 'CONFIRMED',
+    appointmentScheduledAt: '2026-11-22T02:00:00Z',
+  };
+
+  assert.equal(getPreListingHomeIntakeStage(scheduled), 'awaiting_inspector');
+
+  const assigned = { ...scheduled, inspectorId: 'technician' };
+  assert.equal(getPreListingHomeIntakeStage(assigned), 'ready');
+  assert.equal(getPreListingHomeIntakeStage({ ...assigned, status: 'DISPATCHED' }), 'ready');
+  assert.equal(getPreListingHomeIntakeStage({ ...assigned, appointmentStatus: 'COUNTERED_BY_CENTER' }), null);
+  assert.equal(getPreListingHomeIntakeStage({ ...assigned, homeCheckedInAt: '2026-11-22T02:00:00Z' }), null);
+  assert.equal(getPreListingHomeIntakeStage({ ...assigned, orderType: 'AT_CENTER' }), null);
+
+  const markup = renderToStaticMarkup(createElement(AtHomeIntakeBarcode, {
+    orderId: assigned.id,
+    lang: 'vi',
+    format: 'qr',
+  }));
+  assert.match(markup, /Mã QR tiếp nhận kiểm định tại nhà/);
+  assert.match(markup, /SL-ATHOME-AABBCCDD/);
+});
 
 test('1. High-value policy threshold comparison: strictly finalPriceVnd > thresholdPrice', () => {
   const thresholdPrice = 10000000; // 10 million VND

@@ -12,7 +12,7 @@ import { resolveCategoryAndItem, initCatalogCache, resolveOrderListing, resolveL
 import { translateSystemNotification } from './utils/systemNotificationTranslator';
 import { useEscrowOrderFeed } from './hooks/orders/useEscrowOrderFeed';
 import { readOrderFeedQuery } from './utils/escrowOrderFilters';
-import { orderFeedItemToRaw } from './services/orderFeedService';
+import { getPreListingInspection, orderFeedItemToRaw } from './services/orderFeedService';
 import { mapEscrowOrder } from './utils/mapEscrowOrder';
 import { lazyWithRetry } from './utils/lazyWithRetry';
 import { Navbar } from './components/layout/Navbar';
@@ -1323,7 +1323,11 @@ export default function App() {
     [loadListingsFromBackend]
   );
 
-  const orderFeedQuery = readOrderFeedQuery(browserLocation);
+  const requestedOrderFeedQuery = readOrderFeedQuery(browserLocation);
+  const orderFeedQuery = requestedOrderFeedQuery.filter === 'pre_listing' &&
+    (route.role === 'buyer' || currentRole !== 'seller' || requestedOrderFeedQuery.perspective === 'buyer')
+    ? { ...requestedOrderFeedQuery, filter: 'all' as const, page: 0 }
+    : requestedOrderFeedQuery;
   const orderFeed = useEscrowOrderFeed(
     activeTab === 'orders' && routeAccess === 'allowed' && !isRestoringSession && Boolean(currentUser?.id),
     ordersScope,
@@ -1337,7 +1341,10 @@ export default function App() {
       currentListings: listingsRef.current, currentUser: currentUserRef.current, currentRole,
       postCacheMap, postTitleCacheMap, authoritative: true,
     });
-    return { orders: data.items.map(mapRow), detail: data.detail ? mapRow(data.detail) : null };
+    return {
+      orders: data.items.filter((row) => !getPreListingInspection(row)).map(mapRow),
+      detail: data.detail && !getPreListingInspection(data.detail) ? mapRow(data.detail) : null,
+    };
   }, [orderFeed.data, currentRole]);
   const refreshOrderFeedRef = useRef(orderFeed.refresh);
   refreshOrderFeedRef.current = orderFeed.refresh;
@@ -1565,7 +1572,7 @@ export default function App() {
 
       // Thêm các đơn kiểm định độc lập chưa có trong orderMap
       allInspDtos.forEach((insp: any) => {
-        if (!insp?.id) return;
+        if (!insp?.id || insp.inspectionScope === 'PRE_LISTING') return;
         if (insp.linkedOrderId && orderMap.has(insp.linkedOrderId)) return;
         if (!orderMap.has(insp.id)) {
           orderMap.set(insp.id, { ...insp, __isInspection: true });
@@ -1579,7 +1586,8 @@ export default function App() {
           const list = JSON.parse(rawLocalSellerInsp);
           if (Array.isArray(list)) {
             list.forEach((item: any) => {
-              if (item?.id && !orderMap.has(item.id)) {
+              if (item?.id && item.inspectionScope !== 'PRE_LISTING' &&
+                  inspById.get(item.id)?.inspectionScope !== 'PRE_LISTING' && !orderMap.has(item.id)) {
                 orderMap.set(item.id, { ...item, __isInspection: true });
               }
             });

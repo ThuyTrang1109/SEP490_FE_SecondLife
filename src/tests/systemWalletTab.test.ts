@@ -148,3 +148,71 @@ test('legacy wallet responses still use their real transaction ID and signed rev
     { label: 'Hoa hồng sàn', delta: 97_500 },
   ]);
 });
+
+test('inspection return shipping parses multi-part breakdown into separate formatted lines', () => {
+  const tx: SystemWalletTransaction = {
+    id: 126,
+    entryId: '126-1',
+    orderId: null,
+    inspectionOrderId: '08ffdfba-85bd-4c16-8042-insp',
+    type: 'INSPECTION_RETURN_SHIPPING',
+    fundCategory: 'USER_SHIPPING',
+    totalDelta: 129_960,
+    deltaAction: 'MINUS',
+    heldDelta: 0,
+    shippingDelta: -111_500,
+    revenueDelta: 0,
+    heldBalanceAfter: 0,
+    shippingBalanceAfter: 0,
+    revenueBalanceAfter: 0,
+    createdAt: '2026-11-20T20:24:05Z',
+    breakdownDescription: 'Cước hoàn thực tế 111500.00 đ. Trừ quỹ 111500.00 đ. Phần thiếu 0.00 đ. Hoàn dự phòng dư 18460.00 đ.',
+  };
+
+  const item = toSystemWalletHistoryItem(tx);
+  assert.equal(item.signedDelta, -129_960);
+  assert.equal(item.breakdownItems.length, 4);
+
+  assert.equal(item.breakdownItems[0].label, 'Cước hoàn thực tế');
+  assert.match(item.breakdownItems[0].formattedText || '', /111\.500/);
+
+  assert.equal(item.breakdownItems[1].label, 'Trừ quỹ');
+  assert.match(item.breakdownItems[1].formattedText || '', /111\.500/);
+
+  assert.equal(item.breakdownItems[2].label, 'Phần thiếu');
+  assert.match(item.breakdownItems[2].formattedText || '', /0/);
+
+  assert.equal(item.breakdownItems[3].label, 'Hoàn dự phòng dư');
+  assert.match(item.breakdownItems[3].formattedText || '', /18\.460/);
+});
+
+test('inspection hold parses fees and reserve into individual positive items', () => {
+  const tx: SystemWalletTransaction = {
+    id: 128,
+    entryId: '128-1',
+    orderId: null,
+    inspectionOrderId: '70ebb624-e5e4-4c16-8042-insp',
+    type: 'INSPECTION_HOLD',
+    fundCategory: 'USER_SHIPPING',
+    totalDelta: 1_138_320,
+    deltaAction: 'PLUS',
+    heldDelta: 290_000,
+    shippingDelta: 848_320,
+    revenueDelta: 0,
+    heldBalanceAfter: 290_000,
+    shippingBalanceAfter: 848_320,
+    revenueBalanceAfter: 0,
+    createdAt: '2026-11-20T21:30:57Z',
+    breakdownDescription: 'Thu từ người bán. Phí kiểm định và cọc 290000.00 đ, cước và dự phòng 848320.00 đ.',
+  };
+
+  const item = toSystemWalletHistoryItem(tx);
+  assert.equal(item.signedDelta, 1_138_320);
+  assert.equal(item.breakdownItems.length, 2);
+
+  assert.equal(item.breakdownItems[0].label, 'Phí kiểm định và cọc');
+  assert.match(item.breakdownItems[0].formattedText || '', /\+?290\.000/);
+
+  assert.equal(item.breakdownItems[1].label, 'Cước và dự phòng');
+  assert.match(item.breakdownItems[1].formattedText || '', /\+?848\.320/);
+});

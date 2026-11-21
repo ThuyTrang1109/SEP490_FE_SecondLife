@@ -13,6 +13,25 @@ import { canReadCenterInspectionShipments, filterCenterApiOrders, getCenterDispa
 import { canBookHubBuyerDelivery, getHubBuyerShipmentLabel, getLatestInspectionShipment, isPaidHubBuyerDelivery } from '../utils/inspectionCenterData';
 import { canAppealInspection, getHubReturnProgress, getHubReturnState, getReturnReserveMessage, isCenterReturnEligible, shouldSyncHubReturnOnOpen } from '../utils/inspectionCenterData';
 import { isExpiredInspectionPurchase } from '../utils/inspectionPurchase';
+import { canSellerRebookShipment } from '../utils/lalamoveTracking';
+
+test('seller can rebook only the latest eligible outbound shipment', () => {
+  const rejected = {
+    shipmentId: 'previous', orderId: 'order-a', leg: 'SELLER_TO_CENTER', orderCode: '123',
+    status: 'FAILED', providerStatus: 'REJECTED', expectedDeliveryTime: null, deliveredAt: null,
+  };
+  assert.equal(canSellerRebookShipment(rejected, [rejected], []), true);
+  const expired = { ...rejected, providerStatus: 'EXPIRED' };
+  assert.equal(canSellerRebookShipment(expired, [expired], []), true);
+  const uncertain = { ...rejected, shipmentId: 'replacement', status: 'CREATION_UNCERTAIN', providerStatus: null, orderCode: null };
+  assert.equal(canSellerRebookShipment(rejected, [rejected, uncertain], []), false);
+  assert.equal(canSellerRebookShipment(uncertain, [rejected, uncertain], []), false);
+  assert.equal(canSellerRebookShipment(rejected, [rejected], [
+    { id: 'pickup', shipmentId: rejected.shipmentId, type: 'ORDER_STATUS_CHANGED', status: 'PICKED_UP', occurredAt: '', reason: null },
+  ]), false);
+  const returnShipment = { ...rejected, leg: 'CENTER_TO_SELLER', status: 'CANCELLED' };
+  assert.equal(canSellerRebookShipment(returnShipment, [returnShipment], []), false);
+});
 
 test('the center list excludes explicitly foreign orders returned by the API', () => {
   const orders = [
@@ -230,6 +249,33 @@ test('the shipment modal offers only the outbound action allowed by the inspecti
   assert.match(inboundHtml, /Chặng 1: Seller ➔ Hub/);
   assert.match(inboundHtml, /Tạo vận đơn/);
   assert.match(inboundHtml, /Đã giao thành công/);
+
+  const failedReturn = shipment('failed-return', 'CENTER_TO_SELLER', 'FAILED', 'REJECTED');
+  const rebookReturnHtml = render(declined, {
+    inspectionShipments: [failedReturn],
+    hubReturns: new Map([[order.id, getHubReturnState([inbound, failedReturn])]]),
+  });
+  assert.match(rebookReturnHtml, /Tạo lại vận đơn trả người bán/);
+  assert.match(rebookReturnHtml, /Tạo lại vận đơn hoàn trả/);
+  assert.match(rebookReturnHtml, /Vận đơn thất bại/);
+
+  const unconfirmedReturn = { ...failedReturn, providerStatus: null };
+  assert.doesNotMatch(render(declined, {
+    inspectionShipments: [unconfirmedReturn],
+    hubReturns: new Map([[order.id, getHubReturnState([inbound, unconfirmedReturn])]]),
+  }), /Tạo lại vận đơn trả người bán|Tạo lại vận đơn hoàn trả/);
+  const uncertainReturn = shipment('replacement', 'CENTER_TO_SELLER', 'CREATION_UNCERTAIN');
+  assert.doesNotMatch(render(declined, {
+    inspectionShipments: [failedReturn, uncertainReturn],
+    hubReturns: new Map([[order.id, getHubReturnState([inbound, failedReturn, uncertainReturn])]]),
+  }), /Tạo lại vận đơn trả người bán|Tạo lại vận đơn hoàn trả/);
+
+  const failedBuyer = shipment('failed-buyer', 'CENTER_TO_BUYER', 'FAILED');
+  const rebookBuyerHtml = render(paid, {
+    inspectionShipments: [failedBuyer],
+    buyerShipments: new Map([[order.id, failedBuyer]]),
+  });
+  assert.match(rebookBuyerHtml, /Tạo lại vận đơn giao người mua/);
 });
 
 test('a delivered return shows the wallet check without changing failed inspection appeal eligibility', () => {
@@ -243,7 +289,7 @@ test('a delivered return shows the wallet check without changing failed inspecti
   assert.match(getReturnReserveMessage(31000, delivered), /chờ đối soát/);
   assert.match(getReturnReserveMessage(36000, { ...delivered, actualFee: undefined }), /chờ đối soát/);
   assert.match(getReturnReserveMessage(36000, { ...delivered, status: 'PICKED' }), /sau khi giao/);
-  assert.equal(canAppealInspection(order, 'seller', now), true);
+  assert.equal(canAppealInspection(order, 'seller', now), false);
   assert.equal(canAppealInspection(order, 'another-seller', now), false);
   assert.equal(canAppealInspection({ ...order, appealStatus: 'PENDING_REVIEW' }, 'seller', now), false);
   assert.equal(canAppealInspection(order, 'seller', Date.parse(order.appealDeadline)), false);

@@ -75,13 +75,20 @@ export const systemWalletService = {
       }
     );
     const data = (res as any)?.data || res;
+    const extractedItems = Array.isArray(data?.items)
+      ? data.items
+      : Array.isArray(data?.content)
+        ? data.content
+        : Array.isArray(data)
+          ? data
+          : [];
     return {
-      items: Array.isArray(data?.items) ? data.items : [],
-      page: data?.page ?? p,
+      items: extractedItems,
+      page: data?.page ?? data?.number ?? p,
       size: data?.size ?? s,
-      totalElements: data?.totalElements ?? 0,
+      totalElements: data?.totalElements ?? extractedItems.length,
       totalPages: data?.totalPages ?? 1,
-      isLast: data?.isLast ?? true,
+      isLast: data?.isLast ?? data?.last ?? true,
     };
   },
 };

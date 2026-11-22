@@ -126,7 +126,6 @@ interface AdminDashboardViewProps {
 
 type AdminTab =
   | 'overview'
-  | 'system-report'
   | 'catalog-ai'
   | 'orders'
   | 'inspection-funds'
@@ -144,7 +143,6 @@ type AdminTab =
 
 export const VALID_ADMIN_TABS: AdminTab[] = [
   'overview',
-  'system-report',
   'catalog-ai',
   'orders',
   'inspection-funds',
@@ -1174,16 +1172,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const navItems = [
     {
       id: 'overview' as AdminTab,
-      label: 'DASHBOARD',
+      label: lang === 'vi' ? 'TỔNG QUAN HỆ THỐNG' : 'DASHBOARD',
       icon: LayoutDashboard,
       badge: null
-    },
-    {
-      id: 'system-report' as AdminTab,
-      label: lang === 'vi' ? 'BÁO CÁO TỔNG QUAN HỆ THỐNG' : 'SYSTEM OVERVIEW REPORT',
-      icon: BarChart3,
-      badge: 'Mới',
-      badgeColor: 'bg-[#c34c36] text-white'
     },
     {
       id: 'listings' as AdminTab,
@@ -1394,7 +1385,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 </h4>
                 <div className="flex items-center gap-1.5 text-[11px] text-emerald-800 font-bold">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
-                  <span>Online</span>
+                  <span>{lang === 'vi' ? 'Đang hoạt động' : 'Online'}</span>
                 </div>
               </div>
             )}
@@ -1410,7 +1401,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
           {/* Section: MAIN NAVIGATION */}
           <div className="px-4 pt-4 pb-2 text-[10px] font-black text-[#24263e]/80 uppercase tracking-wider">
-            {!isSidebarCollapsed ? 'MAIN NAVIGATION' : '•••'}
+            {!isSidebarCollapsed ? (lang === 'vi' ? 'DANH MỤC QUẢN TRỊ' : 'MAIN NAVIGATION') : '•••'}
           </div>
 
           {/* Nav List */}
@@ -1491,7 +1482,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               <div className="flex items-baseline gap-2">
                 <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
                   {activeTab === 'overview'
-                    ? 'Dashboard'
+                    ? (lang === 'vi' ? 'Tổng quan hệ thống' : 'Dashboard')
                     : navItems.find((n) => n.id === activeTab)?.label}
                 </h1>
               </div>
@@ -1504,13 +1495,13 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     onClick={() => setActiveTab('overview')}
                     className="hover:text-[#24263e] transition cursor-pointer"
                   >
-                    {activeTab === 'orders' && lang === 'vi' ? 'Trang chủ' : 'Home'}
+                    {lang === 'vi' ? 'Trang chủ' : 'Home'}
                   </button>
                   <ChevronRight className="w-3 h-3 text-slate-400" />
-                  <span className="font-semibold text-slate-800 capitalize">
-                    {activeTab === 'overview' ? 'Dashboard' : activeTab === 'orders'
-                      ? (lang === 'vi' ? 'Quản lý đơn hàng' : 'Orders')
-                      : activeTab}
+                  <span className="font-semibold text-slate-800">
+                    {activeTab === 'overview'
+                      ? (lang === 'vi' ? 'Tổng quan hệ thống' : 'Dashboard')
+                      : navItems.find((n) => n.id === activeTab)?.label || activeTab}
                   </span>
                 </div>
               </div>
@@ -1532,370 +1523,6 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           )}
 
           {activeTab === 'overview' && (
-            <div className="space-y-5 animate-fadeIn">
-              {/* ROW 1: 4 KPI STAT BOXES */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {/* Box 1: BÀI ĐĂNG THÀNH CÔNG */}
-                <div className="bg-[#fce5da] text-[#24263e] border border-[#24263e]/15 rounded-xl shadow-xs overflow-hidden relative group">
-                  <div className="p-4 sm:p-5 pr-14 relative z-10">
-                    <div className="text-3xl sm:text-4xl font-black tracking-tight text-[#24263e] font-mono">
-                      {activeListings.length}
-                    </div>
-                    <div className="text-xs uppercase font-black tracking-wider mt-1 text-[#24263e]/80">
-                      BÀI ĐĂNG THÀNH CÔNG
-                    </div>
-                  </div>
-                  <Tag className="w-18 h-18 text-[#24263e]/15 absolute -right-2 top-2 z-0 group-hover:scale-110 transition-transform duration-300" />
-                  <button
-                    onClick={() => setActiveTab('listings')}
-                    className="w-full bg-[#24263e]/10 hover:bg-[#24263e]/20 text-[#24263e] py-1.5 px-3 text-xs flex items-center justify-center gap-1.5 font-bold transition cursor-pointer"
-                  >
-                    <span>Quản lý bài đăng ({activeListings.length})</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-                {/* Box 2: NGƯỜI DÙNG HỆ THỐNG */}
-                <div className="bg-[#fce5da] text-[#24263e] border border-[#24263e]/15 rounded-xl shadow-xs overflow-hidden relative group">
-                  <div className="p-4 sm:p-5 pr-14 relative z-10">
-                    <div className="text-3xl sm:text-4xl font-black tracking-tight text-[#24263e] font-mono">
-                      {backendUsers.length || 0}
-                    </div>
-                    <div className="text-xs uppercase font-black tracking-wider mt-1 text-[#24263e]/80">
-                      NGƯỜI DÙNG TOÀN SÀN
-                    </div>
-                  </div>
-                  <Users className="w-18 h-18 text-[#24263e]/15 absolute -right-2 top-2 z-0 group-hover:scale-110 transition-transform duration-300" />
-                  <button
-                    onClick={() => setActiveTab('customers')}
-                    className="w-full bg-[#24263e]/10 hover:bg-[#24263e]/20 text-[#24263e] py-1.5 px-3 text-xs flex items-center justify-center gap-1.5 font-bold transition cursor-pointer"
-                  >
-                    <span>Xem danh sách tài khoản</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-                {/* Box 3: HỒ SƠ eKYC CHỜ DUYỆT */}
-                <div className="bg-[#fce5da] text-[#24263e] border border-[#24263e]/15 rounded-xl shadow-xs overflow-hidden relative group">
-                  <div className="p-4 sm:p-5 pr-14 relative z-10">
-                    <div className="text-3xl sm:text-4xl font-black tracking-tight text-[#c34c36] font-mono">
-                      {backendVerifications.filter(v => v.status === 'NEEDS_REVIEW' || v.status === 'SUBMITTED' || v.status === 'PENDING').length}
-                    </div>
-                    <div className="text-xs uppercase font-black tracking-wider mt-1 text-[#24263e]/80">
-                      eKYC NGƯỜI BÁN CHỜ DUYỆT
-                    </div>
-                  </div>
-                  <ShieldCheck className="w-18 h-18 text-[#24263e]/15 absolute -right-2 top-2 z-0 group-hover:scale-110 transition-transform duration-300" />
-                  <button
-                    onClick={() => setActiveTab('seller-kyc')}
-                    className="w-full bg-[#24263e]/10 hover:bg-[#24263e]/20 text-[#24263e] py-1.5 px-3 text-xs flex items-center justify-center gap-1.5 font-bold transition cursor-pointer"
-                  >
-                    <span>Thẩm định hồ sơ</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-                {/* Box 4: LỆNH RÚT TIỀN VÍ */}
-                <div className="bg-[#fce5da] text-[#24263e] border border-[#24263e]/15 rounded-xl shadow-xs overflow-hidden relative group">
-                  <div className="p-4 sm:p-5 pr-14 relative z-10">
-                    <div className="text-2xl sm:text-3xl font-black tracking-tight text-[#24263e]">
-                      RÚT TIỀN
-                    </div>
-                    <div className="text-xs uppercase font-black tracking-wider mt-1 text-[#24263e]/80">
-                      GIẢI NGÂN NGÂN HÀNG
-                    </div>
-                  </div>
-                  <Wallet className="w-18 h-18 text-[#24263e]/15 absolute -right-2 top-2 z-0 group-hover:scale-110 transition-transform duration-300" />
-                  <button
-                    onClick={() => setActiveTab('withdrawals')}
-                    className="w-full bg-[#24263e]/10 hover:bg-[#24263e]/20 text-[#24263e] py-1.5 px-3 text-xs flex items-center justify-center gap-1.5 font-bold transition cursor-pointer"
-                  >
-                    <span>Duyệt yêu cầu rút tiền</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-
-              {/* ROW 2: BÀI ĐĂNG THÀNH CÔNG GẦN ĐÂY TRÊN SÀN (CHỈ LẤY BÀI ĐĂNG THÀNH CÔNG, LOẠI BỎ BẢN NHÁP DRAFT) */}
-              <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#c34c36] overflow-hidden">
-                {/* Header */}
-                <div className="px-4 py-3.5 border-b border-slate-100 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Tag className="w-4 h-4 text-[#c34c36]" />
-                    <h3 className="font-extrabold text-xs sm:text-sm text-slate-800 uppercase tracking-wide">
-                      DANH SÁCH BÀI ĐĂNG THÀNH CÔNG GẦN ĐÂY TRÊN SÀN
-                    </h3>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200">
-                      {activeListings.length} tin hoạt động
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => setActiveTab('listings')}
-                    className="text-xs font-bold text-[#c34c36] hover:underline flex items-center gap-1 cursor-pointer"
-                  >
-                    <span>Xem tất cả</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-                {/* Table */}
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead>
-                      <tr className="border-b border-slate-100 bg-slate-50/80 text-slate-600 text-[11px] font-bold">
-                        <th className="py-2.5 px-4 w-12">#</th>
-                        <th className="py-2.5 px-4">Sản Phẩm / Tin Đăng</th>
-                        <th className="py-2.5 px-4">Giá Bán</th>
-                        <th className="py-2.5 px-4">Người Bán</th>
-                        <th className="py-2.5 px-4">Trạng Thái</th>
-                        <th className="py-2.5 px-4 text-center">Thao Tác</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {activeListings.length === 0 ? (
-                        <tr>
-                          <td colSpan={6} className="py-8 text-center text-slate-400">
-                            Hiện chưa có bài đăng nào được duyệt thành công trên sàn.
-                          </td>
-                        </tr>
-                      ) : (
-                        activeListings.slice(0, 5).map((listing, idx) => (
-                          <tr key={listing.id} className="hover:bg-slate-50/70 transition">
-                            <td className="py-3 px-4 font-mono font-medium text-slate-400">
-                              {idx + 1}
-                            </td>
-                            <td className="py-3 px-4">
-                              <div className="flex items-center gap-3">
-                                {listing.photoGallery?.[0] || listing.photos?.front || (listing as any).imageUrl ? (
-                                  <img
-                                    src={listing.photoGallery?.[0] || listing.photos?.front || (listing as any).imageUrl}
-                                    alt={listing.title}
-                                    className="w-10 h-10 object-cover rounded-lg border border-slate-200 shrink-0"
-                                  />
-                                ) : (
-                                  <div className="w-10 h-10 bg-slate-100 rounded-lg border border-slate-200 flex items-center justify-center shrink-0 text-slate-400">
-                                    <Tag className="w-4 h-4" />
-                                  </div>
-                                )}
-                                <div className="min-w-0">
-                                  <div className="font-bold text-slate-900 truncate max-w-xs sm:max-w-md">
-                                    {listing.title}
-                                  </div>
-                                  <div className="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5">
-                                    <span>ID: #{listing.id.substring(0, 8)}</span>
-                                    {listing.brand && <span>• {listing.brand}</span>}
-                                  </div>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="py-3 px-4 font-mono font-bold text-[#c34c36] whitespace-nowrap">
-                              {formatVND(listing.priceVnd || (listing as any).price || 0)}
-                            </td>
-                            <td className="py-3 px-4 whitespace-nowrap">
-                              <div className="font-medium text-slate-800">{listing.sellerName || 'Người bán'}</div>
-                              <div className="text-[10px] text-slate-400 truncate max-w-[150px]">{listing.sellerAddress || ''}</div>
-                            </td>
-                            <td className="py-3 px-4 whitespace-nowrap">
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                Đang hiển thị
-                              </span>
-                            </td>
-                            <td className="py-3 px-4 text-center whitespace-nowrap">
-                              <div className="flex items-center justify-center gap-1.5">
-                                <button
-                                  onClick={() => handleToggleListingStatus(listing.id)}
-                                  className="px-2.5 py-1 rounded bg-slate-100 hover:bg-[#24263e] hover:text-white text-slate-700 text-[11px] font-semibold transition cursor-pointer"
-                                >
-                                  Ẩn tin
-                                </button>
-                                {onOpenListingDetail && (
-                                  <button
-                                    onClick={() => onOpenListingDetail(listing)}
-                                    className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition cursor-pointer"
-                                    title="Xem chi tiết tin đăng"
-                                  >
-                                    <ExternalLink className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="p-3 border-t border-slate-100 flex justify-end">
-                  <button
-                    onClick={() => setActiveTab('listings')}
-                    className="px-3.5 py-1.5 rounded-lg border border-slate-300 hover:border-[#c34c36] hover:text-[#c34c36] text-xs font-semibold text-slate-700 transition cursor-pointer flex items-center gap-1"
-                  >
-                    <span>Quản lý tất cả {activeListings.length} bài đăng thành công</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-
-              {/* ROW 3: TWO 50% WIDTH CARDS (eKYC REVIEW & SYSTEM FINANCIAL OVERVIEW) */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                {/* Left Card: HỒ SƠ eKYC NGƯỜI BÁN CẦN XÉT DUYỆT */}
-                <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-rose-500 overflow-hidden flex flex-col justify-between">
-                  <div>
-                    <div className="px-4 py-3.5 border-b border-slate-100 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <ShieldCheck className="w-4 h-4 text-rose-600" />
-                        <h3 className="font-extrabold text-xs sm:text-sm text-slate-800 uppercase tracking-wide">
-                          HỒ SƠ eKYC NGƯỜI BÁN MỚI NHẤT
-                        </h3>
-                      </div>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                        {backendVerifications.filter(v => v.status === 'NEEDS_REVIEW' || v.status === 'SUBMITTED' || v.status === 'PENDING').length} chờ duyệt
-                      </span>
-                    </div>
-
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs">
-                        <thead>
-                          <tr className="border-b border-slate-100 bg-slate-50/70 text-slate-600 text-[11px] font-bold">
-                            <th className="py-2.5 px-4">Người Dùng</th>
-                            <th className="py-2.5 px-4">Giấy Tờ</th>
-                            <th className="py-2.5 px-4">Trạng Thái</th>
-                            <th className="py-2.5 px-4 text-center">Xử Lý</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {backendVerifications.slice(0, 4).map((v) => (
-                            <tr key={v.id} className="hover:bg-slate-50/70 transition">
-                              <td className="py-3 px-4 font-medium text-slate-800">
-                                <div className="font-bold text-slate-900">{v.userFullName || 'Người bán'}</div>
-                                <div className="text-[10px] text-slate-400">{v.userEmail || ''}</div>
-                              </td>
-                              <td className="py-3 px-4 font-mono text-slate-600 whitespace-nowrap">
-                                <div>{v.verificationType || 'CCCD'}</div>
-                                <div className="text-[10px] text-slate-400">{v.documentNumberMasked || '••••••••'}</div>
-                              </td>
-                              <td className="py-3 px-4 whitespace-nowrap">
-                                <span
-                                  className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${v.status === 'APPROVED'
-                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                    : v.status === 'REJECTED'
-                                      ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                                      : 'bg-amber-50 text-amber-700 border border-amber-200'
-                                    }`}
-                                >
-                                  {v.status === 'APPROVED' ? 'Đã duyệt' : v.status === 'REJECTED' ? 'Từ chối' : 'Cần thẩm định'}
-                                </span>
-                              </td>
-                              <td className="py-3 px-4 text-center">
-                                <button
-                                  onClick={() => setActiveTab('seller-kyc')}
-                                  className="px-2.5 py-1 rounded bg-[#24263e] hover:bg-[#c34c36] text-white text-[11px] font-semibold transition cursor-pointer"
-                                >
-                                  Xem
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-
-                  <div className="p-3 border-t border-slate-100 flex justify-end">
-                    <button
-                      onClick={() => setActiveTab('seller-kyc')}
-                      className="px-3.5 py-1.5 rounded-lg border border-slate-300 hover:border-rose-400 hover:text-rose-600 text-xs font-semibold text-slate-700 transition cursor-pointer"
-                    >
-                      Mở trang Thẩm định eKYC
-                    </button>
-                  </div>
-                </div>
-
-                {/* Right Card: TỔNG QUAN TÀI CHÍNH & VÍ HỆ THỐNG */}
-                <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-emerald-500 overflow-hidden flex flex-col justify-between">
-                  <div>
-                    <div className="px-4 py-3.5 border-b border-slate-100 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Wallet className="w-4 h-4 text-emerald-600" />
-                        <h3 className="font-extrabold text-xs sm:text-sm text-slate-800 uppercase tracking-wide">
-                          TỔNG QUAN TÀI CHÍNH & VÍ HỆ THỐNG
-                        </h3>
-                      </div>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                        VND
-                      </span>
-                    </div>
-
-                    <div className="p-4 space-y-3">
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
-                          <span className="text-[11px] text-slate-500 block">Ký quỹ đang tạm giữ (Escrow)</span>
-                          <span className="text-base sm:text-lg font-black text-slate-900 font-mono mt-0.5 block">
-                            {formatVND(escrowHeld)}
-                          </span>
-                        </div>
-                        <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
-                          <span className="text-[11px] text-slate-500 block">Doanh thu sàn tạm tính</span>
-                          <span className="text-base sm:text-lg font-black text-emerald-700 font-mono mt-0.5 block">
-                            {formatVND(platformEarnings)}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="p-3 rounded-xl bg-[#faf8f5] border border-slate-200/80 flex items-center justify-between">
-                        <div>
-                          <span className="text-[11px] text-slate-500 block">Tổng giá trị đơn hàng (GMV)</span>
-                          <span className="text-sm font-black text-[#24263e] font-mono">
-                            {formatVND(totalGmv)}
-                          </span>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-[11px] text-slate-500 block">Đơn hoàn thành</span>
-                          <span className="text-sm font-bold text-slate-800 font-mono">
-                            {completedOrdersCount} đơn
-                          </span>
-                        </div>
-                      </div>
-
-                      <p className="text-[11px] text-slate-500 italic">
-                        * Quản lý chi tiết từng bút toán giao dịch, tiền ship và hoa hồng chiết khấu trong mục Ví hệ thống và Quy tắc hoa hồng sàn.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="p-3 border-t border-slate-100 flex items-center justify-end gap-2">
-                    <button
-                      onClick={() => setActiveTab('system-report')}
-                      className="px-3 py-1.5 rounded-lg border border-[#c34c36]/30 bg-[#fce5da]/50 hover:bg-[#fce5da] text-xs font-bold text-[#24263e] transition cursor-pointer flex items-center gap-1"
-                    >
-                      <BarChart3 className="w-3.5 h-3.5 text-[#c34c36]" />
-                      <span>Báo cáo tổng quan</span>
-                    </button>
-                    <button
-                      onClick={() => setActiveTab('commission-rules')}
-                      className="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-700 transition cursor-pointer"
-                    >
-                      Biểu phí hoa hồng
-                    </button>
-                    <button
-                      onClick={() => setActiveTab('system-wallet')}
-                      className="px-3.5 py-1.5 rounded-lg bg-[#24263e] hover:bg-[#c34c36] text-white text-xs font-bold transition cursor-pointer flex items-center gap-1"
-                    >
-                      <span>Xem Ví Hệ Thống</span>
-                      <ArrowRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-
-          {/* ======================================================== */}
-          {/* TAB: SYSTEM OVERVIEW REPORT (BÁO CÁO TỔNG QUAN HỆ THỐNG)  */}
-          {/* ======================================================== */}
-          {activeTab === 'system-report' && (
             <SystemOverviewReportTab
               lang={lang}
               initialListings={localListings}

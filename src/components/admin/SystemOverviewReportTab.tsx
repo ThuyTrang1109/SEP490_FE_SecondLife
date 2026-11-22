@@ -80,8 +80,8 @@ const SvgDonutChart: React.FC<{
   centerTitle,
   centerValue,
   centerSub,
-  size = 188,
-  strokeWidth = 24,
+  size = 164,
+  strokeWidth = 20,
   formatValue = (v) => String(v)
 }) => {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
@@ -93,10 +93,10 @@ const SvgDonutChart: React.FC<{
   let cumulativeFraction = 0;
 
   return (
-    <div className="flex flex-col sm:flex-row items-center gap-5">
+    <div className="flex flex-col xl:flex-row items-center gap-4 min-w-0 w-full overflow-hidden">
       {/* SVG Ring */}
       <div className="relative shrink-0 flex items-center justify-center" style={{ width: size, height: size }}>
-        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90 transform overflow-visible">
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90 transform">
           {/* Background track */}
           <circle
             cx={center}
@@ -125,14 +125,13 @@ const SvgDonutChart: React.FC<{
                   r={radius}
                   fill="transparent"
                   stroke={seg.color}
-                  strokeWidth={isHovered ? strokeWidth + 5 : strokeWidth}
+                  strokeWidth={isHovered ? strokeWidth + 3 : strokeWidth}
                   strokeDasharray={`${dashLength} ${circumference}`}
                   strokeDashoffset={dashOffset}
                   strokeLinecap="butt"
                   className="transition-all duration-300 cursor-pointer"
                   style={{
-                    opacity: hoveredIdx !== null && !isHovered ? 0.45 : 1,
-                    filter: isHovered ? 'drop-shadow(0 4px 6px rgba(15,23,42,0.18))' : 'none'
+                    opacity: hoveredIdx !== null && !isHovered ? 0.45 : 1
                   }}
                   onMouseEnter={() => setHoveredIdx(idx)}
                   onMouseLeave={() => setHoveredIdx(null)}
@@ -153,29 +152,29 @@ const SvgDonutChart: React.FC<{
         </svg>
 
         {/* Center Text Overlay */}
-        <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-4 pointer-events-none">
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-3 pointer-events-none">
           {hoveredIdx !== null && segments[hoveredIdx] ? (
             <>
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 line-clamp-1">
+              <span className="text-[9px] font-extrabold uppercase tracking-wider text-slate-500 line-clamp-1 max-w-[105px]">
                 {segments[hoveredIdx].label}
               </span>
-              <span className="text-sm sm:text-base font-black font-mono text-slate-900 mt-0.5">
+              <span className="text-xs sm:text-sm font-black font-mono text-slate-900 mt-0.5 truncate max-w-[115px]">
                 {formatValue(segments[hoveredIdx].value)}
               </span>
-              <span className="text-[11px] font-bold text-[#c34c36]">
+              <span className="text-[10px] font-bold text-[#c34c36]">
                 {total > 0 ? `${Math.round((segments[hoveredIdx].value / total) * 100)}%` : '0%'}
               </span>
             </>
           ) : (
             <>
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+              <span className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400">
                 {centerTitle}
               </span>
-              <span className="text-sm sm:text-base font-black font-mono text-slate-900 mt-0.5 leading-tight">
+              <span className="text-xs sm:text-sm font-black font-mono text-slate-900 mt-0.5 leading-tight truncate max-w-[115px]">
                 {centerValue}
               </span>
               {centerSub && (
-                <span className="text-[10px] font-bold text-emerald-700 mt-0.5">
+                <span className="text-[9px] font-bold text-emerald-700 mt-0.5">
                   {centerSub}
                 </span>
               )}
@@ -185,7 +184,7 @@ const SvgDonutChart: React.FC<{
       </div>
 
       {/* Interactive Legend List */}
-      <div className="flex-1 w-full space-y-2">
+      <div className="flex-1 min-w-0 w-full space-y-2">
         {segments.map((seg, idx) => {
           const pct = total > 0 ? Math.round((Math.max(0, seg.value) / total) * 100) : 0;
           const isHovered = hoveredIdx === idx;
@@ -194,34 +193,34 @@ const SvgDonutChart: React.FC<{
               key={idx}
               onMouseEnter={() => setHoveredIdx(idx)}
               onMouseLeave={() => setHoveredIdx(null)}
-              className={`p-2.5 rounded-xl border transition cursor-pointer flex items-center justify-between gap-2 ${
+              className={`p-2.5 rounded-xl border transition cursor-pointer flex items-center justify-between gap-2 min-w-0 ${
                 isHovered
-                  ? 'bg-slate-900 text-white border-slate-900 shadow-sm scale-[1.01]'
-                  : 'bg-slate-50/80 hover:bg-slate-100/80 border-slate-200/80 text-slate-800'
+                  ? 'bg-[#24263e] text-white border-[#24263e] shadow-xs'
+                  : 'bg-slate-50/90 hover:bg-slate-100/90 border-slate-200/80 text-slate-800'
               }`}
             >
-              <div className="flex items-center gap-2.5 min-w-0">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
                 <span
-                  className="w-3.5 h-3.5 rounded-md shrink-0 shadow-2xs"
+                  className="w-3 h-3 rounded-sm shrink-0 shadow-2xs"
                   style={{ backgroundColor: seg.color }}
                 />
-                <div className="min-w-0">
-                  <div className={`text-xs font-bold truncate ${isHovered ? 'text-white' : 'text-slate-800'}`}>
+                <div className="min-w-0 flex-1">
+                  <div className={`text-xs font-bold truncate ${isHovered ? 'text-white' : 'text-slate-800'}`} title={seg.label}>
                     {seg.label}
                   </div>
                   {seg.subLabel && (
-                    <div className={`text-[10px] truncate ${isHovered ? 'text-slate-300' : 'text-slate-500'}`}>
+                    <div className={`text-[10px] truncate ${isHovered ? 'text-slate-300' : 'text-slate-500'}`} title={seg.subLabel}>
                       {seg.subLabel}
                     </div>
                   )}
                 </div>
               </div>
-              <div className="text-right shrink-0">
-                <div className={`text-xs font-black font-mono ${isHovered ? 'text-[#fce5da]' : 'text-slate-900'}`}>
+              <div className="text-right shrink-0 pl-1">
+                <div className={`text-xs font-black font-mono whitespace-nowrap ${isHovered ? 'text-[#fce5da]' : 'text-slate-900'}`}>
                   {formatValue(seg.value)}
                 </div>
                 <span
-                  className={`inline-block px-1.5 py-0.2 rounded text-[10px] font-bold ${
+                  className={`inline-block px-1.5 py-0.2 rounded text-[9px] font-bold ${
                     isHovered ? 'bg-white/15 text-white' : seg.bgBadge
                   }`}
                 >
@@ -298,6 +297,9 @@ const SvgRadialGauge: React.FC<{
 
 export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = ({
   lang = 'vi',
+  initialListings = [],
+  initialUsers = [],
+  initialVerifications = [],
   onNavigateTab
 }) => {
   const [dateRange, setDateRange] = useState<ReportDateRange>('ALL');
@@ -312,18 +314,93 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
   const [adminOrders, setAdminOrders] = useState<AdminOrderResponse[]>([]);
   const [systemWallet, setSystemWallet] = useState<SystemWalletData | null>(null);
   const [walletTxs, setWalletTxs] = useState<SystemWalletTransaction[]>([]);
-  const [users, setUsers] = useState<UserAdminResponseDto[]>([]);
-  const [totalUsersElements, setTotalUsersElements] = useState<number>(0);
-  const [verifications, setVerifications] = useState<SellerVerificationResponseDto[]>([]);
-  const [posts, setPosts] = useState<any[]>([]);
+  const [users, setUsers] = useState<UserAdminResponseDto[]>(initialUsers);
+  const [totalUsersElements, setTotalUsersElements] = useState<number>(initialUsers.length);
+  const [verifications, setVerifications] = useState<SellerVerificationResponseDto[]>(initialVerifications);
+  const [posts, setPosts] = useState<any[]>(initialListings);
   const [withdrawals, setWithdrawals] = useState<WalletWithdrawalResponseDto[]>([]);
   const [inspectionOrders, setInspectionOrders] = useState<InspectionOrderDto[]>([]);
   const [hubCenters, setHubCenters] = useState<InspectionCenter[]>([]);
   const [commissionRules, setCommissionRules] = useState<CommissionRuleResponse[]>([]);
 
+  // Sync with parent AdminDashboardView's live backend users/verifications/listings whenever they update
+  useEffect(() => {
+    if (initialUsers.length > 0 && users.length === 0) {
+      setUsers(initialUsers);
+      setTotalUsersElements((prev) => Math.max(prev, initialUsers.length));
+    }
+  }, [initialUsers, users.length]);
+
+  useEffect(() => {
+    if (initialVerifications.length > 0 && verifications.length === 0) {
+      setVerifications(initialVerifications);
+    }
+  }, [initialVerifications, verifications.length]);
+
+  useEffect(() => {
+    if (initialListings.length > 0 && posts.length === 0) {
+      setPosts(initialListings);
+    }
+  }, [initialListings, posts.length]);
+
   const loadAllReportData = useCallback(async () => {
     setIsLoading(true);
     try {
+      // Helper to fetch all pages from a Spring Boot paginated endpoint with safe page size (<= 100)
+      const fetchAllPages = async <T,>(
+        fetchPage: (page: number, size: number) => Promise<{ items?: T[]; content?: T[]; totalElements?: number; totalPages?: number } | T[]>,
+        pageSize = 50,
+        maxPages = 10
+      ): Promise<{ items: T[]; totalElements: number }> => {
+        const firstRes: any = await fetchPage(0, pageSize);
+        const firstItems: T[] = Array.isArray(firstRes)
+          ? firstRes
+          : Array.isArray(firstRes?.items)
+            ? firstRes.items
+            : Array.isArray(firstRes?.content)
+              ? firstRes.content
+              : Array.isArray(firstRes?.data?.items)
+                ? firstRes.data.items
+                : Array.isArray(firstRes?.data?.content)
+                  ? firstRes.data.content
+                  : [];
+        const totalElements = Number(
+          firstRes?.totalElements ?? firstRes?.data?.totalElements ?? firstItems.length
+        );
+        const totalPages = Math.min(
+          maxPages,
+          Number(firstRes?.totalPages ?? firstRes?.data?.totalPages ?? 1)
+        );
+
+        if (totalPages <= 1) {
+          return { items: firstItems, totalElements: Math.max(totalElements, firstItems.length) };
+        }
+
+        const morePromises: Promise<any>[] = [];
+        for (let p = 1; p < totalPages; p++) {
+          morePromises.push(fetchPage(p, pageSize).catch(() => null));
+        }
+        const moreResults = await Promise.all(morePromises);
+        const allItems = [...firstItems];
+        moreResults.forEach((res) => {
+          if (!res) return;
+          const pageItems: T[] = Array.isArray(res)
+            ? res
+            : Array.isArray(res?.items)
+              ? res.items
+              : Array.isArray(res?.content)
+                ? res.content
+                : Array.isArray(res?.data?.items)
+                  ? res.data.items
+                  : Array.isArray(res?.data?.content)
+                    ? res.data.content
+                    : [];
+          allItems.push(...pageItems);
+        });
+
+        return { items: allItems, totalElements: Math.max(totalElements, allItems.length) };
+      };
+
       const [
         statsRes,
         ordersRes,
@@ -338,14 +415,14 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
         commRes
       ] = await Promise.allSettled([
         adminOrderService.getAdminOrderStats(),
-        adminOrderService.getAdminOrders({ page: 0, size: 500 }),
+        fetchAllPages((page, size) => adminOrderService.getAdminOrders({ page, size }), 50),
         systemWalletService.getSystemWallet(),
-        systemWalletService.getTransactions({ page: 0, size: 500 }),
-        adminService.getAdminUsers({ page: 0, size: 500 }),
-        adminService.getSellerVerifications({ page: 0, size: 500 }),
+        fetchAllPages((page, size) => systemWalletService.getTransactions({ page, size }), 100),
+        fetchAllPages((page, size) => adminService.getAdminUsers({ page, size }), 50),
+        fetchAllPages((page, size) => adminService.getSellerVerifications({ page, size }), 50),
         adminPostService.getAdminPosts(),
-        walletService.getAdminWithdrawals('ALL', 0, 500),
-        inspectorService.getAllOrders(undefined, 0, 500),
+        fetchAllPages((page, size) => walletService.getAdminWithdrawals('ALL', page, size), 100),
+        fetchAllPages((page, size) => inspectorService.getAllOrders(undefined, page, size), 100),
         inspectorService.getInspectionCenters(true),
         adminCommissionService.getCommissionRules(0, 50)
       ]);
@@ -355,8 +432,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
       }
 
       if (ordersRes.status === 'fulfilled' && ordersRes.value) {
-        const items = ordersRes.value.items || (ordersRes.value as any)?.content || [];
-        setAdminOrders(Array.isArray(items) ? items : []);
+        setAdminOrders(ordersRes.value.items);
       }
 
       if (walletRes.status === 'fulfilled' && walletRes.value) {
@@ -364,38 +440,33 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
       }
 
       if (walletTxRes.status === 'fulfilled' && walletTxRes.value) {
-        setWalletTxs(walletTxRes.value.items || []);
+        setWalletTxs(walletTxRes.value.items);
       }
 
-      if (usersRes.status === 'fulfilled' && usersRes.value) {
-        const userItems = usersRes.value.items || (usersRes.value as any)?.content || [];
-        setUsers(Array.isArray(userItems) ? userItems : []);
-        setTotalUsersElements(Number(usersRes.value.totalElements ?? userItems.length ?? 0));
+      if (usersRes.status === 'fulfilled' && usersRes.value && usersRes.value.items.length > 0) {
+        setUsers(usersRes.value.items);
+        setTotalUsersElements(usersRes.value.totalElements);
       }
 
-      if (verifRes.status === 'fulfilled' && verifRes.value) {
-        const verItems = verifRes.value.items || (verifRes.value as any)?.content || [];
-        setVerifications(Array.isArray(verItems) ? verItems : []);
+      if (verifRes.status === 'fulfilled' && verifRes.value && verifRes.value.items.length > 0) {
+        setVerifications(verifRes.value.items);
       }
 
       if (postsRes.status === 'fulfilled' && postsRes.value) {
         const rawPosts = Array.isArray(postsRes.value)
           ? postsRes.value
-          : postsRes.value.items || postsRes.value.content || [];
-        setPosts(Array.isArray(rawPosts) ? rawPosts : []);
+          : postsRes.value.items || postsRes.value.content || postsRes.value.data || [];
+        if (Array.isArray(rawPosts) && rawPosts.length > 0) {
+          setPosts(rawPosts);
+        }
       }
 
       if (withdrawalsRes.status === 'fulfilled' && withdrawalsRes.value) {
-        const wItems = withdrawalsRes.value.items || (withdrawalsRes.value as any)?.content || [];
-        setWithdrawals(Array.isArray(wItems) ? wItems : []);
+        setWithdrawals(withdrawalsRes.value.items);
       }
 
       if (inspOrdersRes.status === 'fulfilled' && inspOrdersRes.value) {
-        const rawInsp =
-          inspOrdersRes.value.items ||
-          (inspOrdersRes.value as any)?.content ||
-          (Array.isArray(inspOrdersRes.value) ? inspOrdersRes.value : []);
-        setInspectionOrders(Array.isArray(rawInsp) ? rawInsp : []);
+        setInspectionOrders(inspOrdersRes.value.items);
       }
 
       if (hubsRes.status === 'fulfilled' && Array.isArray(hubsRes.value)) {
@@ -439,15 +510,22 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
     const filteredWalletTxs = walletTxs.filter((tx) => isWithinDateRange(tx.createdAt));
 
     // Active commission rule from DB (/v1/admin/commission-rules)
-    const activeRule = commissionRules.find((r) => r.active);
-    const effectiveRate = activeRule && activeRule.rate !== undefined ? Number(activeRule.rate) : 0;
+    const activeRule = commissionRules.find((r) => r.active) || commissionRules[0];
+    const rawRate = activeRule && activeRule.rate !== undefined ? Number(activeRule.rate) : 0;
+    const effectiveRate = rawRate > 1 ? rawRate / 100 : rawRate;
+    const effectiveRatePercent = (rawRate > 1 ? rawRate : rawRate * 100).toFixed(1);
 
-    // Real GMV from DB (/v1/admin/orders/stats or sum of real DB orders)
+    // Real GMV from DB (/v1/admin/orders/stats or sum of real DB orders or PAYMENT_HOLD ledger entries)
     const totalGmvFromOrders = filteredOrders.reduce((sum, o) => sum + Number(o.totalAmount || o.finalPrice || 0), 0);
+    const totalGmvFromLedger = filteredWalletTxs
+      .filter((tx) => tx.type === 'PAYMENT_HOLD')
+      .reduce((sum, tx) => sum + Math.max(0, Number(tx.heldDelta || 0) + Number(tx.shippingDelta || 0)), 0);
     const totalGmv =
-      dateRange === 'ALL' && orderStats?.totalGmv !== undefined
+      dateRange === 'ALL' && orderStats?.totalGmv !== undefined && Number(orderStats.totalGmv) > 0
         ? Number(orderStats.totalGmv)
-        : totalGmvFromOrders;
+        : totalGmvFromOrders > 0
+          ? totalGmvFromOrders
+          : totalGmvFromLedger;
 
     // Real System Wallet balances from DB (/v1/admin/system-wallet)
     const heldEscrow =
@@ -476,16 +554,24 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
         ? Number(systemWallet.totalBalance)
         : heldEscrow + shippingPoolBalance + Number(systemWallet?.revenueBalance ?? platformRevenue);
 
-    // Released vs Refunded from real DB Orders
-    const releasedAmount = filteredOrders
+    // Released vs Refunded from real DB Orders or System Wallet Ledger
+    const releasedFromOrders = filteredOrders
       .filter((o) => o.escrowStatus === 'RELEASED' || o.status === 'COMPLETED')
       .reduce((sum, o) => sum + Number(o.finalPrice || o.totalAmount || 0), 0);
+    const releasedFromLedger = filteredWalletTxs
+      .filter((tx) => tx.type === 'SETTLEMENT' && Number(tx.heldDelta || 0) < 0)
+      .reduce((sum, tx) => sum + Math.abs(Number(tx.heldDelta || 0) + Number(tx.revenueDelta || 0)), 0);
+    const releasedAmount = releasedFromOrders > 0 ? releasedFromOrders : releasedFromLedger;
 
-    const refundedAmount = filteredOrders
+    const refundedFromOrders = filteredOrders
       .filter((o) => o.escrowStatus === 'REFUNDED' || o.status === 'CANCELLED')
       .reduce((sum, o) => sum + Number(o.totalAmount || o.finalPrice || 0), 0);
+    const refundedFromLedger = filteredWalletTxs
+      .filter((tx) => (tx.type === 'REFUND' || tx.type === 'INSPECTION_REFUND') && Number(tx.heldDelta || 0) < 0)
+      .reduce((sum, tx) => sum + Math.abs(Number(tx.heldDelta || 0) + Number(tx.shippingDelta || 0)), 0);
+    const refundedAmount = refundedFromOrders > 0 ? refundedFromOrders : refundedFromLedger;
 
-    // Real Withdrawals summary from DB (/v1/admin/wallets/withdrawals)
+    // Real Withdrawals summary from DB (/v1/wallets/admin/withdrawals)
     const filteredWithdrawals = withdrawals.filter((w) => isWithinDateRange(w.createdAt));
     const pendingWithdrawals = filteredWithdrawals.filter((w) => w.status === 'PENDING_REVIEW');
     const approvedWithdrawals = filteredWithdrawals.filter((w) => w.status === 'APPROVED');
@@ -504,7 +590,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
       releasedAmount,
       refundedAmount,
       effectiveRate,
-      effectiveRatePercent: (effectiveRate * 100).toFixed(1),
+      effectiveRatePercent,
       activeRuleName: activeRule?.name || null,
       pendingWithdrawalsCount: pendingWithdrawals.length,
       approvedWithdrawalsCount: approvedWithdrawals.length,
@@ -541,17 +627,25 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
       bucketMap.set(sortKey, prev);
     });
 
-    // 2. Group real commission revenue from System Wallet ledger transactions by actual date
+    // 2. Group real commission revenue (and GMV if orders list wasn't returned) from System Wallet ledger transactions by actual date
+    const seenLedgerOrderIds = new Set(filteredOrders.map((o) => o.id));
     filteredTxs.forEach((tx) => {
-      const revDelta = Number(tx.revenueDelta || 0);
-      if (revDelta <= 0) return;
       const ts = parseDateMs(tx.createdAt);
       if (!ts) return;
       const d = new Date(ts);
       const sortKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       const label = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
       const prev = bucketMap.get(sortKey) || { sortKey, label, gmv: 0, revenue: 0, orders: 0 };
-      prev.revenue += revDelta;
+
+      const revDelta = Number(tx.revenueDelta || 0);
+      if (revDelta > 0) {
+        prev.revenue += revDelta;
+      }
+      if (tx.type === 'PAYMENT_HOLD' && (!tx.orderId || !seenLedgerOrderIds.has(tx.orderId))) {
+        if (tx.orderId) seenLedgerOrderIds.add(tx.orderId);
+        prev.gmv += Math.max(0, Number(tx.heldDelta || 0) + Number(tx.shippingDelta || 0));
+        prev.orders += 1;
+      }
       bucketMap.set(sortKey, prev);
     });
 
@@ -577,33 +671,67 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
   // ============================================================================
   const orderAnalytics = useMemo(() => {
     const filteredOrders = adminOrders.filter((o) => isWithinDateRange(o.createdAt));
-    const useStats = dateRange === 'ALL' && orderStats !== null;
+    const filteredTxs = walletTxs.filter((tx) => isWithinDateRange(tx.createdAt));
+    const useStats = dateRange === 'ALL' && orderStats !== null && Number(orderStats.totalOrders ?? 0) > 0;
 
-    const total = useStats ? Number(orderStats.totalOrders ?? filteredOrders.length) : filteredOrders.length;
+    // Fallback to ledger transaction order IDs if /v1/admin/orders is empty
+    const ledgerHoldOrderIds = new Set(
+      filteredTxs.filter((tx) => tx.type === 'PAYMENT_HOLD' && tx.orderId).map((tx) => tx.orderId!)
+    );
+    const ledgerSettledOrderIds = new Set(
+      filteredTxs.filter((tx) => tx.type === 'SETTLEMENT' && tx.orderId).map((tx) => tx.orderId!)
+    );
+    const ledgerRefundedOrderIds = new Set(
+      filteredTxs.filter((tx) => tx.type === 'REFUND' && tx.orderId).map((tx) => tx.orderId!)
+    );
+    const ledgerInspectionOrderIds = new Set(
+      filteredTxs.filter((tx) => Boolean(tx.inspectionOrderId) || tx.type.startsWith('INSPECTION_')).map((tx) => tx.inspectionOrderId || tx.orderId || String(tx.id))
+    );
+
+    const hasAdminOrders = filteredOrders.length > 0;
+
+    const total = useStats
+      ? Number(orderStats!.totalOrders)
+      : hasAdminOrders
+        ? filteredOrders.length
+        : ledgerHoldOrderIds.size;
+
     const completed = useStats
-      ? Number(orderStats.completedOrders ?? filteredOrders.filter((o) => o.status === 'COMPLETED').length)
-      : filteredOrders.filter((o) => o.status === 'COMPLETED').length;
+      ? Number(orderStats!.completedOrders ?? 0)
+      : hasAdminOrders
+        ? filteredOrders.filter((o) => o.status === 'COMPLETED').length
+        : ledgerSettledOrderIds.size;
+
     const confirmed = useStats
-      ? Number(
-          (orderStats.confirmedOrders ?? 0) + (orderStats.processingOrders ?? 0) ||
-            filteredOrders.filter((o) => o.status === 'CONFIRMED' || o.status === 'PROCESSING').length
-        )
-      : filteredOrders.filter((o) => o.status === 'CONFIRMED' || o.status === 'PROCESSING').length;
+      ? Number((orderStats!.confirmedOrders ?? 0) + (orderStats!.processingOrders ?? 0))
+      : hasAdminOrders
+        ? filteredOrders.filter((o) => o.status === 'CONFIRMED' || o.status === 'PROCESSING').length
+        : Math.max(0, ledgerHoldOrderIds.size - ledgerSettledOrderIds.size - ledgerRefundedOrderIds.size);
+
     const shipping = useStats
-      ? Number(
-          (orderStats.shippingOrders ?? 0) + (orderStats.deliveredOrders ?? 0) ||
-            filteredOrders.filter((o) => o.status === 'SHIPPED' || o.status === 'DELIVERED').length
-        )
-      : filteredOrders.filter((o) => o.status === 'SHIPPED' || o.status === 'DELIVERED').length;
+      ? Number((orderStats!.shippingOrders ?? 0) + (orderStats!.deliveredOrders ?? 0))
+      : hasAdminOrders
+        ? filteredOrders.filter((o) => o.status === 'SHIPPED' || o.status === 'DELIVERED').length
+        : 0;
+
     const cancelled = useStats
-      ? Number(orderStats.cancelledOrders ?? filteredOrders.filter((o) => o.status === 'CANCELLED').length)
-      : filteredOrders.filter((o) => o.status === 'CANCELLED').length;
+      ? Number(orderStats!.cancelledOrders ?? 0)
+      : hasAdminOrders
+        ? filteredOrders.filter((o) => o.status === 'CANCELLED').length
+        : ledgerRefundedOrderIds.size;
+
     const disputed = useStats
-      ? Number(orderStats.disputedOrders ?? filteredOrders.filter((o) => o.escrowStatus === 'FROZEN').length)
-      : filteredOrders.filter((o) => o.escrowStatus === 'FROZEN').length;
+      ? Number(orderStats!.disputedOrders ?? 0)
+      : hasAdminOrders
+        ? filteredOrders.filter((o) => o.escrowStatus === 'FROZEN').length
+        : 0;
+
     const withInspection = useStats
-      ? Number(orderStats.withInspectionCount ?? filteredOrders.filter((o) => Boolean(o.hasInspection)).length)
-      : filteredOrders.filter((o) => Boolean(o.hasInspection)).length;
+      ? Number(orderStats!.withInspectionCount ?? 0)
+      : hasAdminOrders
+        ? filteredOrders.filter((o) => Boolean(o.hasInspection)).length
+        : Math.max(inspectionOrders.length, ledgerInspectionOrderIds.size);
+
     const directOrders = Math.max(0, total - withInspection);
 
     const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
@@ -955,7 +1083,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
       {
         key: 'inspection',
         label: 'Có Kiểm định',
-        sub: 'Qua Trạm Hub',
+        sub: 'Qua trạm kiểm định',
         count: orderAnalytics.withInspection,
         color: '#8b5cf6',
         gradientFrom: 'from-violet-600',
@@ -994,11 +1122,11 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
   }, [financialAnalytics]);
 
   return (
-    <div className="space-y-6 animate-fadeIn">
+    <div className="space-y-5 animate-fadeIn max-w-full overflow-x-hidden">
       {/* ============================================================================ */}
       {/* 1. HEADER BANNER & FILTER TOOLBAR                                            */}
       {/* ============================================================================ */}
-      <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-xs">
+      <div className="bg-white rounded-2xl border border-slate-200/90 p-4 sm:p-5 shadow-xs overflow-hidden">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="flex items-start sm:items-center gap-3.5">
             <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[#24263e] to-[#c34c36] text-white flex items-center justify-center shadow-sm shrink-0">
@@ -1007,17 +1135,15 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight uppercase">
-                  {lang === 'vi' ? 'BIỂU ĐỒ BÁO CÁO TỔNG QUAN HỆ THỐNG' : 'SYSTEM ANALYTICS & VISUAL CHARTS REPORT'}
+                  BIỂU ĐỒ BÁO CÁO TỔNG QUAN HỆ THỐNG
                 </h2>
                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  100% Real Database Data
+                  Dữ liệu thực tế từ hệ thống
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-1">
-                {lang === 'vi'
-                  ? 'Toàn bộ số liệu và biểu đồ được truy vấn trực tiếp từ cơ sở dữ liệu PostgreSQL (Ví hệ thống, Đơn hàng Escrow, Trạm Kiểm định Hub, Người dùng & Tin đăng).'
-                  : 'All metrics and charts are queried directly from the PostgreSQL database (System Wallet, Escrow Orders, Hub Inspections, Users & Listings).'}
+                Toàn bộ số liệu và biểu đồ được truy vấn trực tiếp từ cơ sở dữ liệu hệ thống (Ví hệ thống, Đơn hàng ký quỹ, Trạm kiểm định, Người dùng & Tin đăng).
               </p>
             </div>
           </div>
@@ -1075,9 +1201,9 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
           <div className="flex flex-wrap items-center gap-1.5">
             {[
               { id: 'ALL', label: lang === 'vi' ? 'Tất cả biểu đồ tổng quan' : 'All Visual Charts', icon: Layers },
-              { id: 'FINANCE', label: lang === 'vi' ? '1. Biểu đồ Tài chính & Dòng tiền' : '1. Financial & Cashflow Charts', icon: Wallet },
-              { id: 'ORDERS_INSPECTION', label: lang === 'vi' ? '2. Biểu đồ Đơn hàng & Kiểm định' : '2. Orders & Inspection Charts', icon: BarChart3 },
-              { id: 'USERS_LISTINGS', label: lang === 'vi' ? '3. Biểu đồ Người dùng & Ngành hàng' : '3. Users & Category Charts', icon: PieChart }
+              { id: 'FINANCE', label: lang === 'vi' ? 'Biểu đồ Tài chính & Dòng tiền' : 'Financial & Cashflow Charts', icon: Wallet },
+              { id: 'ORDERS_INSPECTION', label: lang === 'vi' ? 'Biểu đồ Đơn hàng & Kiểm định' : 'Orders & Inspection Charts', icon: BarChart3 },
+              { id: 'USERS_LISTINGS', label: lang === 'vi' ? 'Biểu đồ Người dùng & Ngành hàng' : 'Users & Category Charts', icon: PieChart }
             ].map((sec) => {
               const Icon = sec.icon;
               const active = reportSection === sec.id;
@@ -1100,7 +1226,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
           </div>
 
           <span className="text-[11px] text-slate-400 font-mono">
-            {lang === 'vi' ? 'Đồng bộ từ DB lúc:' : 'DB synced at:'} {lastSyncedAt.toLocaleTimeString('vi-VN')}
+            Cập nhật lúc: {lastSyncedAt.toLocaleTimeString('vi-VN')}
           </span>
         </div>
       </div>
@@ -1114,7 +1240,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
           <div className="flex items-center justify-between">
             <div>
               <span className="text-[11px] font-bold text-[#fce5da]/80 uppercase tracking-wider block">
-                TỔNG GIÁ TRỊ GIAO DỊCH (GMV)
+                TỔNG GIÁ TRỊ GIAO DỊCH
               </span>
               <span className="text-xl sm:text-2xl font-black font-mono text-[#fce5da] mt-1 block">
                 {formatVND(financialAnalytics.totalGmv)}
@@ -1166,7 +1292,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
 
           <div className="mt-3 space-y-1.5">
             <div className="flex items-center justify-between text-[11px]">
-              <span className="text-slate-500 font-semibold">Ký quỹ đang giữ (Escrow):</span>
+              <span className="text-slate-500 font-semibold">Tiền ký quỹ đang giữ:</span>
               <span className="font-mono font-bold text-amber-800">{formatVND(financialAnalytics.heldEscrow)}</span>
             </div>
             <div className="w-full h-2 rounded-full bg-slate-100 overflow-hidden flex">
@@ -1224,7 +1350,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
 
           <div className="mt-3 space-y-1.5">
             <div className="flex items-center justify-between text-[11px]">
-              <span className="text-slate-500 font-semibold">Đơn qua Kiểm định Hub:</span>
+              <span className="text-slate-500 font-semibold">Đơn qua kiểm định:</span>
               <span className="font-mono font-bold text-indigo-700">
                 {orderAnalytics.withInspection} đơn ({orderAnalytics.inspectionAdoptionRate}%)
               </span>
@@ -1265,7 +1391,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
                   {userAndListingAnalytics.totalUsers}
                 </span>
                 <span className="text-xs font-bold text-[#c34c36]">
-                  • {userAndListingAnalytics.activeListingsCount} tin active
+                  • {userAndListingAnalytics.activeListingsCount} tin đang hiển thị
                 </span>
               </div>
             </div>
@@ -1276,7 +1402,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
 
           <div className="mt-3 space-y-1.5">
             <div className="flex items-center justify-between text-[11px]">
-              <span className="text-slate-500 font-semibold">Tỷ lệ duyệt eKYC Seller:</span>
+              <span className="text-slate-500 font-semibold">Tỷ lệ duyệt hồ sơ người bán:</span>
               <span className="font-mono font-bold text-emerald-700">
                 {userAndListingAnalytics.ekycApproved}/{userAndListingAnalytics.ekycTotal} ({userAndListingAnalytics.ekycApprovalRate}%)
               </span>
@@ -1294,7 +1420,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
                 onClick={() => onNavigateTab?.('seller-kyc')}
                 className="text-rose-700 font-bold hover:underline cursor-pointer"
               >
-                Duyệt eKYC →
+                Duyệt hồ sơ →
               </button>
             </div>
           </div>
@@ -1305,46 +1431,44 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
       {/* 3. ROW 1 CHARTS: BIỂU ĐỒ MIỀN XU HƯỚNG GMV THỰC TẾ & DONUT VÍ HỆ THỐNG       */}
       {/* ============================================================================ */}
       {(reportSection === 'ALL' || reportSection === 'FINANCE') && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
           {/* LEFT 7 COLS: SVG AREA & LINE CHART FOR REAL GMV & LEDGER REVENUE */}
-          <div className="lg:col-span-7 bg-white rounded-2xl border border-slate-200/90 shadow-xs p-5 flex flex-col justify-between">
+          <div className="lg:col-span-7 min-w-0 bg-white rounded-2xl border border-slate-200/90 shadow-xs p-4 sm:p-5 flex flex-col justify-between overflow-hidden">
             <div>
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-slate-100">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-2 rounded-xl bg-[#24263e] text-[#fce5da]">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 border-b border-slate-100">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="p-2 rounded-xl bg-[#24263e] text-[#fce5da] shrink-0">
                     <Activity className="w-4 h-4" />
                   </div>
-                  <div>
-                    <h3 className="font-black text-xs sm:text-sm text-slate-900 uppercase tracking-wide">
-                      {lang === 'vi'
-                        ? 'BIỂU ĐỒ DÒNG TIỀN GMV & DOANH THU HOA HỒNG THEO NGÀY THỰC TẾ'
-                        : 'REAL DAILY GMV & LEDGER COMMISSION REVENUE CHART'}
+                  <div className="min-w-0">
+                    <h3 className="font-black text-xs sm:text-sm text-slate-900 uppercase tracking-wide truncate">
+                      BIỂU ĐỒ DÒNG TIỀN GIAO DỊCH & DOANH THU HOA HỒNG
                     </h3>
-                    <p className="text-[11px] text-slate-500">
-                      Tổng hợp theo ngày tạo đơn thực tế từ bảng đơn hàng (`orders`) và sổ cái Ví hệ thống (`system_wallet_transactions`)
+                    <p className="text-[11px] text-slate-500 truncate">
+                      Tổng hợp theo ngày giao dịch thực tế từ đơn hàng và sổ cái Ví hệ thống
                     </p>
                   </div>
                 </div>
 
                 {/* Chart Legend */}
-                <div className="flex items-center gap-4 text-xs font-bold">
-                  <span className="flex items-center gap-1.5 text-slate-700">
-                    <span className="w-3 h-3 rounded-full bg-[#c34c36] inline-block" />
-                    <span>GMV Giao dịch</span>
+                <div className="flex items-center gap-3 text-xs font-bold shrink-0">
+                  <span className="flex items-center gap-1.5 text-slate-700 whitespace-nowrap">
+                    <span className="w-2.5 h-2.5 rounded-full bg-[#c34c36] inline-block shrink-0" />
+                    <span>Giá trị giao dịch</span>
                   </span>
-                  <span className="flex items-center gap-1.5 text-emerald-700">
-                    <span className="w-3 h-3 rounded-full bg-emerald-500 inline-block" />
-                    <span>Hoa hồng sổ cái</span>
+                  <span className="flex items-center gap-1.5 text-emerald-700 whitespace-nowrap">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block shrink-0" />
+                    <span>Hoa hồng sàn</span>
                   </span>
                 </div>
               </div>
 
               {/* Interactive SVG Area Chart */}
-              <div className="mt-4 relative">
+              <div className="mt-4 relative overflow-hidden">
                 {trendSeriesData.length > 0 ? (
                   <svg
                     viewBox={`0 0 ${areaChartGeometry.width} ${areaChartGeometry.height}`}
-                    className="w-full h-56 overflow-visible select-none"
+                    className="w-full h-56 select-none"
                   >
                     <defs>
                       <linearGradient id="gmvAreaGrad" x1="0" y1="0" x2="0" y2="1">
@@ -1513,7 +1637,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
                       </div>
                       <div className="flex items-center gap-4 font-mono">
                         <span>
-                          GMV ngày: <strong className="text-[#c34c36]">{formatVND(trendSeriesData[hoveredTrendIdx].gmv)}</strong>
+                          Giá trị ngày: <strong className="text-[#c34c36]">{formatVND(trendSeriesData[hoveredTrendIdx].gmv)}</strong>
                         </span>
                         <span>
                           Hoa hồng thu: <strong className="text-emerald-700">{formatVND(trendSeriesData[hoveredTrendIdx].revenue)}</strong>
@@ -1523,14 +1647,14 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
                   ) : (
                     <>
                       <span className="text-slate-600 font-medium">
-                        Tổng hợp thực tế từ DB: <strong className="text-slate-900">{orderAnalytics.total} đơn giao dịch</strong>
+                        Tổng hợp thực tế: <strong className="text-slate-900">{orderAnalytics.total} đơn giao dịch</strong>
                       </span>
                       <div className="flex items-center gap-4 font-mono">
                         <span>
-                          Đã giải ngân Seller: <strong className="text-emerald-700">{formatVND(financialAnalytics.releasedAmount)}</strong>
+                          Đã giải ngân người bán: <strong className="text-emerald-700">{formatVND(financialAnalytics.releasedAmount)}</strong>
                         </span>
                         <span>
-                          Đã hoàn Buyer: <strong className="text-purple-700">{formatVND(financialAnalytics.refundedAmount)}</strong>
+                          Đã hoàn tiền người mua: <strong className="text-purple-700">{formatVND(financialAnalytics.refundedAmount)}</strong>
                         </span>
                       </div>
                     </>
@@ -1541,19 +1665,19 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
           </div>
 
           {/* RIGHT 5 COLS: DONUT CHART - CƠ CẤU PHÂN BỔ VÍ HỆ THỐNG THỰC TẾ */}
-          <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-200/90 shadow-xs p-5 flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-2 rounded-xl bg-amber-100 text-amber-800">
+          <div className="lg:col-span-5 min-w-0 bg-white rounded-2xl border border-slate-200/90 shadow-xs p-4 sm:p-5 flex flex-col justify-between overflow-hidden">
+            <div className="min-w-0">
+              <div className="flex items-center justify-between gap-2 pb-3.5 border-b border-slate-100">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="p-2 rounded-xl bg-amber-100 text-amber-800 shrink-0">
                     <PieChart className="w-4 h-4" />
                   </div>
-                  <div>
-                    <h3 className="font-black text-xs sm:text-sm text-slate-900 uppercase tracking-wide">
-                      {lang === 'vi' ? 'BIỂU ĐỒ TỶ TRỌNG DÒNG TIỀN VÍ HỆ THỐNG' : 'SYSTEM WALLET FUND ALLOCATION'}
+                  <div className="min-w-0">
+                    <h3 className="font-black text-xs sm:text-sm text-slate-900 uppercase tracking-wide truncate">
+                      {lang === 'vi' ? 'CƠ CẤU DÒNG TIỀN VÍ HỆ THỐNG' : 'SYSTEM WALLET FUND ALLOCATION'}
                     </h3>
-                    <p className="text-[11px] text-slate-500">
-                      Số dư trực tiếp từ API `/v1/admin/system-wallet`
+                    <p className="text-[11px] text-slate-500 truncate">
+                      Phân bổ số dư thực tế trong Ví hệ thống
                     </p>
                   </div>
                 </div>
@@ -1561,7 +1685,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
                   <button
                     type="button"
                     onClick={() => onNavigateTab('system-wallet')}
-                    className="text-xs font-bold text-[#c34c36] hover:underline flex items-center gap-0.5 cursor-pointer"
+                    className="text-xs font-bold text-[#c34c36] hover:underline flex items-center gap-0.5 cursor-pointer shrink-0 whitespace-nowrap"
                   >
                     <span>Chi tiết</span>
                     <ChevronRight className="w-3.5 h-3.5" />
@@ -1569,30 +1693,30 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
                 )}
               </div>
 
-              <div className="mt-5">
+              <div className="mt-4 min-w-0">
                 <SvgDonutChart
                   centerTitle="TỔNG VÍ HỆ THỐNG"
                   centerValue={formatVND(financialAnalytics.totalSystemBalance)}
-                  centerSub={`${walletTxs.length} bút toán DB`}
+                  centerSub={`${walletTxs.length} bút toán`}
                   formatValue={(v) => formatVND(v)}
                   segments={[
                     {
-                      label: 'Ký quỹ Đơn hàng (heldBalance)',
-                      subLabel: 'Tiền hàng tạm giữ bảo vệ Buyer',
+                      label: 'Ký quỹ Đơn hàng',
+                      subLabel: 'Tiền hàng tạm giữ bảo vệ người mua',
                       value: financialAnalytics.heldEscrow,
                       color: '#f59e0b',
                       bgBadge: 'bg-amber-100 text-amber-800'
                     },
                     {
-                      label: 'Quỹ Vận chuyển & Dự phòng cước hoàn',
-                      subLabel: 'shippingBalance + returnShippingReserveFee',
+                      label: 'Quỹ Vận chuyển & Cước hoàn',
+                      subLabel: 'Phí giao nhận & dự phòng kiểm định',
                       value: financialAnalytics.shippingPoolBalance + inspectionAnalytics.heldReturnReserves,
                       color: '#3b82f6',
                       bgBadge: 'bg-blue-100 text-blue-800'
                     },
                     {
-                      label: 'Doanh thu Hoa hồng Sàn (revenueBalance)',
-                      subLabel: `Lợi nhuận phí sàn thực nhận`,
+                      label: 'Doanh thu Hoa hồng Sàn',
+                      subLabel: 'Lợi nhuận phí sàn thực nhận',
                       value: financialAnalytics.platformRevenue,
                       color: '#10b981',
                       bgBadge: 'bg-emerald-100 text-emerald-800'
@@ -1667,23 +1791,23 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
       {/* 4. ROW 2 CHARTS: BIỂU ĐỒ CỘT ĐƠN HÀNG & BIỂU ĐỒ ĐỒNG HỒ ĐO KIỂM ĐỊNH HUB    */}
       {/* ============================================================================ */}
       {(reportSection === 'ALL' || reportSection === 'ORDERS_INSPECTION') && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
           {/* LEFT 7 COLS: VERTICAL COLUMN BAR CHART - TRẠNG THÁI ĐƠN HÀNG TOÀN SÀN */}
-          <div className="lg:col-span-7 bg-white rounded-2xl border border-slate-200/90 shadow-xs p-5 flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-2 rounded-xl bg-[#fce5da] text-[#c34c36]">
+          <div className="lg:col-span-7 min-w-0 bg-white rounded-2xl border border-slate-200/90 shadow-xs p-4 sm:p-5 flex flex-col justify-between overflow-hidden">
+            <div className="min-w-0">
+              <div className="flex items-center justify-between gap-2 pb-3.5 border-b border-slate-100">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="p-2 rounded-xl bg-[#fce5da] text-[#c34c36] shrink-0">
                     <BarChart3 className="w-4 h-4" />
                   </div>
-                  <div>
-                    <h3 className="font-black text-xs sm:text-sm text-slate-900 uppercase tracking-wide">
+                  <div className="min-w-0">
+                    <h3 className="font-black text-xs sm:text-sm text-slate-900 uppercase tracking-wide truncate">
                       {lang === 'vi'
-                        ? 'BIỂU ĐỒ CỘT PHÂN BỔ TRẠNG THÁI ĐƠN HÀNG TOÀN SÀN'
+                        ? 'BIỂU ĐỒ CỘT PHÂN BỔ TRẠNG THÁI ĐƠN HÀNG'
                         : 'MARKETPLACE ORDER STATUS COLUMN CHART'}
                     </h3>
-                    <p className="text-[11px] text-slate-500">
-                      Truy vấn trực tiếp từ `/v1/admin/orders/stats` & `/v1/admin/orders` ({orderAnalytics.total} đơn)
+                    <p className="text-[11px] text-slate-500 truncate">
+                      Thống kê trạng thái thực tế của {orderAnalytics.total} đơn hàng trên sàn
                     </p>
                   </div>
                 </div>
@@ -1691,9 +1815,9 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
                   <button
                     type="button"
                     onClick={() => onNavigateTab('orders')}
-                    className="text-xs font-bold text-[#c34c36] hover:underline flex items-center gap-1 cursor-pointer"
+                    className="text-xs font-bold text-[#c34c36] hover:underline flex items-center gap-1 cursor-pointer shrink-0 whitespace-nowrap"
                   >
-                    <span>Quản lý đơn hàng</span>
+                    <span>Quản lý đơn</span>
                     <ChevronRight className="w-3.5 h-3.5" />
                   </button>
                 )}
@@ -1761,28 +1885,26 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
                 <span className="font-mono font-black text-indigo-950 text-sm">{orderAnalytics.inspectionAdoptionRate}%</span>
               </div>
               <div className="p-2.5 rounded-xl bg-rose-50/70 border border-rose-200 flex items-center justify-between">
-                <span className="text-rose-800 font-bold">Đơn tranh chấp / Frozen:</span>
+                <span className="text-rose-800 font-bold">Đơn đang tranh chấp:</span>
                 <span className="font-mono font-black text-rose-950 text-sm">{orderAnalytics.disputed} đơn</span>
               </div>
             </div>
           </div>
 
           {/* RIGHT 5 COLS: RADIAL GAUGE & INSPECTION HUB ANALYTICS */}
-          <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-200/90 shadow-xs p-5 flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-2 rounded-xl bg-blue-100 text-blue-800">
+          <div className="lg:col-span-5 min-w-0 bg-white rounded-2xl border border-slate-200/90 shadow-xs p-4 sm:p-5 flex flex-col justify-between overflow-hidden">
+            <div className="min-w-0">
+              <div className="flex items-center justify-between gap-2 pb-3.5 border-b border-slate-100">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="p-2 rounded-xl bg-blue-100 text-blue-800 shrink-0">
                     <ShieldCheck className="w-4 h-4" />
                   </div>
-                  <div>
-                    <h3 className="font-black text-xs sm:text-sm text-slate-900 uppercase tracking-wide">
-                      {lang === 'vi'
-                        ? 'BIỂU ĐỒ CHẤT LƯỢNG KIỂM ĐỊNH & TRẠM HUB'
-                        : 'INSPECTION PASS RATE GAUGE & HUB SPLIT'}
+                  <div className="min-w-0">
+                    <h3 className="font-black text-xs sm:text-sm text-slate-900 uppercase tracking-wide truncate">
+                      CHẤT LƯỢNG KIỂM ĐỊNH & TRẠM KIỂM ĐỊNH
                     </h3>
-                    <p className="text-[11px] text-slate-500">
-                      Dữ liệu thực tế từ {inspectionAnalytics.total} hồ sơ kiểm định trên hệ thống
+                    <p className="text-[11px] text-slate-500 truncate">
+                      Dữ liệu từ {inspectionAnalytics.total} hồ sơ kiểm định trên hệ thống
                     </p>
                   </div>
                 </div>
@@ -1790,7 +1912,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
                   <button
                     type="button"
                     onClick={() => onNavigateTab('inspection-funds')}
-                    className="text-xs font-bold text-[#c34c36] hover:underline flex items-center gap-1 cursor-pointer"
+                    className="text-xs font-bold text-[#c34c36] hover:underline flex items-center gap-1 cursor-pointer shrink-0 whitespace-nowrap"
                   >
                     <span>Đối soát</span>
                     <ChevronRight className="w-3.5 h-3.5" />
@@ -1813,7 +1935,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
                 <div className="space-y-2.5">
                   <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
                     <div className="flex items-center justify-between text-xs font-bold text-slate-800">
-                      <span>Tại Trạm Hub (AT_CENTER)</span>
+                      <span>Tại Trạm Kiểm định</span>
                       <span className="font-mono text-[#24263e]">{inspectionAnalytics.atCenterCount} đơn</span>
                     </div>
                     <div className="w-full h-2 rounded-full bg-slate-200 mt-1.5 overflow-hidden">
@@ -1832,7 +1954,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
 
                   <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
                     <div className="flex items-center justify-between text-xs font-bold text-slate-800">
-                      <span>Tại Nhà (AT_HOME)</span>
+                      <span>Tại Nhà</span>
                       <span className="font-mono text-[#c34c36]">{inspectionAnalytics.atHomeCount} đơn</span>
                     </div>
                     <div className="w-full h-2 rounded-full bg-slate-200 mt-1.5 overflow-hidden">
@@ -1863,7 +1985,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
                 <strong className="font-mono text-amber-800">{formatVND(inspectionAnalytics.heldReturnReserves)}</strong>
               </span>
               <span className="text-slate-600">
-                Trạm Hub hoạt động: <strong className="text-emerald-700">{inspectionAnalytics.activeHubsCount} trạm</strong>
+                Trạm kiểm định hoạt động: <strong className="text-emerald-700">{inspectionAnalytics.activeHubsCount} trạm</strong>
               </span>
             </div>
           </div>
@@ -1874,23 +1996,21 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
       {/* 5. ROW 3 CHARTS: DONUT CƠ CẤU NGƯỜI DÙNG & BIỂU ĐỒ NGANG NGÀNH HÀNG TIN ĐĂNG */}
       {/* ============================================================================ */}
       {(reportSection === 'ALL' || reportSection === 'USERS_LISTINGS') && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
           {/* LEFT 6 COLS: USER ROLES DONUT CHART & eKYC STACKED BAR */}
-          <div className="lg:col-span-6 bg-white rounded-2xl border border-slate-200/90 shadow-xs p-5 flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-2 rounded-xl bg-rose-100 text-rose-700">
+          <div className="lg:col-span-6 min-w-0 bg-white rounded-2xl border border-slate-200/90 shadow-xs p-4 sm:p-5 flex flex-col justify-between overflow-hidden">
+            <div className="min-w-0">
+              <div className="flex items-center justify-between gap-2 pb-3.5 border-b border-slate-100">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="p-2 rounded-xl bg-rose-100 text-rose-700 shrink-0">
                     <Users className="w-4 h-4" />
                   </div>
-                  <div>
-                    <h3 className="font-black text-xs sm:text-sm text-slate-900 uppercase tracking-wide">
-                      {lang === 'vi'
-                        ? 'BIỂU ĐỒ CƠ CẤU VAI TRÒ NGƯỜI DÙNG & DUYỆT eKYC'
-                        : 'USER ROLES DONUT & SELLER eKYC VERIFICATION CHART'}
+                  <div className="min-w-0">
+                    <h3 className="font-black text-xs sm:text-sm text-slate-900 uppercase tracking-wide truncate">
+                      CƠ CẤU VAI TRÒ NGƯỜI DÙNG & DUYỆT ĐỊNH DANH
                     </h3>
-                    <p className="text-[11px] text-slate-500">
-                      Truy vấn thực tế từ `/v1/admin/users` ({userAndListingAnalytics.totalUsers} tài khoản)
+                    <p className="text-[11px] text-slate-500 truncate">
+                      Phân bổ {userAndListingAnalytics.totalUsers} tài khoản trên hệ thống theo nhóm quyền
                     </p>
                   </div>
                 </div>
@@ -1898,45 +2018,45 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
                   <button
                     type="button"
                     onClick={() => onNavigateTab('customers')}
-                    className="text-xs font-bold text-[#c34c36] hover:underline flex items-center gap-1 cursor-pointer"
+                    className="text-xs font-bold text-[#c34c36] hover:underline flex items-center gap-1 cursor-pointer shrink-0 whitespace-nowrap"
                   >
-                    <span>Quản lý User</span>
+                    <span>Quản lý người dùng</span>
                     <ChevronRight className="w-3.5 h-3.5" />
                   </button>
                 )}
               </div>
 
-              <div className="mt-5">
+              <div className="mt-4 min-w-0">
                 <SvgDonutChart
                   centerTitle="TỔNG TÀI KHOẢN"
-                  centerValue={`${userAndListingAnalytics.totalUsers} Users`}
-                  centerSub={`${userAndListingAnalytics.activeUsers} đang Active`}
+                  centerValue={`${userAndListingAnalytics.totalUsers} tài khoản`}
+                  centerSub={`${userAndListingAnalytics.activeUsers} đang hoạt động`}
                   formatValue={(v) => `${v} tài khoản`}
                   segments={[
                     {
-                      label: 'Người mua (ROLE_BUYER)',
+                      label: 'Người mua',
                       subLabel: 'Tài khoản mua sắm tiêu chuẩn',
                       value: userAndListingAnalytics.buyersOnlyCount,
                       color: '#3b82f6',
                       bgBadge: 'bg-blue-100 text-blue-800'
                     },
                     {
-                      label: 'Người bán (ROLE_SELLER)',
-                      subLabel: 'Đã định danh eKYC mở gian hàng',
+                      label: 'Người bán',
+                      subLabel: 'Đã xác thực định danh mở gian hàng',
                       value: userAndListingAnalytics.sellersCount,
                       color: '#10b981',
                       bgBadge: 'bg-emerald-100 text-emerald-800'
                     },
                     {
-                      label: 'Kiểm định viên & Trạm Hub',
-                      subLabel: 'INSPECTOR / INSPECTION_CENTER',
+                      label: 'Kiểm định viên & Quản lý trạm',
+                      subLabel: 'Nhân sự phụ trách kiểm định chất lượng',
                       value: userAndListingAnalytics.inspectorsCount,
                       color: '#f59e0b',
                       bgBadge: 'bg-amber-100 text-amber-800'
                     },
                     {
-                      label: 'Quản trị viên & Nhân viên vận hành',
-                      subLabel: 'ADMIN / STAFF',
+                      label: 'Quản trị & Vận hành',
+                      subLabel: 'Quản trị viên & nhân viên hệ thống',
                       value: userAndListingAnalytics.staffAdminCount,
                       color: '#8b5cf6',
                       bgBadge: 'bg-purple-100 text-purple-800'
@@ -1950,7 +2070,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
             <div className="mt-5 pt-4 border-t border-slate-100 space-y-2.5">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-extrabold text-slate-800">
-                  Biểu đồ Tiến độ Thẩm định Hồ sơ eKYC Người Bán ({userAndListingAnalytics.ekycTotal} hồ sơ)
+                  Biểu đồ Tiến độ Thẩm định Hồ sơ Người Bán ({userAndListingAnalytics.ekycTotal} hồ sơ)
                 </span>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200">
                   Đạt {userAndListingAnalytics.ekycApprovalRate}%
@@ -2002,21 +2122,21 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
           </div>
 
           {/* RIGHT 6 COLS: HORIZONTAL BAR CHART - NGÀNH HÀNG & TRẠNG THÁI TIN ĐĂNG */}
-          <div className="lg:col-span-6 bg-white rounded-2xl border border-slate-200/90 shadow-xs p-5 flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-2 rounded-xl bg-purple-100 text-purple-800">
+          <div className="lg:col-span-6 min-w-0 bg-white rounded-2xl border border-slate-200/90 shadow-xs p-4 sm:p-5 flex flex-col justify-between overflow-hidden">
+            <div className="min-w-0">
+              <div className="flex items-center justify-between gap-2 pb-3.5 border-b border-slate-100">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="p-2 rounded-xl bg-purple-100 text-purple-800 shrink-0">
                     <Tag className="w-4 h-4" />
                   </div>
-                  <div>
-                    <h3 className="font-black text-xs sm:text-sm text-slate-900 uppercase tracking-wide">
+                  <div className="min-w-0">
+                    <h3 className="font-black text-xs sm:text-sm text-slate-900 uppercase tracking-wide truncate">
                       {lang === 'vi'
-                        ? 'BIỂU ĐỒ TỶ TRỌNG TIN ĐĂNG THEO NGÀNH HÀNG GIA DỤNG'
+                        ? 'TỶ TRỌNG TIN ĐĂNG THEO NGÀNH HÀNG GIA DỤNG'
                         : 'APPLIANCE CATEGORY DISTRIBUTION BAR CHART'}
                     </h3>
-                    <p className="text-[11px] text-slate-500">
-                      Truy vấn thực tế từ `/v1/admin/posts` ({userAndListingAnalytics.totalListings} bài đăng chính thức)
+                    <p className="text-[11px] text-slate-500 truncate">
+                      Phân tích {userAndListingAnalytics.totalListings} bài đăng chính thức trên sàn
                     </p>
                   </div>
                 </div>
@@ -2024,9 +2144,9 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
                   <button
                     type="button"
                     onClick={() => onNavigateTab('listings')}
-                    className="text-xs font-bold text-[#c34c36] hover:underline flex items-center gap-1 cursor-pointer"
+                    className="text-xs font-bold text-[#c34c36] hover:underline flex items-center gap-1 cursor-pointer shrink-0 whitespace-nowrap"
                   >
-                    <span>Quản lý tin đăng</span>
+                    <span>Quản lý tin</span>
                     <ChevronRight className="w-3.5 h-3.5" />
                   </button>
                 )}
@@ -2112,13 +2232,13 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
             </div>
 
             <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-              <span>Danh mục sản phẩm chuẩn hóa từ Database Catalog</span>
+              <span>Danh mục sản phẩm chuẩn hóa trên toàn hệ thống</span>
               <button
                 type="button"
                 onClick={() => onNavigateTab?.('catalog-ai')}
                 className="font-bold text-[#c34c36] hover:underline cursor-pointer"
               >
-                Cấu hình Danh mục & AI →
+                Cấu hình Danh mục →
               </button>
             </div>
           </div>
@@ -2133,9 +2253,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
           <div className="flex items-center gap-2.5">
             <FileSpreadsheet className="w-4 h-4 text-[#c34c36]" />
             <h3 className="font-black text-xs sm:text-sm text-slate-900 uppercase tracking-wide">
-              {lang === 'vi'
-                ? 'BẢNG ĐỐI SOÁT TỔNG HỢP CHỈ SỐ TRỌNG YẾU TOÀN SÀN (LIVE DATABASE KPI MATRIX)'
-                : 'LIVE DATABASE KPI & RECONCILIATION MATRIX'}
+              BẢNG ĐỐI SOÁT TỔNG HỢP CHỈ SỐ TRỌNG YẾU TOÀN SÀN
             </h3>
           </div>
           <span className="text-[11px] text-slate-500">
@@ -2148,15 +2266,15 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50/90 text-slate-600 text-[11px] font-extrabold uppercase tracking-wider">
                 <th className="py-3 px-4">Phân Khu Nghiệp Vụ</th>
-                <th className="py-3 px-4">Chỉ Số Trọng Yếu (Key Metric)</th>
-                <th className="py-3 px-4 text-right">Giá Trị Database Hiện Hành</th>
+                <th className="py-3 px-4">Chỉ Số Trọng Yếu</th>
+                <th className="py-3 px-4 text-right">Giá Trị Hiện Hành</th>
                 <th className="py-3 px-4 text-center">Trạng Thái Vận Hành</th>
                 <th className="py-3 px-4 text-right">Điều Hướng Nhanh</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               <tr className="hover:bg-slate-50/70 transition">
-                <td className="py-3 px-4 font-bold text-slate-800">1. Tài chính & Ví Hệ Thống</td>
+                <td className="py-3 px-4 font-bold text-slate-800">Tài chính & Ví Hệ Thống</td>
                 <td className="py-3 px-4 text-slate-600">Tổng số dư Ví Hệ Thống / Ký quỹ đang giữ</td>
                 <td className="py-3 px-4 text-right font-mono font-black text-slate-900">
                   {formatVND(financialAnalytics.totalSystemBalance)} / {formatVND(financialAnalytics.heldEscrow)}
@@ -2178,8 +2296,8 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
               </tr>
 
               <tr className="hover:bg-slate-50/70 transition">
-                <td className="py-3 px-4 font-bold text-slate-800">2. Doanh thu & Hoa hồng sàn</td>
-                <td className="py-3 px-4 text-slate-600">Tổng GMV giao dịch / Doanh thu hoa hồng sàn</td>
+                <td className="py-3 px-4 font-bold text-slate-800">Doanh thu & Hoa hồng sàn</td>
+                <td className="py-3 px-4 text-slate-600">Tổng giá trị giao dịch / Doanh thu hoa hồng sàn</td>
                 <td className="py-3 px-4 text-right font-mono font-black text-emerald-700">
                   {formatVND(financialAnalytics.totalGmv)} / {formatVND(financialAnalytics.platformRevenue)}
                 </td>
@@ -2200,7 +2318,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
               </tr>
 
               <tr className="hover:bg-slate-50/70 transition">
-                <td className="py-3 px-4 font-bold text-slate-800">3. Đơn hàng & Ký quỹ Escrow</td>
+                <td className="py-3 px-4 font-bold text-slate-800">Đơn hàng & Tiền ký quỹ</td>
                 <td className="py-3 px-4 text-slate-600">Đơn hoàn thành / Tổng số đơn hàng toàn sàn</td>
                 <td className="py-3 px-4 text-right font-mono font-black text-slate-900">
                   {orderAnalytics.completed} / {orderAnalytics.total} đơn ({orderAnalytics.completionRate}%)
@@ -2222,7 +2340,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
               </tr>
 
               <tr className="hover:bg-slate-50/70 transition">
-                <td className="py-3 px-4 font-bold text-slate-800">4. Kiểm định & Quỹ dự phòng</td>
+                <td className="py-3 px-4 font-bold text-slate-800">Kiểm định & Quỹ dự phòng</td>
                 <td className="py-3 px-4 text-slate-600">Tổng hồ sơ kiểm định / Quỹ dự phòng cước hoàn đang giữ</td>
                 <td className="py-3 px-4 text-right font-mono font-black text-blue-900">
                   {inspectionAnalytics.total} đơn / {formatVND(inspectionAnalytics.heldReturnReserves)}
@@ -2244,7 +2362,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
               </tr>
 
               <tr className="hover:bg-slate-50/70 transition">
-                <td className="py-3 px-4 font-bold text-slate-800">5. Giải ngân Rút tiền Ví</td>
+                <td className="py-3 px-4 font-bold text-slate-800">Giải ngân Rút tiền Ví</td>
                 <td className="py-3 px-4 text-slate-600">Lệnh chờ duyệt / Lệnh đã giải ngân thành công</td>
                 <td className="py-3 px-4 text-right font-mono font-black text-amber-900">
                   {financialAnalytics.pendingWithdrawalsCount} chờ ({formatVND(financialAnalytics.pendingWithdrawalAmount)}) /{' '}
@@ -2273,10 +2391,10 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
               </tr>
 
               <tr className="hover:bg-slate-50/70 transition">
-                <td className="py-3 px-4 font-bold text-slate-800">6. Người dùng & Thẩm định eKYC</td>
-                <td className="py-3 px-4 text-slate-600">Tổng tài khoản / Hồ sơ eKYC người bán đã duyệt</td>
+                <td className="py-3 px-4 font-bold text-slate-800">Người dùng & Định danh người bán</td>
+                <td className="py-3 px-4 text-slate-600">Tổng tài khoản / Hồ sơ người bán đã duyệt</td>
                 <td className="py-3 px-4 text-right font-mono font-black text-slate-900">
-                  {userAndListingAnalytics.totalUsers} users / {userAndListingAnalytics.ekycApproved} eKYC Approved
+                  {userAndListingAnalytics.totalUsers} tài khoản / {userAndListingAnalytics.ekycApproved} hồ sơ đã duyệt
                 </td>
                 <td className="py-3 px-4 text-center">
                   <span
@@ -2295,7 +2413,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
                     onClick={() => onNavigateTab?.('seller-kyc')}
                     className="text-[#c34c36] hover:underline font-bold cursor-pointer"
                   >
-                    Thẩm định eKYC →
+                    Thẩm định hồ sơ →
                   </button>
                 </td>
               </tr>

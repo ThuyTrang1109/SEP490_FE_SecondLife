@@ -127,27 +127,35 @@ export const AdminOrdersTab: React.FC<AdminOrdersTabProps> = ({
     loadStats();
   }, [loadOrders, loadStats]);
 
-  // Derived, 100% database-accurate counts
+  // Derived, 100% database-accurate counts from API or loaded orders
   const confirmedCount = useMemo(() => {
-    if (stats?.confirmedOrders !== undefined && stats.confirmedOrders > 0) return stats.confirmedOrders;
-    return 4; // DB count for CONFIRMED
-  }, [stats]);
+    if (stats?.confirmedOrders !== undefined) {
+      return Number(stats.confirmedOrders) + Number(stats.processingOrders ?? 0);
+    }
+    return orders.filter((o) => o.status === 'CONFIRMED' || o.status === 'PROCESSING').length;
+  }, [stats, orders]);
 
   const shippingCount = useMemo(() => {
-    return stats?.shippingOrders ?? 2; // DB count for SHIPPED
-  }, [stats]);
+    if (stats?.shippingOrders !== undefined) {
+      return Number(stats.shippingOrders) + Number(stats.deliveredOrders ?? 0);
+    }
+    return orders.filter((o) => o.status === 'SHIPPED' || o.status === 'DELIVERED').length;
+  }, [stats, orders]);
 
   const completedCount = useMemo(() => {
-    return stats?.completedOrders ?? 14; // DB count for COMPLETED
-  }, [stats]);
+    if (stats?.completedOrders !== undefined) return Number(stats.completedOrders);
+    return orders.filter((o) => o.status === 'COMPLETED').length;
+  }, [stats, orders]);
 
   const cancelledCount = useMemo(() => {
-    return stats?.cancelledOrders ?? 12; // DB count for CANCELLED
-  }, [stats]);
+    if (stats?.cancelledOrders !== undefined) return Number(stats.cancelledOrders);
+    return orders.filter((o) => o.status === 'CANCELLED').length;
+  }, [stats, orders]);
 
   const totalCount = useMemo(() => {
-    return stats?.totalOrders ?? totalElements ?? 34;
-  }, [stats, totalElements]);
+    if (stats?.totalOrders !== undefined) return Number(stats.totalOrders);
+    return totalElements || orders.length;
+  }, [stats, totalElements, orders]);
 
   // Export CSV
   const handleExportCSV = () => {

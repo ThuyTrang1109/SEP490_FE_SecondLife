@@ -11,7 +11,7 @@ export interface AppRoute {
 
 export const panelPaths: Partial<Record<UserRole, Record<string, string>>> = {
   admin: {
-    overview: '/admin/dashboard', 'system-report': '/admin/system-report', customers: '/admin/users', 'catalog-ai': '/admin/catalog-ai',
+    overview: '/admin/dashboard', customers: '/admin/users', 'catalog-ai': '/admin/catalog-ai',
     orders: '/admin/orders', listings: '/admin/products', withdrawals: '/admin/withdrawals',
     hubs: '/admin/hubs', 'seller-kyc': '/admin/seller-kyc', permissions: '/admin/permissions',
     'credit-pricing': '/admin/credit-pricing', 'system-wallet': '/admin/system-wallet',

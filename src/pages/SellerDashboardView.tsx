@@ -346,12 +346,16 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
 
   // Seller Reputation State (GET /api/v1/seller/reputation/me & /history)
   const [myReputation, setMyReputation] = useState<SellerReputationDto | null>(null);
+
   const sellerReviewCount = useMemo(() => {
     const sellerId = currentUser?.id;
-    if (!sellerId) return (currentUser as any)?.reviewCount ?? 0;
-    const directReviews = reviewService.getReviewsBySeller(sellerId).length;
-    return directReviews > 0 ? directReviews : ((currentUser as any)?.reviewCount ?? 0);
-  }, [currentUser?.id, (currentUser as any)?.reviewCount]);
+    const directReviews = sellerId ? reviewService.getReviewsBySeller(sellerId).length : 0;
+    const evaluatedFromRep = Number(myReputation?.evaluatedOrders ?? 0);
+    if (evaluatedFromRep > 0 || directReviews > 0) {
+      return Math.max(evaluatedFromRep, directReviews);
+    }
+    return Number((currentUser as any)?.reviewCount ?? 0);
+  }, [currentUser?.id, (currentUser as any)?.reviewCount, myReputation?.evaluatedOrders]);
 
   const sellerAverageRatingText = useMemo(() => {
     const sellerId = currentUser?.id;
@@ -360,11 +364,20 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       const avg = directReviews.reduce((sum, r) => sum + r.rating, 0) / directReviews.length;
       return `${avg.toFixed(1)} / 5.0`;
     }
+    const evaluated = Number(myReputation?.evaluatedOrders ?? 0);
+    if (evaluated > 0) {
+      const txScore =
+        myReputation?.transactionScore !== undefined && myReputation?.transactionScore !== null
+          ? Number(myReputation.transactionScore)
+          : (Number(myReputation?.goodTransactions ?? 0) / evaluated) * 100;
+      const starRating = Math.max(0, Math.min(5, txScore / 20));
+      return `${starRating.toFixed(1)} / 5.0`;
+    }
     if (currentUser?.sellerRating && currentUser.sellerRating > 0) {
       return `${currentUser.sellerRating.toFixed(1)} / 5.0`;
     }
     return lang === 'vi' ? 'Chưa có đánh giá' : 'No ratings yet';
-  }, [currentUser?.id, currentUser?.sellerRating, lang]);
+  }, [currentUser?.id, currentUser?.sellerRating, myReputation, lang]);
 
   const [isReputationHistoryOpen, setIsReputationHistoryOpen] = useState(false);
   const [reputationHistoryItems, setReputationHistoryItems] = useState<ReputationHistoryDto[]>([]);
@@ -1348,8 +1361,6 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                     {sellerReviewCount > 0 ? ` (${sellerReviewCount})` : ''}
                   </span>
                 </button>
-
-
               </div>
             </div>
           </div>

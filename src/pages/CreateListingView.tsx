@@ -3106,8 +3106,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       sellerAddress: finalSellerAddress,
       sellerId: currentUser?.id || 'current-user',
       sellerName: currentUser?.name || 'Người bán SecondLife',
-      sellerRating: currentUser?.sellerRating || 5.0,
-      sellerCompletedOrders: currentUser?.completedOrdersCount || 1,
+      sellerRating: currentUser?.sellerRating ?? 0,
+      sellerCompletedOrders: currentUser?.completedOrdersCount ?? 0,
       sellerVerified: true,
       status: (effectiveSubmitRes?.status === 'ACTIVE'
         ? 'active'

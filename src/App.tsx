@@ -252,6 +252,30 @@ export default function App() {
             emailVerified: Boolean(profile.emailVerified),
             roles: profile.roles,
             permissions: profile.permissions,
+            trustScore:
+              (profile as any).sellerReputation?.score !== undefined && (profile as any).sellerReputation?.score !== null
+                ? Number((profile as any).sellerReputation.score)
+                : stored?.trustScore,
+            completedOrdersCount:
+              (profile as any).sellerReputation?.goodTransactions !== undefined &&
+              (profile as any).sellerReputation?.goodTransactions !== null
+                ? Number((profile as any).sellerReputation.goodTransactions)
+                : stored?.completedOrdersCount,
+            sellerRating:
+              Number((profile as any).sellerReputation?.evaluatedOrders ?? 0) > 0
+                ? Math.max(
+                    0,
+                    Math.min(
+                      5,
+                      ((profile as any).sellerReputation?.transactionScore !== undefined &&
+                      (profile as any).sellerReputation?.transactionScore !== null
+                        ? Number((profile as any).sellerReputation.transactionScore)
+                        : (Number((profile as any).sellerReputation?.goodTransactions ?? 0) /
+                            Number((profile as any).sellerReputation.evaluatedOrders)) *
+                          100) / 20
+                    )
+                  )
+                : 0,
           };
           setCurrentUser(syncedUser);
           setCurrentRole(syncedUser.role);

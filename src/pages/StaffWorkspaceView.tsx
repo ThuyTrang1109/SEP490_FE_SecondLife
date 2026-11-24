@@ -47,7 +47,7 @@ import { Listing, EscrowOrder, Language, UserProfile } from '../types';
 import { UserAvatar } from '../components/common/UserAvatar';
 import { formatVND } from '../utils/translations';
 import { formatDisputeReason } from '../utils/orders/orderDispute';
-import { staffService, staffListingService, adminPostService, SellerVerificationResponseDto, staffReportService, ReportItemDto, StaffOrderConfirmationResponse, userReportService } from '../services';
+import { staffService, staffListingService, adminPostService, SellerVerificationResponseDto, staffReportService, ReportItemDto, StaffOrderConfirmationResponse, userReportService, reputationService, postService } from '../services';
 import { dialogService } from '../utils/dialogService';
 import { translateSystemNotification } from '../utils/systemNotificationTranslator';
 import { ListingComparisonModal } from '../components/staff/ListingComparisonModal';
@@ -297,24 +297,104 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
     try {
       const res = await staffListingService.getStaffQueue(page, 10);
       const items = res.content || [];
-      const mapped = items.map((it: any) => ({
-        id: it.postId || it.id,
-        title: it.title || 'Bài đăng cần duyệt',
-        category: it.category || 'Sản phẩm',
-        sellerName: it.sellerName || 'Người bán ' + (it.sellerId ? it.sellerId.slice(0, 8) : ''),
-        sellerRating: it.sellerRating ?? 0,
-        priceVnd: it.price || 0,
-        aiEstimatedPrice: it.aiSuggestedPrice || it.price || 0,
-        aiConfidence: 85,
-        isSuspicious: Boolean(it.duplicateMatches && it.duplicateMatches.length > 0),
-        duplicateMatches: it.duplicateMatches || [],
-        suspiciousReason: it.reviewReason || (it.duplicateMatches?.length ? `Phát hiện ${it.duplicateMatches.length} bài đối chiếu nghi trùng` : 'Chờ nhân viên duyệt'),
-        status: it.status || 'PENDING',
-        images: it.imageUrls?.length ? it.imageUrls : [it.imageUrl || 'https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=400&q=80'],
-        description: it.description || 'Chưa có mô tả'
-      }));
-      setStaffListings(mapped);
-      setPendingReviewCount(res.totalElements ?? mapped.length);
+
+      const enriched = await Promise.all(
+        items.map(async (it: any) => {
+          const postId = String(it.postId || it.id || '');
+          let resolvedSellerId: string = it.sellerId || it.user?.id || '';
+          let resolvedSellerName: string =
+            it.sellerName || it.user?.fullName || it.user?.email || '';
+
+          if (!resolvedSellerId) {
+            const matchedFromProp = listings.find(
+              (l) => String(l.id) === postId || (Array.isArray(it.duplicateMatches) && it.duplicateMatches.includes(l.id))
+            );
+            if (matchedFromProp) {
+              resolvedSellerId = matchedFromProp.sellerId || '';
+              resolvedSellerName = resolvedSellerName || matchedFromProp.sellerName || '';
+            }
+          }
+
+          if (!resolvedSellerId && Array.isArray(it.duplicateMatches) && it.duplicateMatches.length > 0) {
+            try {
+              const dupDetail = await postService.getListingDetail(String(it.duplicateMatches[0]));
+              if (dupDetail) {
+                resolvedSellerId = dupDetail.sellerId || '';
+                resolvedSellerName = resolvedSellerName || dupDetail.sellerName || '';
+              }
+            } catch {
+              // Ignore duplicate detail fetch error
+            }
+          }
+
+          let sellerRating = Number(it.sellerRating ?? 0);
+          let sellerReputationScore: number | null = null;
+          let sellerEvaluatedOrders = 0;
+
+          if (resolvedSellerId) {
+            try {
+              const rep = await reputationService.getSellerReputation(resolvedSellerId);
+              if (rep) {
+                sellerReputationScore = rep.score ?? null;
+                sellerEvaluatedOrders = Number(rep.evaluatedOrders ?? 0);
+                if (sellerEvaluatedOrders > 0) {
+                  const txScore =
+                    rep.transactionScore !== undefined && rep.transactionScore !== null
+                      ? Number(rep.transactionScore)
+                      : (Number(rep.goodTransactions ?? 0) / sellerEvaluatedOrders) * 100;
+                  sellerRating = Math.max(0, Math.min(5, txScore / 20));
+                }
+              }
+            } catch {
+              // Ignore reputation fetch error
+            }
+          }
+
+          const priceVnd = Number(it.price || 0);
+          const hasAiSuggested = it.aiSuggestedPrice !== undefined && it.aiSuggestedPrice !== null && Number(it.aiSuggestedPrice) > 0;
+          const aiEstimatedPrice = hasAiSuggested ? Number(it.aiSuggestedPrice) : priceVnd;
+          const aiConfidence = hasAiSuggested
+            ? Math.max(
+                15,
+                Math.min(
+                  98,
+                  Math.round((1 - Math.min(0.85, Math.abs(priceVnd - aiEstimatedPrice) / aiEstimatedPrice)) * 100)
+                )
+              )
+            : null;
+
+          return {
+            id: postId,
+            title: it.title || 'Bài đăng cần duyệt',
+            category: it.category || 'Sản phẩm',
+            sellerId: resolvedSellerId,
+            sellerName:
+              resolvedSellerName ||
+              (resolvedSellerId ? `Người bán #${resolvedSellerId.slice(0, 8)}` : 'Người bán'),
+            sellerRating,
+            sellerReputationScore,
+            sellerEvaluatedOrders,
+            priceVnd,
+            aiEstimatedPrice,
+            aiConfidence,
+            isSuspicious: Boolean(it.duplicateMatches && it.duplicateMatches.length > 0),
+            duplicateMatches: it.duplicateMatches || [],
+            suspiciousReason:
+              it.reviewReason ||
+              (it.duplicateMatches?.length
+                ? `Phát hiện ${it.duplicateMatches.length} bài đối chiếu nghi trùng`
+                : 'Chờ nhân viên duyệt'),
+            status: it.status || 'PENDING',
+            images: it.imageUrls?.length
+              ? it.imageUrls
+              : [it.imageUrl || 'https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=400&q=80'],
+            description: it.description || 'Chưa có mô tả',
+          };
+        })
+      );
+
+      setStaffListings(enriched);
+      setPendingReviewCount(res.totalElements ?? enriched.length);
       setQueuePage(res.number ?? page);
       setQueueTotalPages(res.totalPages ?? 1);
     } catch (err) {
@@ -515,7 +595,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
     },
     {
       id: 'payouts' as StaffTab,
-      label: 'QUẢN LÝ THANH TOÁN & HOLD ❌',
+      label: 'QUẢN LÝ THANH TOÁN & HOLD',
       icon: Wallet,
       badge: payouts.filter((p) => p.status === 'HOLD').length,
       badgeColor: 'bg-amber-700 text-white'
@@ -528,7 +608,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
     },
     {
       id: 'restrict-users' as StaffTab,
-      label: 'CẢNH BÁO & HẠN CHẾ USER ❌',
+      label: 'CẢNH BÁO & HẠN CHẾ USER',
       icon: UserX,
       badge: restrictedUsers.length,
       badgeColor: 'bg-slate-700 text-white'
@@ -1120,7 +1200,11 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                             <td className="py-3 px-3 text-slate-800 whitespace-nowrap">
                               <span className="font-bold">{item.sellerName}</span>
                               <span className="text-[10px] text-amber-600 font-bold block">
-                                {item.sellerRating > 0 ? `★ ${item.sellerRating.toFixed(1)} / 5.0` : 'Chưa có đánh giá'}
+                                {item.sellerEvaluatedOrders > 0
+                                  ? `★ ${item.sellerRating.toFixed(1)} / 5.0 (${item.sellerEvaluatedOrders} đơn)`
+                                  : item.sellerRating > 0
+                                  ? `★ ${item.sellerRating.toFixed(1)} / 5.0`
+                                  : 'Chưa có đánh giá'}
                               </span>
                             </td>
                             <td className="py-3 px-3 font-black text-[#c34c36] whitespace-nowrap">
@@ -1128,12 +1212,14 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                             </td>
                             <td className="py-3 px-3 whitespace-nowrap">
                               <span className="font-bold text-slate-700">{formatVND(item.aiEstimatedPrice)}</span>
-                              <div className="flex items-center gap-1.5 text-[10px] text-slate-500 mt-0.5">
-                                <span>Tin cậy:</span>
-                                <span className={`font-black ${item.aiConfidence < 60 ? 'text-rose-600' : 'text-emerald-700'}`}>
-                                  {item.aiConfidence}%
-                                </span>
-                              </div>
+                              {item.aiConfidence !== null && item.aiConfidence !== undefined && (
+                                <div className="flex items-center gap-1.5 text-[10px] text-slate-500 mt-0.5">
+                                  <span>Tin cậy:</span>
+                                  <span className={`font-black ${item.aiConfidence < 60 ? 'text-rose-600' : 'text-emerald-700'}`}>
+                                    {item.aiConfidence}%
+                                  </span>
+                                </div>
+                              )}
                             </td>
                             <td className="py-3 px-3">
                               {item.isSuspicious ? (
@@ -1723,7 +1809,12 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
                   <span className="text-[11px] text-slate-500 font-bold block">Người bán:</span>
                   <span className="font-bold text-slate-900 text-xs">
-                    {selectedListingModal.sellerName} {selectedListingModal.sellerRating > 0 ? `(Đánh giá: ★ ${selectedListingModal.sellerRating.toFixed(1)})` : '(Chưa có đánh giá)'}
+                    {selectedListingModal.sellerName}{' '}
+                    {selectedListingModal.sellerEvaluatedOrders > 0
+                      ? `(Đánh giá: ★ ${selectedListingModal.sellerRating.toFixed(1)} / 5.0 • ${selectedListingModal.sellerEvaluatedOrders} đơn)`
+                      : selectedListingModal.sellerRating > 0
+                      ? `(Đánh giá: ★ ${selectedListingModal.sellerRating.toFixed(1)})`
+                      : '(Chưa có đánh giá)'}
                   </span>
                 </div>
                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
@@ -1735,7 +1826,10 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
                   <span className="text-[11px] text-slate-500 font-bold block">AI Định giá thị trường:</span>
                   <span className="font-black text-base text-slate-800">
-                    {formatVND(selectedListingModal.aiEstimatedPrice)} (Độ tin cậy: {selectedListingModal.aiConfidence}%)
+                    {formatVND(selectedListingModal.aiEstimatedPrice)}
+                    {selectedListingModal.aiConfidence !== null && selectedListingModal.aiConfidence !== undefined
+                      ? ` (Độ tin cậy: ${selectedListingModal.aiConfidence}%)`
+                      : ''}
                   </span>
                 </div>
               </div>

@@ -335,15 +335,25 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
     ? (productReviews.reduce((sum, r) => sum + r.rating, 0) / productReviews.length).toFixed(1)
     : null;
 
-  const totalSellerEvaluated = sellerReviews.length > 0
-    ? sellerReviews.length
-    : (realReputation?.evaluatedOrders ?? 0);
+  const totalSellerEvaluated = Math.max(
+    sellerReviews.length,
+    Number(realReputation?.evaluatedOrders ?? 0)
+  );
 
-  const realSellerRating = realReputation?.score !== null && realReputation?.score !== undefined
-    ? (realReputation.score / 20).toFixed(1)
-    : (sellerReviews.length > 0
-      ? (sellerReviews.reduce((sum, r) => sum + r.rating, 0) / sellerReviews.length).toFixed(1)
-      : (listing.sellerRating ? String(listing.sellerRating) : null));
+  const realSellerRating = (() => {
+    if (sellerReviews.length > 0) {
+      return (sellerReviews.reduce((sum, r) => sum + r.rating, 0) / sellerReviews.length).toFixed(1);
+    }
+    const evaluated = Number(realReputation?.evaluatedOrders ?? 0);
+    if (evaluated > 0) {
+      const txScore =
+        realReputation?.transactionScore !== undefined && realReputation?.transactionScore !== null
+          ? Number(realReputation.transactionScore)
+          : (Number(realReputation?.goodTransactions ?? 0) / evaluated) * 100;
+      return Math.max(0, Math.min(5, txScore / 20)).toFixed(1);
+    }
+    return listing.sellerRating && listing.sellerRating > 0 ? String(listing.sellerRating) : null;
+  })();
 
   const isInspected = React.useMemo(() => {
     return isListingInspectionPassed(listing);

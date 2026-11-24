@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buyerInspectionStageLabel, extractInspectionRejectionDetails, formatInspectionFailureReason, formatOrderCancellationReason, getBuyerInspectionStage, getCustomerInspectionStatus, getInspectionPurchaseDecision, inspectionPurchaseDecisionLabel, parseInspectorVerdictNote, shouldReadSellerHubReturn } from '../utils/inspectionPurchase';
+import { buyerInspectionStageLabel, extractInspectionRejectionDetails, formatInspectionFailureReason, formatOrderCancellationReason, getBuyerInspectionStage, getCustomerInspectionStatus, getInspectionPurchaseDecision, inspectionPurchaseDecisionLabel, isExpiredInspectionPurchase, parseInspectorVerdictNote, shouldReadSellerHubReturn } from '../utils/inspectionPurchase';
 
 test('the buyer only sees inspection status while the item is on its way to the hub or being inspected', () => {
   const order = { inspectionStatus: 'SHIPPING_TO_CENTER', shippingDeliveredAt: '2026-11-09T08:00:00Z' };
@@ -115,6 +115,23 @@ test('formatOrderCancellationReason cleans composite notes for outer order cards
 
   const standardRejection = 'Người mua từ chối mua tiếp sau kiểm định. Lý do: Tìm được máy khác giá tốt hơn';
   assert.equal(formatOrderCancellationReason(standardRejection, 'vi'), 'Tìm được máy khác giá tốt hơn');
+
+  // 6-hour timeout note prefixed with inspector's verdict note
+  const timeoutWithVerdictNote = 'cc | Người mua không thanh toán tiền hàng trong vòng 6 giờ sau khi kiểm định đạt chuẩn.';
+  assert.equal(
+    formatOrderCancellationReason(timeoutWithVerdictNote, 'vi'),
+    'Người mua không thanh toán tiền hàng trong vòng 6 giờ sau khi kiểm định đạt chuẩn.'
+  );
+
+  const timeoutDetails = extractInspectionRejectionDetails(timeoutWithVerdictNote);
+  assert.equal(timeoutDetails.isBuyerPurchaseExpired, true);
+  assert.equal(timeoutDetails.inspectorNote, 'cc');
+  assert.equal(
+    timeoutDetails.buyerRejectReason,
+    'Người mua không thanh toán tiền hàng trong vòng 6 giờ sau khi kiểm định đạt chuẩn.'
+  );
+
+  assert.equal(isExpiredInspectionPurchase('CANCELLED', timeoutWithVerdictNote), true);
 });
 
 test('buyer-rejected inspection order continues tracking return shipment from Hub', () => {
@@ -144,6 +161,12 @@ test('parseInspectorVerdictNote removes Tem tag and cleans up verdict note', () 
   // Verify empty fallback
   assert.equal(parseInspectorVerdictNote('').cleanText, '');
   assert.equal(parseInspectorVerdictNote(null).cleanText, '');
+
+  // Verify timeout suffix is stripped
+  assert.equal(
+    parseInspectorVerdictNote('cc | Người mua không thanh toán tiền hàng trong vòng 6 giờ sau khi kiểm định đạt chuẩn.').cleanText,
+    'cc'
+  );
 });
 
 test('pre-listing failure reason shows findings and omits photo URLs and report metadata', () => {

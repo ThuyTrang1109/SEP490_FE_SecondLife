@@ -1,11 +1,13 @@
 import type { BuyerInspectionStage, OrderCheck } from '../../../types/orders/orderTypes';
 import { AlertTriangle, Clock, Receipt } from 'lucide-react';
-import type { EscrowOrder, OrderCommissionDTO, OrderSettlementDTO } from '../../../types';
+import type { EscrowOrder, Language, OrderCommissionDTO, OrderSettlementDTO } from '../../../types';
 import { formatVND } from '../../../utils/translations';
 import { getCommissionPayout } from '../../../utils/orders/orderFinance';
+import { getOrderEscrowHoldNotice, isOrderEscrowOnHold } from '../../../utils/orders/orderDispute';
 
 interface Props {
   order: EscrowOrder;
+  lang?: Language;
   detailBuyerInspectionStage: BuyerInspectionStage | null;
   isOrderReceiptConfirmed: OrderCheck;
   orderSettlement: OrderSettlementDTO | null;
@@ -17,6 +19,7 @@ interface Props {
 
 export function OrderSettlement({
   order: detailModalOrder,
+  lang = 'vi',
   detailBuyerInspectionStage,
   isOrderReceiptConfirmed,
   orderSettlement,
@@ -28,31 +31,24 @@ export function OrderSettlement({
   if (isSeller === false) return null;
 
   const commissionPayout = orderCommission && getCommissionPayout(orderCommission);
-  const isDisputed = Boolean(
-    detailModalOrder.escrowStatus === 'DISPUTED' ||
-    (detailModalOrder.escrowStatus as any) === 'FROZEN' ||
-    detailModalOrder.backendEscrowStatus === 'FROZEN' ||
-    (detailModalOrder as any).status === 'DISPUTED' ||
-    (detailModalOrder as any).backendStatus === 'DISPUTED' ||
-    (typeof window !== 'undefined' && detailModalOrder.id && localStorage.getItem(`order_disputed_${detailModalOrder.id}`) === 'true')
-  );
+  const escrowNotice = getOrderEscrowHoldNotice(detailModalOrder, lang);
 
   return (
     <>
-      {isDisputed && (
+      {escrowNotice && (
         <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-1.5 animate-fadeIn">
           <div className="flex items-center gap-2 font-bold text-amber-900">
             <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-            <span>Quỹ Escrow Tạm Đóng Băng • Tạm Dừng Giải Ngân</span>
+            <span>{escrowNotice.title}</span>
           </div>
           <p className="text-[11px] text-amber-800 leading-relaxed">
-            Đơn hàng hiện đang phát sinh khiếu nại / tranh chấp. Khoản thanh toán đang được bảo lưu an toàn trong Quỹ Escrow và quy trình tự động giải ngân sau 48h tạm ngưng cho đến khi tranh chấp được giải quyết.
+            {escrowNotice.description}
           </p>
         </div>
       )}
 
       {!isEscrowReleased && !detailBuyerInspectionStage && detailModalOrder.shippingDeliveredAt &&
-        !isOrderReceiptConfirmed(detailModalOrder) && !isDisputed && (
+        !isOrderReceiptConfirmed(detailModalOrder) && !isOrderEscrowOnHold(detailModalOrder) && (
           <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-1.5">
             <div className="flex items-center gap-2 font-bold text-amber-900">
               <Clock className="w-4 h-4 text-amber-600 shrink-0" />
@@ -60,7 +56,7 @@ export function OrderSettlement({
             </div>
             <p className="text-[11px] text-amber-800 leading-relaxed">
               Đơn hàng đã được bưu tá xác nhận giao thành công vào lúc <strong>{new Date(detailModalOrder.shippingDeliveredAt).toLocaleString('vi-VN')}</strong>.
-              Theo chính sách bảo vệ người mua của SecondLife, hệ thống sẽ tự động giải ngân cho người bán sau 48 giờ kể từ thời điểm này nếu không có khiếu nại phát sinh.
+              Người mua có thể khiếu nại trong vòng 48 giờ kể từ lúc giao thành công, khi tiền còn trong Escrow.
             </p>
           </div>
         )}

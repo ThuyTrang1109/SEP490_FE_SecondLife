@@ -904,7 +904,12 @@ export function useCenterOrders({ currentUser, initialOrders, lang, loadingShipm
       });
 
       const finalOrders = Array.from(combinedMap.values());
-      finalOrders.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+      finalOrders.sort((a, b) => {
+        const timeA = new Date(a.createdAt || (a as any).orderDate || (a as any).createdDate || a.appointmentScheduledAt || a.updatedAt || 0).getTime() || 0;
+        const timeB = new Date(b.createdAt || (b as any).orderDate || (b as any).createdDate || b.appointmentScheduledAt || b.updatedAt || 0).getTime() || 0;
+        if (timeB !== timeA) return timeB - timeA;
+        return (b.id || '').localeCompare(a.id || '');
+      });
       setOrders(finalOrders);
     } catch (err) {
       if (requestId !== ordersRequestRef.current || background) return;

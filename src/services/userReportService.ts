@@ -1,4 +1,5 @@
 import { request, resolveApiUrl, getAccessToken, clearAuthTokens, PageResponse } from './apiClient';
+import type { RequestOptions } from './apiClient';
 import type {
   ReportReasonCode,
   ReportStatus,
@@ -54,6 +55,47 @@ export interface ReportEvidenceMetadataResponse {
   contentUrl: string;
 }
 
+export interface SellerOrderDisputeDetailDto {
+  id: string;
+  reasonCode: ReportReasonCode;
+  description: string;
+  buyerEvidenceUrls: string[];
+  status?: ReportStatus;
+  responsibleParty?: ResponsibleParty | null;
+  decisionReason?: string | null;
+  resolvedAt?: string | null;
+  orderId?: string | null;
+  postId?: string | null;
+  resolutionAction?: 'NONE' | 'RETURN_AND_REFUND' | null;
+  refundedAt?: string | null;
+  refundAmount?: number | null;
+  returnShipmentId?: string | null;
+  sellerResponseDeadlineAt?: string | null;
+  sellerRespondedAt?: string | null;
+  createdAt?: string;
+}
+
+export interface SellerOrderDisputeDto {
+  id: string;
+  orderId: string;
+  postTitle: string | null;
+  reasonCode: ReportReasonCode;
+  status: ReportStatus;
+  resolutionAction: 'NONE' | 'RETURN_AND_REFUND';
+  refundedAt?: string | null;
+  sellerResponseDeadlineAt?: string | null;
+  sellerRespondedAt?: string | null;
+  createdAt: string;
+  postId?: string | null;
+  responsibleParty?: ResponsibleParty | null;
+  decisionReason?: string | null;
+  resolvedAt?: string | null;
+  description?: string;
+  evidenceUrls?: string[];
+  returnShipmentId?: string | null;
+  returnShipment?: any;
+}
+
 export interface UserReportResponseDto {
   id: string;
   requestId: string;
@@ -80,7 +122,7 @@ export interface UserReportResponseDto {
   resolvedAt?: string | null;
 }
 
-function generateReportUuid(): string {
+export function createReportRequestId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     try {
       return crypto.randomUUID();
@@ -94,13 +136,29 @@ function generateReportUuid(): string {
 }
 
 export const userReportService = {
+  async getSellerDisputeDetail(reportId: string): Promise<SellerOrderDisputeDetailDto> {
+    const result = await request<SellerOrderDisputeDetailDto>(
+      '/v1/reports/seller/' + encodeURIComponent(reportId), { requiresAuth: true },
+    );
+    return result.data;
+  },
+
+  async getSellerDisputes(page: number, size = 10, options?: Pick<RequestOptions, 'signal' | 'isBackground'>): Promise<PageResponse<SellerOrderDisputeDto>> {
+    const query = new URLSearchParams({ page: String(page), size: String(size) });
+    const response = await request<PageResponse<SellerOrderDisputeDto>>('/v1/reports/seller?' + query, {
+      requiresAuth: true,
+      ...options,
+    });
+    return response.data;
+  },
+
   /**
    * Tạo khiếu nại đối với bài đăng hoặc đơn hàng
    * POST /api/v1/reports
    */
   async createReport(data: CreateReportRequestDto): Promise<UserReportResponseDto> {
     const payload: any = {
-      requestId: data.requestId || generateReportUuid(),
+      requestId: data.requestId || createReportRequestId(),
       reasonCode: data.reasonCode,
       description: data.description.trim(),
       evidenceUrls: Array.isArray(data.evidenceUrls) ? data.evidenceUrls : [],
@@ -129,7 +187,7 @@ export const userReportService = {
    * Xem danh sách các khiếu nại của chính người dùng đăng nhập
    * GET /api/v1/reports/me
    */
-  async getMyReports(page = 0, size = 10, targetType?: string): Promise<PageResponse<UserReportResponseDto>> {
+  async getMyReports(page = 0, size = 10, targetType?: string, options?: Pick<RequestOptions, 'signal' | 'isBackground'>): Promise<PageResponse<UserReportResponseDto>> {
     const query = new URLSearchParams({
       page: String(page),
       size: String(size),
@@ -141,6 +199,7 @@ export const userReportService = {
     const res = await request<any>(`/v1/reports/me?${query.toString()}`, {
       method: 'GET',
       requiresAuth: true,
+      ...options,
     });
     const d = (res as any)?.data || res;
     return {
@@ -155,14 +214,48 @@ export const userReportService = {
 
   /**
    * Xem chi tiết một khiếu nại theo ID
-   * GET /api/v1/reports/{id}
+   * GET /api/v1/reports/{id} hoặc fallback sang seller dispute detail nếu là người bán
    */
   async getReportById(id: string): Promise<UserReportResponseDto> {
-    const res = await request<UserReportResponseDto>(`/v1/reports/${id}`, {
-      method: 'GET',
-      requiresAuth: true,
-    });
-    return (res as any)?.data || res;
+    try {
+      const res = await request<UserReportResponseDto>(`/v1/reports/${encodeURIComponent(id)}`, {
+        method: 'GET',
+        requiresAuth: true,
+      });
+      return (res as any)?.data || res;
+    } catch (err: any) {
+      // Nếu 403 Forbidden hoặc lỗi do là người bán, thử gọi getSellerDisputeDetail
+      try {
+        const sellerDetail = await this.getSellerDisputeDetail(id);
+        if (sellerDetail) {
+          return {
+            id: sellerDetail.id,
+            requestId: sellerDetail.id,
+            reporterId: '',
+            sellerId: '',
+            orderId: sellerDetail.orderId ?? null,
+            postId: sellerDetail.postId ?? null,
+            reasonCode: sellerDetail.reasonCode,
+            description: sellerDetail.description,
+            evidenceUrls: sellerDetail.buyerEvidenceUrls || [],
+            status: sellerDetail.status || 'OPEN',
+            responsibleParty: sellerDetail.responsibleParty,
+            decisionReason: sellerDetail.decisionReason,
+            resolvedAt: sellerDetail.resolvedAt,
+            resolutionAction: sellerDetail.resolutionAction,
+            returnShipmentId: sellerDetail.returnShipmentId,
+            refundAmount: sellerDetail.refundAmount,
+            refundedAt: sellerDetail.refundedAt,
+            sellerResponseDeadlineAt: sellerDetail.sellerResponseDeadlineAt,
+            sellerRespondedAt: sellerDetail.sellerRespondedAt,
+            createdAt: sellerDetail.createdAt || new Date().toISOString(),
+          } as UserReportResponseDto;
+        }
+      } catch {
+        // bỏ qua fallback nếu cũng thất bại
+      }
+      throw err;
+    }
   },
 
   /**
@@ -175,7 +268,7 @@ export const userReportService = {
     data: { requestId?: string; description: string; evidenceUrls?: string[] }
   ): Promise<ReportSubmissionResponse> {
     const payload = {
-      requestId: data.requestId || generateReportUuid(),
+      requestId: data.requestId || createReportRequestId(),
       description: data.description.trim(),
       evidenceUrls: Array.isArray(data.evidenceUrls) ? data.evidenceUrls : [],
     };
@@ -270,7 +363,7 @@ export const userReportService = {
    */
   async reportListing(postId: string, data: CreateListingReportRequestDto): Promise<UserReportResponseDto> {
     const payload = {
-      requestId: data.requestId || generateReportUuid(),
+      requestId: data.requestId || createReportRequestId(),
       reasonCode: data.reasonCode,
       description: data.description.trim(),
       evidenceUrls: Array.isArray(data.evidenceUrls) ? data.evidenceUrls : [],

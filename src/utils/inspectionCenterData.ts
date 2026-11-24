@@ -1,7 +1,7 @@
 import type { Language, ShipmentBackend } from '../types';
 import type { InspectionOrderDto } from '../services/inspectorService';
 import { isDeliveredInspectionCashShipment } from './inspectionCashShipping';
-import { getInspectionPurchaseDecision } from './inspectionPurchase';
+import { getInspectionPurchaseDecision, isExpiredInspectionPurchase, extractInspectionRejectionDetails } from './inspectionPurchase';
 
 export function getCenterTabDataNeeds(tab: string) {
   return {
@@ -210,7 +210,7 @@ export function canReadCenterInspectionShipments(order: Pick<InspectionOrderDto,
 
 export function shouldTrackCenterInspectionShipments(order: InspectionOrderDto, centerId?: string, role?: string) {
   const isCompletedCenterOrder = (order.orderType === 'AT_CENTER' || !order.orderType || (order as any).inspectionMethod === 'AT_CENTER') &&
-    ['PASSED', 'COMPLETED', 'FAILED'].includes(order.status);
+    ['PASSED', 'COMPLETED', 'FAILED', 'CANCELLED', 'CANCELED'].includes(order.status);
   return canReadCenterInspectionShipments(order, centerId) &&
     (shouldTrackInboundShipment(order) || isPaidHubBuyerDelivery(order) || isCenterReturnEligible(order, centerId, role) || isCompletedCenterOrder);
 }
@@ -277,21 +277,42 @@ export function canBookCenterBuyerDelivery(
 }
 
 export function isHubReturnCase(order?: Pick<InspectionOrderDto, 'orderType' | 'status' | 'inspectionScope'> | null) {
-  if (order?.orderType !== 'AT_CENTER') return false;
-  if (['FAILED', 'CANCELLED'].includes(order.status)) return true;
-  if (order.inspectionScope === 'PRE_LISTING' && order.status === 'COMPLETED') return true;
+  if (!order) return false;
+  const isAtCenter =
+    order.orderType === 'AT_CENTER' ||
+    (order as any).inspectionMethod === 'AT_CENTER' ||
+    (order as any).inspectionScope === 'AT_CENTER' ||
+    (order as any).isAtCenter ||
+    (!order.orderType && (order as any).inspectionScope !== 'AT_HOME');
+  if (!isAtCenter) return false;
+  const status = String(order.status || '').toUpperCase();
+  if (['FAILED', 'CANCELLED', 'CANCELED'].includes(status)) return true;
+  if (order.inspectionScope === 'PRE_LISTING' && status === 'COMPLETED') return true;
   return false;
 }
 
 export function isCenterReturnEligible(order: InspectionOrderDto, centerId?: string, role?: string) {
+  const normRole = (role || '').toLowerCase();
+  const isAuthorizedRole = !role || normRole === 'inspection_center' || normRole === 'staff' || normRole === 'admin' || normRole === 'inspector';
+  const isCenterMatch = Boolean(centerId && (order.inspectionCenterId === centerId || !order.inspectionCenterId));
+  if (!isAuthorizedRole || !isCenterMatch) return false;
+  if (!isHubReturnCase(order)) return false;
+  if (order.finalPaymentPaidAt != null) return false;
+
   const isPreListingCompleted = order.inspectionScope === 'PRE_LISTING' && order.status === 'COMPLETED';
-  return role?.toLowerCase() === 'inspection_center' && Boolean(centerId && centerId === order.inspectionCenterId) &&
-    isHubReturnCase(order) && (Boolean(order.feeSettledAt) || isPreListingCompleted) && order.returnShippingReserveFee != null &&
-    order.finalPaymentPaidAt == null;
+  const isExpired = isExpiredInspectionPurchase(order.status, order.note || (order as any).rejectionReason);
+  const isBuyerRejected = getInspectionPurchaseDecision(null, order) === 'rejected' ||
+    extractInspectionRejectionDetails(order.note || (order as any).rejectionReason).isBuyerPurchaseRejected;
+
+  // Đơn được phép trả hàng khi đã có quyết toán phí, hoặc là pre-listing hoàn tất, hoặc người mua từ chối / hết hạn 6h
+  const isSettledOrSpecial = Boolean(order.feeSettledAt) || isPreListingCompleted || isExpired || isBuyerRejected;
+  if (!isSettledOrSpecial) return false;
+
+  return order.returnShippingReserveFee != null || isExpired || isBuyerRejected || isPreListingCompleted;
 }
 
 function canBookHubReturnShipment(shipment: ShipmentBackend | null | undefined) {
-  if (shipment === null) return true;
+  if (shipment === null || shipment === undefined) return true;
   if (shipment?.leg !== 'CENTER_TO_SELLER') return false;
   if (shipment.status === 'CANCELLED') return true;
   return shipment.status === 'FAILED' && Boolean(shipment.orderCode) && !shipment.deliveredAt && !shipment.cashConfirmedAt &&
@@ -304,7 +325,7 @@ export function getHubReturnState(shipments: ShipmentBackend[], orderStatus?: st
   const isReceived = shipments.some((shipment) =>
     shipment.leg === 'SELLER_TO_CENTER' &&
     (shipment.status === 'DELIVERED' || shipment.status === 'COMPLETED' || (shipment.providerStatus || '').toUpperCase() === 'COMPLETED')
-  ) || (orderStatus ? ['FAILED', 'PASSED', 'COMPLETED', 'RECEIVED_AT_CENTER', 'INSPECTING', 'INSPECTION_IN_PROGRESS'].includes(orderStatus.toUpperCase()) : false);
+  ) || (orderStatus ? ['FAILED', 'PASSED', 'COMPLETED', 'RECEIVED_AT_CENTER', 'INSPECTING', 'INSPECTION_IN_PROGRESS', 'CANCELLED', 'CANCELED'].includes(orderStatus.toUpperCase()) : false);
 
   return {
     received: isReceived,
@@ -323,6 +344,67 @@ export function getSellerHubReturnStage(shipment?: ShipmentBackend | null) {
   return 'pending';
 }
 
+export function getLatestReturnShipment(shipments: ShipmentBackend[] | null | undefined): ShipmentBackend | null {
+  if (!Array.isArray(shipments) || shipments.length === 0) return null;
+  const returns = shipments.filter((s) => s && (s.leg === 'CENTER_TO_SELLER' || s.leg === 'RETURN' || s.leg === 'BUYER_TO_SELLER'));
+  if (returns.length === 0) return null;
+  if (returns.length === 1) return returns[0];
+
+  const sorted = [...returns].sort((a, b) => {
+    const timeA = (a as any).createdAt || (a as any).createdDate || (a as any).updatedAt;
+    const timeB = (b as any).createdAt || (b as any).createdDate || (b as any).updatedAt;
+    if (timeA && timeB) {
+      return new Date(timeA).getTime() - new Date(timeB).getTime();
+    }
+    return 0;
+  });
+
+  const reversed = [...sorted].reverse();
+  // 1. Ưu tiên vận đơn hoàn trả mới nhất đang hoạt động (không bị hủy hoặc thất bại)
+  const activeReturn = reversed.find(
+    (s) => s.status !== 'CANCELLED' && s.status !== 'CANCELED' && s.status !== 'FAILED'
+  );
+  if (activeReturn) return activeReturn;
+
+  // 2. Tiếp theo là vận đơn mới nhất không bị CANCELLED
+  const nonCancelled = reversed.find(
+    (s) => s.status !== 'CANCELLED' && s.status !== 'CANCELED'
+  );
+  if (nonCancelled) return nonCancelled;
+
+  // 3. Cuối cùng trả về vận đơn mới nhất trong danh sách (dù là FAILED hay CANCELLED)
+  return reversed[0] || null;
+}
+
+export function getLatestBuyerDeliveryShipment(shipments: ShipmentBackend[] | null | undefined): ShipmentBackend | null {
+  if (!Array.isArray(shipments) || shipments.length === 0) return null;
+  const buyerLegs = shipments.filter((s) => s && (s.leg === 'CENTER_TO_BUYER' || s.leg === 'SELLER_TO_BUYER' || s.leg === 'DELIVERY'));
+  if (buyerLegs.length === 0) return null;
+  if (buyerLegs.length === 1) return buyerLegs[0];
+
+  const sorted = [...buyerLegs].sort((a, b) => {
+    const timeA = (a as any).createdAt || (a as any).createdDate || (a as any).updatedAt;
+    const timeB = (b as any).createdAt || (b as any).createdDate || (b as any).updatedAt;
+    if (timeA && timeB) {
+      return new Date(timeA).getTime() - new Date(timeB).getTime();
+    }
+    return 0;
+  });
+
+  const reversed = [...sorted].reverse();
+  const activeShipment = reversed.find(
+    (s) => s.status !== 'CANCELLED' && s.status !== 'CANCELED' && s.status !== 'FAILED'
+  );
+  if (activeShipment) return activeShipment;
+
+  const nonCancelled = reversed.find(
+    (s) => s.status !== 'CANCELLED' && s.status !== 'CANCELED'
+  );
+  if (nonCancelled) return nonCancelled;
+
+  return reversed[0] || null;
+}
+
 export function canBookCenterReturn(
   order: InspectionOrderDto,
   centerId: string | undefined,
@@ -330,12 +412,19 @@ export function canBookCenterReturn(
   state: ReturnType<typeof getHubReturnState> | undefined,
 ) {
   const isPreListingCompleted = order.inspectionScope === 'PRE_LISTING' && order.status === 'COMPLETED';
-  const isOrderAtHubStatus = ['FAILED', 'PASSED', 'COMPLETED', 'RECEIVED_AT_CENTER', 'INSPECTING', 'INSPECTION_IN_PROGRESS'].includes((order.status || '').toUpperCase());
-  const isReceived = state?.received === true || isOrderAtHubStatus;
+  const isExpired = isExpiredInspectionPurchase(order.status, order.note || (order as any).rejectionReason);
+  const isBuyerRejected = getInspectionPurchaseDecision(null, order) === 'rejected' ||
+    extractInspectionRejectionDetails(order.note || (order as any).rejectionReason).isBuyerPurchaseRejected;
+  const isOrderAtHubStatus = ['FAILED', 'PASSED', 'COMPLETED', 'RECEIVED_AT_CENTER', 'INSPECTING', 'INSPECTION_IN_PROGRESS'].includes((order.status || '').toUpperCase()) ||
+    (['CANCELLED', 'CANCELED'].includes((order.status || '').toUpperCase()) && Boolean((order as any).conditionScore != null || isExpired || isBuyerRejected));
+  const isReceived = state !== undefined ? state.received === true : isOrderAtHubStatus;
+
+  const isEligibleStatus = order.status === 'FAILED' || isPreListingCompleted || isBuyerRejected || isExpired;
 
   return isCenterReturnEligible(order, centerId, role) &&
-    (order.status === 'FAILED' || isPreListingCompleted || getInspectionPurchaseDecision(null, order) === 'rejected') &&
-    isReceived && canBookHubReturnShipment(state?.shipment);
+    isEligibleStatus &&
+    isReceived &&
+    canBookHubReturnShipment(state?.shipment);
 }
 
 export function shouldSyncHubReturnOnOpen(shipment: ShipmentBackend | null): shipment is ShipmentBackend {

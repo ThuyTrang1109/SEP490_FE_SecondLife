@@ -29,7 +29,6 @@ import {
   staffReportService,
   ReportItemDto,
   ReportStatus,
-  ResponsibleParty,
   userReportService,
   ReportSubmissionResponse,
   shippingService,
@@ -39,19 +38,42 @@ import {
 } from '../../services';
 import { ShipmentBackend, ShipmentEventBackend } from '../../types';
 import { formatVND } from '../../utils/translations';
+import { DisputeEvidenceThumbnail } from '../common/DisputeEvidenceThumbnail';
+import {
+  DISPUTE_REASON_MAP,
+  RESPONSIBLE_PARTY_MAP,
+  LALAMOVE_STATUS_MAP,
+  formatDisputeReason
+} from '../../utils/orders/orderDispute';
+
+const DISPUTE_STATUS_MAP: Record<string, { label: string; bg: string }> = {
+  ALL: { label: 'Tất cả', bg: '' },
+  OPEN: { label: 'Chờ xử lý', bg: 'bg-rose-100 text-rose-800' },
+  IN_REVIEW: { label: 'Đang xem xét', bg: 'bg-amber-100 text-amber-800' },
+  CONFIRMED: { label: 'Đã chấp thuận', bg: 'bg-emerald-100 text-emerald-800' },
+  DISMISSED: { label: 'Đã bác bỏ', bg: 'bg-slate-200 text-slate-700' },
+};
 
 interface StaffDisputeManagementProps {
   currentUserId?: string;
+  canHandleReturns: boolean;
+  initialReportId?: string;
+  returnOnly?: boolean;
   onOpenOrderModal?: (orderId: string) => void;
 }
 
 export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
   currentUserId,
+  canHandleReturns,
+  initialReportId,
+  returnOnly = false,
   onOpenOrderModal,
 }) => {
   const [reports, setReports] = useState<ReportItemDto[]>([]);
   const [loadingQueue, setLoadingQueue] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [statusFilter, setStatusFilter] = useState<string>(returnOnly ? 'CONFIRMED' : 'ALL');
+  const [queuePage, setQueuePage] = useState(0);
+  const [queuePages, setQueuePages] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
 
@@ -59,6 +81,23 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
   const [selectedReport, setSelectedReport] = useState<ReportItemDto | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [responses, setResponses] = useState<ReportSubmissionResponse[]>([]);
+  const [responsesLoaded, setResponsesLoaded] = useState(false);
+  const [, refreshDeadline] = useState(0);
+  const responseDeadline = Date.parse(selectedReport?.sellerResponseDeadlineAt ?? '');
+  const responseTime = Date.parse(selectedReport?.sellerRespondedAt ?? '');
+  const sellerResponded = Number.isFinite(responseTime) &&
+    (!Number.isFinite(responseDeadline) || responseTime < responseDeadline);
+  const sellerMissedDeadline = Boolean(selectedReport?.orderId) && !sellerResponded && Date.now() >= responseDeadline;
+  const canReview = !selectedReport?.orderId || sellerResponded || sellerMissedDeadline;
+  const canRequestSellerResponse = Boolean(selectedReport?.orderId) && !sellerResponded && !Number.isFinite(responseDeadline)
+    && (selectedReport?.status === 'OPEN' || (selectedReport?.status === 'IN_REVIEW' && selectedReport.reviewerId === currentUserId));
+
+  useEffect(() => {
+    const delay = responseDeadline - Date.now();
+    if (!(delay > 0) || sellerResponded) return;
+    const timeout = setTimeout(() => refreshDeadline((value) => value + 1), delay + 50);
+    return () => clearTimeout(timeout);
+  }, [responseDeadline, sellerResponded]);
   const [shipments, setShipments] = useState<ShipmentBackend[]>([]);
   const [feeAssessment, setFeeAssessment] = useState<ReturnShippingFeeResponse | null>(null);
   const [shipmentEvents, setShipmentEvents] = useState<ShipmentEventBackend[]>([]);
@@ -70,8 +109,8 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
 
   // Modals state
   const [showResolveModal, setShowResolveModal] = useState(false);
-  const [resolveDecision, setResolveDecision] = useState<'CONFIRMED' | 'DISMISSED'>('CONFIRMED');
-  const [resolveResponsibleParty, setResolveResponsibleParty] = useState<ResponsibleParty>('SELLER');
+  const [resolveChoice, setResolveChoice] = useState<'RETURN' | 'DISMISS'>(canHandleReturns ? 'RETURN' : 'DISMISS');
+  const detailVersion = React.useRef(0);
   const [resolveReason, setResolveReason] = useState('');
 
   const [showReconcileModal, setShowReconcileModal] = useState(false);
@@ -87,15 +126,16 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
     setActionError(null);
     try {
       const statusParam = statusFilter === 'ALL' ? undefined : (statusFilter as ReportStatus);
-      const res = await staffReportService.getReportQueue(statusParam, 'ORDER', 0, 50);
-      setReports(res.items || []);
+      const res = await staffReportService.getReportQueue(statusParam, 'ORDER', queuePage, 50);
+      setQueuePages(res.totalPages);
+      setReports(returnOnly ? res.items.filter((item) => item.resolutionAction === 'RETURN_AND_REFUND') : res.items);
     } catch (err: any) {
       console.error('[StaffDisputeManagement] Failed to fetch queue:', err);
       setActionError(err?.message || 'Không thể tải danh sách khiếu nại.');
     } finally {
       setLoadingQueue(false);
     }
-  }, [statusFilter]);
+  }, [statusFilter, queuePage, returnOnly]);
 
   useEffect(() => {
     fetchQueue();
@@ -103,64 +143,115 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
 
   // Load detailed report data
   const loadReportDetail = useCallback(async (reportId: string) => {
+    const version = ++detailVersion.current;
     setLoadingDetail(true);
+    setResponsesLoaded(false);
     setActionError(null);
-    setActionSuccess(null);
     try {
       const rep = await staffReportService.getReportById(reportId);
+      if (version !== detailVersion.current) return;
+      if (!rep.orderId) throw new Error('Đây là báo cáo bài đăng. Xem tại tab Báo cáo vi phạm và hỗ trợ.');
       setSelectedReport(rep);
 
-      // Load supplemental responses of both parties
-      try {
-        const respData = await userReportService.getReportResponses(reportId, 0, 100);
-        setResponses(respData.items || []);
-      } catch (err) {
-        console.warn('Could not load report responses:', err);
-        setResponses([]);
-      }
-
-      // Load shipments for this order
-      if (rep.orderId) {
-        try {
-          const shipList = await shippingService.getOrderShipments(rep.orderId);
-          setShipments(shipList || []);
-
-          // If there is a return shipment, check events and return shipping fee
-          const returnShip = shipList?.find(
-            (s) => s.leg === 'BUYER_TO_SELLER' && (s.shipmentId === rep.returnShipmentId || !rep.returnShipmentId)
-          );
-          if (returnShip) {
-            try {
-              const evs = await shippingService.getShipmentEvents(returnShip.shipmentId);
-              setShipmentEvents(evs || []);
-            } catch {}
-
-            try {
-              const fee = await returnShippingFeeService.getReturnShippingFee(returnShip.shipmentId);
-              setFeeAssessment(fee);
-            } catch {
-              setFeeAssessment(null);
-            }
-          } else {
-            setShipmentEvents([]);
-            setFeeAssessment(null);
+      const [proof, shipList] = await Promise.all([
+        (async () => {
+          const first = await userReportService.getReportResponses(reportId, 0, 100);
+          const all = [...first.items];
+          for (let page = 1; page < first.totalPages && version === detailVersion.current; page++) {
+            all.push(...(await userReportService.getReportResponses(reportId, page, 100)).items);
           }
-        } catch (err) {
-          console.warn('Could not load shipments:', err);
-          setShipments([]);
+          return all;
+        })(),
+        rep.returnShipmentId ? shippingService.getOrderShipments(rep.orderId) : Promise.resolve([]),
+      ]);
+      if (version !== detailVersion.current) return;
+      setResponses(proof);
+      setResponsesLoaded(true);
+      setShipments(shipList);
+
+      const returnShip = shipList.find((item) => item.leg === 'BUYER_TO_SELLER' && item.shipmentId === rep.returnShipmentId);
+      if (returnShip) {
+        const [events, fee] = await Promise.all([
+          shippingService.getShipmentEvents(returnShip.shipmentId).catch(() => []),
+          canHandleReturns && rep.refundedAt && rep.responsibleParty === 'SELLER'
+            ? returnShippingFeeService.getReturnShippingFee(returnShip.shipmentId).catch(() => null)
+            : null,
+        ]);
+        if (version !== detailVersion.current) return;
+        setShipmentEvents(events);
+        setFeeAssessment(fee);
+      }
+    } catch (err: unknown) {
+      if (version === detailVersion.current) {
+        setActionError(err instanceof Error ? err.message : 'Không tải được chi tiết hồ sơ hoặc dữ liệu đối chiếu.');
+      }
+    } finally {
+      if (version === detailVersion.current) setLoadingDetail(false);
+    }
+  }, [canHandleReturns]);
+
+  const waitingReportId = selectedReport && !canReview &&
+    (selectedReport.status === 'OPEN' || selectedReport.status === 'IN_REVIEW') ? selectedReport.id : null;
+
+  const waitingDeadline = selectedReport?.sellerResponseDeadlineAt;
+  useEffect(() => {
+    if (!waitingReportId) return;
+    let active = true;
+    const timer = setInterval(async () => {
+      try {
+        const updated = await staffReportService.getReportById(waitingReportId);
+        if (active && (updated.sellerRespondedAt || updated.sellerResponseDeadlineAt !== waitingDeadline || updated.status === 'CONFIRMED' || updated.status === 'DISMISSED')) {
+          void loadReportDetail(waitingReportId);
+        }
+      } catch {
+        // The report remains locked until a fresh read succeeds.
+      }
+    }, 15000);
+    return () => { active = false; clearInterval(timer); };
+  }, [waitingReportId, waitingDeadline, loadReportDetail]);
+
+  const pendingRefundId = selectedReport?.resolutionAction === 'RETURN_AND_REFUND' &&
+    selectedReport.returnShipmentId && !selectedReport.refundedAt ? selectedReport.id : null;
+
+  useEffect(() => {
+    if (!pendingRefundId || isProcessing) return;
+    let active = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const checkRefund = async () => {
+      if (!document.hidden) {
+        try {
+          const report = await staffReportService.getReportById(pendingRefundId);
+          if (active && report.refundedAt) {
+            void loadReportDetail(pendingRefundId);
+            return;
+          }
+        } catch {
+          // Retry on the next refresh.
         }
       }
-    } catch (err: any) {
-      console.error('[StaffDisputeManagement] Failed to load report detail:', err);
-      setActionError(err?.message || 'Không thể tải thông tin chi tiết vụ việc.');
-    } finally {
-      setLoadingDetail(false);
-    }
-  }, []);
+      if (active) timer = setTimeout(checkRefund, 10000);
+    };
+    timer = setTimeout(checkRefund, 10000);
+    return () => { active = false; clearTimeout(timer); };
+  }, [pendingRefundId, isProcessing, loadReportDetail]);
+
+  const openReport = useCallback((reportId: string) => {
+    setSelectedReportId(reportId);
+    setSelectedReport(null);
+    setResponses([]);
+    setShipments([]);
+    setFeeAssessment(null);
+    setShipmentEvents([]);
+    setActionSuccess(null);
+    void loadReportDetail(reportId);
+  }, [loadReportDetail]);
+
+  useEffect(() => {
+    if (initialReportId) openReport(initialReportId);
+  }, [initialReportId, openReport]);
 
   const handleSelectReport = (rep: ReportItemDto) => {
-    setSelectedReportId(rep.id);
-    loadReportDetail(rep.id);
+    if (!isProcessing) openReport(rep.id);
   };
 
   // Helper to load private media
@@ -176,15 +267,30 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
     }
   };
 
+  const handleRequestSellerResponse = async () => {
+    if (!selectedReport || !canRequestSellerResponse || isProcessing) return;
+    setIsProcessing(true);
+    setActionError(null);
+    try {
+      const updated = await staffReportService.requestSellerResponse(selectedReport.id);
+      setSelectedReport(updated);
+      setActionSuccess('Đã thông báo cho người bán. Hạn phản hồi là 24 giờ kể từ lúc gửi.');
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Không gửi được yêu cầu phản hồi.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   // 1. Start Review
   const handleStartReview = async () => {
-    if (!selectedReport) return;
+    if (!selectedReport || !canReview) return;
     setIsProcessing(true);
     setActionError(null);
     try {
       const updated = await staffReportService.startReview(selectedReport.id);
       setSelectedReport(updated);
-      setActionSuccess('Đã tiếp nhận hồ sơ tranh chấp vào danh sách đang xử lý (IN_REVIEW).');
+      setActionSuccess('Đã tiếp nhận hồ sơ tranh chấp vào danh sách đang xem xét.');
       fetchQueue();
     } catch (err: any) {
       setActionError(err?.message || 'Không thể nhận xử lý báo cáo.');
@@ -195,7 +301,8 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
 
   // 2. Resolve Dispute
   const handleConfirmResolve = async () => {
-    if (!selectedReport) return;
+    if (!selectedReport || !currentUserId || selectedReport.reviewerId !== currentUserId || !responsesLoaded || !canReview) return;
+    if (resolveChoice === 'RETURN' && !canHandleReturns) return;
     if (!resolveReason.trim()) {
       alert('Vui lòng nhập lý do/căn cứ đưa ra phán quyết.');
       return;
@@ -203,47 +310,23 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
     setIsProcessing(true);
     setActionError(null);
     try {
-      const resolutionAction = resolveDecision === 'CONFIRMED' ? 'RETURN_AND_REFUND' : 'NONE';
+      const resolutionAction = resolveChoice === 'RETURN' ? 'RETURN_AND_REFUND' : 'NONE';
       const updated = await staffReportService.resolveReport(selectedReport.id, {
-        decision: resolveDecision,
-        responsibleParty: resolveResponsibleParty,
+        decision: resolveChoice === 'DISMISS' ? 'DISMISSED' : 'CONFIRMED',
         reason: resolveReason.trim(),
         resolutionAction,
       });
       setSelectedReport(updated);
       setShowResolveModal(false);
       setActionSuccess(
-        resolveDecision === 'CONFIRMED'
-          ? 'Đã duyệt yêu cầu hoàn hàng. Chuyển sang bước tạo vận đơn hoàn hàng Lalamove.'
-          : 'Đã bác khiếu nại. Hồ sơ đã được đóng.'
+        resolveChoice === 'RETURN' ? 'Đã duyệt trả hàng. Đang chờ người mua tạo vận đơn hoàn.'
+          : updated.responsibleParty === 'SELLER'
+            ? 'Đã bác yêu cầu trả hàng và ghi nhận người bán quá hạn phản hồi.'
+            : 'Đã bác khiếu nại và đóng hồ sơ.'
       );
       fetchQueue();
     } catch (err: any) {
       setActionError(err?.message || 'Không thể lưu phán quyết tranh chấp.');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  // 3. Create Return Shipment (BUYER_TO_SELLER)
-  const handleCreateReturnShipment = async () => {
-    if (!selectedReport || !selectedReport.orderId) return;
-    if (!window.confirm('Xác nhận tạo vận đơn hoàn hàng (Lalamove chiều Người Mua -> Người Bán)?')) return;
-
-    setIsProcessing(true);
-    setActionError(null);
-    try {
-      const reqId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `ret_${Date.now()}`;
-      await shippingService.createShipment(selectedReport.orderId, {
-        requestId: reqId,
-        leg: 'BUYER_TO_SELLER',
-        reason: `Tạo chuyến hoàn theo phán quyết hồ sơ tranh chấp #${selectedReport.id.substring(0, 8)}`,
-        reportId: selectedReport.id,
-      });
-      setActionSuccess('Đã tạo thành công vận đơn hoàn hàng Lalamove.');
-      loadReportDetail(selectedReport.id);
-    } catch (err: any) {
-      setActionError(err?.message || 'Không thể tạo vận đơn hoàn hàng Lalamove.');
     } finally {
       setIsProcessing(false);
     }
@@ -299,29 +382,9 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
     }
   };
 
-  // 7. Refund Buyer
-  const handleRefundBuyer = async (returnShipmentId: string) => {
-    if (!selectedReport) return;
-    if (!window.confirm('Xác nhận hoàn tiền hàng về ví Người Mua? Sau khi hoàn, phí vận chuyển hoàn sẽ được thu hoặc ghi nợ vào Seller có lỗi.')) return;
-    setIsProcessing(true);
-    setActionError(null);
-    try {
-      await shippingService.refundShipment(returnShipmentId, {
-        reason: 'Hàng hoàn đã giao về người bán thành công. Hoàn toàn bộ tiền hàng vào ví người mua theo phán quyết.',
-      });
-      setActionSuccess('Đã thực hiện hoàn tiền vào ví Người Mua thành công!');
-      loadReportDetail(selectedReport.id);
-      fetchQueue();
-    } catch (err: any) {
-      setActionError(err?.message || 'Lỗi khi thực hiện hoàn tiền.');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  // 8. Chốt phí hoàn PENDING_FEE
+  // Chốt phí hoàn PENDING_FEE
   const handleFinalizePendingFee = async (returnShipmentId: string) => {
-    if (!selectedReport) return;
+    if (!selectedReport || !canHandleReturns || selectedReturnShipment?.shipmentId !== returnShipmentId || selectedReturnShipment.status !== 'DELIVERED') return;
     setIsProcessing(true);
     setActionError(null);
     try {
@@ -352,7 +415,7 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
   const selectedReturnShipment = shipments.find(
     (s) =>
       s.leg === 'BUYER_TO_SELLER' &&
-      (selectedReport?.returnShipmentId ? s.shipmentId === selectedReport.returnShipmentId : true)
+      s.shipmentId === selectedReport?.returnShipmentId
   );
 
   const buyerResponses = responses.filter((r) => r.authorRole === 'BUYER');
@@ -365,6 +428,14 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
 
   return (
     <div className="space-y-6">
+      {queuePages > 1 && (
+        <div className="flex justify-end gap-3 text-xs">
+          <button disabled={loadingQueue || queuePage === 0} onClick={() => setQueuePage(queuePage - 1)}>Trang trước</button>
+          <span>Trang {queuePage + 1} / {queuePages}</span>
+          <button disabled={loadingQueue || queuePage + 1 >= queuePages} onClick={() => setQueuePage(queuePage + 1)}>Trang sau</button>
+        </div>
+      )}
+
       {/* Notifications / Alerts */}
       {actionError && (
         <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs flex items-center justify-between">
@@ -398,7 +469,7 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
                 <span>Hàng Đợi Tranh Chấp ({filteredReports.length})</span>
               </h3>
               <button
-                onClick={fetchQueue}
+                onClick={() => { void fetchQueue(); if (selectedReportId) void loadReportDetail(selectedReportId); }}
                 disabled={loadingQueue}
                 className="p-1 rounded-lg hover:bg-slate-200 text-slate-500 transition cursor-pointer"
                 title="Làm mới"
@@ -412,14 +483,13 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
               {['ALL', 'OPEN', 'IN_REVIEW', 'CONFIRMED', 'DISMISSED'].map((st) => (
                 <button
                   key={st}
-                  onClick={() => setStatusFilter(st)}
-                  className={`px-2.5 py-1 rounded-lg transition whitespace-nowrap cursor-pointer ${
-                    statusFilter === st
-                      ? 'bg-[#24263e] text-white shadow-xs'
-                      : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-                  }`}
+                  onClick={() => { setQueuePage(0); setStatusFilter(st); }}
+                  className={`px-2 py-1 rounded-lg transition whitespace-nowrap cursor-pointer shrink-0 ${statusFilter === st
+                    ? 'bg-[#24263e] text-white shadow-xs'
+                    : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                    }`}
                 >
-                  {st === 'ALL' ? 'Tất cả' : st}
+                  {DISPUTE_STATUS_MAP[st]?.label || st}
                 </button>
               ))}
             </div>
@@ -456,26 +526,18 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
                   <div
                     key={item.id}
                     onClick={() => handleSelectReport(item)}
-                    className={`p-3.5 transition cursor-pointer text-xs space-y-1.5 ${
-                      isSelected ? 'bg-amber-50/70 border-l-4 border-l-[#c34c36]' : 'hover:bg-slate-50'
-                    }`}
+                    className={`p-3.5 transition cursor-pointer text-xs space-y-1.5 ${isSelected ? 'bg-amber-50/70 border-l-4 border-l-[#c34c36]' : 'hover:bg-slate-50'
+                      }`}
                   >
                     <div className="flex items-center justify-between">
                       <span className="font-mono font-bold text-slate-900">
                         #{item.id.substring(0, 8)}
                       </span>
                       <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                          item.status === 'OPEN'
-                            ? 'bg-rose-100 text-rose-800'
-                            : item.status === 'IN_REVIEW'
-                            ? 'bg-amber-100 text-amber-800'
-                            : item.status === 'CONFIRMED'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : 'bg-slate-200 text-slate-700'
-                        }`}
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-black ${DISPUTE_STATUS_MAP[item.status]?.bg || 'bg-slate-200 text-slate-700'
+                          }`}
                       >
-                        {item.status}
+                        {DISPUTE_STATUS_MAP[item.status]?.label || item.status}
                       </span>
                     </div>
 
@@ -519,17 +581,10 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
                       Hồ Sơ Tranh Chấp #{selectedReport.id.substring(0, 8)}
                     </span>
                     <span
-                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${
-                        selectedReport.status === 'OPEN'
-                          ? 'bg-rose-100 text-rose-800'
-                          : selectedReport.status === 'IN_REVIEW'
-                          ? 'bg-amber-100 text-amber-800'
-                          : selectedReport.status === 'CONFIRMED'
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : 'bg-slate-200 text-slate-700'
-                      }`}
+                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${DISPUTE_STATUS_MAP[selectedReport.status]?.bg || 'bg-slate-200 text-slate-700'
+                        }`}
                     >
-                      {selectedReport.status}
+                      {DISPUTE_STATUS_MAP[selectedReport.status]?.label || selectedReport.status}
                     </span>
                   </div>
                   <div className="text-xs text-slate-500 flex flex-wrap items-center gap-3">
@@ -556,10 +611,16 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
 
                 {/* Top Action Button */}
                 <div>
+                  {canRequestSellerResponse && (
+                    <button type="button" onClick={handleRequestSellerResponse} disabled={isProcessing}
+                      className="mb-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900 disabled:opacity-50">
+                      Yêu cầu người bán phản hồi
+                    </button>
+                  )}
                   {selectedReport.status === 'OPEN' && (
                     <button
                       onClick={handleStartReview}
-                      disabled={isProcessing}
+                      disabled={isProcessing || !canReview}
                       className="px-4 py-2 bg-[#24263e] hover:bg-[#c34c36] text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
                     >
                       <User className="w-3.5 h-3.5" />
@@ -567,10 +628,10 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
                     </button>
                   )}
 
-                  {selectedReport.status === 'IN_REVIEW' && (
+                  {selectedReport.status === 'IN_REVIEW' && currentUserId && selectedReport.reviewerId === currentUserId && (
                     <button
-                      onClick={() => setShowResolveModal(true)}
-                      disabled={isProcessing}
+                      onClick={() => { setResolveChoice(canHandleReturns ? 'RETURN' : 'DISMISS'); setResolveReason(''); setShowResolveModal(true); }}
+                      disabled={isProcessing || !responsesLoaded || !canReview}
                       className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-90 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
                     >
                       <Scale className="w-3.5 h-3.5" />
@@ -580,11 +641,23 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
                 </div>
               </div>
 
+              {['OPEN', 'IN_REVIEW'].includes(selectedReport.status) && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950">
+                  {sellerResponded
+                    ? 'Người bán đã gửi phản hồi.'
+                    : sellerMissedDeadline
+                      ? 'Đã quá hạn phản hồi từ người bán.'
+                      : Number.isFinite(responseDeadline)
+                        ? 'Đang chờ người bán phản hồi trước ' + new Date(responseDeadline).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) + ' (giờ Việt Nam).'
+                        : 'Người bán chưa phản hồi. Gửi yêu cầu để bắt đầu thời hạn 24 giờ.'}
+                </div>
+              )}
+
               {/* 2-COLUMN SIDE-BY-SIDE EVIDENCE COMPARISON */}
               <div className="space-y-2">
                 <h4 className="font-extrabold text-xs text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
                   <FileText className="w-4 h-4 text-[#c34c36]" />
-                  <span>Đối Chiếu Bằng Chứng Hai Bên (Side-by-Side)</span>
+                  <span>Đối Chiếu Bằng Chứng Hai Bên</span>
                 </h4>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -593,10 +666,10 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
                     <div className="flex items-center justify-between border-b border-blue-200/60 pb-2">
                       <span className="font-extrabold text-xs text-blue-900 flex items-center gap-1.5">
                         <User className="w-3.5 h-3.5 text-blue-600" />
-                        <span>BẰNG CHỨNG NGƯỜI MUA (BUYER)</span>
+                        <span>BẰNG CHỨNG NGƯỜI MUA</span>
                       </span>
                       <span className="text-[10px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded">
-                        Lý do: {selectedReport.reasonCode}
+                        Lý do: {formatDisputeReason(selectedReport.reasonCode)}
                       </span>
                     </div>
 
@@ -611,24 +684,22 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
                     {/* Initial Evidence URLs */}
                     {selectedReport.evidenceUrls && selectedReport.evidenceUrls.length > 0 && (
                       <div className="space-y-1.5">
-                        <span className="text-[10px] font-black text-slate-500 block uppercase">
-                          Ảnh/Video khui hàng ban đầu ({selectedReport.evidenceUrls.length}):
-                        </span>
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-black text-slate-500 uppercase">
+                            Ảnh/Video khui hàng ban đầu ({selectedReport.evidenceUrls.length}):
+                          </span>
+                          <span className="text-[10px] text-slate-400">Bấm để xem phóng to</span>
+                        </div>
+                        <div className="flex flex-wrap gap-2.5 pt-0.5">
                           {selectedReport.evidenceUrls.map((url, idx) => (
-                            <button
-                              key={idx}
-                              onClick={() => handleOpenMedia(url)}
-                              disabled={loadingMediaUrl === url}
-                              className="px-2.5 py-1.5 rounded-lg bg-white border border-blue-200 hover:border-blue-400 text-blue-800 text-[11px] font-bold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
-                            >
-                              {loadingMediaUrl === url ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : (
-                                <ImageIcon className="w-3.5 h-3.5 text-blue-600" />
-                              )}
-                              <span>Bằng chứng #{idx + 1}</span>
-                            </button>
+                            <DisputeEvidenceThumbnail
+                              key={`buyer-ev-${url}-${idx}`}
+                              url={url}
+                              idx={idx}
+                              size="md"
+                              labelPrefix="Bằng chứng khui hàng"
+                              onOpen={(view) => setPreviewMedia({ kind: view.kind, src: view.src })}
+                            />
                           ))}
                         </div>
                       </div>
@@ -644,15 +715,16 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
                           <div key={br.id} className="p-2.5 bg-white rounded-lg border border-blue-100 text-[11px] space-y-1.5">
                             <p className="text-slate-700">"{br.description}"</p>
                             {br.evidenceUrls && br.evidenceUrls.length > 0 && (
-                              <div className="flex flex-wrap gap-1.5 pt-1">
+                              <div className="flex flex-wrap gap-2 pt-1">
                                 {br.evidenceUrls.map((u, i) => (
-                                  <button
-                                    key={i}
-                                    onClick={() => handleOpenMedia(u)}
-                                    className="px-2 py-1 bg-blue-50 text-blue-700 rounded text-[10px] font-bold hover:bg-blue-100 transition cursor-pointer"
-                                  >
-                                    Tệp #{i + 1}
-                                  </button>
+                                  <DisputeEvidenceThumbnail
+                                    key={`buyer-supp-${u}-${i}`}
+                                    url={u}
+                                    idx={i}
+                                    size="sm"
+                                    labelPrefix="Bằng chứng bổ sung"
+                                    onOpen={(view) => setPreviewMedia({ kind: view.kind, src: view.src })}
+                                  />
                                 ))}
                               </div>
                             )}
@@ -667,7 +739,7 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
                     <div className="flex items-center justify-between border-b border-amber-200/60 pb-2">
                       <span className="font-extrabold text-xs text-amber-900 flex items-center gap-1.5">
                         <User className="w-3.5 h-3.5 text-amber-600" />
-                        <span>BẰNG CHỨNG NGƯỜI BÁN (SELLER)</span>
+                        <span>BẰNG CHỨNG NGƯỜI BÁN</span>
                       </span>
                       <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">
                         {sellerResponses.length} lượt phản hồi
@@ -696,24 +768,22 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
 
                             {sr.evidenceUrls && sr.evidenceUrls.length > 0 && (
                               <div className="space-y-1 pt-1">
-                                <span className="text-[10px] font-bold text-slate-500 block">
-                                  Video/Ảnh đóng gói đính kèm:
-                                </span>
-                                <div className="flex flex-wrap gap-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] font-bold text-amber-900 uppercase">
+                                    Video/Ảnh đóng gói đính kèm ({sr.evidenceUrls.length}):
+                                  </span>
+                                  <span className="text-[10px] text-slate-400">Bấm để xem phóng to</span>
+                                </div>
+                                <div className="flex flex-wrap gap-2.5 pt-0.5">
                                   {sr.evidenceUrls.map((u, i) => (
-                                    <button
-                                      key={i}
-                                      onClick={() => handleOpenMedia(u)}
-                                      disabled={loadingMediaUrl === u}
-                                      className="px-2.5 py-1.5 rounded-lg bg-amber-50 border border-amber-200 hover:border-amber-400 text-amber-900 text-[11px] font-bold flex items-center gap-1.5 transition cursor-pointer"
-                                    >
-                                      {loadingMediaUrl === u ? (
-                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                      ) : (
-                                        <Video className="w-3.5 h-3.5 text-amber-700" />
-                                      )}
-                                      <span>Bằng chứng đóng gói #{i + 1}</span>
-                                    </button>
+                                    <DisputeEvidenceThumbnail
+                                      key={`seller-ev-${u}-${i}`}
+                                      url={u}
+                                      idx={i}
+                                      size="md"
+                                      labelPrefix="Bằng chứng đóng gói"
+                                      onOpen={(view) => setPreviewMedia({ kind: view.kind, src: view.src })}
+                                    />
                                   ))}
                                 </div>
                               </div>
@@ -735,7 +805,7 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
                       <span>Kết Luận Trọng Tài Đã Lưu</span>
                     </span>
                     <span className="text-[11px] font-bold text-slate-500">
-                      Bên chịu trách nhiệm: <strong className="text-slate-800">{selectedReport.responsibleParty || 'N/A'}</strong>
+                      Bên chịu trách nhiệm: <strong className="text-slate-800">{RESPONSIBLE_PARTY_MAP[String(selectedReport.responsibleParty || '').toUpperCase()] || selectedReport.responsibleParty || 'Chưa xác định'}</strong>
                     </span>
                   </div>
                   <p className="text-xs text-slate-700 italic bg-white p-3 rounded-lg border border-slate-200">
@@ -758,24 +828,25 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => handleSyncShipment(selectedReturnShipment.shipmentId)}
-                          disabled={isProcessing}
+                          disabled={isProcessing || !canHandleReturns}
                           className="px-2.5 py-1 bg-white border border-indigo-200 hover:bg-indigo-50 text-indigo-800 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer"
                         >
                           <RefreshCw className="w-3 h-3" />
-                          <span>Đồng Bộ (Sync)</span>
+                          <span>Đồng Bộ</span>
                         </button>
 
-                        {['READY_TO_PICK', 'ASSIGNED'].includes(selectedReturnShipment.status) && (
-                          <button
-                            onClick={() => handleCancelShipment(selectedReturnShipment.shipmentId)}
-                            disabled={isProcessing}
-                            className="px-2.5 py-1 bg-rose-100 hover:bg-rose-200 text-rose-800 rounded-lg text-xs font-bold transition cursor-pointer"
-                          >
-                            Hủy Chuyến
-                          </button>
-                        )}
+                        {canHandleReturns && selectedReturnShipment.orderCode &&
+                          ['ASSIGNING_DRIVER', 'ON_GOING'].includes(selectedReturnShipment.providerStatus ?? '') && (
+                            <button
+                              onClick={() => handleCancelShipment(selectedReturnShipment.shipmentId)}
+                              disabled={isProcessing}
+                              className="px-2.5 py-1 bg-rose-100 hover:bg-rose-200 text-rose-800 rounded-lg text-xs font-bold transition cursor-pointer"
+                            >
+                              Hủy Chuyến
+                            </button>
+                          )}
 
-                        {['CREATING', 'CREATION_UNCERTAIN'].includes(selectedReturnShipment.status) && (
+                        {canHandleReturns && ['CREATING', 'CREATION_UNCERTAIN'].includes(selectedReturnShipment.status) && (
                           <button
                             onClick={() => setShowReconcileModal(true)}
                             className="px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded-lg text-xs font-bold transition cursor-pointer"
@@ -790,15 +861,11 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
                   {!selectedReturnShipment ? (
                     <div className="text-center py-6 space-y-2">
                       <Package className="w-8 h-8 text-indigo-300 mx-auto" />
-                      <p className="text-xs font-bold text-slate-700">Chưa tạo vận đơn hoàn hàng Lalamove</p>
-                      <button
-                        onClick={handleCreateReturnShipment}
-                        disabled={isProcessing}
-                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer inline-flex items-center gap-1.5"
-                      >
-                        <Truck className="w-3.5 h-3.5" />
-                        <span>Tạo Vận Đơn Hoàn Hàng Lalamove</span>
-                      </button>
+                      <p className="text-xs font-bold text-slate-700">
+                        {selectedReport.returnShipmentId
+                          ? 'Chưa tải được thông tin vận đơn hoàn.'
+                          : 'Đang chờ người mua tạo vận đơn hoàn.'}
+                      </p>
                     </div>
                   ) : (
                     <div className="space-y-3">
@@ -812,7 +879,7 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
                         <div className="p-2.5 bg-white rounded-lg border border-indigo-100">
                           <span className="text-[10px] text-slate-400 block font-bold">Trạng Thái Hãng:</span>
                           <strong className="text-indigo-700 text-[11px] font-black">
-                            {selectedReturnShipment.status} ({selectedReturnShipment.providerStatus || 'N/A'})
+                            {LALAMOVE_STATUS_MAP[selectedReturnShipment.status] || selectedReturnShipment.status}
                           </strong>
                         </div>
                         <div className="p-2.5 bg-white rounded-lg border border-indigo-100">
@@ -828,6 +895,12 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
                           </strong>
                         </div>
                       </div>
+
+                      {selectedReturnShipment.status === 'CANCELLED' && !isRefunded && (
+                        <p className="text-xs font-medium text-slate-700">
+                          Đang chờ người mua tạo vận đơn hoàn thay thế.
+                        </p>
+                      )}
 
                       {/* Driver Info if assigned */}
                       {selectedReturnShipment.driverName && (
@@ -854,11 +927,11 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
 
                     {/* Refund Status Badge */}
                     <span
-                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${
-                        isRefunded ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                      }`}
+                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${isRefunded ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                        }`}
                     >
-                      {isRefunded ? 'ĐÃ HOÀN TIỀN BUYER' : 'CHỜ HOÀN TIỀN'}
+                      {isRefunded ? 'ĐÃ HOÀN TIỀN NGƯỜI MUA'
+                        : selectedReturnShipment.status === 'DELIVERED' ? 'CHỜ HOÀN TỰ ĐỘNG' : 'CHỜ GIAO TRẢ'}
                     </span>
                   </div>
 
@@ -866,28 +939,23 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
                     <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-3.5 rounded-xl border border-emerald-100 text-xs">
                       <div className="space-y-0.5">
                         <p className="font-bold text-slate-800">
-                          Điều kiện: Vận đơn hoàn hàng đã được bưu tá giao thành công (DELIVERED) về Seller.
+                          {selectedReturnShipment.status === 'DELIVERED'
+                            ? 'Hàng đã về người bán. Hệ thống đang xử lý hoàn tiền vào ví người mua.'
+                            : 'Hệ thống sẽ tự hoàn tiền khi hãng vận chuyển xác nhận đã giao hàng về người bán.'}
                         </p>
                         <p className="text-[11px] text-slate-500">
                           Trạng thái vận đơn hiện tại:{' '}
-                          <strong className="text-slate-800">{selectedReturnShipment.status}</strong>
+                          <strong className="text-slate-800">{LALAMOVE_STATUS_MAP[selectedReturnShipment.status] || selectedReturnShipment.status}</strong>
                         </p>
                       </div>
 
-                      <button
-                        onClick={() => handleRefundBuyer(selectedReturnShipment.shipmentId)}
-                        disabled={isProcessing || selectedReturnShipment.status !== 'DELIVERED'}
-                        className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold transition shadow-xs cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
-                      >
-                        Xác Nhận Hoàn Tiền Hàng
-                      </button>
                     </div>
                   ) : (
                     <div className="space-y-3">
                       {/* Refund Receipt */}
                       <div className="bg-white p-3.5 rounded-xl border border-emerald-100 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                         <div>
-                          <span className="text-[10px] text-slate-400 block font-bold">Số Tiền Đã Hoàn Buyer:</span>
+                          <span className="text-[10px] text-slate-400 block font-bold">Số Tiền Đã Hoàn Người Mua:</span>
                           <strong className="text-emerald-700 text-sm font-black">
                             {selectedReport.refundAmount ? formatVND(selectedReport.refundAmount) : '100% Tiền Hàng'}
                           </strong>
@@ -901,7 +969,7 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
                         <div>
                           <span className="text-[10px] text-slate-400 block font-bold">Người Thực Hiện:</span>
                           <strong className="text-slate-800 font-mono text-[11px]">
-                            {selectedReport.refundedBy ? selectedReport.refundedBy.substring(0, 8) : 'Staff'}
+                            {selectedReport.refundedBy ? selectedReport.refundedBy.substring(0, 8) : 'Hệ thống'}
                           </strong>
                         </div>
                       </div>
@@ -910,21 +978,20 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
                       {feeAssessment && (
                         <div className="p-3 bg-white rounded-xl border border-slate-200 text-xs space-y-2">
                           <div className="flex items-center justify-between">
-                            <span className="font-bold text-slate-800">Khoản Phí Hoàn Hàng Của Seller:</span>
+                            <span className="font-bold text-slate-800">Khoản Phí Hoàn Hàng Của Người Bán:</span>
                             <span
-                              className={`px-2 py-0.5 rounded text-[10px] font-black ${
-                                feeAssessment.status === 'PAID'
-                                  ? 'bg-emerald-100 text-emerald-800'
-                                  : feeAssessment.status === 'OUTSTANDING'
+                              className={`px-2 py-0.5 rounded text-[10px] font-black ${feeAssessment.status === 'PAID'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : feeAssessment.status === 'OUTSTANDING'
                                   ? 'bg-rose-100 text-rose-800'
                                   : 'bg-amber-100 text-amber-800'
-                              }`}
+                                }`}
                             >
                               {feeAssessment.status === 'PAID'
                                 ? 'ĐÃ THU ĐỦ PHÍ'
                                 : feeAssessment.status === 'OUTSTANDING'
-                                ? 'CÒN NỢ CÔNG NỢ'
-                                : 'CHỜ HÃNG CHỐT PHÍ (PENDING_FEE)'}
+                                  ? 'CÒN NỢ CÔNG NỢ'
+                                  : 'CHỜ HÃNG CHỐT PHÍ'}
                             </span>
                           </div>
 
@@ -948,14 +1015,14 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
                           </div>
 
                           {/* Finalize pending fee button if fee is pending and actual fee is now present */}
-                          {feeAssessment.status === 'PENDING_FEE' && selectedReturnShipment.actualFee != null && (
+                          {canHandleReturns && feeAssessment.status === 'PENDING_FEE' && selectedReturnShipment.actualFee != null && (
                             <div className="pt-2 flex justify-end">
                               <button
                                 onClick={() => handleFinalizePendingFee(selectedReturnShipment.shipmentId)}
                                 disabled={isProcessing}
                                 className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-xs transition cursor-pointer"
                               >
-                                Chốt Phí Hoàn Hàng Seller ({formatVND(selectedReturnShipment.actualFee)})
+                                Chốt Phí Hoàn Hàng Người Bán ({formatVND(selectedReturnShipment.actualFee)})
                               </button>
                             </div>
                           )}
@@ -990,58 +1057,26 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
             <div className="space-y-3 text-xs">
               <div>
                 <label className="font-bold text-slate-700 block mb-1">Quyết định phán quyết:</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setResolveDecision('CONFIRMED');
-                      setResolveResponsibleParty('SELLER');
-                    }}
-                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition cursor-pointer ${
-                      resolveDecision === 'CONFIRMED'
-                        ? 'bg-emerald-50 border-emerald-500 text-emerald-800'
-                        : 'border-slate-200 text-slate-600'
-                    }`}
-                  >
-                    Duyệt Hoàn Hàng (CONFIRMED)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setResolveDecision('DISMISSED');
-                      setResolveResponsibleParty('NONE');
-                    }}
-                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition cursor-pointer ${
-                      resolveDecision === 'DISMISSED'
-                        ? 'bg-rose-50 border-rose-500 text-rose-800'
-                        : 'border-slate-200 text-slate-600'
-                    }`}
-                  >
-                    Bác Khiếu Nại (DISMISSED)
-                  </button>
+                <div className={`grid gap-2 ${canHandleReturns ? 'sm:grid-cols-2' : ''}`}>
+                  {([
+                    { id: 'RETURN', label: 'Duyệt trả hàng và hoàn tiền' },
+                    { id: 'DISMISS', label: 'Bác khiếu nại' },
+                  ] as const).filter((option) => option.id !== 'RETURN' || canHandleReturns).map((option) => (
+                    <button type="button" key={option.id} aria-pressed={resolveChoice === option.id}
+                      onClick={() => setResolveChoice(option.id)}
+                      className={'rounded-xl border px-3 py-2 text-xs font-bold ' +
+                        (resolveChoice === option.id ? 'border-indigo-500 bg-indigo-50 text-indigo-800' : 'border-slate-200 text-slate-600')}>
+                      {option.label}
+                    </button>
+                  ))}
                 </div>
               </div>
-
-              {resolveDecision === 'CONFIRMED' && (
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">Bên có lỗi / Chịu phí hoàn hàng:</label>
-                  <select
-                    value={resolveResponsibleParty}
-                    onChange={(e) => setResolveResponsibleParty(e.target.value as ResponsibleParty)}
-                    className="w-full p-2.5 bg-white border border-slate-200 rounded-xl font-bold text-xs"
-                  >
-                    <option value="SELLER">Người Bán (SELLER - Chịu phí vận chuyển hoàn)</option>
-                    <option value="BUYER">Người Mua (BUYER)</option>
-                    <option value="CARRIER">Đơn vị vận chuyển (CARRIER)</option>
-                    <option value="NONE">Không xác định (NONE)</option>
-                  </select>
-                </div>
-              )}
 
               <div>
                 <label className="font-bold text-slate-700 block mb-1">Căn cứ & Lý do phán quyết (Bắt buộc):</label>
                 <textarea
                   rows={4}
+                  maxLength={2000}
                   value={resolveReason}
                   onChange={(e) => setResolveReason(e.target.value)}
                   placeholder="Ghi rõ kết quả đối chiếu bằng chứng khui hàng và đóng gói giữa hai bên..."
@@ -1049,9 +1084,13 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
                 />
               </div>
 
-              <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-[11px] text-amber-900 leading-relaxed">
-                <strong>Lưu ý:</strong> Khi duyệt hoàn hàng, quyết định này không thể hoàn tác. Tiền hàng sẽ được giữ an toàn và chỉ hoàn cho Người Mua khi kiện hàng hoàn đã về tay Người Bán.
-              </div>
+              <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                {resolveChoice === 'RETURN'
+                  ? 'Người bán chịu trách nhiệm. Tiền hàng được hoàn sau khi hãng vận chuyển xác nhận đã giao hàng về người bán.'
+                  : sellerMissedDeadline
+                    ? 'Người mua giữ hàng. Hệ thống ghi nhận người bán quá hạn phản hồi.'
+                    : 'Người mua giữ hàng. Tiền hàng tiếp tục quy trình giải ngân khi đủ điều kiện.'}
+              </p>
             </div>
 
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">

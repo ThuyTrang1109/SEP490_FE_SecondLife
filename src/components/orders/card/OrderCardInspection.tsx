@@ -5,7 +5,7 @@ import { getOrderAppointmentRejection } from '../../../utils/orders/orderAppoint
 import type { OrderAppointment } from '../../../utils/orders/orderAppointments';
 import type { OrderCheck } from '../../../types/orders/orderTypes';
 import { buyerInspectionStageLabel, getInspectionPurchaseDecision } from '../../../utils/inspectionPurchase';
-import { getHubReturnState, getInboundShipmentProgress, getSellerHubReturnStage } from '../../../utils/inspectionCenterData';
+import { getHubReturnState, getInboundShipmentProgress, getSellerHubReturnStage, getLatestReturnShipment, getLatestBuyerDeliveryShipment } from '../../../utils/inspectionCenterData';
 import { getOrderAllShipments } from '../../../utils/orders/shipmentCache';
 import { getAtHomeDeliveryStage } from '../../../utils/orders/orderReceipt';
 import { getOrderSellerAddress } from '../../../pages/inspection-center/dispatch/orderContacts';
@@ -523,8 +523,8 @@ export function OrderCardInspection({
                 ? getHubReturnState(ordAllShipments).shipment
                 : ord.returnShipment);
               const leg2Shipment = isRejected
-                ? (ordAllShipments.find((s) => s.leg === 'CENTER_TO_SELLER' && s.status !== 'CANCELLED') || ordAllShipments.find((s) => s.leg === 'CENTER_TO_SELLER'))
-                : (ordAllShipments.find((s) => s.leg === 'CENTER_TO_BUYER' && s.status !== 'CANCELLED') || ordAllShipments.find((s) => s.leg === 'CENTER_TO_BUYER'));
+                ? getLatestReturnShipment(ordAllShipments)
+                : getLatestBuyerDeliveryShipment(ordAllShipments);
               const isLeg2Delivered = leg2Shipment?.status === 'DELIVERED' || ord.escrowStatus === 'COMPLETED_RELEASED';
               const isLeg2InTransit = leg2Shipment?.status === 'IN_TRANSIT' || leg2Shipment?.status === 'SHIPPED' || leg2Shipment?.status === 'PICKED_UP';
 
@@ -569,8 +569,12 @@ export function OrderCardInspection({
                                       ? (lang === 'vi' ? 'Chờ người bán xác nhận gửi hàng Chặng 1' : 'Awaiting Seller Confirmation for Leg 1')
                                       : isWaitingBuyerApproval
                                         ? (lang === 'vi' ? 'Chờ người mua xác nhận phương án chia phí' : 'Awaiting Buyer Confirmation')
-                                        : ordShipment && getInboundShipmentProgress(ordShipment, lang).step >= 1
-                                          ? (lang === 'vi' ? 'Đang thực hiện Chặng 1 đến Hub' : 'Leg 1 In Progress to Hub')
+                                        : ordShipment && (String(ordShipment.status).toUpperCase() === 'CANCELLED' || String(ordShipment.status).toUpperCase() === 'CANCELED' || String(ordShipment.providerStatus).toUpperCase() === 'CANCELLED' || String(ordShipment.providerStatus).toUpperCase() === 'CANCELED')
+                                          ? (lang === 'vi' ? 'Vận đơn Chặng 1 đến Hub đã hủy' : 'Leg 1 shipment to Hub cancelled')
+                                          : ordShipment && (String(ordShipment.status).toUpperCase() === 'FAILED' || String(ordShipment.providerStatus).toUpperCase() === 'FAILED' || String(ordShipment.providerStatus).toUpperCase() === 'REJECTED' || String(ordShipment.providerStatus).toUpperCase() === 'EXPIRED')
+                                            ? (lang === 'vi' ? 'Vận đơn Chặng 1 đến Hub thất bại' : 'Leg 1 shipment to Hub failed')
+                                            : ordShipment && getInboundShipmentProgress(ordShipment, lang).step !== null && getInboundShipmentProgress(ordShipment, lang).step >= 1
+                                              ? (lang === 'vi' ? 'Đang thực hiện Chặng 1 đến Hub' : 'Leg 1 In Progress to Hub')
                                           : isOrderSellerConfirmed(ord)
                                             ? (lang === 'vi' ? 'Đã xác nhận • Chờ gửi hàng Chặng 1 đến Hub' : 'Confirmed • Awaiting Leg 1 Dispatch')
                                             : (lang === 'vi' ? 'Chờ người bán xác nhận gửi hàng Chặng 1' : 'Awaiting Seller Confirmation for Leg 1')}
@@ -584,16 +588,30 @@ export function OrderCardInspection({
                     <div className="p-2.5 rounded-lg bg-white/90 border border-blue-200 text-blue-950 space-y-1">
                       <div className="flex items-center justify-between font-bold">
                         <span className="text-blue-700">📦 {lang === 'vi' ? 'Chặng 1: Gửi Hàng Đến Hub' : 'Leg 1: Send to Hub'}</span>
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold ${isWaitingFeePayment
-                          ? 'bg-amber-100 text-amber-800'
-                          : isWaitingSellerApproval || isWaitingBuyerApproval
-                            ? 'bg-slate-100 text-slate-700'
-                            : 'bg-blue-100 text-blue-800'
-                          }`}>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold ${(() => {
+                          if (isWaitingFeePayment) return 'bg-amber-100 text-amber-800';
+                          if (isWaitingSellerApproval || isWaitingBuyerApproval) return 'bg-slate-100 text-slate-700';
+                          if (ordShipment) {
+                            const inSt = String(ordShipment.status || '').toUpperCase();
+                            const inPr = String(ordShipment.providerStatus || '').toUpperCase();
+                            if (inSt === 'CANCELLED' || inSt === 'CANCELED' || inPr === 'CANCELLED' || inPr === 'CANCELED' || inSt === 'FAILED' || inPr === 'FAILED' || inPr === 'REJECTED' || inPr === 'EXPIRED') {
+                              return 'bg-rose-100 text-rose-800';
+                            }
+                          }
+                          return 'bg-blue-100 text-blue-800';
+                        })()}`}>
                           {(() => {
                             if (isWaitingFeePayment) return lang === 'vi' ? 'Chờ nộp phí' : 'Fee Pending';
                             if (isWaitingSellerApproval || isWaitingBuyerApproval) return lang === 'vi' ? 'Cần xác nhận' : 'Pending';
                             if (ordShipment) {
+                              const inSt = String(ordShipment.status || '').toUpperCase();
+                              const inPr = String(ordShipment.providerStatus || '').toUpperCase();
+                              if (inSt === 'CANCELLED' || inSt === 'CANCELED' || inPr === 'CANCELLED' || inPr === 'CANCELED') {
+                                return lang === 'vi' ? 'Đã hủy' : 'Cancelled';
+                              }
+                              if (inSt === 'FAILED' || inPr === 'FAILED' || inPr === 'REJECTED' || inPr === 'EXPIRED') {
+                                return lang === 'vi' ? 'Thất bại' : 'Failed';
+                              }
                               const p = getInboundShipmentProgress(ordShipment, lang);
                               if (p.step === 3) return lang === 'vi' ? 'Đã đến Hub' : 'Delivered to Hub';
                               if (p.step === 2) return lang === 'vi' ? 'Đang giao Hub' : 'In Transit';

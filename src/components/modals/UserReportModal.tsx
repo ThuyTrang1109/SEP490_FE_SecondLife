@@ -17,18 +17,30 @@ import {
 } from 'lucide-react';
 import {
   userReportService,
+  createReportRequestId,
   ReportReasonCode,
   CreateReportRequestDto,
   UserReportResponseDto
 } from '../../services/userReportService';
 import { orderService } from '../../services/orderService';
 import { OrderBackend } from '../../types';
+import { videoService } from '../../services/videoService';
+import { canOpenOrderDispute } from '../../utils/orders/orderDispute';
+import {
+  REPORT_EVIDENCE_IMAGE_MAX_MB,
+  REPORT_EVIDENCE_MAX_FILES,
+  REPORT_EVIDENCE_VIDEO_ACCEPT,
+  REPORT_EVIDENCE_VIDEO_MAX_MB,
+  REPORT_EVIDENCE_VIDEO_MAX_SECONDS,
+  validateReportEvidenceFiles,
+} from '../../utils/reportEvidenceLimits';
 
 interface UserReportModalProps {
   isOpen: boolean;
   onClose: () => void;
   postId?: string;
   orderId?: string;
+  shippingDeliveredAt?: string;
   itemTitle?: string;
   onSuccess?: (report?: UserReportResponseDto) => void;
   onNavigateToDisputes?: () => void;
@@ -46,11 +58,6 @@ const ORDER_REPORT_REASONS: { code: ReportReasonCode; label: string; desc: strin
     desc: 'Sản phẩm nhận được bị nứt vỡ, thiếu phụ kiện hoặc khác biệt hoàn toàn với tin đăng.',
   },
   {
-    code: 'ITEM_NOT_RECEIVED',
-    label: 'Chưa nhận được hàng',
-    desc: 'Đơn hàng quá hạn cam kết nhưng chưa nhận được sản phẩm từ người bán/vận chuyển.',
-  },
-  {
     code: 'COUNTERFEIT',
     label: 'Hàng giả / hàng nhái',
     desc: 'Sản phẩm không chính hãng, nghi ngờ hàng nhái hoặc vi phạm bản quyền.',
@@ -59,16 +66,6 @@ const ORDER_REPORT_REASONS: { code: ReportReasonCode; label: string; desc: strin
     code: 'FRAUD',
     label: 'Dấu hiệu lừa đảo / gian lận',
     desc: 'Yêu cầu chuyển tiền ngoài sàn, thông tin thanh toán gian lận hoặc mạo danh.',
-  },
-  {
-    code: 'LATE_HANDOVER',
-    label: 'Chậm bàn giao hàng hóa',
-    desc: 'Người bán không chịu gửi hàng đúng hạn cho đơn vị vận chuyển hoặc Hub kiểm định.',
-  },
-  {
-    code: 'SELLER_CANCELLATION',
-    label: 'Người bán tự ý hủy giao dịch',
-    desc: 'Hủy đơn vô cớ hoặc ép người mua hủy đơn ngoài hệ thống.',
   },
   {
     code: 'OTHER',
@@ -104,6 +101,7 @@ interface EvidenceThumbItemProps {
   url: string;
   idx: number;
   localPreview?: string;
+  isVideo?: boolean;
   onRemove: () => void;
 }
 
@@ -111,6 +109,7 @@ const EvidenceThumbItem: React.FC<EvidenceThumbItemProps> = ({
   url,
   idx,
   localPreview,
+  isVideo,
   onRemove,
 }) => {
   const [blobSrc, setBlobSrc] = useState<string | null>(localPreview || null);
@@ -150,6 +149,8 @@ const EvidenceThumbItem: React.FC<EvidenceThumbItemProps> = ({
           <Loader2 className="w-4 h-4 animate-spin text-[#c34c36]" />
           <span className="text-[9px] mt-1 font-medium">Tải...</span>
         </div>
+      ) : blobSrc && isVideo ? (
+        <video src={blobSrc} controls preload="metadata" className="w-full h-full object-contain" />
       ) : blobSrc ? (
         <img
           src={blobSrc}
@@ -186,6 +187,7 @@ export const UserReportModal: React.FC<UserReportModalProps> = ({
   onClose,
   postId,
   orderId,
+  shippingDeliveredAt,
   itemTitle,
   onSuccess,
   onNavigateToDisputes,
@@ -200,8 +202,15 @@ export const UserReportModal: React.FC<UserReportModalProps> = ({
   const [reasonCode, setReasonCode] = useState<ReportReasonCode>('MISLEADING_DESCRIPTION');
   const [description, setDescription] = useState('');
   const [evidenceUrls, setEvidenceUrls] = useState<string[]>([]);
+  const evidenceInputId = React.useId();
+  const requiresEvidence = targetType === 'ORDER';
+  const missingEvidence = requiresEvidence && evidenceUrls.length === 0;
   const [localPreviewMap, setLocalPreviewMap] = useState<Map<string, string>>(() => new Map());
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [videoEvidence, setVideoEvidence] = useState<string[]>([]);
+  const previewUrls = React.useRef(new Map<string, string>());
+  const pendingRequest = React.useRef<{ key: string; id: string } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
@@ -213,13 +222,10 @@ export const UserReportModal: React.FC<UserReportModalProps> = ({
     try {
       const res = await orderService.getBuyerOrders(0, 50);
       const list = res?.content || [];
-      // Lọc các đơn hàng đã thanh toán / ký quỹ (BE cấm khiếu nại đơn chưa thanh toán PENDING_PAYMENT)
-      const eligible = list.filter(
-        (o: OrderBackend) => o.status !== 'PENDING_PAYMENT' && (o as any).escrowStatus !== 'AWAITING_PAYMENT'
-      );
+      const eligible = list.filter((order) => canOpenOrderDispute(order));
       setBuyerOrders(eligible);
       if (eligible.length > 0) {
-        setSelectedOrderId((prev) => prev || eligible[0].id);
+        setSelectedOrderId((prev) => eligible.some((order) => order.id === prev) ? prev : eligible[0].id);
       }
     } catch (err: any) {
       console.warn('Lỗi tải danh sách đơn hàng đã mua từ BE:', err);
@@ -237,6 +243,8 @@ export const UserReportModal: React.FC<UserReportModalProps> = ({
       setDescription('');
       setEvidenceUrls([]);
       setLocalPreviewMap(new Map());
+      pendingRequest.current = null;
+      setVideoEvidence([]);
 
       if (orderId) {
         setTargetType('ORDER');
@@ -254,6 +262,11 @@ export const UserReportModal: React.FC<UserReportModalProps> = ({
         fetchBuyerOrders();
       }
     }
+  }, [isOpen, orderId, postId]);
+
+  useEffect(() => () => {
+    for (const src of previewUrls.current.values()) URL.revokeObjectURL(src);
+    previewUrls.current.clear();
   }, [isOpen, orderId, postId]);
 
   if (!isOpen) return null;
@@ -284,22 +297,24 @@ export const UserReportModal: React.FC<UserReportModalProps> = ({
     setErrorMessage(null);
 
     try {
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        if (file.size > 15 * 1024 * 1024) {
-          throw new Error(`File "${file.name}" vượt quá kích thước 15MB cho phép.`);
-        }
+      const accepted = await validateReportEvidenceFiles(Array.from(files), evidenceUrls.length, targetType === 'ORDER');
+      for (const file of accepted) {
+        const isVideo = file.type.startsWith('video/');
+        const uploaded = isVideo
+          ? await videoService.uploadVideoChunked(file, setUploadProgress)
+          : await userReportService.uploadEvidence(file);
         const localPreview = URL.createObjectURL(file);
-        const res = await userReportService.uploadEvidence(file);
-        if (res?.evidenceUrl) {
-          setLocalPreviewMap((prev) => new Map(prev).set(res.evidenceUrl, localPreview));
-          setEvidenceUrls((prev) => [...prev, res.evidenceUrl]);
-        }
+        previewUrls.current.set(uploaded.evidenceUrl, localPreview);
+        setLocalPreviewMap((previous) => new Map(previous).set(uploaded.evidenceUrl, localPreview));
+        if (isVideo) setVideoEvidence((previous) => [...previous, uploaded.evidenceUrl]);
+        setEvidenceUrls((previous) => [...previous, uploaded.evidenceUrl]);
+        setUploadProgress(null);
       }
     } catch (err: any) {
       setErrorMessage(err?.message || 'Không thể tải lên file bằng chứng.');
     } finally {
       setIsUploading(false);
+      setUploadProgress(null);
       e.target.value = '';
     }
   };
@@ -309,7 +324,8 @@ export const UserReportModal: React.FC<UserReportModalProps> = ({
     if (targetUrl && localPreviewMap.has(targetUrl)) {
       try {
         URL.revokeObjectURL(localPreviewMap.get(targetUrl)!);
-      } catch {}
+        previewUrls.current.delete(targetUrl);
+      } catch { }
       setLocalPreviewMap((prev) => {
         const next = new Map(prev);
         next.delete(targetUrl);
@@ -324,6 +340,7 @@ export const UserReportModal: React.FC<UserReportModalProps> = ({
       e.preventDefault();
       e.stopPropagation();
     }
+    if (isSubmitting || isUploading) return;
     setErrorMessage(null);
 
     const finalOrderId = targetType === 'ORDER' ? (orderId || selectedOrderId) : undefined;
@@ -332,6 +349,16 @@ export const UserReportModal: React.FC<UserReportModalProps> = ({
     if (targetType === 'ORDER' && !finalOrderId) {
       setErrorMessage('Vui lòng chọn đơn hàng cần tạo khiếu nại.');
       return;
+    }
+
+    if (targetType === 'ORDER') {
+      const candidate = orderId && shippingDeliveredAt
+        ? { status: 'DELIVERED', escrowStatus: 'HELD', shippingDeliveredAt }
+        : selectedOrderObj;
+      if (candidate && !canOpenOrderDispute(candidate)) {
+        setErrorMessage('Đơn hàng đã hết hạn khiếu nại. Hạn gửi là 48 giờ kể từ lúc giao thành công.');
+        return;
+      }
     }
 
     if (targetType === 'LISTING' && !finalPostId?.trim()) {
@@ -357,8 +384,18 @@ export const UserReportModal: React.FC<UserReportModalProps> = ({
       return;
     }
 
+    if (missingEvidence) {
+      setErrorMessage('Vui lòng đính kèm ít nhất 1 ảnh hoặc video bằng chứng để gửi khiếu nại.');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
+      const key = JSON.stringify([targetType, finalOrderId, finalPostId, reasonCode, description.trim(), evidenceUrls]);
+      if (pendingRequest.current?.key !== key) {
+        pendingRequest.current = { key, id: createReportRequestId() };
+      }
+      const requestId = pendingRequest.current.id;
       let res: UserReportResponseDto;
       if (targetType === 'LISTING' && finalPostId) {
         // Gọi API chuyên dụng báo cáo bài đăng: POST /api/v1/reports/listings/{postId}
@@ -371,24 +408,20 @@ export const UserReportModal: React.FC<UserReportModalProps> = ({
         }
 
         res = await userReportService.reportListing(finalPostId.trim(), {
+          requestId,
           reasonCode: listingReason,
           description: description.trim(),
           evidenceUrls,
         });
       } else {
         const payload: CreateReportRequestDto = {
+          requestId,
           orderId: finalOrderId,
           reasonCode,
           description: description.trim(),
           evidenceUrls,
         };
         res = await userReportService.createReport(payload);
-      }
-
-      if (finalOrderId) {
-        try {
-          localStorage.setItem(`order_disputed_${finalOrderId}`, 'true');
-        } catch { }
       }
 
       setSubmittedReport(res);
@@ -455,7 +488,7 @@ export const UserReportModal: React.FC<UserReportModalProps> = ({
                 Khiếu Nại Của Bạn Đã Được Ghi Nhận!
               </h4>
               <p className="text-xs text-slate-600 max-w-sm mx-auto leading-relaxed">
-                Đội ngũ Trọng tài & Trust & Safety của SecondLife sẽ thụ lý và phản hồi trong vòng <strong>24 giờ</strong>. Khoản thanh toán Escrow đang được bảo vệ an toàn.
+                Nhân viên SecondLife sẽ xem xét hồ sơ. Với khiếu nại đơn hàng hợp lệ, tiền hàng được giữ trong Escrow trong thời gian xử lý.
               </p>
             </div>
 
@@ -486,7 +519,7 @@ export const UserReportModal: React.FC<UserReportModalProps> = ({
               <div className="flex justify-between items-center text-[11px]">
                 <span className="text-slate-500 font-medium">Trạng thái:</span>
                 <span className="font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200 text-[10px]">
-                  Đang Chờ Xem Xét (OPEN)
+                  ĐANG CHỜ XEM XÉT
                 </span>
               </div>
             </div>
@@ -502,7 +535,7 @@ export const UserReportModal: React.FC<UserReportModalProps> = ({
                   className="flex-1 py-3 px-4 bg-[#24263e] hover:bg-[#1a1c2e] text-white rounded-xl font-bold text-xs shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <FileText className="w-4 h-4" />
-                  <span>Đến Trang Khiếu Nại Của Tôi</span>
+                  <span>Đến trang khiếu nại của tôi</span>
                   <ArrowRight className="w-3.5 h-3.5 ml-0.5" />
                 </button>
               )}
@@ -551,8 +584,8 @@ export const UserReportModal: React.FC<UserReportModalProps> = ({
                         type="button"
                         onClick={() => handleTargetTypeChange('ORDER')}
                         className={`flex-1 py-1.5 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${targetType === 'ORDER'
-                            ? 'bg-white text-[#24263e] shadow-sm'
-                            : 'text-slate-600 hover:text-slate-900'
+                          ? 'bg-white text-[#24263e] shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900'
                           }`}
                       >
                         <Package className="w-3.5 h-3.5 text-[#c34c36]" />
@@ -562,8 +595,8 @@ export const UserReportModal: React.FC<UserReportModalProps> = ({
                         type="button"
                         onClick={() => handleTargetTypeChange('LISTING')}
                         className={`flex-1 py-1.5 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${targetType === 'LISTING'
-                            ? 'bg-white text-[#24263e] shadow-sm'
-                            : 'text-slate-600 hover:text-slate-900'
+                          ? 'bg-white text-[#24263e] shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900'
                           }`}
                       >
                         <Layers className="w-3.5 h-3.5 text-blue-600" />
@@ -583,7 +616,7 @@ export const UserReportModal: React.FC<UserReportModalProps> = ({
                           </div>
                         ) : buyerOrders.length === 0 ? (
                           <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-[11px] leading-relaxed">
-                            Bạn chưa có đơn hàng nào đã thanh toán / ký quỹ để khiếu nại. (Chỉ áp dụng cho các đơn hàng đã thanh toán qua Escrow).
+                            Bạn chưa có đơn hàng đã giao thành công còn trong hạn khiếu nại 48 giờ và còn tiền trong Escrow.
                           </div>
                         ) : (
                           <div className="space-y-2">
@@ -674,10 +707,10 @@ export const UserReportModal: React.FC<UserReportModalProps> = ({
                   <label className="block font-bold text-slate-700 mb-1.5 flex items-center justify-between">
                     <span>Mô tả chi tiết vi phạm <span className="text-rose-500">*</span></span>
                     <span className={`text-[10px] font-semibold transition-colors ${description.trim().length === 0
-                        ? 'text-slate-400'
-                        : description.trim().length < 10
-                          ? 'text-amber-600 font-bold'
-                          : 'text-emerald-600'
+                      ? 'text-slate-400'
+                      : description.trim().length < 10
+                        ? 'text-amber-600 font-bold'
+                        : 'text-emerald-600'
                       }`}>
                       {description.trim().length}/2000 ký tự {
                         description.trim().length === 0
@@ -698,24 +731,28 @@ export const UserReportModal: React.FC<UserReportModalProps> = ({
                     }}
                     placeholder="Vui lòng cung cấp chi tiết sự việc, mốc thời gian, nội dung tin nhắn hoặc sai khác thực tế (tối thiểu 10 ký tự)..."
                     className={`w-full text-xs p-3 bg-slate-50 border rounded-xl focus:outline-none transition-colors leading-relaxed ${errorMessage && description.trim().length < 10
-                        ? 'border-rose-400 focus:border-rose-500 focus:ring-2 focus:ring-rose-200 bg-rose-50/20'
-                        : 'border-slate-200 focus:border-[#24263e]'
+                      ? 'border-rose-400 focus:border-rose-500 focus:ring-2 focus:ring-rose-200 bg-rose-50/20'
+                      : 'border-slate-200 focus:border-[#24263e]'
                       }`}
                   />
                 </div>
 
                 {/* D. PRIVATE EVIDENCE UPLOAD */}
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1.5 flex items-center justify-between">
-                    <span>Tải file bằng chứng của bạn</span>
-                    <span className="text-[10px] text-slate-400 font-normal">Tối đa 15MB/file</span>
+                  <label htmlFor={evidenceInputId} className="mb-1.5 flex items-center justify-between font-bold text-slate-700">
+                    <span>Tệp bằng chứng {requiresEvidence && <span className="text-rose-500">*</span>}</span>
+                    <span className="text-[10px] font-normal text-slate-500">
+                      {requiresEvidence ? `Từ 1 đến ${REPORT_EVIDENCE_MAX_FILES} tệp` : `Tối đa ${REPORT_EVIDENCE_MAX_FILES} tệp`}
+                    </span>
                   </label>
 
                   <div className="border border-dashed border-slate-300 rounded-2xl p-4 text-center hover:bg-slate-50 transition cursor-pointer relative">
                     <input
+                      id={evidenceInputId}
                       type="file"
+                      aria-required={requiresEvidence}
                       multiple
-                      accept="image/png,image/jpeg,image/webp,image/*"
+                      accept={targetType === 'ORDER' ? `image/png,image/jpeg,image/webp,${REPORT_EVIDENCE_VIDEO_ACCEPT}` : 'image/png,image/jpeg,image/webp'}
                       onChange={handleFileUpload}
                       disabled={isUploading}
                       className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
@@ -727,10 +764,11 @@ export const UserReportModal: React.FC<UserReportModalProps> = ({
                         <Upload className="w-6 h-6 text-slate-400" />
                       )}
                       <div className="text-[11px] font-bold text-slate-700">
-                        {isUploading ? 'Đang tải ảnh lên...' : 'Bấm để chọn file hoặc kéo thả ảnh vào đây'}
+                        {isUploading ? (uploadProgress == null ? 'Đang tải bằng chứng…' : 'Đang tải video · ' + Math.round(uploadProgress) + '%') : 'Bấm để chọn hoặc thả tệp vào đây'}
                       </div>
-                      <div className="text-[10px] text-slate-400">
-                        Hỗ trợ JPG, PNG, WEBP
+                      <div className="text-[10px] text-slate-500">
+                        Ảnh JPG, PNG, WebP dưới {REPORT_EVIDENCE_IMAGE_MAX_MB} MB
+                        {targetType === 'ORDER' && ` · Video MP4, WebM, MOV dưới ${REPORT_EVIDENCE_VIDEO_MAX_MB} MB và ${REPORT_EVIDENCE_VIDEO_MAX_SECONDS} giây`}
                       </div>
                     </div>
                   </div>
@@ -740,10 +778,10 @@ export const UserReportModal: React.FC<UserReportModalProps> = ({
                     <div className="mt-3 space-y-1.5">
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                          Ảnh đã tải lên ({evidenceUrls.length})
+                          Bằng chứng đã tải ({evidenceUrls.length})
                         </span>
                         <span className="text-[10px] text-slate-400">
-                          Nhấn ✕ trên ảnh để xóa
+                          Nhấn ✕ để gỡ tệp
                         </span>
                       </div>
                       <div className="flex flex-wrap gap-2.5 pt-0.5">
@@ -752,7 +790,7 @@ export const UserReportModal: React.FC<UserReportModalProps> = ({
                             key={`${url}-${idx}`}
                             url={url}
                             idx={idx}
-                            localPreview={localPreviewMap.get(url)}
+                            localPreview={localPreviewMap.get(url)} isVideo={videoEvidence.includes(url)}
                             onRemove={() => handleRemoveEvidence(idx)}
                           />
                         ))}
@@ -773,7 +811,7 @@ export const UserReportModal: React.FC<UserReportModalProps> = ({
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || isUploading || missingEvidence}
                   className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white rounded-xl font-black text-xs shadow-md transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}

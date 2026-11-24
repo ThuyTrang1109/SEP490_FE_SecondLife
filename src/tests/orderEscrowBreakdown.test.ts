@@ -30,7 +30,7 @@ function renderBreakdown(order: typeof purchase, inspectionOrder = inspection) {
 
 test('the paid at-home order shows the item and checkout delivery fee under its Escrow total', () => {
   const html = renderBreakdown(purchase);
-  assert.match(html, /Tổng tiền phong tỏa Escrow:<\/span><span[^>]*>498\.900\s*₫/);
+  assert.match(html, /Tổng tiền:<\/span><span[^>]*>498\.900\s*₫/);
   assert.match(html, /Tiền hàng<\/dt><dd[^>]*>420\.000\s*₫/);
   assert.match(html, /Cước giao hàng \(Người bán → Người mua\)<\/dt><dd[^>]*>78\.900\s*₫/);
 });

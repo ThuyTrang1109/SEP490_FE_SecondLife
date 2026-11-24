@@ -9,16 +9,28 @@ export function getOrderAllShipments(orderId?: string | null, linkedOrderId?: st
   try {
     const storage = window.localStorage || (typeof localStorage !== 'undefined' ? localStorage : null);
     if (!storage) return [];
+    const map = new Map<string, ShipmentBackend>();
     for (const id of ids) {
-      const raw = storage.getItem(`sl_order_shipments_${id}`) ||
-        storage.getItem(`order_shipments_${id}`) ||
-        storage.getItem(`sl_insp_shipments_${id}`);
-      if (raw) {
-        const list = JSON.parse(raw);
-        if (Array.isArray(list) && list.length > 0) {
-          return list;
+      for (const prefix of ['sl_order_shipments_', 'order_shipments_', 'sl_insp_shipments_']) {
+        const raw = storage.getItem(`${prefix}${id}`);
+        if (raw) {
+          try {
+            const list = JSON.parse(raw);
+            if (Array.isArray(list)) {
+              list.forEach((s) => {
+                const sid = s?.shipmentId || s?.id;
+                if (s && sid) {
+                  const key = String(sid);
+                  map.set(key, { ...map.get(key), shipmentId: key, ...s });
+                }
+              });
+            }
+          } catch { }
         }
       }
+    }
+    if (map.size > 0) {
+      return Array.from(map.values());
     }
   } catch { }
   return [];

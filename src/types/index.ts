@@ -195,6 +195,15 @@ export interface ShippingLeg {
   }[];
 }
 
+export interface OrderReturnInfo {
+  orderId: string;
+  reportId: string;
+  shipmentId?: string | null;
+  shipmentStatus?: string | null;
+  orderCode?: string | null;
+  refundedAt?: string | null;
+}
+
 export interface EscrowOrder {
   id: string;
   listingId: string;
@@ -260,9 +269,12 @@ export interface EscrowOrder {
   userReview?: ProductReview;
   backendStatus?: OrderBackendStatus;
   backendEscrowStatus?: EscrowStatusBackend;
+  hasActiveDispute?: boolean;
   status?: OrderBackendStatus | string | null;
   shippingQuoteId?: string;
   shippingDeliveredAt?: string;
+  orderReturn?: OrderReturnInfo | null;
+  shipments?: ShipmentBackend[];
   returnShipment?: ShipmentBackend | null;
   deliveryAddress?: any;
   sellerConfirmedAt?: string | null;
@@ -762,7 +774,7 @@ export interface Negotiation {
 // ==========================================
 // 3. Order & Escrow Types
 // ==========================================
-export type OrderStatusBackend = 'PENDING' | 'PENDING_PAYMENT' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'COMPLETED' | 'CANCELLED' | 'WAITING_SELLER_APPROVAL';
+export type OrderStatusBackend = 'PENDING' | 'PENDING_PAYMENT' | 'PROCESSING' | 'CONFIRMED' | 'SHIPPED' | 'DELIVERED' | 'COMPLETED' | 'CANCELLED' | 'WAITING_SELLER_APPROVAL';
 export type OrderBackendStatus = OrderStatusBackend | 'PASSED' | 'FAILED';
 export type EscrowStatusBackend = 'PENDING' | 'HELD' | 'RELEASED' | 'REFUNDED' | 'FROZEN';
 
@@ -886,6 +898,7 @@ export interface CreateShipmentRequestDto {
 
 export interface ShipmentBackend {
   shipmentId: string;
+  canRebook?: boolean;
   cashPayerId?: string | null;
   cashConfirmedAt?: string | null;
   cashPaidAmount?: number | null;

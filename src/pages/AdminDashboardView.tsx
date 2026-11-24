@@ -1239,7 +1239,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     },
     {
       id: 'system-wallet' as AdminTab,
-      label: lang === 'vi' ? 'VÍ HỆ THỐNG & ĐỐI SOÁT' : 'SYSTEM WALLET',
+      label: lang === 'vi' ? 'VÍ HỆ THỐNG' : 'SYSTEM WALLET',
       icon: Wallet,
       badge: null
     },
@@ -1251,7 +1251,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     },
     {
       id: 'inspection-governance' as AdminTab,
-      label: lang === 'vi' ? 'BIỂU PHÍ KIỂM ĐỊNH' : 'INSPECTION GOVERNANCE',
+      label: lang === 'vi' ? 'BIỂU PHÍ HỆ THỐNG' : 'INSPECTION GOVERNANCE',
       icon: ShieldCheck,
       badge: null
     }
@@ -1500,7 +1500,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   <span className="font-semibold text-slate-800 capitalize">
                     {activeTab === 'overview' ? 'Dashboard' : activeTab === 'orders'
                       ? (lang === 'vi' ? 'Quản lý đơn hàng' : 'Orders')
-                      : activeTab}
+                      : activeTab === 'inspection-governance'
+                        ? (lang === 'vi' ? 'Biểu phí kiểm định' : 'Inspection-Governance')
+                        : activeTab}
                   </span>
                 </div>
               </div>

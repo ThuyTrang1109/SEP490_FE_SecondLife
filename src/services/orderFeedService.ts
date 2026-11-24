@@ -1,12 +1,13 @@
 import { requestGet } from './apiClient';
 import type { InspectionOrderDto } from './inspectorService';
-import type { OrderBackend, SellerCommissionPreviewDTO } from '../types';
+import type { OrderBackend, OrderReturnInfo, SellerCommissionPreviewDTO } from '../types';
 import type { OrderFeedQuery, OrderFilterTab } from '../utils/escrowOrderFilters';
 
 export interface OrderFeedItem {
   order: OrderBackend | null;
   inspection: InspectionOrderDto | null;
   sellerCommissionPreview?: SellerCommissionPreviewDTO | null;
+  orderReturn?: OrderReturnInfo | null;
   buyerName: string | null;
   sellerName: string | null;
   postImageUrl: string | null;

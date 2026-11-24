@@ -11,7 +11,7 @@ import { useCenterShipments } from '../pages/inspection-center/orders/useCenterS
 import type { EscrowOrder, ShipmentBackend, UserProfile } from '../types';
 import { canReadCenterInspectionShipments, filterCenterApiOrders, getCenterDispatchStage, getInboundShipmentProgress, getLatestInboundShipment, hasCenterReceivedInbound, shouldTrackCenterInspectionShipments, shouldTrackInboundShipment } from '../utils/inspectionCenterData';
 import { canBookHubBuyerDelivery, getHubBuyerShipmentLabel, getLatestInspectionShipment, isPaidHubBuyerDelivery } from '../utils/inspectionCenterData';
-import { canAppealInspection, getHubReturnProgress, getHubReturnState, getReturnReserveMessage, isCenterReturnEligible, shouldSyncHubReturnOnOpen } from '../utils/inspectionCenterData';
+import { canAppealInspection, canBookCenterReturn, getHubReturnProgress, getHubReturnState, getReturnReserveMessage, isCenterReturnEligible, isHubReturnCase, shouldSyncHubReturnOnOpen, getLatestReturnShipment, getLatestBuyerDeliveryShipment } from '../utils/inspectionCenterData';
 import { isExpiredInspectionPurchase } from '../utils/inspectionPurchase';
 import { canSellerRebookShipment } from '../utils/lalamoveTracking';
 
@@ -154,6 +154,42 @@ test('a zero reserve still permits the assigned center to start a settled Hub re
   assert.equal(isCenterReturnEligible({ ...order, finalPaymentPaidAt: 'paid' }, 'a', 'inspection_center'), false);
 });
 
+test('inspection center can book return shipment when buyer expires 6h or rejects purchase even without feeSettledAt', () => {
+  const expiredTimeoutOrder: any = {
+    id: 'ord-expired-timeout-1',
+    postId: 'post-1',
+    orderType: 'AT_CENTER',
+    status: 'CANCELLED',
+    inspectionCenterId: 'hub-1',
+    feeSettledAt: null,
+    returnShippingReserveFee: 50000,
+    note: 'cc | Người mua không thanh toán tiền hàng trong vòng 6 giờ sau khi kiểm định đạt chuẩn.',
+    conditionScore: 85,
+  };
+
+  assert.equal(isHubReturnCase(expiredTimeoutOrder), true);
+  assert.equal(isCenterReturnEligible(expiredTimeoutOrder, 'hub-1', 'inspection_center'), true);
+  assert.equal(canBookCenterReturn(expiredTimeoutOrder, 'hub-1', 'inspection_center', undefined), true);
+  assert.equal(shouldTrackCenterInspectionShipments(expiredTimeoutOrder, 'hub-1', 'inspection_center'), true);
+
+  const buyerRejectedOrder: any = {
+    id: 'ord-buyer-rejected-1',
+    postId: 'post-2',
+    orderType: 'AT_CENTER',
+    status: 'CANCELLED',
+    inspectionCenterId: 'hub-1',
+    feeSettledAt: null,
+    returnShippingReserveFee: 50000,
+    note: 'Sản phẩm ổn | Người mua từ chối mua tiếp sau kiểm định. Lý do: Đổi ý',
+    conditionScore: 80,
+  };
+
+  assert.equal(isHubReturnCase(buyerRejectedOrder), true);
+  assert.equal(isCenterReturnEligible(buyerRejectedOrder, 'hub-1', 'inspection_center'), true);
+  assert.equal(canBookCenterReturn(buyerRejectedOrder, 'hub-1', 'inspection_center', undefined), true);
+  assert.equal(shouldTrackCenterInspectionShipments(buyerRejectedOrder, 'hub-1', 'inspection_center'), true);
+});
+
 test('return tracking retains an existing non-cancelled shipment, including uncertain creation', () => {
   const inbound = shipment('in', 'SELLER_TO_CENTER', 'DELIVERED');
   const uncertain = shipment('unknown', 'CENTER_TO_SELLER', 'CREATION_UNCERTAIN');
@@ -210,13 +246,13 @@ test('the shipment modal offers only the outbound action allowed by the inspecti
   const returnAction = /Tạo vận đơn trả người bán/;
   const paid = { status: 'DELIVERING_TO_BUYER', linkedOrderId: 'purchase', finalPaymentPaidAt: '2026-11-15T08:00:00Z' };
   const declined = { status: 'CANCELLED', note: 'Người mua từ chối mua tiếp sau kiểm định. Lý do: Đổi ý' };
+  const timeoutExpired = { status: 'CANCELLED', note: 'Người mua không thanh toán tiền hàng trong vòng 6 giờ sau khi kiểm định đạt chuẩn.' };
 
   for (const changes of [
     { status: 'INSPECTING' },
     { status: 'PASSED' },
     { status: 'DELIVERING_TO_BUYER', linkedOrderId: 'purchase' },
     { status: 'CANCELLED', note: 'Trung tâm đã hủy đơn' },
-    { status: 'CANCELLED', note: 'Người mua không thanh toán tiền hàng trong vòng 6 giờ sau khi kiểm định đạt chuẩn.' },
     { ...paid, orderType: 'AT_HOME' },
   ]) {
     const html = render(changes);
@@ -227,7 +263,7 @@ test('the shipment modal offers only the outbound action allowed by the inspecti
 
   assert.match(render(paid), buyerAction);
   assert.doesNotMatch(render(paid), returnAction);
-  for (const changes of [{ status: 'FAILED' }, declined]) {
+  for (const changes of [{ status: 'FAILED' }, declined, timeoutExpired]) {
     assert.match(render(changes), returnAction);
     assert.doesNotMatch(render(changes), buyerAction);
   }
@@ -424,4 +460,41 @@ test('getOrderAllShipments and 2-leg detail modal tracking work instantly withou
     centerOrder.orderType !== 'AT_HOME'
   );
   assert.equal(isDetailAtCenter, true);
+});
+
+test('getLatestReturnShipment prioritizes latest active return shipment over older failed ones', () => {
+  const oldFailedReturn = {
+    shipmentId: 'ship-1',
+    leg: 'CENTER_TO_SELLER',
+    orderCode: '3633580610872373597',
+    status: 'FAILED',
+    providerStatus: 'REJECTED',
+  } as ShipmentBackend;
+
+  const newActiveReturn = {
+    shipmentId: 'ship-2',
+    leg: 'CENTER_TO_SELLER',
+    orderCode: 'NEW_RETURN_8888',
+    status: 'ASSIGNED',
+    providerStatus: 'ASSIGNING_DRIVER',
+  } as ShipmentBackend;
+
+  // Given shipments in ascending creation order [oldFailedReturn, newActiveReturn]
+  const list = [oldFailedReturn, newActiveReturn];
+  const latest = getLatestReturnShipment(list);
+  assert.equal(latest?.orderCode, 'NEW_RETURN_8888');
+  assert.equal(latest?.status, 'ASSIGNED');
+
+  // When only old failed return exists
+  assert.equal(getLatestReturnShipment([oldFailedReturn])?.orderCode, '3633580610872373597');
+
+  // When multiple failed returns exist, returns the latest one
+  const newerFailed = {
+    shipmentId: 'ship-3',
+    leg: 'CENTER_TO_SELLER',
+    orderCode: 'FAILED_AGAIN_9999',
+    status: 'FAILED',
+    providerStatus: 'REJECTED',
+  } as ShipmentBackend;
+  assert.equal(getLatestReturnShipment([oldFailedReturn, newerFailed])?.orderCode, 'FAILED_AGAIN_9999');
 });

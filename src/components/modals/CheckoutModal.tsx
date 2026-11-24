@@ -52,7 +52,7 @@ import { LalamoveAddressPicker, getCityCoordinates, normalizeCityKey } from '../
 import { saveScopedLocalNotification } from '../../utils/notificationStorage';
 import { resolveListingCategory, resolveOrderListing } from '../../utils/catalogCache';
 import { translateSystemNotification } from '../../utils/systemNotificationTranslator';
-import { formatLalamoveVehicle } from '../../utils/lalamoveVehicle';
+import { formatLalamoveVehicle, formatShippingLeg } from '../../utils/lalamoveVehicle';
 
 export const parseLalamoveVehicleLimits = (text: string) => {
   if (!text) return [];
@@ -3323,34 +3323,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                             </button>
                           </div>
                         </div>
-
-                        {/* Compact Note & Email inputs */}
-                        <div className="pt-2 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                          <div>
-                            <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                              {lang === 'vi' ? 'Ghi chú cho tài xế Lalamove (tùy chọn)' : 'Delivery note (optional)'}
-                            </label>
-                            <input
-                              type="text"
-                              value={deliveryNote}
-                              onChange={(e) => setDeliveryNote(e.target.value)}
-                              placeholder={lang === 'vi' ? 'Ví dụ: Gọi trước 15 phút, nhà có thang máy...' : 'E.g., Call before delivery...'}
-                              className="w-full px-3 py-1.5 bg-[#faf8f5] border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#c34c36] transition"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                              {lang === 'vi' ? 'Email nhận chứng nhận Escrow & Hóa đơn' : 'Email for Escrow Certificate'}
-                            </label>
-                            <input
-                              type="email"
-                              value={buyerEmail}
-                              onChange={(e) => setBuyerEmail(e.target.value)}
-                              placeholder="email@domain.com"
-                              className="w-full px-3 py-1.5 bg-[#faf8f5] border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#c34c36] transition"
-                            />
-                          </div>
-                        </div>
                       </div>
                     ) : (
                       /* Empty state: User has NO saved address yet (lần đầu chưa có) */
@@ -3571,8 +3543,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                           <Truck className="w-4 h-4 text-emerald-700" />
                           <span className="font-extrabold">Báo Giá Vận Chuyển Lalamove</span>
                         </div>
-                        <span className="font-mono text-[11px] bg-emerald-200/80 px-2 py-0.5 rounded text-emerald-900 font-semibold">
-                          Chặng: {ghnQuote.leg || 'SELLER_TO_BUYER'}
+                        <span className="text-[11px] bg-emerald-200/80 px-2.5 py-0.5 rounded-md text-emerald-900 font-bold">
+                          Chặng: {formatShippingLeg(ghnQuote.leg)}
                         </span>
                       </div>
 
@@ -3630,11 +3602,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                                       <span className="font-extrabold text-xs text-slate-900">
                                         Phương tiện: {displayVehicle.name}
                                       </span>
-                                      {ghnQuote.serviceType && (
-                                        <span className="font-mono text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded font-semibold border border-slate-200">
-                                          {ghnQuote.serviceType}
-                                        </span>
-                                      )}
                                     </div>
                                     <p className="text-[11px] text-slate-600 mt-0.5 leading-snug">
                                       {displayVehicle.desc}
@@ -3664,19 +3631,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         );
                       })()}
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
-                        <div className="p-2.5 bg-white/70 rounded-xl border border-emerald-100 space-y-0.5">
-                          <span className="text-emerald-700 font-medium block">Phí giao Lalamove (Người mua trả):</span>
-                          <strong className="text-emerald-950 text-sm font-black">{formatVND(ghnQuote.shippingFee)}</strong>
-                        </div>
-                        <div className="p-2.5 bg-white/70 rounded-xl border border-emerald-100 space-y-0.5">
-                          <span className="text-emerald-700 font-medium block">Thời gian dự kiến:</span>
-                          <strong className="text-emerald-950 text-xs font-bold">
-                            {ghnQuote.expectedDeliveryTime
-                              ? new Date(ghnQuote.expectedDeliveryTime).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' })
-                              : 'Chưa có dự kiến giao hàng'}
-                          </strong>
-                        </div>
+                      <div className="p-3 bg-white/80 rounded-xl border border-emerald-200 flex items-center justify-between text-xs">
+                        <span className="text-emerald-800 font-bold">Phí giao hàng:</span>
+                        <strong className="text-emerald-950 text-base font-black">{formatVND(ghnQuote.shippingFee)}</strong>
                       </div>
                     </div>
                   )}
@@ -3927,7 +3884,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     </div>
 
                     <div className="flex justify-between text-slate-600 text-[11px] items-center">
-                      <span>{lang === 'vi' ? 'Phí giao hàng Lalamove On-Demand:' : 'Lalamove Shipping Fee:'}</span>
+                      <span>{lang === 'vi' ? 'Phí giao hàng:' : 'Lalamove Shipping Fee:'}</span>
                       <div className="text-right">
                         {quoteLoading ? (
                           <button

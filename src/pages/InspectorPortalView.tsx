@@ -71,6 +71,73 @@ import {
 } from '../services';
 import { canInspectorCheckIn, getOrderScheduledAppointmentTime } from '../utils/inspectionAppointmentTime';
 
+export const getOrderTimestamp = (ord: any): number => {
+  if (!ord) return 0;
+  const val =
+    ord.createdAt ||
+    ord.appointmentScheduledAt ||
+    ord.updatedAt ||
+    ord.inspectedAt ||
+    ord.inspectionReport?.inspectedAt ||
+    ord.inspectionReport?.completedAt ||
+    ord.listing?.createdAt ||
+    ord.sellerPaidAt ||
+    ord.buyerPaidAt ||
+    ord.orderDate ||
+    ord.createdDate;
+
+  if (!val) return 0;
+  if (typeof val === 'number') return val;
+  if (val instanceof Date) {
+    const t = val.getTime();
+    return isNaN(t) ? 0 : t;
+  }
+  if (Array.isArray(val)) {
+    return new Date(
+      Date.UTC(
+        val[0] || 1970,
+        (val[1] || 1) - 1,
+        val[2] || 1,
+        val[3] || 0,
+        val[4] || 0,
+        val[5] || 0
+      )
+    ).getTime();
+  }
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    const t = Date.parse(trimmed);
+    if (!isNaN(t)) return t;
+    const isoLike = trimmed.match(
+      /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T\s](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/
+    );
+    if (isoLike) {
+      return new Date(
+        parseInt(isoLike[1], 10),
+        parseInt(isoLike[2], 10) - 1,
+        parseInt(isoLike[3], 10),
+        isoLike[4] ? parseInt(isoLike[4], 10) : 0,
+        isoLike[5] ? parseInt(isoLike[5], 10) : 0,
+        isoLike[6] ? parseInt(isoLike[6], 10) : 0
+      ).getTime();
+    }
+    const dmy = trimmed.match(
+      /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/
+    );
+    if (dmy) {
+      return new Date(
+        parseInt(dmy[3], 10),
+        parseInt(dmy[2], 10) - 1,
+        parseInt(dmy[1], 10),
+        dmy[4] ? parseInt(dmy[4], 10) : 0,
+        dmy[5] ? parseInt(dmy[5], 10) : 0,
+        dmy[6] ? parseInt(dmy[6], 10) : 0
+      ).getTime();
+    }
+  }
+  return 0;
+};
+
 interface InspectorPortalViewProps {
   orders: EscrowOrder[];
   currentUser?: UserProfile | null;
@@ -199,7 +266,15 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
     setIsLoadingBackendOrders(true);
     try {
       const orders = await inspectorService.getMyOrders();
-      setBackendOrders(orders);
+      const sorted = Array.isArray(orders)
+        ? [...orders].sort((a, b) => {
+            const timeA = getOrderTimestamp(a);
+            const timeB = getOrderTimestamp(b);
+            if (timeB !== timeA) return timeB - timeA;
+            return (b.id || '').localeCompare(a.id || '');
+          })
+        : [];
+      setBackendOrders(sorted);
     } catch (err) {
       console.warn('Lỗi tải danh sách đơn từ backend:', err);
     } finally {
@@ -369,6 +444,8 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
         return {
           ...existing,
           ...inspectionFields,
+          createdAt: bo.createdAt || existing.createdAt || new Date().toISOString(),
+          updatedAt: bo.updatedAt || existing.updatedAt || bo.createdAt || existing.createdAt,
           buyerName: bo.buyerName || existing.buyerName,
           sellerName: bo.sellerName || existing.sellerName,
           listing: existing.listing ? {
@@ -400,7 +477,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
           sellerCompletedOrders: 0,
           sellerVerified: true,
           status: 'ACTIVE' as any,
-          createdAt: bo.appointmentScheduledAt || new Date().toISOString(),
+          createdAt: bo.createdAt || bo.appointmentScheduledAt || new Date().toISOString(),
           isInspectionGuaranteed: true,
           requiresInspection: true,
           photos: {
@@ -433,7 +510,8 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
         multiStagePhotos: {
           listingPhotos: bo.postImageUrls || (bo.postImageUrl ? [bo.postImageUrl] : [fallbackFront]),
         },
-        createdAt: bo.appointmentScheduledAt || new Date().toISOString(),
+        createdAt: bo.createdAt || bo.appointmentScheduledAt || new Date().toISOString(),
+        updatedAt: bo.updatedAt || bo.createdAt || bo.appointmentScheduledAt || new Date().toISOString(),
         deliveryAddress: 'TP. Hồ Chí Minh',
         deliveryOption: 'INSPECTION',
       } as unknown as EscrowOrder;
@@ -562,7 +640,12 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
       }
     }
 
-    result.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+    result.sort((a, b) => {
+      const timeA = getOrderTimestamp(a);
+      const timeB = getOrderTimestamp(b);
+      if (timeB !== timeA) return timeB - timeA;
+      return (b.id || '').localeCompare(a.id || '');
+    });
     return result;
   }, [backendOrders, currentUser, orders, savedResults, selectedOrderId]);
 
@@ -590,7 +673,16 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
 
   const assignedCount = effectiveOrders.length;
   const atHomeCount = effectiveOrders.filter((o) => o.inspectionMethod === 'AT_HOME').length;
-  const completedOrders = effectiveOrders.filter((order) => order.inspectionReport);
+  const completedOrders = useMemo(() => {
+    const list = effectiveOrders.filter((order) => order.inspectionReport);
+    list.sort((a, b) => {
+      const timeA = getOrderTimestamp(a);
+      const timeB = getOrderTimestamp(b);
+      if (timeB !== timeA) return timeB - timeA;
+      return (b.id || '').localeCompare(a.id || '');
+    });
+    return list;
+  }, [effectiveOrders]);
   const completedCount = effectiveOrders.filter((order) => getInspectionTaskStage(order.inspectionStatus) === 'completed').length;
   const inProgressCount = effectiveOrders.filter((order) => {
     const stage = getInspectionTaskStage(order.inspectionStatus);
@@ -601,7 +693,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
 
   // --- FILTERED TASKS FOR TAB 2 ---
   const filteredTasks = useMemo(() => {
-    return effectiveOrders.filter((o) => {
+    const list = effectiveOrders.filter((o) => {
       const isAtHome = o.inspectionMethod === 'AT_HOME';
       const stage = getInspectionTaskStage(o.inspectionStatus);
 
@@ -620,6 +712,15 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
       }
       return true;
     });
+
+    list.sort((a, b) => {
+      const timeA = getOrderTimestamp(a);
+      const timeB = getOrderTimestamp(b);
+      if (timeB !== timeA) return timeB - timeA;
+      return (b.id || '').localeCompare(a.id || '');
+    });
+
+    return list;
   }, [effectiveOrders, taskFilter, taskSearchTerm]);
 
   // Handle Barcode Scan

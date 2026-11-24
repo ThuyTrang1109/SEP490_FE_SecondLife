@@ -39,7 +39,7 @@ import { sellerCreditService, CreditBalanceResponseDto } from '../services/selle
 import { mediaService } from '../services/mediaService';
 import { postService } from '../services/postService';
 import { walletService } from '../services/walletService';
-import { reputationService, SellerReputationDto, ReputationHistoryDto, getAssessmentStatusMeta, getReputationWarningMeta, getReputationEventMeta } from '../services/reputationService';
+import { reputationService, SellerReputationDto, ReputationHistoryDto, getAssessmentStatusMeta, getReputationWarningMeta, getReputationEventMeta, formatReputationReason, formatFormulaVersion } from '../services/reputationService';
 import { reviewService } from '../data/mockReviews';
 import { SellerReviewsModal } from '../components/modals/SellerReviewsModal';
 import { translateSystemNotification } from '../utils/systemNotificationTranslator';
@@ -48,7 +48,6 @@ import { extractWardAndCity, cleanFullAddress } from '../utils/addressUtils';
 import { dialogService } from '../utils/dialogService';
 import { resolveCategoryAndItem } from '../utils/catalogCache';
 import { isListingInspectionPassed } from '../utils/listingInspection';
-import { SellerDisputeResponseModal } from '../components/seller/SellerDisputeResponseModal';
 import { UserAvatar } from '../components/common/UserAvatar';
 import { PreListingInspectionWorkflow } from '../components/listing/PreListingInspectionWorkflow';
 import { DigitalInspectionCertificateModal } from '../components/modals/DigitalInspectionCertificateModal';
@@ -332,10 +331,6 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
   };
 
   const [sellerActiveTab, setSellerActiveTab] = useState<'listings' | 'high_value_inspections'>('listings');
-  const [disputeModalReportId, setDisputeModalReportId] = useState<string | null>(null);
-  const [disputeModalOrderId, setDisputeModalOrderId] = useState<string | null>(null);
-  const [isDisputeModalOpen, setIsDisputeModalOpen] = useState(false);
-
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -346,13 +341,6 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
         setSellerActiveTab('listings');
       }
 
-      const rId = params.get('reportId') || params.get('report_id');
-      const oId = params.get('orderId') || params.get('order_id');
-      if (rId) {
-        setDisputeModalReportId(rId);
-        if (oId) setDisputeModalOrderId(oId);
-        setIsDisputeModalOpen(true);
-      }
     }
   }, []);
 
@@ -383,23 +371,44 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
   const [isLoadingReputationHistory, setIsLoadingReputationHistory] = useState(false);
   const [isReloadingReputation, setIsReloadingReputation] = useState(false);
   const [showViolationWarning, setShowViolationWarning] = useState(true);
+  const [showModalViolationWarning, setShowModalViolationWarning] = useState(true);
+  const [reputationPage, setReputationPage] = useState(0);
+  const REPUTATION_PAGE_SIZE = 10;
+
+  const totalReputationPages = Math.max(1, Math.ceil(reputationHistoryItems.length / REPUTATION_PAGE_SIZE));
+  const safeReputationPage = Math.min(reputationPage, totalReputationPages - 1);
+  const paginatedReputationItems = useMemo(() => {
+    const start = safeReputationPage * REPUTATION_PAGE_SIZE;
+    return reputationHistoryItems.slice(start, start + REPUTATION_PAGE_SIZE);
+  }, [reputationHistoryItems, safeReputationPage]);
 
   useEffect(() => {
     if (myReputation?.sellingRestricted || myReputation?.warningCode) {
       setShowViolationWarning(true);
       const timer = setTimeout(() => {
         setShowViolationWarning(false);
-      }, 15000);
+      }, 5000);
       return () => clearTimeout(timer);
     }
   }, [myReputation?.sellingRestricted, myReputation?.warningCode]);
 
+  useEffect(() => {
+    if (isReputationHistoryOpen && (myReputation?.sellingRestricted || myReputation?.warningCode)) {
+      setShowModalViolationWarning(true);
+      const timer = setTimeout(() => {
+        setShowModalViolationWarning(false);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [isReputationHistoryOpen, myReputation?.sellingRestricted, myReputation?.warningCode]);
+
   const handleRefreshReputation = async () => {
     setIsReloadingReputation(true);
+    setReputationPage(0);
     try {
       const [rep, historyRes] = await Promise.all([
         reputationService.getMyReputation(),
-        reputationService.getMyReputationHistory(0, 30),
+        reputationService.getMyReputationHistory(0, 100),
       ]);
       if (rep) setMyReputation(rep);
       setReputationHistoryItems(historyRes.items || []);
@@ -413,10 +422,11 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
   const handleOpenReputationHistory = async () => {
     setIsReputationHistoryOpen(true);
     setIsLoadingReputationHistory(true);
+    setReputationPage(0);
     try {
       const [rep, res] = await Promise.all([
         reputationService.getMyReputation(),
-        reputationService.getMyReputationHistory(0, 30),
+        reputationService.getMyReputationHistory(0, 100),
       ]);
       if (rep) setMyReputation(rep);
       setReputationHistoryItems(res.items || []);
@@ -570,7 +580,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
         .catch(() => { });
 
       const res = await postService.getMyPosts(0, 50);
-      const posts = (res as any)?.content || (res as any)?.data || (Array.isArray(res) ? res : []);
+      const posts = (res as any)?.items || (res as any)?.data?.items || (res as any)?.content || (res as any)?.data || (Array.isArray(res) ? res : []);
       if (posts && posts.length > 0) {
         const mapped: Listing[] = posts.map((p: any) => {
           const rawImages: string[] = Array.isArray(p.imageUrls) && p.imageUrls.length > 0
@@ -583,6 +593,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
           const loc = extractWardAndCity(sellerAddr);
 
           const isDraft = p.status === 'DRAFT';
+          const isSold = String(p.status || '').toUpperCase() === 'SOLD';
           const isAwaitingInspectionPublication = p.status === 'PENDING_INSPECTION' || p.status === 'READY_TO_PUBLISH';
           const draftTitle = p.title || (isDraft ? 'Bản nháp sản phẩm' : 'Thiết bị gia dụng SecondLife');
           const draftDesc = p.description || p.aiDescription || '';
@@ -629,13 +640,17 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
               isAwaitingInspectionPublication ? 'pending_inspection'
                 : localStorage.getItem(`listing_available_${p.postId || p.id}`) === 'true'
                   ? 'active'
-                  : (getBoughtListingIds().has(String(p.postId || p.id)) ? 'reserved' : (p.status === 'ACTIVE' ? 'active' : p.status === 'DRAFT' ? 'draft' : 'reserved'))
+                  : isSold
+                    ? 'sold'
+                    : (getBoughtListingIds().has(String(p.postId || p.id)) ? 'reserved' : (p.status === 'ACTIVE' ? 'active' : p.status === 'DRAFT' ? 'draft' : p.status === 'REJECTED' ? 'rejected' : 'reserved'))
             ) as any,
             backendStatus: (
               isAwaitingInspectionPublication ? p.status
                 : localStorage.getItem(`listing_available_${p.postId || p.id}`) === 'true'
                   ? 'ACTIVE'
-                  : (getBoughtListingIds().has(String(p.postId || p.id)) ? 'RESERVED' : p.status)
+                  : isSold
+                    ? 'SOLD'
+                    : (getBoughtListingIds().has(String(p.postId || p.id)) ? 'RESERVED' : p.status)
             ),
             rejectionReason: p.rejectionReason,
             createdAt: p.createdAt || p.createdDate || p.created_at || p.publishedAt || p.updatedAt || new Date().toISOString(),
@@ -940,6 +955,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       if (filterStatus === 'reserved') {
         const isExplicitlyAvail = localStorage.getItem(`listing_available_${l.id}`) === 'true';
         if (isExplicitlyAvail) return false;
+        if (l.backendStatus === 'SOLD' || l.status === 'sold') return false;
         return getBoughtListingIds().has(String(l.id)) || l.backendStatus === 'RESERVED' || l.status === 'reserved';
       }
       if (filterStatus === 'sold') {
@@ -1971,9 +1987,20 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                 const isActive = filterStatus === st;
                 const count = normalListings.filter(item => {
                   if (st === 'ALL') return true;
-                  if (st === 'active') return item.status === 'active' || item.backendStatus === 'ACTIVE';
+                  if (st === 'active') {
+                    const isExplicitlyAvail = localStorage.getItem(`listing_available_${item.id}`) === 'true';
+                    if (!isExplicitlyAvail && (getBoughtListingIds().has(String(item.id)) || item.backendStatus === 'RESERVED' || item.backendStatus === 'SOLD' || item.status === 'reserved' || item.status === 'sold')) {
+                      return false;
+                    }
+                    return item.status === 'active' || item.backendStatus === 'ACTIVE' || isExplicitlyAvail;
+                  }
                   if (st === 'draft') return item.backendStatus === 'DRAFT' || item.status === 'draft';
-                  if (st === 'reserved') return item.status === 'reserved' || item.backendStatus === 'RESERVED';
+                  if (st === 'reserved') {
+                    const isExplicitlyAvail = localStorage.getItem(`listing_available_${item.id}`) === 'true';
+                    if (isExplicitlyAvail) return false;
+                    if (item.backendStatus === 'SOLD' || item.status === 'sold') return false;
+                    return item.status === 'reserved' || item.backendStatus === 'RESERVED' || getBoughtListingIds().has(String(item.id));
+                  }
                   if (st === 'sold') return item.status === 'sold' || item.backendStatus === 'SOLD';
                   if (st === 'rejected') return item.backendStatus === 'REJECTED' || item.status === 'rejected';
                   return true;
@@ -2040,17 +2067,21 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                           ? 'bg-rose-600 text-white'
                           : item.backendStatus === 'DRAFT' || item.status === 'draft'
                             ? 'bg-slate-500 text-white'
-                            : item.status === 'active'
-                              ? 'bg-[#24263e] text-white'
-                              : 'bg-[#c34c36] text-white'
+                            : item.status === 'sold' || item.backendStatus === 'SOLD'
+                              ? 'bg-slate-700 text-white'
+                              : item.status === 'active'
+                                ? 'bg-[#24263e] text-white'
+                                : 'bg-[#c34c36] text-white'
                           }`}>
                           {item.backendStatus === 'REJECTED'
                             ? (lang === 'vi' ? '● Bị Từ Chối' : '● Rejected')
                             : item.backendStatus === 'DRAFT' || item.status === 'draft'
                               ? (lang === 'vi' ? '● Bản Nháp' : '● Draft')
-                              : item.status === 'active'
-                                ? (lang === 'vi' ? '● Đang bán' : '● Active')
-                                : (lang === 'vi' ? '● Đã Cọc Ký Quỹ' : '● Escrow Deposited')}
+                              : item.status === 'sold' || item.backendStatus === 'SOLD'
+                                ? (lang === 'vi' ? '● Đã bán' : '● Sold')
+                                : item.status === 'active'
+                                  ? (lang === 'vi' ? '● Đang bán' : '● Active')
+                                  : (lang === 'vi' ? '● Đã Cọc Ký Quỹ' : '● Escrow Deposited')}
                         </span>
                         {isListingInspectionPassed(item) && (
                           <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-600 text-white shadow-2xs">
@@ -2219,23 +2250,6 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             </div>
           )}
         </div>
-      )}
-
-      {/* Seller Dispute Response Modal */}
-      {isDisputeModalOpen && disputeModalReportId && (
-        <SellerDisputeResponseModal
-          isOpen={isDisputeModalOpen}
-          onClose={() => {
-            setIsDisputeModalOpen(false);
-            setDisputeModalReportId(null);
-            setDisputeModalOrderId(null);
-          }}
-          reportId={disputeModalReportId}
-          orderId={disputeModalOrderId || undefined}
-          onSuccess={() => {
-            fetchSellerData();
-          }}
-        />
       )}
 
       {/* Payout / Withdrawal Modal */}
@@ -2557,40 +2571,40 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       {/* Modal: Uy Tín Của Tôi & Lịch Sử Biến Động (GET /api/v1/seller/reputation/me & /history) */}
       {isReputationHistoryOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
-          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 space-y-4 border border-slate-200 shadow-2xl text-[#24263e] max-h-[90vh] flex flex-col">
+          <div className="bg-white rounded-3xl max-w-3xl sm:max-w-4xl w-full p-6 sm:p-7 space-y-4 border border-slate-200 shadow-2xl text-[#24263e] max-h-[92vh] flex flex-col">
             {/* Header */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-3 shrink-0">
-              <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center font-black">
-                  <Award className="w-5 h-5 text-amber-600" />
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center font-black shadow-xs">
+                  <Award className="w-6 h-6 text-amber-600" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h4 className="font-extrabold text-base text-slate-900">
+                    <h4 className="font-extrabold text-lg text-slate-900 tracking-tight">
                       {lang === 'vi' ? 'UY TÍN CỦA TÔI' : 'MY REPUTATION'}
                     </h4>
                     {(() => {
                       const statusMeta = getAssessmentStatusMeta(myReputation?.assessmentStatus);
                       return (
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${statusMeta.badgeClass}`}>
+                        <span className={`text-[11px] px-2.5 py-0.5 rounded-full font-bold border ${statusMeta.badgeClass}`}>
                           {statusMeta.label}
                         </span>
                       );
                     })()}
                   </div>
-                  <p className="text-[11px] text-slate-500">
+                  <p className="text-xs text-slate-500 mt-0.5">
                     {lang === 'vi'
-                      ? 'Đánh giá dựa trên tỷ lệ giao dịch thành công (GOOD/evaluatedOrders) và trừ điểm vi phạm/trễ hạn'
+                      ? 'Đánh giá dựa trên tỷ lệ giao dịch thành công và trừ điểm vi phạm hoặc trễ hạn xác nhận'
                       : 'Evaluated on completed transaction success rate and penalty deductions'}
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={handleRefreshReputation}
                   disabled={isReloadingReputation}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold transition cursor-pointer disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold transition cursor-pointer disabled:opacity-50 shadow-xs"
                   title="Tải lại số liệu mới nhất từ server"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isReloadingReputation ? 'animate-spin text-[#c34c36]' : ''}`} />
@@ -2599,7 +2613,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsReputationHistoryOpen(false)}
-                  className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  className="p-2 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 cursor-pointer transition"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -2608,45 +2622,65 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
 
             {/* Modal Body: Scrollable */}
             <div className="space-y-4 overflow-y-auto pr-1">
-              {/* Cảnh báo ưu tiên nếu có */}
-              {myReputation?.sellingRestricted ? (
-                <div className="p-3 rounded-2xl bg-rose-50 border border-rose-300 text-rose-900 text-xs flex items-start gap-2.5">
-                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-bold block">Tài khoản đang bị hạn chế bán hàng</span>
-                    <span className="text-[11px] text-rose-700">Quyền đăng tin đang tạm khóa. Vui lòng hoàn tất xử lý đơn và liên hệ Quản trị viên.</span>
+              {/* Cảnh báo ưu tiên nếu có (hiển thị 5 giây rồi tự ẩn) */}
+              {showModalViolationWarning && (myReputation?.sellingRestricted ? (
+                <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-300 text-rose-900 text-xs flex items-start justify-between gap-2.5 animate-fadeIn">
+                  <div className="flex items-start gap-2.5">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold block">Tài khoản đang bị hạn chế bán hàng</span>
+                      <span className="text-[11px] text-rose-700">Quyền đăng tin đang tạm khóa. Vui lòng hoàn tất xử lý đơn và liên hệ Quản trị viên.</span>
+                    </div>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowModalViolationWarning(false)}
+                    className="text-rose-500 hover:text-rose-800 p-1 text-xs cursor-pointer"
+                    title="Đóng thông báo"
+                  >
+                    ✕
+                  </button>
                 </div>
               ) : myReputation?.warningCode ? (
                 (() => {
                   const warnMeta = getReputationWarningMeta(myReputation.warningCode);
                   if (!warnMeta) return null;
                   return (
-                    <div className={`p-3 rounded-2xl border text-xs flex items-start gap-2.5 ${warnMeta.badgeClass}`}>
-                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                      <div>
-                        <span className="font-bold block">{warnMeta.title}</span>
-                        <span className="text-[11px] opacity-90">{warnMeta.desc}</span>
+                    <div className={`p-3.5 rounded-2xl border text-xs flex items-start justify-between gap-2.5 animate-fadeIn ${warnMeta.badgeClass}`}>
+                      <div className="flex items-start gap-2.5">
+                        <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                        <div>
+                          <span className="font-bold block">{warnMeta.title}</span>
+                          <span className="text-[11px] opacity-90">{warnMeta.desc}</span>
+                        </div>
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowModalViolationWarning(false)}
+                        className="hover:opacity-80 p-1 text-xs cursor-pointer"
+                        title="Đóng thông báo"
+                      >
+                        ✕
+                      </button>
                     </div>
                   );
                 })()
-              ) : null}
+              ) : null)}
 
               {/* Main Score Hero Card */}
-              <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-900 to-[#24263e] text-white shadow-md">
+              <div className="p-5 rounded-2xl bg-gradient-to-br from-slate-900 to-[#24263e] text-white shadow-md">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div>
-                    <span className="text-[11px] uppercase tracking-wider text-slate-300 font-bold block">
+                    <span className="text-xs uppercase tracking-wider text-slate-300 font-bold block">
                       Điểm Uy Tín Tổng Kết
                     </span>
-                    <div className="flex items-baseline gap-2 mt-0.5">
-                      <span className="text-3xl sm:text-4xl font-black text-amber-300 font-mono">
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <span className="text-4xl sm:text-5xl font-black text-amber-300 font-mono">
                         {myReputation?.score !== null && myReputation?.score !== undefined
                           ? myReputation.score
                           : '—'}
                       </span>
-                      <span className="text-sm font-bold text-slate-300">/ 100</span>
+                      <span className="text-base font-bold text-slate-300">/ 100</span>
                       {myReputation?.score === null && (
                         <span className="text-xs font-medium text-slate-300 ml-2">
                           (Chưa có đơn hàng kết thúc)
@@ -2655,18 +2689,18 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 text-right">
-                    <div className="bg-white/10 px-3 py-2 rounded-xl backdrop-blur-xs">
-                      <span className="text-[10px] text-slate-300 block font-semibold">Điểm giao dịch</span>
-                      <span className="text-base font-black text-emerald-400 font-mono">
+                  <div className="grid grid-cols-2 gap-2.5 text-right">
+                    <div className="bg-white/10 px-3.5 py-2.5 rounded-xl backdrop-blur-xs">
+                      <span className="text-[11px] text-slate-300 block font-semibold">Điểm giao dịch</span>
+                      <span className="text-lg font-black text-emerald-400 font-mono">
                         {myReputation?.transactionScore !== null && myReputation?.transactionScore !== undefined
                           ? `${myReputation.transactionScore}`
                           : '—'}
                       </span>
                     </div>
-                    <div className="bg-white/10 px-3 py-2 rounded-xl backdrop-blur-xs">
-                      <span className="text-[10px] text-slate-300 block font-semibold">Điểm phạt tích lũy</span>
-                      <span className={`text-base font-black font-mono ${(myReputation?.confirmationPenaltyPoints || 0) > 0 ? 'text-rose-400' : 'text-slate-200'}`}>
+                    <div className="bg-white/10 px-3.5 py-2.5 rounded-xl backdrop-blur-xs">
+                      <span className="text-[11px] text-slate-300 block font-semibold">Điểm phạt tích lũy</span>
+                      <span className={`text-lg font-black font-mono ${(myReputation?.confirmationPenaltyPoints || 0) > 0 ? 'text-rose-400' : 'text-slate-200'}`}>
                         {myReputation?.confirmationPenaltyPoints ?? 0}
                       </span>
                     </div>
@@ -2674,79 +2708,38 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                 </div>
 
                 {/* 3 Pills: good / bad / evaluated */}
-                <div className="flex flex-wrap items-center gap-2 mt-4 pt-3 border-t border-white/15 text-xs">
-                  <span className="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-400/30">
-                    {myReputation?.goodTransactions ?? 0} đơn thành công (GOOD)
+                <div className="flex flex-wrap items-center gap-2.5 mt-4 pt-3.5 border-t border-white/15 text-xs">
+                  <span className="px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-400/30">
+                    {myReputation?.goodTransactions ?? 0} đơn thành công
                   </span>
-                  <span className="px-2.5 py-1 rounded-lg bg-rose-500/20 text-rose-300 font-bold border border-rose-400/30">
-                    {myReputation?.badTransactions ?? 0} đơn lỗi SELLER (BAD)
+                  <span className="px-3 py-1.5 rounded-xl bg-rose-500/20 text-rose-300 font-bold border border-rose-400/30">
+                    {myReputation?.badTransactions ?? 0} đơn lỗi Người bán
                   </span>
-                  <span className="px-2.5 py-1 rounded-lg bg-white/10 text-white font-bold border border-white/20">
+                  <span className="px-3 py-1.5 rounded-xl bg-white/10 text-white font-bold border border-white/20">
                     {myReputation?.evaluatedOrders ?? 0} đơn được đánh giá
                   </span>
                 </div>
               </div>
 
-              {/* Operational Metrics Breakdown */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                {/* Non-fulfillment breakdown */}
-                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-700">Tỷ lệ không hoàn thành:</span>
-                    <span className="font-black font-mono text-rose-600">
-                      {myReputation?.nonFulfillmentRate !== null && myReputation?.nonFulfillmentRate !== undefined
-                        ? `${myReputation.nonFulfillmentRate}%`
-                        : '0%'}
-                      <span className="text-slate-400 text-[11px] font-normal ml-1">
-                        ({myReputation?.nonFulfillmentOrders ?? 0}/{myReputation?.evaluatedOrders ?? 0})
-                      </span>
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-slate-500 flex items-center justify-between pt-1 border-t border-slate-200/60">
-                    <span>Hủy do SELLER: <strong className="text-slate-700">{myReputation?.sellerCancellationOrders ?? 0}</strong></span>
-                    <span>Trả hàng lỗi SELLER: <strong className="text-slate-700">{myReputation?.sellerReturnFaultOrders ?? 0}</strong></span>
-                  </div>
-                </div>
-
-                {/* Handover breakdown */}
-                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-700">Bàn giao trễ bưu tá:</span>
-                    <span className="font-black font-mono text-amber-600">
-                      {myReputation?.lateHandoverRate !== null && myReputation?.lateHandoverRate !== undefined
-                        ? `${myReputation.lateHandoverRate}%`
-                        : '0%'}
-                      <span className="text-slate-400 text-[11px] font-normal ml-1">
-                        ({myReputation?.lateHandoverOrders ?? 0}/{myReputation?.handoverEvaluatedOrders ?? 0})
-                      </span>
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-slate-500 flex items-center justify-between pt-1 border-t border-slate-200/60">
-                    <span>Đơn bàn giao trễ: <strong className="text-slate-700">{myReputation?.lateHandoverOrders ?? 0}</strong></span>
-                    <span>Vi phạm xác nhận: <strong className="text-slate-700">{myReputation?.confirmedIncidents ?? 0}</strong></span>
-                  </div>
-                </div>
-              </div>
-
               {/* History Table */}
-              <div className="space-y-2 pt-2">
+              <div className="space-y-2.5 pt-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-800 block uppercase tracking-wider">
+                  <span className="text-xs font-extrabold text-slate-800 block uppercase tracking-wider">
                     {lang === 'vi' ? 'LỊCH SỬ BIẾN ĐỘNG ĐIỂM UY TÍN' : 'REPUTATION AUDIT TRAIL'}
                   </span>
-                  <span className="text-[11px] text-slate-400">
-                    {reputationHistoryItems.length} sự kiện gần nhất
+                  <span className="text-xs text-slate-400 font-medium">
+                    Tổng {reputationHistoryItems.length} sự kiện biến động
                   </span>
                 </div>
 
                 {isLoadingReputationHistory ? (
-                  <div className="py-8 text-center text-slate-400">
-                    <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2 text-[#c34c36]" />
-                    <span className="text-xs">{lang === 'vi' ? 'Đang tải lịch sử...' : 'Loading history...'}</span>
+                  <div className="py-10 text-center text-slate-400">
+                    <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-[#c34c36]" />
+                    <span className="text-xs font-medium">{lang === 'vi' ? 'Đang tải lịch sử...' : 'Loading history...'}</span>
                   </div>
                 ) : reputationHistoryItems.length === 0 ? (
-                  <div className="py-8 text-center border border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
-                    <Award className="w-8 h-8 text-slate-300 mx-auto mb-1.5" />
+                  <div className="py-10 text-center border border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
+                    <Award className="w-9 h-9 text-slate-300 mx-auto mb-2" />
                     <span className="text-xs font-bold text-slate-600 block">
                       {lang === 'vi' ? 'Chưa có biến động điểm nào' : 'No reputation score changes yet'}
                     </span>
@@ -2757,66 +2750,134 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                     </span>
                   </div>
                 ) : (
-                  <div className="max-h-64 overflow-y-auto space-y-2 pr-1 text-xs">
-                    {reputationHistoryItems.map((item) => {
-                      const eventMeta = getReputationEventMeta(item.eventType);
-                      const penaltyIncrease = (item.penaltyAfter || 0) - (item.penaltyBefore || 0);
+                  <>
+                    <div className="space-y-2.5 text-xs">
+                      {paginatedReputationItems.map((item) => {
+                        const eventMeta = getReputationEventMeta(item.eventType);
+                        const penaltyIncrease = (item.penaltyAfter || 0) - (item.penaltyBefore || 0);
 
-                      return (
-                        <div
-                          key={item.id}
-                          className="p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 flex items-start justify-between gap-3 transition"
-                        >
-                          <div className="space-y-1">
-                            <div className="font-bold text-slate-900 flex items-center gap-1.5 flex-wrap">
-                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${eventMeta.type === 'positive'
-                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                : eventMeta.type === 'negative'
-                                  ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                                  : 'bg-slate-100 text-slate-700 border border-slate-200'
-                                }`}>
-                                {eventMeta.label}
-                              </span>
-                              {item.orderId && (
-                                <span className="font-mono text-[10px] text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200">
-                                  Đơn #{item.orderId.substring(0, 8)}
+                        return (
+                          <div
+                            key={item.id}
+                            className="p-3.5 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 flex items-start justify-between gap-3 transition shadow-xs"
+                          >
+                            <div className="space-y-1.5 min-w-0">
+                              <div className="font-bold text-slate-900 flex items-center gap-2 flex-wrap">
+                                <span className={`px-2.5 py-0.5 rounded-md text-[11px] font-bold border ${eventMeta.type === 'positive'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : eventMeta.type === 'negative'
+                                    ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                    : 'bg-slate-100 text-slate-700 border-slate-200'
+                                  }`}>
+                                  {eventMeta.label}
                                 </span>
-                              )}
-                            </div>
-                            <p className="text-[11px] text-slate-600">
-                              {item.reason || eventMeta.desc}
-                            </p>
-                            <div className="flex items-center gap-3 text-[10px] text-slate-400 font-medium">
-                              <span>{new Date(item.createdAt).toLocaleString('vi-VN')}</span>
-                              {(item.goodAfter !== undefined || item.badAfter !== undefined) && (
-                                <span>Mẫu: G:{item.goodAfter ?? 0} | B:{item.badAfter ?? 0}</span>
-                              )}
-                              {item.formulaVersion && (
-                                <span className="text-[9px] font-mono text-slate-400">v:{item.formulaVersion}</span>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="text-right shrink-0 font-mono space-y-1">
-                            {item.scoreBefore !== undefined && item.scoreAfter !== undefined && (
-                              <div className="flex items-center gap-1 text-xs justify-end font-bold">
-                                <span className="text-slate-400">{item.scoreBefore ?? '—'}</span>
-                                <span className="text-slate-400">→</span>
-                                <span className={(item.scoreAfter || 0) >= (item.scoreBefore || 0) ? 'text-emerald-600' : 'text-rose-600'}>
-                                  {item.scoreAfter ?? '—'}
-                                </span>
+                                {item.orderId && (
+                                  <span className="font-mono text-[11px] text-slate-500 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200">
+                                    Đơn #{item.orderId.substring(0, 8)}
+                                  </span>
+                                )}
                               </div>
-                            )}
-                            {penaltyIncrease > 0 && (
-                              <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                                +{penaltyIncrease} phạt
-                              </span>
-                            )}
+                              <p className="text-xs text-slate-700 leading-relaxed">
+                                {formatReputationReason(item.reason || eventMeta.desc)}
+                              </p>
+                              <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-400 font-medium pt-0.5">
+                                <span>{new Date(item.createdAt).toLocaleString('vi-VN')}</span>
+                                {(item.goodAfter !== undefined || item.badAfter !== undefined) && (
+                                  <span>
+                                    Mẫu giao dịch: <strong className="text-emerald-700 font-semibold">{item.goodAfter ?? 0} thành công</strong> | <strong className="text-rose-700 font-semibold">{item.badAfter ?? 0} lỗi</strong>
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="text-right shrink-0 font-mono space-y-1.5 pl-2">
+                              {item.scoreBefore !== undefined && item.scoreAfter !== undefined && (
+                                <div className="flex items-center gap-1.5 text-xs justify-end font-bold">
+                                  <span className="text-slate-400">{item.scoreBefore ?? '—'}</span>
+                                  <span className="text-slate-400">→</span>
+                                  <span className={(item.scoreAfter || 0) >= (item.scoreBefore || 0) ? 'text-emerald-600' : 'text-rose-600'}>
+                                    {item.scoreAfter ?? '—'}
+                                  </span>
+                                </div>
+                              )}
+                              {penaltyIncrease > 0 && (
+                                <span className="inline-block px-2 py-0.5 rounded-md text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                                  +{penaltyIncrease} phạt
+                                </span>
+                              )}
+                            </div>
                           </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Pagination Controls */}
+                    {totalReputationPages > 1 && (
+                      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-100 text-xs">
+                        <div className="text-slate-500 font-medium">
+                          Trang <span className="font-bold text-slate-800">{safeReputationPage + 1}</span> / <span className="font-bold text-slate-800">{totalReputationPages}</span>
+                          <span className="text-slate-400 ml-1.5">(10 sự kiện / trang)</span>
                         </div>
-                      );
-                    })}
-                  </div>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setReputationPage((p) => Math.max(0, p - 1))}
+                            disabled={safeReputationPage === 0}
+                            className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-1 font-bold text-slate-700 cursor-pointer text-xs"
+                          >
+                            <ChevronLeft className="w-3.5 h-3.5" />
+                            <span>Trước</span>
+                          </button>
+
+                          <div className="flex items-center gap-1">
+                            {Array.from({ length: totalReputationPages }, (_, i) => i).map((pageNum) => {
+                              if (
+                                pageNum === 0 ||
+                                pageNum === totalReputationPages - 1 ||
+                                Math.abs(pageNum - safeReputationPage) <= 1
+                              ) {
+                                return (
+                                  <button
+                                    key={pageNum}
+                                    type="button"
+                                    onClick={() => setReputationPage(pageNum)}
+                                    className={`w-7 h-7 rounded-lg text-xs font-bold transition cursor-pointer ${
+                                      safeReputationPage === pageNum
+                                        ? 'bg-slate-900 text-white shadow-xs'
+                                        : 'border border-slate-200 bg-white hover:bg-slate-50 text-slate-700'
+                                    }`}
+                                  >
+                                    {pageNum + 1}
+                                  </button>
+                                );
+                              }
+                              if (
+                                (pageNum === 1 && safeReputationPage > 2) ||
+                                (pageNum === totalReputationPages - 2 && safeReputationPage < totalReputationPages - 3)
+                              ) {
+                                return (
+                                  <span key={pageNum} className="px-1 text-slate-400">
+                                    ...
+                                  </span>
+                                );
+                              }
+                              return null;
+                            })}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => setReputationPage((p) => Math.min(totalReputationPages - 1, p + 1))}
+                            disabled={safeReputationPage >= totalReputationPages - 1}
+                            className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-1 font-bold text-slate-700 cursor-pointer text-xs"
+                          >
+                            <span>Sau</span>
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>

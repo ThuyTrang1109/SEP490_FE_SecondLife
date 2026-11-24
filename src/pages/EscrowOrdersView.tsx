@@ -22,6 +22,7 @@ import { ProductReviewModal } from '../components/modals/ProductReviewModal';
 import { SellerReviewsModal } from '../components/modals/SellerReviewsModal';
 import { OrderTrackingModal } from '../components/modals/OrderTrackingModal';
 import { CreateShipmentModal } from '../components/modals/CreateShipmentModal';
+import { CreateReturnShipmentModal } from '../components/modals/CreateReturnShipmentModal';
 import { InspectionCashShipmentStatus } from '../components/inspection/InspectionCashShipmentStatus';
 import { ShippingLabelModal } from '../components/modals/ShippingLabelModal';
 import { DigitalInspectionCertificateModal } from '../components/modals/DigitalInspectionCertificateModal';
@@ -40,12 +41,13 @@ import { getHubReturnProgress, getHubReturnState, getInboundShipmentProgress } f
 import { resolveOrderListing } from '../utils/catalogCache';
 import { translateSystemNotification } from '../utils/systemNotificationTranslator';
 import { OrderCard } from '../components/orders/card/OrderCard';
+import { canCreateApprovedOrderReturn } from '../utils/orders/orderDispute';
 import { OrderDetailModal } from '../components/orders/detail/OrderDetailModal';
 import { useOrderDetailData } from '../hooks/orders/useOrderDetailData';
 import { useOrderInboundShipments } from '../hooks/orders/useOrderInboundShipments';
+import { useActiveOrderDisputes } from '../hooks/orders/useActiveOrderDisputes';
 import { OrderDetailHeader } from '../components/orders/detail/OrderDetailHeader';
 import { OrderDetailProduct } from '../components/orders/detail/OrderDetailProduct';
-import { OrderDetailDirectShipping } from '../components/orders/detail/OrderDetailDirectShipping';
 import { OrderDeliveryJourney } from '../components/orders/detail/OrderDeliveryJourney';
 import { OrderDetailCertificate } from '../components/orders/detail/OrderDetailCertificate';
 import { OrderDetailPhotos } from '../components/orders/detail/OrderDetailPhotos';
@@ -67,6 +69,7 @@ import { getAtHomeDeliveryStage } from '../utils/orders/orderReceipt';
 import { readOrderAppointment } from '../utils/orders/orderAppointments';
 import { getCommissionPayout, getInspectionPayoutPreview, getOrderFinanceLookup, getSettlementPayout, type SellerPayoutData } from '../utils/orders/orderFinance';
 import { isOrderWithInspection } from '../utils/orders/orderReceipt';
+import { upsertShipment } from '../utils/lalamoveTracking';
 
 export { getOrderAllShipments } from '../utils/orders/shipmentCache';
 interface EscrowOrdersViewProps {
@@ -436,11 +439,26 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         setApptTick((t) => t + 1);
         onRefreshOrders?.();
       }
-      if (e?.key?.startsWith('order_appointment_') || e?.key?.startsWith('recent_placed_orders')) {
+      if (
+        e?.key?.startsWith('order_appointment_') ||
+        e?.key?.startsWith('recent_placed_orders')
+      ) {
+        setApptTick((t) => t + 1);
+        onRefreshOrders?.();
+        onRefreshFilter?.();
+      } else if (
+        e?.key?.startsWith('sl_order_shipments_') ||
+        e?.key?.startsWith('order_shipments_') ||
+        !e?.key
+      ) {
         setApptTick((t) => t + 1);
       }
     };
+    const handleShipmentSignal = () => {
+      setApptTick((t) => t + 1);
+    };
     window.addEventListener('secondlife_inspector_arrived', handler);
+    window.addEventListener('secondlife_shipment_updated', handleShipmentSignal);
     window.addEventListener('storage', handler);
 
     const handleApptSignal = (e?: any) => {
@@ -504,6 +522,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
 
     return () => {
       window.removeEventListener('secondlife_inspector_arrived', handler);
+      window.removeEventListener('secondlife_shipment_updated', handleShipmentSignal);
       window.removeEventListener('storage', handler);
       window.removeEventListener('secondlife_appointment_rejected', handleApptSignal);
       window.removeEventListener('secondlife_order_assigned_signal', handleApptSignal);
@@ -687,19 +706,29 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
 
   // Lalamove Shipping Modals state
   const [trackingSelection, setTrackingOrder] = useState<EscrowOrder | null>(null);
-  const trackingOrder = orders.find((order) => order.id === trackingSelection?.id) ?? trackingSelection;
+  const activeDisputeIds = useActiveOrderDisputes(currentUser?.id, orders, routeOrder);
+  const hasActiveDispute = (order: EscrowOrder) =>
+    order.hasActiveDispute || (order.backendEscrowStatus === 'FROZEN' && activeDisputeIds.has(order.id));
+  const liveTrackingOrder = orders.find((order) => order.id === trackingSelection?.id) ??
+    (routeOrder?.id === trackingSelection?.id ? routeOrder : trackingSelection);
+  const trackingOrder = liveTrackingOrder && hasActiveDispute(liveTrackingOrder)
+    ? { ...liveTrackingOrder, hasActiveDispute: true } : liveTrackingOrder;
   const detailBuyerInspectionStage = detailModalOrder && !isOrderSeller(detailModalOrder)
     ? getBuyerInspectionStage(detailModalOrder)
     : null;
   const [createShipmentOrder, setCreateShipmentOrder] = useState<EscrowOrder | null>(null);
-  const { getOrderInboundShipment, saveSellerInboundShipment, inboundLoadingOrders, sellerInboundShipments, sellerReturnShipments } = useOrderInboundShipments({
+  const { getOrderInboundShipment, saveSellerInboundShipment, inboundLoadingOrders, sellerInboundShipments, sellerReturnShipments, directShipments, saveDirectShipment, deliveryCacheVersion: _deliveryCacheVersion } = useOrderInboundShipments({
     userId: currentUser?.id,
-    userOrders,
+    userOrders: orders,
     trackingOrderId: trackingOrder?.id,
     createShipmentOrderId: createShipmentOrder?.id,
     detailOrderId,
     detailShipments,
   });
+  const applyDirectShipment = (orderId: string, shipment: ShipmentBackend) => {
+    saveDirectShipment(orderId, shipment);
+    if (detailModalOrder?.id === orderId) setDetailShipments((previous) => upsertShipment(previous, shipment));
+  };
   const detailInboundShipment = detailModalOrder?.inspectionMethod === 'AT_CENTER'
     ? getOrderInboundShipment(detailModalOrder)
     : null;
@@ -868,7 +897,8 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         return false;
       }
     }
-    if (ord.sellerConfirmedAt || ord.confirmationStatus === 'CONFIRMED') return true;
+    if (ord.sellerConfirmedAt || ord.confirmationStatus === 'CONFIRMED' ||
+        (!hasInsp && (ord.backendStatus === 'CONFIRMED' || ord.status === 'CONFIRMED'))) return true;
     if (hasInsp) {
       const rawStatus = String(
         (ord as any).backendStatus ||
@@ -969,6 +999,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
 
   const isShipmentCreatedForOrder = (ord: EscrowOrder | null | undefined): boolean => {
     if (!ord?.id) return false;
+    if (!isOrderSellerConfirmed(ord)) return false;
 
     // Đơn hàng kiểm định đang ở giai đoạn chờ phê duyệt hoặc chờ hai bên nộp phí thì chưa thể có vận đơn đóng gói
     const rawInspStatus = String(
@@ -1000,9 +1031,16 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     ) return true;
     if (ord.shippingLegs?.some((leg) => leg.status === 'IN_TRANSIT' || leg.status === 'COMPLETED' || Boolean((leg as any).trackingCode))) return true;
     const linkedId = (ord as any).linkedOrderId || (ord as any).inspectionOrderId;
+    const isCancelledShipment = (s: any) => {
+      const st = String(s?.status || '').toUpperCase();
+      const pst = String(s?.providerStatus || '').toUpperCase();
+      return ['CANCELLED', 'CANCELED', 'FAILED', 'REJECTED', 'EXPIRED'].includes(st) ||
+        ['CANCELLED', 'CANCELED', 'FAILED', 'REJECTED', 'EXPIRED'].includes(pst);
+    };
+
     if (
       (detailModalOrder?.id === ord.id || (linkedId && detailModalOrder?.id === linkedId) || (detailModalOrder?.linkedOrderId && detailModalOrder.linkedOrderId === ord.id)) &&
-      detailShipments.some((s) => s.status !== 'CANCELLED')
+      detailShipments.some((s) => !isCancelledShipment(s))
     ) {
       return true;
     }
@@ -1010,11 +1048,19 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       if (typeof window !== 'undefined') {
         const ids = [ord.id, linkedId].filter(Boolean) as string[];
         for (const id of ids) {
-          if (localStorage.getItem(`order_shipment_created_${id}`) === 'true') return true;
           if (localStorage.getItem(`order_packed_${id}`) === 'true') return true;
-          if (localStorage.getItem(`order_shipments_${id}`)) return true;
-          if (localStorage.getItem(`sl_order_shipments_${id}`)) return true;
-          if (localStorage.getItem(`sl_insp_shipments_${id}`)) return true;
+          for (const prefix of ['sl_order_shipments_', 'order_shipments_', 'sl_insp_shipments_']) {
+            const raw = localStorage.getItem(`${prefix}${id}`);
+            if (raw) {
+              try {
+                const list = JSON.parse(raw);
+                if (Array.isArray(list) && list.some((s: any) => s && !isCancelledShipment(s))) {
+                  return true;
+                }
+              } catch { }
+            }
+          }
+          if (localStorage.getItem(`order_shipment_created_${id}`) === 'true') return true;
         }
       }
     } catch { }
@@ -1100,6 +1146,13 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   const { bankPaymentOrder, setBankPaymentOrder, bankPaymentInfo, setBankPaymentInfo, loadingBankPaymentId, handleOpenBankPaymentModal } = useOrderBankPayment();
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
   const [orderActionLoading, setOrderActionLoading] = useState<string | null>(null);
+  const [returnShipmentOrder, setReturnShipmentOrder] = useState<EscrowOrder | null>(null);
+
+  const promptOrderReturn = (order: EscrowOrder) => {
+    const approval = order.orderReturn;
+    if (!approval || !canCreateApprovedOrderReturn(order, currentUser?.id)) return;
+    setReturnShipmentOrder(order);
+  };
 
   const { handleAcceptFailedInspection, handleRespondInspection, handlePayInspectionFee, handleConfirmInspectionPurchase } = createInspectionOrderActions({
     lang, detailModalOrder, setDetailModalOrder, onRefreshOrders, setInspectionActionNotice, setOrderActionLoading,
@@ -1628,6 +1681,25 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
           {orders.map((ord) => {
             const orderIsSeller = isOrderSeller(ord);
             const returnShipment = orderIsSeller ? sellerReturnShipments.get(ord.id) : undefined;
+            const effectiveReturnShipment = returnShipment || (ord as any).returnShipment;
+            const currentReturn = ord.orderReturn && Boolean(ord.orderReturn.reportId || ord.escrowStatus === 'DISPUTED' || ord.backendEscrowStatus === 'FROZEN')
+              ? ord.orderReturn
+              : undefined;
+            const orderShipments = directShipments.get(ord.id) ?? ((ord as any).shipments?.length
+              ? (ord as any).shipments
+              : (ord?.id ? getOrderAllShipments(ord.id, (ord as any).linkedOrderId) : []));
+            const cardOrder = {
+              ...ord,
+              hasActiveDispute: hasActiveDispute(ord),
+              shipments: orderShipments,
+              returnShipment: effectiveReturnShipment,
+              orderReturn: currentReturn ? {
+                ...currentReturn,
+                shipmentId: effectiveReturnShipment?.shipmentId || currentReturn.shipmentId,
+                shipmentStatus: effectiveReturnShipment?.status || currentReturn.shipmentStatus,
+                orderCode: effectiveReturnShipment?.orderCode ?? currentReturn.orderCode,
+              } : undefined,
+            };
             const payoutData = getOrderFinanceLookup(ord)
               ? payoutDataMap[ord.id]
               : getInspectionPayoutPreview(ord);
@@ -1652,13 +1724,18 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
               <OrderCard
                 key={ord.id}
                 payoutData={payoutData}
-                order={returnShipment === undefined ? ord : { ...ord, returnShipment }}
+                order={cardOrder}
                 orderIsSeller={orderIsSeller}
                 hasInspection={hasInspection}
                 lang={lang}
                 savedAppointment={savedAppointment}
                 ordShipment={ordShipment}
                 buyerInspectionStage={buyerInspectionStage}
+                onBookOrderReturn={canCreateApprovedOrderReturn(ord, currentUser?.id) ? () => promptOrderReturn(ord) : undefined}
+                onTrackReturnShipment={() => {
+                  setTrackingOrder(cardOrder);
+                  setTrackingShipmentId(cardOrder.orderReturn?.shipmentId || effectiveReturnShipment?.shipmentId || undefined);
+                }}
                 state={{
                   getStatusBadge,
                   isOrderReceiptConfirmed,
@@ -1749,152 +1826,147 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         </div>
       )}
 
-      {detailModalOrder && (
-        <OrderDetailModal
-          onClose={() => setDetailModalOrder(null)}
-          header={
-            <OrderDetailHeader
+      {detailModalOrder && (() => {
+        const effectiveShipments = detailShipments.length > 0
+          ? detailShipments
+          : (directShipments.get(detailModalOrder.id) ?? detailModalOrder.shipments ?? getOrderAllShipments(detailModalOrder.id, detailModalOrder.linkedOrderId));
+        const effectiveDetailOrder = {
+          ...detailModalOrder,
+          hasActiveDispute: hasActiveDispute(detailModalOrder),
+          shipments: effectiveShipments,
+        };
+        return (
+          <OrderDetailModal
+            onClose={() => setDetailModalOrder(null)}
+            header={
+              <OrderDetailHeader
+                lang={lang}
+                order={effectiveDetailOrder}
+                getStatusBadge={getStatusBadge}
+                isOrderReceiptConfirmed={isOrderReceiptConfirmed}
+                detailHasInspection={detailHasInspection}
+                isOrderSeller={isOrderSeller}
+                setDetailModalOrder={setDetailModalOrder}
+              />
+            }
+            actions={
+              <OrderDetailActions
+                order={effectiveDetailOrder}
+                isOrderCancelledOrRefunded={isOrderCancelledOrRefunded}
+                isOrderSeller={isOrderSeller}
+                detailHasInspection={detailHasInspection}
+                isOrderReceiptConfirmed={isOrderReceiptConfirmed}
+                renderInspectionDecision={renderInspectionDecision}
+                setDetailModalOrder={setDetailModalOrder}
+                lang={lang}
+                setTrackingOrder={setTrackingOrder}
+                isOrderSellerConfirmed={isOrderSellerConfirmed}
+                getOrderAppointment={getOrderAppointment}
+                handleSellerAcceptCounterAppointment={handleSellerAcceptCounterAppointment}
+                orderActionLoading={orderActionLoading}
+                setSchedulingOrder={setSchedulingOrder}
+                setSchedulingReadOnly={setSchedulingReadOnly}
+                handleSellerConfirmOrder={handleSellerConfirmOrder}
+                handlePromptRejectInspection={handlePromptRejectInspection}
+                onCancelOrder={onCancelOrder}
+                handlePromptCancelOrder={handlePromptCancelOrder}
+                isPartyInspectionFeePending={isPartyInspectionFeePending}
+                getPartyInspectionFee={getPartyInspectionFee}
+                isPartyInspectionFeePaid={isPartyInspectionFeePaid}
+                onRefreshOrders={onRefreshOrders}
+                handlePayInspectionFee={handlePayInspectionFee}
+                detailInboundLabel={detailInboundLabel}
+                isOrderPacked={isOrderPacked}
+                setCreateShipmentOrder={setCreateShipmentOrder}
+                isInspectorArrivedForOrder={isInspectorArrivedForOrder}
+                handlePromptCancelInspectionRequest={handlePromptCancelInspectionRequest}
+                isShipmentCreatedForOrder={isShipmentCreatedForOrder}
+                detailHasInboundTracking={detailHasInboundTracking}
+                detailHasHubBuyerShipment={detailHasHubBuyerShipment}
+                detailInboundProgress={detailInboundProgress}
+                detailBuyerInspectionStage={detailBuyerInspectionStage}
+                confirmingReceiptIds={confirmingReceiptIds}
+                setConfirmDialog={setConfirmDialog}
+                setConfirmingReceiptIds={setConfirmingReceiptIds}
+                onConfirmReceipt={onConfirmReceipt}
+                onOpenDispute={onOpenDispute}
+                setReportingOrder={setReportingOrder}
+              />
+            }
+          >
+            <OrderDetailProduct
+              isOrderCancelledOrRefunded={isOrderCancelledOrRefunded}
+              order={effectiveDetailOrder}
               lang={lang}
-              order={detailModalOrder}
-              getStatusBadge={getStatusBadge}
-              isOrderReceiptConfirmed={isOrderReceiptConfirmed}
               detailHasInspection={detailHasInspection}
-              isOrderSeller={isOrderSeller}
-              setDetailModalOrder={setDetailModalOrder}
             />
-          }
-          actions={
-            <OrderDetailActions
-              order={detailModalOrder}
+
+            <OrderDeliveryJourney
+              order={effectiveDetailOrder}
+              detailShipments={effectiveShipments}
+              isOrderSellerConfirmed={isOrderSellerConfirmed}
+              lang={lang}
               isOrderCancelledOrRefunded={isOrderCancelledOrRefunded}
               isOrderSeller={isOrderSeller}
-              detailHasInspection={detailHasInspection}
-              isOrderReceiptConfirmed={isOrderReceiptConfirmed}
-              renderInspectionDecision={renderInspectionDecision}
-              setDetailModalOrder={setDetailModalOrder}
-              lang={lang}
-              setTrackingOrder={setTrackingOrder}
-              isOrderSellerConfirmed={isOrderSellerConfirmed}
+              setInspectionActionNotice={setInspectionActionNotice}
+              setCreateShipmentOrder={setCreateShipmentOrder}
+              detailInboundShipment={detailInboundShipment}
+              getOrderInboundShipment={getOrderInboundShipment}
+              detailInspectionDto={detailInspectionDto}
               getOrderAppointment={getOrderAppointment}
+              isInspectorArrivedForOrder={isInspectorArrivedForOrder}
               handleSellerAcceptCounterAppointment={handleSellerAcceptCounterAppointment}
-              orderActionLoading={orderActionLoading}
               setSchedulingOrder={setSchedulingOrder}
               setSchedulingReadOnly={setSchedulingReadOnly}
-              handleSellerConfirmOrder={handleSellerConfirmOrder}
-              handlePromptRejectInspection={handlePromptRejectInspection}
-              onCancelOrder={onCancelOrder}
-              handlePromptCancelOrder={handlePromptCancelOrder}
-              isPartyInspectionFeePending={isPartyInspectionFeePending}
-              getPartyInspectionFee={getPartyInspectionFee}
-              isPartyInspectionFeePaid={isPartyInspectionFeePaid}
-              onRefreshOrders={onRefreshOrders}
-              handlePayInspectionFee={handlePayInspectionFee}
               detailInboundLabel={detailInboundLabel}
-              isOrderPacked={isOrderPacked}
-              setCreateShipmentOrder={setCreateShipmentOrder}
-              isInspectorArrivedForOrder={isInspectorArrivedForOrder}
-              handlePromptCancelInspectionRequest={handlePromptCancelInspectionRequest}
-              isShipmentCreatedForOrder={isShipmentCreatedForOrder}
-              detailHasInboundTracking={detailHasInboundTracking}
-              detailHasHubBuyerShipment={detailHasHubBuyerShipment}
-              detailInboundProgress={detailInboundProgress}
-              detailBuyerInspectionStage={detailBuyerInspectionStage}
-              confirmingReceiptIds={confirmingReceiptIds}
-              setConfirmDialog={setConfirmDialog}
-              setConfirmingReceiptIds={setConfirmingReceiptIds}
-              onConfirmReceipt={onConfirmReceipt}
-              onOpenDispute={onOpenDispute}
-              setReportingOrder={setReportingOrder}
+              setTrackingShipmentId={setTrackingShipmentId}
+              setTrackingOrder={setTrackingOrder}
+              setExpandedDetailLeg1={setExpandedDetailLeg1}
+              expandedDetailLeg1={expandedDetailLeg1}
+              setExpandedDetailLeg2={setExpandedDetailLeg2}
+              expandedDetailLeg2={expandedDetailLeg2}
             />
-          }
-        >
-          <OrderDetailProduct
-            isOrderCancelledOrRefunded={isOrderCancelledOrRefunded}
-            order={detailModalOrder}
-            lang={lang}
-            detailHasInspection={detailHasInspection}
-          />
 
-          <OrderDetailDirectShipping
-            detailHasInspection={detailHasInspection}
-            order={detailModalOrder}
-            detailInboundShipment={detailInboundShipment}
-            lang={lang}
-            isOrderCancelledOrRefunded={isOrderCancelledOrRefunded}
-            isShipmentCreatedForOrder={isShipmentCreatedForOrder}
-            detailInboundProgress={detailInboundProgress}
-            setTrackingOrder={setTrackingOrder}
-            detailBuyerInspectionStage={detailBuyerInspectionStage}
-            isOrderSeller={isOrderSeller}
-            setInspectionActionNotice={setInspectionActionNotice}
-            setCreateShipmentOrder={setCreateShipmentOrder}
-            isOrderSellerConfirmed={isOrderSellerConfirmed}
-          />
-
-          <OrderDeliveryJourney
-            order={detailModalOrder}
-            detailShipments={detailShipments}
-            isOrderSellerConfirmed={isOrderSellerConfirmed}
-            lang={lang}
-            isOrderCancelledOrRefunded={isOrderCancelledOrRefunded}
-            isOrderSeller={isOrderSeller}
-            setInspectionActionNotice={setInspectionActionNotice}
-            setCreateShipmentOrder={setCreateShipmentOrder}
-            detailInboundShipment={detailInboundShipment}
-            getOrderInboundShipment={getOrderInboundShipment}
-            detailInspectionDto={detailInspectionDto}
-            getOrderAppointment={getOrderAppointment}
-            isInspectorArrivedForOrder={isInspectorArrivedForOrder}
-            handleSellerAcceptCounterAppointment={handleSellerAcceptCounterAppointment}
-            setSchedulingOrder={setSchedulingOrder}
-            setSchedulingReadOnly={setSchedulingReadOnly}
-            detailInboundLabel={detailInboundLabel}
-            setTrackingShipmentId={setTrackingShipmentId}
-            setTrackingOrder={setTrackingOrder}
-            setExpandedDetailLeg1={setExpandedDetailLeg1}
-            expandedDetailLeg1={expandedDetailLeg1}
-            setExpandedDetailLeg2={setExpandedDetailLeg2}
-            expandedDetailLeg2={expandedDetailLeg2}
-          />
-
-          <OrderDetailCertificate
-            order={detailModalOrder}
-            setVerifySealId={setVerifySealId}
-            setIsVerifySealModalOpen={setIsVerifySealModalOpen}
-            setPrintSealOrder={setPrintSealOrder}
-          />
-
-          <OrderDetailPhotos
-            order={detailModalOrder}
-            detailInspectionDto={detailInspectionDto}
-            sellerPostPhotos={sellerPostPhotos}
-            activePhotoStage={activePhotoStage}
-            setActivePhotoStage={setActivePhotoStage}
-            lang={lang}
-          />
-
-          <OrderFeeBreakdown
-            order={detailModalOrder}
-            detailInspectionDto={detailInspectionDto}
-            getInspectionFeeSplit={getInspectionFeeSplit}
-            detailShipments={detailShipments}
-            lang={lang}
-          />
-
-          {financeResource && isOrderSeller(detailModalOrder) && (
-            <OrderSettlement
-              order={detailModalOrder}
-              detailBuyerInspectionStage={detailBuyerInspectionStage}
-              isOrderReceiptConfirmed={isOrderReceiptConfirmed}
-              orderSettlement={displayedFinancialData?.settlement ?? null}
-              isEscrowReleased={financeResource === 'settlement'}
-              isLoadingSettlement={!displayedFinancialData}
-              orderCommission={displayedFinancialData?.commission ?? null}
-              isSeller={isOrderSeller(detailModalOrder)}
+            <OrderDetailCertificate
+              order={effectiveDetailOrder}
+              setVerifySealId={setVerifySealId}
+              setIsVerifySealModalOpen={setIsVerifySealModalOpen}
+              setPrintSealOrder={setPrintSealOrder}
             />
-          )}
-        </OrderDetailModal>
-      )}
+
+            <OrderDetailPhotos
+              order={effectiveDetailOrder}
+              detailInspectionDto={detailInspectionDto}
+              sellerPostPhotos={sellerPostPhotos}
+              activePhotoStage={activePhotoStage}
+              setActivePhotoStage={setActivePhotoStage}
+              lang={lang}
+            />
+
+            <OrderFeeBreakdown
+              order={effectiveDetailOrder}
+              detailInspectionDto={detailInspectionDto}
+              getInspectionFeeSplit={getInspectionFeeSplit}
+              detailShipments={effectiveShipments}
+              lang={lang}
+            />
+
+            {financeResource && isOrderSeller(effectiveDetailOrder) && (
+              <OrderSettlement
+                order={effectiveDetailOrder}
+                lang={lang}
+                detailBuyerInspectionStage={detailBuyerInspectionStage}
+                isOrderReceiptConfirmed={isOrderReceiptConfirmed}
+                orderSettlement={displayedFinancialData?.settlement ?? null}
+                isEscrowReleased={financeResource === 'settlement'}
+                isLoadingSettlement={!displayedFinancialData}
+                orderCommission={displayedFinancialData?.commission ?? null}
+                isSeller={isOrderSeller(effectiveDetailOrder)}
+              />
+            )}
+          </OrderDetailModal>
+        );
+      })()}
 
       {/* Lalamove Order Tracking Modal */}
       {trackingOrder && (
@@ -1904,11 +1976,17 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
           onClose={() => {
             setTrackingOrder(null);
             setTrackingShipmentId(undefined);
+            onRefreshOrders?.();
+            onRefreshFilter?.();
           }}
           lang={lang}
           onConfirmReceipt={onConfirmReceipt}
           onOpenLabelModal={(shipment) => setActiveLabelShipment({ order: trackingOrder, shipment })}
-          onOrderUpdated={onRefreshOrders}
+          onOrderUpdated={() => {
+            onRefreshOrders?.();
+            onRefreshFilter?.();
+          }}
+          onDirectShipmentChanged={(shipment) => applyDirectShipment(trackingOrder.id, shipment)}
           onInboundShipmentLoaded={isOrderSeller(trackingOrder) ? saveSellerInboundShipment : undefined}
           initialShipmentId={trackingShipmentId}
         />
@@ -1924,7 +2002,11 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
             setCreateShipmentOrder(null);
             onRefreshOrders?.();
             setActiveLabelShipment({ order: createShipmentOrder, shipment });
-            setDetailShipments((prev) => [shipment, ...prev.filter((s) => s.shipmentId !== shipment.shipmentId)]);
+            if (isOrderWithInspection(createShipmentOrder)) {
+              setDetailShipments((prev) => [shipment, ...prev.filter((s) => s.shipmentId !== shipment.shipmentId)]);
+            } else {
+              applyDirectShipment(createShipmentOrder.id, shipment);
+            }
             try {
               if (createShipmentOrder?.id) {
                 const nowIso = new Date().toISOString();
@@ -1938,6 +2020,39 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                 orderService.markReadyForPickup(createShipmentOrder.id).catch(() => { });
               }
             } catch { }
+          }}
+        />
+      )}
+
+      {/* Lalamove Create Return Shipment Modal (Chặng hoàn hàng Người Mua -> Người Bán) */}
+      {returnShipmentOrder && (
+        <CreateReturnShipmentModal
+          order={returnShipmentOrder}
+          onClose={() => setReturnShipmentOrder(null)}
+          lang={lang}
+          onShipmentCreated={(shipment) => {
+            const approval = returnShipmentOrder.orderReturn;
+            if (approval) {
+              const progress = {
+                ...approval,
+                shipmentId: shipment.shipmentId,
+                shipmentStatus: shipment.status,
+                orderCode: shipment.orderCode,
+              };
+              setDetailModalOrder((previous) => (previous?.id === returnShipmentOrder.id ? { ...previous, orderReturn: progress } : previous));
+            }
+            try {
+              const cacheKey = `sl_order_shipments_${returnShipmentOrder.id}`;
+              const existingRaw = localStorage.getItem(cacheKey) || localStorage.getItem(`order_shipments_${returnShipmentOrder.id}`);
+              const existing = existingRaw ? JSON.parse(existingRaw) : [];
+              const updated = [shipment, ...(Array.isArray(existing) ? existing.filter((s: any) => s.shipmentId !== shipment.shipmentId) : [])];
+              localStorage.setItem(cacheKey, JSON.stringify(updated));
+              localStorage.setItem(`order_shipments_${returnShipmentOrder.id}`, JSON.stringify(updated));
+            } catch { }
+            setReturnShipmentOrder(null);
+            onRefreshOrders?.();
+            setDetailShipments((prev) => [shipment, ...prev.filter((s) => s.shipmentId !== shipment.shipmentId)]);
+            setActiveLabelShipment({ order: returnShipmentOrder, shipment });
           }}
         />
       )}
@@ -2064,18 +2179,10 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                 : `Dispute filed successfully for order #${reportingOrder.id.slice(0, 8)}! Funds are frozen in Escrow.`
             );
             setTimeout(() => setInspectionActionNotice(null), 8000);
-            if (reportingOrder?.id) {
-              try {
-                localStorage.setItem(`order_disputed_${reportingOrder.id}`, 'true');
-              } catch { }
-            }
             if (detailModalOrder && detailModalOrder.id === reportingOrder.id) {
-              setDetailModalOrder({
-                ...detailModalOrder,
-                escrowStatus: 'DISPUTED',
-                status: 'DISPUTED',
-                backendStatus: 'DISPUTED' as any,
-              });
+              setDetailModalOrder((previous) => previous?.id === reportingOrder.id
+                ? { ...previous, hasActiveDispute: true }
+                : previous);
             }
             onRefreshOrders?.();
           }}

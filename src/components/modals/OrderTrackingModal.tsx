@@ -32,10 +32,12 @@ import { inspectorService } from '../../services/inspectorService';
 import { dialogService } from '../../utils/dialogService';
 import { translateApiError } from '../../services/apiClient';
 import { resolveListingCategory, resolveOrderListing } from '../../utils/catalogCache';
-import { getHubReturnProgress, getHubReturnState, getInboundShipmentProgress, getLatestInboundShipment } from '../../utils/inspectionCenterData';
+import { getHubReturnProgress, getHubReturnState, getInboundShipmentProgress, getLatestInboundShipment, getLatestReturnShipment, getLatestBuyerDeliveryShipment } from '../../utils/inspectionCenterData';
 import { createInFlightRequests } from '../../utils/inFlightRequests';
-import { canSellerRebookShipment, getLalamoveInterruption, isLalamoveShipmentTerminal, shouldSyncLalamoveShipment } from '../../utils/lalamoveTracking';
+import { canSellerRebookShipment, getLalamoveInterruption, getLatestDirectShipment, isLalamoveShipmentTerminal, shouldSyncLalamoveShipment } from '../../utils/lalamoveTracking';
 import { LalamoveProgress } from '../common/LalamoveProgress';
+import { getOrderEscrowHoldNotice, isOrderEscrowOnHold } from '../../utils/orders/orderDispute';
+import { getRebookableDirectShipment } from '../../utils/orders/directShipment';
 
 const settlementStep = { title: 'Quyết toán', desc: 'Người mua xác nhận & giải ngân Escrow' };
 const carrierSyncUnavailable = 'Chưa thể đồng bộ với Lalamove. Đang hiển thị trạng thái gần nhất từ SecondLife.';
@@ -127,6 +129,7 @@ interface OrderTrackingModalProps {
   onConfirmReceipt?: (orderId: string) => void;
   onOpenLabelModal?: (shipment: ShipmentBackend) => void;
   onOrderUpdated?: () => void;
+  onDirectShipmentChanged?: (shipment: ShipmentBackend) => void;
   onInboundShipmentLoaded?: (orderId: string, shipment: ShipmentBackend | null) => void;
   onReturnShipmentLoaded?: (orderId: string, shipment: ShipmentBackend | null) => void;
   returnOnly?: boolean;
@@ -161,6 +164,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
   onConfirmReceipt,
   onOpenLabelModal,
   onOrderUpdated,
+  onDirectShipmentChanged,
   onInboundShipmentLoaded,
   onReturnShipmentLoaded,
   returnOnly = false,
@@ -212,7 +216,8 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
   const bookingInFlight = useRef(false);
 
   const handleManualCreateShipment = async () => {
-    if (!isSeller || returnOnly || bookingInFlight.current || (activeShipment && !canRebookShipment)) return;
+    if (!isSeller || returnOnly || bookingInFlight.current ||
+      (activeShipment ? !canRebookShipment : isOrderEscrowOnHold(order))) return;
     bookingInFlight.current = true;
     setIsCreatingShipment(true);
     setErrorMsg(null);
@@ -239,6 +244,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
 
       selectShipment(shipment.shipmentId);
       setShipments((previous) => [...previous.filter((item) => item.shipmentId !== shipment.shipmentId), shipment]);
+      if (!isInspectionOrder) onDirectShipmentChanged?.(shipment);
       void loadShipmentData(true, shipment);
       const failure = getLalamoveInterruption(shipment);
       if (failure) throw new Error(shipment.lastError || getLalamoveStatusDetails(failure).description);
@@ -396,13 +402,18 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
   const markerRef = useRef<any>(null);
 
   const activeShipment = shipments.find((s) => s.shipmentId === activeShipmentId) || shipments[0] || null;
-  const canRebookShipment = isSeller && !returnOnly && Boolean(activeShipment && canSellerRebookShipment(activeShipment, shipments, events));
+  const isInspectionOrder = returnOnly || Boolean(order.hasInspectionService || order.inspectionMethod || order.inspectionStatus);
+  const escrowOnHold = isOrderEscrowOnHold(order);
+  const escrowNotice = getOrderEscrowHoldNotice(order, lang, shipments);
+  const canRebookShipment = isSeller && !returnOnly && Boolean(activeShipment &&
+    (isInspectionOrder
+      ? !escrowOnHold && canSellerRebookShipment(activeShipment, shipments, events)
+      : getRebookableDirectShipment(order, shipments)?.shipmentId === activeShipment.shipmentId));
   const interruption = getLalamoveInterruption(activeShipment) ?? (
     isLalamoveShipmentTerminal(activeShipment) ? null : getLalamoveInterruption(trackingData)
   );
   const effectiveProviderStatus = interruption ?? activeShipment?.providerStatus ?? trackingData?.providerStatus;
   const canShowDriver = effectiveProviderStatus === 'ON_GOING' || effectiveProviderStatus === 'PICKED_UP';
-  const isInspectionOrder = returnOnly || Boolean(order.hasInspectionService || order.inspectionMethod || order.inspectionStatus);
   const isHubSeller = isSeller && order.inspectionMethod === 'AT_CENTER';
 
   const showNotification = (msg: string, isError = false) => {
@@ -425,24 +436,39 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
       const targetQueryIds = [order.id, (order as any).linkedOrderId].filter(Boolean) as string[];
 
       for (const id of targetQueryIds) {
-        if (shipList.length > 0) break;
+        let foundAny = false;
         if (isInspectionOrder) {
           try {
-            shipList = await shippingService.getInspectionShipments(id, { isBackground });
-            if (shipList.length > 0) loadedFromBackend = true;
+            const inspShips = await shippingService.getInspectionShipments(id, { isBackground });
+            if (Array.isArray(inspShips) && inspShips.length > 0) {
+              for (const s of inspShips) {
+                if (!shipList.some((existing) => existing.shipmentId === s.shipmentId)) {
+                  shipList.push(s);
+                }
+              }
+              loadedFromBackend = true;
+              foundAny = true;
+            }
           } catch (inspShipErr) {
             if (isHubSeller || returnOnly) throw inspShipErr;
             console.warn('Could not load inspection shipments:', inspShipErr);
           }
         }
-        if (shipList.length === 0) {
-          try {
-            shipList = await shippingService.getOrderShipments(id);
-            if (shipList.length > 0) loadedFromBackend = true;
-          } catch (orderShipErr) {
-            console.warn('Could not load order shipments:', orderShipErr);
+        try {
+          const ordShips = await shippingService.getOrderShipments(id);
+          if (Array.isArray(ordShips) && ordShips.length > 0) {
+            for (const s of ordShips) {
+              if (!shipList.some((existing) => existing.shipmentId === s.shipmentId)) {
+                shipList.push(s);
+              }
+            }
+            loadedFromBackend = true;
+            foundAny = true;
           }
+        } catch (orderShipErr) {
+          console.warn('Could not load order shipments:', orderShipErr);
         }
+        if (foundAny) break;
       }
       if (request !== shipmentRequest.current) return;
       if (returnOnly) shipList = shipList.filter((shipment) => shipment.leg === 'CENTER_TO_SELLER');
@@ -467,27 +493,44 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
 
       if (syncedShipment) {
         shipList = shipList.some((shipment) => shipment.shipmentId === syncedShipment.shipmentId)
-          ? shipList.map((shipment) => shipment.shipmentId === syncedShipment.shipmentId ? { ...shipment, ...syncedShipment } : shipment)
+          ? shipList.map((shipment) => shipment.shipmentId === syncedShipment.shipmentId
+            ? { ...shipment, ...syncedShipment, canRebook: shipment.canRebook }
+            : shipment)
           : [...shipList, syncedShipment];
       }
 
       setShipments(shipList);
+      try {
+        if (typeof window !== 'undefined' && order.id) {
+          localStorage.setItem(`sl_order_shipments_${order.id}`, JSON.stringify(shipList));
+          localStorage.setItem(`order_shipments_${order.id}`, JSON.stringify(shipList));
+          const allCancelled = shipList.length > 0 && shipList.every((s) => {
+            const st = String(s.status || '').toUpperCase();
+            const pst = String(s.providerStatus || '').toUpperCase();
+            return ['CANCELLED', 'CANCELED', 'FAILED', 'REJECTED', 'EXPIRED'].includes(st) ||
+              ['CANCELLED', 'CANCELED', 'FAILED', 'REJECTED', 'EXPIRED'].includes(pst);
+          });
+          if (allCancelled) {
+            localStorage.removeItem(`order_packed_${order.id}`);
+            localStorage.removeItem(`order_shipment_created_${order.id}`);
+          }
+          window.dispatchEvent(new CustomEvent('secondlife_shipment_updated', { detail: { orderId: order.id, shipments: shipList } }));
+        }
+      } catch { }
       const latestInbound = getLatestInboundShipment(shipList);
       if ((loadedFromBackend || syncedShipment) && (isHubSeller || latestInbound)) onInboundShipmentLoaded?.(order.id, latestInbound);
       if ((loadedFromBackend || syncedShipment) && returnOnly) onReturnShipmentLoaded?.(order.id, getHubReturnState(shipList).shipment);
 
       if (shipList.length > 0) {
         const selected = selectedShipmentId.current;
-        const returnShipment = getHubReturnState(shipList).shipment;
-        const buyerDeliveryShipment = shipList.find(
-          (s) => (s.leg === 'SELLER_TO_BUYER' || s.leg === 'CENTER_TO_BUYER' || s.leg === 'DELIVERY') && s.status !== 'CANCELLED'
-        ) || shipList.find((s) => s.leg === 'SELLER_TO_BUYER' || s.leg === 'CENTER_TO_BUYER' || s.leg === 'DELIVERY');
+        const returnShipment = getLatestReturnShipment(shipList) || getHubReturnState(shipList).shipment;
+        const buyerDeliveryShipment = isInspectionOrder ? getLatestBuyerDeliveryShipment(shipList) : getLatestDirectShipment(shipList);
 
         const targetId = selected && shipList.some((s) => s.shipmentId === selected)
           ? selected
           : (returnShipment
             ? returnShipment.shipmentId
-            : !isSeller && buyerDeliveryShipment
+            : (!isSeller || !isInspectionOrder) && buyerDeliveryShipment
               ? buyerDeliveryShipment.shipmentId
               : isSeller && latestInbound
                 ? latestInbound.shipmentId
@@ -504,6 +547,23 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
             if (synced) {
               shipList = shipList.map((s) => (s.shipmentId === targetId ? { ...s, ...synced } : s));
               setShipments(shipList);
+              try {
+                if (typeof window !== 'undefined' && order.id) {
+                  localStorage.setItem(`sl_order_shipments_${order.id}`, JSON.stringify(shipList));
+                  localStorage.setItem(`order_shipments_${order.id}`, JSON.stringify(shipList));
+                  const allCancelled = shipList.length > 0 && shipList.every((s) => {
+                    const st = String(s.status || '').toUpperCase();
+                    const pst = String(s.providerStatus || '').toUpperCase();
+                    return ['CANCELLED', 'CANCELED', 'FAILED', 'REJECTED', 'EXPIRED'].includes(st) ||
+                      ['CANCELLED', 'CANCELED', 'FAILED', 'REJECTED', 'EXPIRED'].includes(pst);
+                  });
+                  if (allCancelled) {
+                    localStorage.removeItem(`order_packed_${order.id}`);
+                    localStorage.removeItem(`order_shipment_created_${order.id}`);
+                  }
+                  window.dispatchEvent(new CustomEvent('secondlife_shipment_updated', { detail: { orderId: order.id, shipments: shipList } }));
+                }
+              } catch { }
               setErrorMsg((message) => message === carrierSyncUnavailable ? null : message);
               if (currentShipment.leg === 'SELLER_TO_CENTER') {
                 onInboundShipmentLoaded?.(order.id, getLatestInboundShipment(shipList));
@@ -645,7 +705,25 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
     setErrorMsg(null);
     try {
       const updated = await syncCarrierShipment(activeShipment.shipmentId);
-      setShipments((previous) => previous.map((shipment) => shipment.shipmentId === updated.shipmentId ? { ...shipment, ...updated } : shipment));
+      const updatedList = shipments.map((shipment) => shipment.shipmentId === updated.shipmentId ? { ...shipment, ...updated } : shipment);
+      setShipments(updatedList);
+      try {
+        if (typeof window !== 'undefined' && order.id) {
+          localStorage.setItem(`sl_order_shipments_${order.id}`, JSON.stringify(updatedList));
+          localStorage.setItem(`order_shipments_${order.id}`, JSON.stringify(updatedList));
+          const allCancelled = updatedList.length > 0 && updatedList.every((s) => {
+            const st = String(s.status || '').toUpperCase();
+            const pst = String(s.providerStatus || '').toUpperCase();
+            return ['CANCELLED', 'CANCELED', 'FAILED', 'REJECTED', 'EXPIRED'].includes(st) ||
+              ['CANCELLED', 'CANCELED', 'FAILED', 'REJECTED', 'EXPIRED'].includes(pst);
+          });
+          if (allCancelled) {
+            localStorage.removeItem(`order_packed_${order.id}`);
+            localStorage.removeItem(`order_shipment_created_${order.id}`);
+          }
+          window.dispatchEvent(new CustomEvent('secondlife_shipment_updated', { detail: { orderId: order.id, shipments: updatedList } }));
+        }
+      } catch { }
       const statusDesc = getLalamoveStatusDetails(getLalamoveInterruption(updated) || updated.providerStatus || updated.status).title;
       showNotification(`Đã đồng bộ thành công từ Lalamove: ${statusDesc}`);
       await loadShipmentData(true, updated);
@@ -657,7 +735,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
     }
   };
 
-  // Handle Cancel Shipment with Auto-Refund
+  // Cancelling a direct shipment keeps the purchase open for another booking.
   const handleCancelShipment = async () => {
     if (!activeShipment) return;
     const confirmed = await dialogService.confirm(
@@ -667,15 +745,42 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
     if (!confirmed) return;
     setIsCancelling(true);
     try {
-      await shippingService.cancelShipment(activeShipment.shipmentId);
-      // Auto refund shipment fee if possible
+      const cancelledShipment = await shippingService.cancelShipment(activeShipment.shipmentId);
+      const cancelledShipments = shipments.map((s) =>
+        s.shipmentId === activeShipment.shipmentId
+          ? { ...s, ...cancelledShipment }
+          : s
+      );
+      setShipments(cancelledShipments);
+      if (!isInspectionOrder) onDirectShipmentChanged?.(cancelledShipment);
       try {
-        await shippingService.refundShipment(activeShipment.shipmentId);
-        showNotification('Đã hủy vận đơn thành công và tự động hoàn cước vận chuyển về Ví SecondLife.');
-      } catch {
-        showNotification('Đã hủy vận đơn Lalamove thành công.');
+        if (typeof window !== 'undefined' && order.id) {
+          localStorage.setItem(`sl_order_shipments_${order.id}`, JSON.stringify(cancelledShipments));
+          localStorage.setItem(`order_shipments_${order.id}`, JSON.stringify(cancelledShipments));
+          const allCancelled = cancelledShipments.length > 0 && cancelledShipments.every((s) => {
+            const st = String(s.status || '').toUpperCase();
+            const pst = String(s.providerStatus || '').toUpperCase();
+            return ['CANCELLED', 'CANCELED', 'FAILED', 'REJECTED', 'EXPIRED'].includes(st) ||
+              ['CANCELLED', 'CANCELED', 'FAILED', 'REJECTED', 'EXPIRED'].includes(pst);
+          });
+          if (allCancelled) {
+            localStorage.removeItem(`order_packed_${order.id}`);
+            localStorage.removeItem(`order_shipment_created_${order.id}`);
+          }
+          window.dispatchEvent(new CustomEvent('secondlife_shipment_updated', { detail: { orderId: order.id, shipments: cancelledShipments } }));
+        }
+      } catch { }
+      if (isInspectionOrder) {
+        try {
+          await shippingService.refundShipment(activeShipment.shipmentId);
+          showNotification('Đã hủy vận đơn thành công và tự động hoàn cước vận chuyển về Ví SecondLife.');
+        } catch {
+          showNotification('Đã hủy vận đơn Lalamove thành công.');
+        }
+      } else {
+        showNotification('Đã hủy vận đơn Lalamove thành công. Bạn có thể tạo lại vận đơn cho đơn hàng này.');
       }
-      await loadShipmentData();
+      await loadShipmentData(false, cancelledShipment);
       onOrderUpdated?.();
     } catch (err: any) {
       showNotification(err?.message || 'Không thể hủy vận đơn.', true);
@@ -775,7 +880,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
   };
 
   const interruptionDetails = interruption ? getLalamoveStatusDetails(interruption) : null;
-  const isReturnShipment = activeShipment?.leg === 'CENTER_TO_SELLER';
+  const isReturnShipment = activeShipment?.leg === 'CENTER_TO_SELLER' || activeShipment?.leg === 'BUYER_TO_SELLER';
   const hubProgress = isReturnShipment ? getHubReturnProgress(activeShipment, lang)
     : activeShipment?.leg === 'SELLER_TO_CENTER' ? getInboundShipmentProgress(activeShipment, lang) : null;
   const currentStep = interruption ? -1 : hubProgress ? (hubProgress.step ?? -1) : getStepIndex(
@@ -978,7 +1083,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                     : 'bg-gray-100 hover:bg-gray-200 text-slate-700'
                     }`}
                 >
-                  Kiện {idx + 1} ({s.leg === 'SELLER_TO_CENTER' ? 'Chặng 1: Hub' : s.leg === 'CENTER_TO_SELLER' ? 'Hoàn trả' : s.leg === 'CENTER_TO_BUYER' ? 'Giao khách' : s.leg === 'SELLER_TO_BUYER' ? 'Giao trực tiếp' : s.leg || 'Lalamove'})
+                  Kiện {idx + 1} ({s.leg === 'SELLER_TO_CENTER' ? 'Chặng 1: Hub' : s.leg === 'CENTER_TO_SELLER' ? 'Hoàn trả' : s.leg === 'CENTER_TO_BUYER' ? 'Giao khách' : s.leg === 'SELLER_TO_BUYER' ? 'Giao trực tiếp' : s.leg === 'BUYER_TO_SELLER' ? 'Hoàn về người bán' : s.leg || 'Lalamove'})
                 </button>
               ))}
             </div>
@@ -1088,12 +1193,14 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                         {activeShipment.leg === 'SELLER_TO_CENTER'
                           ? 'Chặng 1: Người Bán ➔ Lab Hub'
                           : activeShipment.leg === 'CENTER_TO_BUYER'
-                            ? 'Chặng 2: Lab Hub ➔ Người Mua (Đạt Chuẩn)'
+                            ? 'Chặng 2: Lab Hub ➔ Người mua'
                             : activeShipment.leg === 'CENTER_TO_SELLER'
-                              ? 'Chặng 2: Hoàn Trả ➔ Người Bán (Không Đạt)'
+                              ? 'Chặng 2: Hoàn trả ➔ Người bán'
                               : activeShipment.leg === 'SELLER_TO_BUYER'
                                 ? 'Giao thẳng (Người Bán ➔ Người Mua)'
-                                : activeShipment.leg}
+                                : activeShipment.leg === 'BUYER_TO_SELLER'
+                                  ? 'Hoàn hàng (Người Mua ➔ Người Bán)'
+                                  : activeShipment.leg}
                       </span>
                     </div>
                   </div>
@@ -1123,7 +1230,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                         ) : (
                           <>
                             <Truck className="w-3.5 h-3.5" />
-                            <span>Đặt Lại Chuyến Xe Lalamove</span>
+                            <span>{lang === 'vi' ? 'Tạo lại vận đơn' : 'Rebook shipment'}</span>
                           </>
                         )}
                       </button>
@@ -1302,7 +1409,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                   <div className="p-3.5 bg-indigo-50/90 border border-indigo-200 rounded-2xl flex items-start gap-2.5 text-xs text-indigo-900 animate-fadeIn">
                     <Info className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
                     <div className="space-y-1">
-                      <p className="font-bold">Tài xế đã nhận đơn & đang di chuyển tới lấy hàng (ON_GOING)</p>
+                      <p className="font-bold">Tài xế đã nhận đơn & đang di chuyển tới lấy hàng.</p>
                       <p className="text-indigo-800 text-[11px] leading-relaxed">
                         Tiến trình tiếp theo <strong>&quot;Đã lấy kiện&quot;</strong> sẽ tự động cập nhật khi tài xế đến lấy hàng và xác nhận trên ứng dụng.
                         Bạn có thể nhấn nút <strong>&quot;Đồng bộ từ Lalamove&quot;</strong> bên dưới để làm mới dữ liệu bất kỳ lúc nào.
@@ -1406,32 +1513,36 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                 </div>
 
                 {/* Confirm Receipt for Buyer when Delivered (Section 12) */}
-                {!isSeller && !hubProgress && (
+                {!hubProgress && (!isSeller || escrowNotice) && (
                   <div>
-                    {isReceiptConfirmed ? (
+                    {isReceiptConfirmed && !isSeller ? (
                       <span className="px-3.5 py-2 rounded-xl bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200 flex items-center gap-1.5">
                         <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                         <span>Đơn hàng đã hoàn tất & giải ngân thành công</span>
                       </span>
-                    ) : String(order.escrowStatus) === 'DISPUTED' || String(order.escrowStatus) === 'FROZEN' ? (
+                    ) : escrowNotice ? (
                       <span className="px-3.5 py-2 rounded-xl bg-amber-50 text-amber-800 text-xs font-bold border border-amber-200 flex items-center gap-1.5">
                         <AlertTriangle className="w-4 h-4 text-amber-600" />
-                        <span>Quỹ Escrow đang tạm đóng băng do khiếu nại / tranh chấp</span>
+                        <span>
+                          {escrowNotice.title}
+                          <span className="block font-normal">{escrowNotice.description}</span>
+                        </span>
                       </span>
-                    ) : activeShipment.providerStatus === 'COMPLETED' || activeShipment.status === 'DELIVERED' || activeShipment.deliveredAt || order.shippingDeliveredAt ? (
-                      <button
-                        onClick={handleConfirmReceived}
-                        disabled={isConfirmingDelivered}
-                        className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:opacity-90 text-white text-xs font-black transition flex items-center gap-2 shadow-md cursor-pointer disabled:opacity-50 animate-pulse"
-                      >
-                        <CheckCircle2 className="w-4 h-4" />
-                        <span>{isConfirmingDelivered ? 'Đang giải ngân...' : 'Xác nhận đã nhận hàng'}</span>
-                      </button>
-                    ) : (
-                      <span className="text-[11px] text-slate-500 italic">
-                        (Nút xác nhận nhận hàng sẽ mở sau khi Lalamove hoàn tất giao hàng và quỹ Escrow đang giữ)
-                      </span>
-                    )}
+                    ) : escrowOnHold ? null
+                      : activeShipment.providerStatus === 'COMPLETED' || activeShipment.status === 'DELIVERED' || activeShipment.deliveredAt || order.shippingDeliveredAt ? (
+                        <button
+                          onClick={handleConfirmReceived}
+                          disabled={isConfirmingDelivered}
+                          className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:opacity-90 text-white text-xs font-black transition flex items-center gap-2 shadow-md cursor-pointer disabled:opacity-50 animate-pulse"
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>{isConfirmingDelivered ? 'Đang giải ngân...' : 'Xác nhận đã nhận hàng'}</span>
+                        </button>
+                      ) : (
+                        <span className="text-[11px] text-slate-500 italic">
+                          (Nút xác nhận nhận hàng sẽ mở sau khi Lalamove hoàn tất giao hàng và quỹ Escrow đang giữ)
+                        </span>
+                      )}
                   </div>
                 )}
               </div>

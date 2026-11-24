@@ -10,18 +10,50 @@ type PurchaseDecision = 'pending' | 'accepted' | 'rejected';
 type BuyerInspectionStage = 'waiting' | 'inspecting' | 'decision' | 'rejected' | 'failed' | 'closed';
 
 export function isExpiredInspectionPurchase(status?: string | null, note?: string | null) {
-  return status === 'CANCELLED' && Boolean(note?.includes('Người mua không thanh toán tiền hàng trong vòng 6 giờ sau khi kiểm định đạt chuẩn.'));
+  const normStatus = String(status || '').toUpperCase();
+  if (normStatus !== 'CANCELLED' && normStatus !== 'CANCELED') return false;
+  const n = String(note || '');
+  return (
+    n.includes('Người mua không thanh toán tiền hàng trong vòng 6 giờ') ||
+    n.includes('Người mua quá hạn đưa ra quyết định mua tiếp') ||
+    extractInspectionRejectionDetails(n).isBuyerPurchaseExpired === true
+  );
 }
 
 export interface InspectionRejectionDetails {
   inspectorNote: string;
   buyerRejectReason: string;
   isBuyerPurchaseRejected: boolean;
+  isBuyerPurchaseExpired?: boolean;
 }
 
 export function extractInspectionRejectionDetails(note?: string | null): InspectionRejectionDetails {
-  if (!note) return { inspectorNote: '', buyerRejectReason: '', isBuyerPurchaseRejected: false };
+  if (!note) return { inspectorNote: '', buyerRejectReason: '', isBuyerPurchaseRejected: false, isBuyerPurchaseExpired: false };
   const raw = String(note).trim();
+
+  // 1. Quá hạn 6 giờ người mua không thanh toán / quyết định mua tiếp
+  const timeoutMarkers = [
+    'Người mua không thanh toán tiền hàng trong vòng 6 giờ sau khi kiểm định đạt chuẩn.',
+    'Người mua không thanh toán tiền hàng trong vòng 6 giờ sau khi kiểm định đạt chuẩn',
+    'Người mua không thanh toán tiền hàng trong vòng 6 giờ',
+    'Người mua quá hạn đưa ra quyết định mua tiếp sau khi sản phẩm đạt kiểm định.',
+    'Người mua quá hạn đưa ra quyết định mua tiếp',
+  ];
+  for (const marker of timeoutMarkers) {
+    const markerIndex = raw.indexOf(marker);
+    if (markerIndex !== -1) {
+      const inspectorPart = raw.slice(0, markerIndex).replace(/\|\s*$/, '').trim();
+      const buyerPart = raw.slice(markerIndex).trim();
+      return {
+        inspectorNote: inspectorPart,
+        buyerRejectReason: buyerPart || 'Người mua không thanh toán tiền hàng trong vòng 6 giờ sau khi kiểm định đạt chuẩn.',
+        isBuyerPurchaseRejected: false,
+        isBuyerPurchaseExpired: true,
+      };
+    }
+  }
+
+  // 2. Người mua chủ động từ chối mua tiếp
   const marker = 'Người mua từ chối mua tiếp sau kiểm định. Lý do:';
   const markerIndex = raw.indexOf(marker);
   if (markerIndex !== -1) {
@@ -31,6 +63,7 @@ export function extractInspectionRejectionDetails(note?: string | null): Inspect
       inspectorNote: inspectorPart,
       buyerRejectReason: buyerPart || 'Thay đổi nhu cầu sử dụng / Lý do cá nhân',
       isBuyerPurchaseRejected: true,
+      isBuyerPurchaseExpired: false,
     };
   }
 
@@ -43,6 +76,7 @@ export function extractInspectionRejectionDetails(note?: string | null): Inspect
       inspectorNote: inspectorPart,
       buyerRejectReason: buyerPart || 'Thay đổi nhu cầu sử dụng / Lý do cá nhân',
       isBuyerPurchaseRejected: true,
+      isBuyerPurchaseExpired: false,
     };
   }
 
@@ -55,13 +89,31 @@ export function extractInspectionRejectionDetails(note?: string | null): Inspect
       inspectorNote: inspectorPart,
       buyerRejectReason: buyerPart || 'Thay đổi nhu cầu sử dụng / Lý do cá nhân',
       isBuyerPurchaseRejected: true,
+      isBuyerPurchaseExpired: false,
     };
+  }
+
+  // Nếu chuỗi chứa dấu phân cách `|` và vế sau là lý do hủy / từ chối
+  if (raw.includes('|')) {
+    const parts = raw.split('|').map(s => s.trim()).filter(Boolean);
+    if (parts.length > 1) {
+      const secondPart = parts.slice(1).join(' | ').trim();
+      if (/không thanh toán|quá hạn|từ chối/i.test(secondPart)) {
+        return {
+          inspectorNote: parts[0],
+          buyerRejectReason: secondPart,
+          isBuyerPurchaseRejected: /từ chối/i.test(secondPart),
+          isBuyerPurchaseExpired: /không thanh toán|quá hạn/i.test(secondPart),
+        };
+      }
+    }
   }
 
   return {
     inspectorNote: raw,
     buyerRejectReason: raw,
     isBuyerPurchaseRejected: false,
+    isBuyerPurchaseExpired: false,
   };
 }
 
@@ -71,13 +123,31 @@ export function formatOrderCancellationReason(
 ): string {
   if (!rawReason) return '';
   const rejection = extractInspectionRejectionDetails(rawReason);
+  if (rejection.isBuyerPurchaseExpired) {
+    return rejection.buyerRejectReason || (lang === 'vi' ? 'Người mua không thanh toán tiền hàng trong vòng 6 giờ sau khi kiểm định đạt chuẩn.' : 'Buyer defaulted on payment within 6 hours after inspection passed.');
+  }
   if (rejection.isBuyerPurchaseRejected) {
     return rejection.buyerRejectReason || (lang === 'vi' ? 'Người mua từ chối mua tiếp sau kiểm định' : 'Buyer declined purchase after inspection');
   }
-  const cleanReason = String(rawReason)
+
+  let cleanReason = String(rawReason)
     .replace(/\[(Tem|Grade|Điểm|Bao bì|Phụ kiện|Photos):.*?\]/gi, '')
-    .split(/\|\s*Người mua từ chối/i)[0]
     .trim();
+
+  if (cleanReason.includes('|')) {
+    const parts = cleanReason.split('|').map(s => s.trim()).filter(Boolean);
+    const afterPipe = parts.slice(1).join(' | ').trim();
+    if (afterPipe) {
+      const afterRejection = extractInspectionRejectionDetails(afterPipe);
+      if (afterRejection.isBuyerPurchaseExpired || afterRejection.isBuyerPurchaseRejected) {
+        return afterRejection.buyerRejectReason;
+      }
+      if (/người mua không thanh toán|quá hạn|từ chối|hết hạn/i.test(afterPipe)) {
+        return afterPipe;
+      }
+    }
+  }
+
   return cleanReason || String(rawReason).trim();
 }
 
@@ -96,6 +166,12 @@ export function parseInspectorVerdictNote(rawNote?: string | null): ParsedInspec
   if (!rawNote) return { cleanText: '' };
 
   let text = String(rawNote).replace(INSPECTION_NOTE_PHOTO_TAG, ' ').trim();
+
+  // Tách bỏ phần lý do hủy / từ chối / quá hạn thanh toán nếu bị nối vào note sau kiểm định
+  const rejection = extractInspectionRejectionDetails(text);
+  if (rejection.isBuyerPurchaseRejected || rejection.isBuyerPurchaseExpired) {
+    text = rejection.inspectorNote;
+  }
 
   // Extract Packaging: [Bao bì: ...]
   let packaging: string | undefined;
@@ -186,7 +262,9 @@ export function getInspectionPurchaseDecision(
     (details as any)?.inspectionDecision === 'rejected' ||
     Boolean(note?.includes('Người mua từ chối mua tiếp sau kiểm định')) ||
     Boolean(note?.includes('Từ chối mua tiếp sau kiểm định')) ||
-    extractInspectionRejectionDetails(note).isBuyerPurchaseRejected
+    extractInspectionRejectionDetails(note).isBuyerPurchaseRejected ||
+    extractInspectionRejectionDetails(note).isBuyerPurchaseExpired ||
+    isExpiredInspectionPurchase(status, note)
   )) return 'rejected';
   if (status === 'PASSED' || status === 'INSPECTION_PASSED' ||
       (!details?.status && !order?.inspectionStatus && order?.escrowStatus === 'INSPECTION_PASSED')) return 'pending';

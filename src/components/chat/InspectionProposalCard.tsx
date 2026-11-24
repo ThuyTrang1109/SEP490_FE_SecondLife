@@ -30,7 +30,13 @@ import { buyerFeePercentFor, feePercentLabel, feePercentOptions } from '../../ut
 import { getCashInspectionFeeShares } from '../../utils/inspectionCashShipping';
 import { getChatInspectionFees } from '../../utils/chatInspection';
 import { CHAT_PRODUCT_PLACEHOLDER } from '../../utils/chatProduct';
-import { getCustomerInspectionStatus, extractInspectionRejectionDetails, getInspectionPurchaseDecision } from '../../utils/inspectionPurchase';
+import {
+  getCustomerInspectionStatus,
+  extractInspectionRejectionDetails,
+  getInspectionPurchaseDecision,
+  formatOrderCancellationReason,
+  isExpiredInspectionPurchase
+} from '../../utils/inspectionPurchase';
 import { getInboundShipmentProgress, getLatestInboundShipment } from '../../utils/inspectionCenterData';
 import { getOrderAllShipments } from '../../utils/orders/shipmentCache';
 import { isOrderReceivedAtHub } from '../../pages/ProductInspectionStationView';
@@ -157,8 +163,20 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
   const isLocalCancelled = typeof window !== 'undefined' && localStorage.getItem(`order_cancelled_${order.id}`) === 'true';
   const isRejected = status === 'REJECTED';
   const isCancelled = status === 'CANCELLED' || isLocalCancelled;
-  const rejectionDetails = extractInspectionRejectionDetails(order.note || (order as any).rejectionReason || (order as any).rejectReason);
+  const rawOrderReason = order.note || (order as any).rejectionReason || (order as any).rejectReason;
+  const rejectionDetails = extractInspectionRejectionDetails(rawOrderReason);
   const isBuyerPurchaseRejected = isCancelled && rejectionDetails.isBuyerPurchaseRejected;
+  const isBuyerPurchaseExpired = isCancelled && (
+    Boolean(rejectionDetails.isBuyerPurchaseExpired) ||
+    isExpiredInspectionPurchase(status, rawOrderReason)
+  );
+  const displayCancellationReason = formatOrderCancellationReason(rawOrderReason, lang) || (
+    isBuyerPurchaseExpired
+      ? (lang === 'vi' ? 'Người mua không thanh toán tiền hàng trong vòng 6 giờ sau khi kiểm định đạt chuẩn.' : 'Buyer defaulted on payment within 6 hours after inspection passed.')
+      : (isBuyerPurchaseRejected
+        ? (rejectionDetails.buyerRejectReason || (lang === 'vi' ? 'Người mua từ chối mua tiếp sau kiểm định' : 'Buyer declined purchase after inspection'))
+        : rawOrderReason)
+  );
   const isAtHome = Boolean(
     String(order.orderType || '').toUpperCase() === 'AT_HOME' ||
     String((order as any).inspectionMethod || '').toUpperCase() === 'AT_HOME' ||
@@ -259,10 +277,34 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
     )
   );
 
+  const inStatus = String(inboundShipment?.status || '').toUpperCase();
+  const inProvStatus = String(inboundShipment?.providerStatus || '').toUpperCase();
+  const inProgress = inboundShipment ? getInboundShipmentProgress(inboundShipment, lang) : null;
+
+  const isInboundCancelled = Boolean(
+    isAtCenter && inboundShipment && !isPassed && !isFailed && !isCancelled && !isPurchaseAccepted && !isCompleted && !isDelivered && (
+      inStatus === 'CANCELLED' ||
+      inStatus === 'CANCELED' ||
+      inProvStatus === 'CANCELLED' ||
+      inProvStatus === 'CANCELED' ||
+      inProgress?.label === (lang === 'vi' ? 'Vận đơn đã hủy' : 'Shipment cancelled')
+    )
+  );
+
+  const isInboundFailed = Boolean(
+    isAtCenter && inboundShipment && !isInboundCancelled && !isPassed && !isFailed && !isCancelled && !isPurchaseAccepted && !isCompleted && !isDelivered && (
+      inStatus === 'FAILED' ||
+      inProvStatus === 'FAILED' ||
+      inProvStatus === 'REJECTED' ||
+      inProvStatus === 'EXPIRED' ||
+      inProgress?.label === (lang === 'vi' ? 'Vận đơn thất bại' : 'Shipment failed')
+    )
+  );
+
   const isInboundShipping = Boolean(
-    isAtCenter && !isInboundDelivered && !isPassed && !isFailed && !isCancelled && !isPurchaseAccepted && !isCompleted && !isDelivered && (
+    isAtCenter && !isInboundDelivered && !isInboundCancelled && !isInboundFailed && !isPassed && !isFailed && !isCancelled && !isPurchaseAccepted && !isCompleted && !isDelivered && (
       status === 'SHIPPING_TO_CENTER' ||
-      (inboundShipment && inboundShipment.status !== 'CANCELLED' && getInboundShipmentProgress(inboundShipment).step !== null) ||
+      (inboundShipment && getInboundShipmentProgress(inboundShipment).step !== null) ||
       (typeof window !== 'undefined' && (
         localStorage.getItem(`order_shipment_created_${order.id}`) === 'true' ||
         localStorage.getItem(`seller_shipped_to_hub_${order.id}`) === 'true'
@@ -287,13 +329,19 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                 ? 'INSPECTING'
                 : isInboundDelivered
                   ? 'RECEIVED_AT_CENTER'
-                  : isInboundShipping
-                    ? 'SHIPPING_TO_CENTER'
-                    : customerStatus;
+                  : isInboundCancelled
+                    ? 'INBOUND_CANCELLED'
+                    : isInboundFailed
+                      ? 'INBOUND_FAILED'
+                      : isInboundShipping
+                        ? 'SHIPPING_TO_CENTER'
+                        : customerStatus;
   const isConfirmedPendingDispatch = status === 'CONFIRMED_PENDING_DISPATCH' && (
     badgeStatus === 'CONFIRMED_PENDING_DISPATCH' ||
     badgeStatus === 'SHIPPING_TO_CENTER' ||
-    badgeStatus === 'RECEIVED_AT_CENTER'
+    badgeStatus === 'RECEIVED_AT_CENTER' ||
+    badgeStatus === 'INBOUND_CANCELLED' ||
+    badgeStatus === 'INBOUND_FAILED'
   );
   const isInspecting = badgeStatus === 'INSPECTING' || customerStatus === 'INSPECTING' || customerStatus === 'INSPECTION_IN_PROGRESS';
 
@@ -757,6 +805,8 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
             : (isSeller ? (vi ? 'Chờ bạn hẹn lịch đón KTV' : 'Awaiting your schedule') : (vi ? 'Chờ người bán hẹn lịch đón KTV' : 'Awaiting seller schedule')))
       : (vi ? 'Đã thu đủ phí' : 'Fees collected'),
     SHIPPING_TO_CENTER: vi ? 'Đang giao đến Hub' : 'Shipping to Hub',
+    INBOUND_CANCELLED: vi ? 'Vận đơn đến Hub đã hủy' : 'Shipment to Hub cancelled',
+    INBOUND_FAILED: vi ? 'Vận đơn đến Hub thất bại' : 'Shipment to Hub failed',
     RECEIVED_AT_CENTER: vi ? 'Đã đến Hub kiểm định' : 'Delivered to Hub',
     INSPECTING: vi ? 'Đang kiểm định' : 'Inspection in progress',
     PASSED: vi ? 'Kiểm định đạt chuẩn' : 'Passed',
@@ -778,7 +828,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
       <div
         className={`max-w-lg w-full rounded-2xl border p-4 shadow-sm text-left transition-all relative overflow-hidden ${isPassed || isConfirmedPendingDispatch || badgeStatus === 'RECEIVED_AT_CENTER'
           ? 'bg-gradient-to-b from-emerald-50/70 to-white border-emerald-300'
-          : isRejected || isCancelled
+          : isRejected || isCancelled || badgeStatus === 'INBOUND_CANCELLED' || badgeStatus === 'INBOUND_FAILED'
             ? 'bg-gradient-to-b from-rose-50/70 to-white border-rose-200'
             : isWaitingFeePayment
               ? 'bg-gradient-to-b from-amber-50/80 to-white border-amber-300'
@@ -811,7 +861,9 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                     ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
                     : badgeStatus === 'SHIPPING_TO_CENTER'
                       ? 'bg-cyan-100 text-cyan-800 border-cyan-300'
-                      : badgeStatus === 'CONFIRMED_PENDING_DISPATCH'
+                      : badgeStatus === 'INBOUND_CANCELLED' || badgeStatus === 'INBOUND_FAILED'
+                        ? 'bg-rose-100 text-rose-800 border-rose-300 font-bold'
+                        : badgeStatus === 'CONFIRMED_PENDING_DISPATCH'
                         ? (isAtHome
                           ? (hasNoAppt
                             ? 'bg-amber-100 text-amber-900 border-amber-300 font-bold'
@@ -904,12 +956,12 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                   <span className="font-semibold text-slate-800">{formatFee(shippingFeeToHub)}</span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span>• Dự phòng hoàn hàng (hoàn lại nếu Đạt):</span>
+                  <span>• Dự phòng hoàn hàng:</span>
                   <span className="font-semibold text-slate-800">{formatFee(returnReserveFee)}</span>
                 </div>
                 <div className="text-[10px] text-slate-500 italic bg-blue-50/50 p-1.5 rounded-lg border border-blue-100/70 leading-snug">
                   ℹ️ {lang === 'vi'
-                    ? 'Khoản dự phòng cước trả về sẽ được hoàn nếu Buyer mua tiếp hoặc hoàn phần dư sau khi đối soát cước trả hàng.'
+                    ? 'Khoản dự phòng cước trả về sẽ được hoàn nếu người mua mua tiếp hoặc hoàn phần dư sau khi đối soát cước trả hàng.'
                     : 'Return reserve is refunded if Buyer completes purchase or residual balance refunded after reconciliation.'}
                 </div>
               </>
@@ -1315,8 +1367,8 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
           </div>
         )}
 
-        {/* 4. STATUS: CONFIRMED_PENDING_DISPATCH / SHIPPING_TO_CENTER / RECEIVED_AT_CENTER */}
-        {(isConfirmedPendingDispatch || badgeStatus === 'SHIPPING_TO_CENTER' || badgeStatus === 'RECEIVED_AT_CENTER') && !isInspecting && !isPassed && !isFailed && !isCancelled && !isPurchaseAccepted && !isCompleted && (
+        {/* 4. STATUS: CONFIRMED_PENDING_DISPATCH / SHIPPING_TO_CENTER / RECEIVED_AT_CENTER / INBOUND_CANCELLED / INBOUND_FAILED */}
+        {(isConfirmedPendingDispatch || badgeStatus === 'SHIPPING_TO_CENTER' || badgeStatus === 'RECEIVED_AT_CENTER' || badgeStatus === 'INBOUND_CANCELLED' || badgeStatus === 'INBOUND_FAILED') && !isInspecting && !isPassed && !isFailed && !isCancelled && !isPurchaseAccepted && !isCompleted && (
           isInboundDelivered ? (
             <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-950 space-y-1.5">
               <div className="font-bold flex items-center justify-between">
@@ -1335,6 +1387,72 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                   ? 'Thiết bị đã được giao tới Trung tâm kiểm định. Kỹ thuật viên chuẩn bị tiếp nhận và tiến hành thẩm định.'
                   : 'The item has arrived at the inspection center. Technicians are preparing to inspect.'}
               </p>
+            </div>
+          ) : isInboundCancelled ? (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-950 space-y-2">
+              <div className="font-bold flex items-center justify-between text-rose-900">
+                <div className="flex items-center gap-1.5">
+                  <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{lang === 'vi' ? 'Vận đơn đến Hub đã hủy' : 'Shipment to Hub cancelled'}</span>
+                </div>
+                {inboundShipment?.orderCode && (
+                  <span className="text-[10px] font-mono text-rose-800 bg-rose-100/80 px-2 py-0.5 rounded-md border border-rose-300">
+                    #{inboundShipment.orderCode}
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-rose-800 leading-relaxed">
+                {isSeller
+                  ? (lang === 'vi'
+                    ? 'Vận đơn Lalamove gửi kiện hàng đến Hub đã bị hủy. Vui lòng bấm "Tạo lại vận đơn Lalamove" bên dưới để gọi tài xế mới.'
+                    : 'The shipment to Hub was cancelled. Please create a new shipment.')
+                  : (lang === 'vi'
+                    ? 'Vận đơn chuyển kiện hàng đến Hub đã bị hủy. Người bán sẽ điều phối lại chuyến xe mới để gửi kiện hàng đến Hub.'
+                    : 'The shipment to Hub was cancelled. The seller will dispatch a new shipment.')}
+              </p>
+              {isSeller && isAtCenter && (
+                <button
+                  type="button"
+                  onClick={() => setShowShipmentModal(true)}
+                  className="w-full mt-1.5 py-2 px-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-xs shadow-sm transition flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99]"
+                >
+                  <Truck className="w-4 h-4" />
+                  <span>{lang === 'vi' ? 'Tạo lại vận đơn Lalamove' : 'Re-create Shipment'}</span>
+                </button>
+              )}
+            </div>
+          ) : isInboundFailed ? (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-950 space-y-2">
+              <div className="font-bold flex items-center justify-between text-rose-900">
+                <div className="flex items-center gap-1.5">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{lang === 'vi' ? 'Vận đơn đến Hub thất bại' : 'Shipment to Hub failed'}</span>
+                </div>
+                {inboundShipment?.orderCode && (
+                  <span className="text-[10px] font-mono text-rose-800 bg-rose-100/80 px-2 py-0.5 rounded-md border border-rose-300">
+                    #{inboundShipment.orderCode}
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-rose-800 leading-relaxed">
+                {isSeller
+                  ? (lang === 'vi'
+                    ? 'Chuyến xe giao đến Hub không thành công hoặc không tìm được tài xế nhận đơn. Vui lòng bấm "Tạo lại vận đơn Lalamove" bên dưới.'
+                    : 'The delivery to Hub failed. Please create a new shipment.')
+                  : (lang === 'vi'
+                    ? 'Chuyến xe giao kiện hàng đến Hub gặp sự cố hoặc quá hạn nhận đơn. Người bán đang xử lý điều phối lại vận đơn.'
+                    : 'The delivery to Hub failed. Seller is arranging a new shipment.')}
+              </p>
+              {isSeller && isAtCenter && (
+                <button
+                  type="button"
+                  onClick={() => setShowShipmentModal(true)}
+                  className="w-full mt-1.5 py-2 px-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-xs shadow-sm transition flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99]"
+                >
+                  <Truck className="w-4 h-4" />
+                  <span>{lang === 'vi' ? 'Tạo lại vận đơn Lalamove' : 'Re-create Shipment'}</span>
+                </button>
+              )}
             </div>
           ) : isInboundShipping ? (
             <div className="p-3 bg-cyan-50 border border-cyan-200 rounded-xl text-xs text-cyan-950 space-y-1.5">
@@ -1721,21 +1839,21 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
             <div className="font-extrabold flex items-center gap-1.5 text-rose-800">
               <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
               <span>
-                {isBuyerPurchaseRejected
-                  ? (isSeller
-                    ? (lang === 'vi' ? 'Người mua từ chối mua tiếp sau kiểm định' : 'Buyer declined purchase after inspection')
-                    : (lang === 'vi' ? 'Bạn đã từ chối mua tiếp sau kiểm định' : 'You declined purchase after inspection'))
-                  : isCancelled
-                    ? (lang === 'vi' ? 'Đề xuất kiểm định đã bị hủy' : 'Inspection proposal cancelled')
-                    : (lang === 'vi' ? 'Đề xuất kiểm định đã bị từ chối' : 'Inspection proposal rejected')}
+                {isBuyerPurchaseExpired
+                  ? (lang === 'vi' ? 'Đã hủy do hết hạn quyết định mua' : 'Cancelled due to purchase decision timeout')
+                  : isBuyerPurchaseRejected
+                    ? (isSeller
+                      ? (lang === 'vi' ? 'Người mua từ chối mua tiếp sau kiểm định' : 'Buyer declined purchase after inspection')
+                      : (lang === 'vi' ? 'Bạn đã từ chối mua tiếp sau kiểm định' : 'You declined purchase after inspection'))
+                    : isCancelled
+                      ? (lang === 'vi' ? 'Đề xuất kiểm định đã bị hủy' : 'Inspection proposal cancelled')
+                      : (lang === 'vi' ? 'Đề xuất kiểm định đã bị từ chối' : 'Inspection proposal rejected')}
               </span>
             </div>
-            {(isBuyerPurchaseRejected ? rejectionDetails.buyerRejectReason : (order.note || (order as any).rejectionReason || (order as any).rejectReason)) ? (
+            {displayCancellationReason ? (
               <div className="text-[11px] text-rose-800 bg-white/90 p-2 rounded-lg border border-rose-200/80 leading-relaxed font-medium">
                 <strong>{lang === 'vi' ? 'Lý do:' : 'Reason:'}</strong>{' '}
-                {isBuyerPurchaseRejected
-                  ? rejectionDetails.buyerRejectReason
-                  : (order.note || (order as any).rejectionReason || (order as any).rejectReason)}
+                {displayCancellationReason}
               </div>
             ) : (
               <p className="text-[11px] text-rose-600 italic">
@@ -1898,7 +2016,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
         )}
 
         {/* Modal Tạo Vận Đơn Vận Chuyển Lalamove (dành cho Người bán) */}
-        {showShipmentModal && isConfirmedPendingDispatch && isSeller && isAtCenter && (
+        {showShipmentModal && isSeller && isAtCenter && (
           <CreateShipmentModal
             order={escrowOrderForShipment}
             onClose={() => setShowShipmentModal(false)}

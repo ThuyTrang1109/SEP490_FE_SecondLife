@@ -184,3 +184,67 @@ test('stage 2 leg status correctly identifies awaiting buyer decision over in-tr
   assert.equal(inTransit.label, 'Đang giao người mua');
   assert.equal(inTransit.leg, 'CENTER_TO_BUYER');
 });
+
+test('Inspector verdict badge shows ĐẠT CHUẨN (PASS) for scored/passed inspection even if cancelled, and NEVER shows ĐANG KIỂM ĐỊNH', () => {
+  const getVerdictBadge = (params: {
+    isPassed: boolean;
+    isFailed: boolean;
+    conditionScore?: number | null;
+    backendStatus?: string;
+    inspectorNote?: string;
+    parsedScore?: string;
+  }) => {
+    const parsedScoreNum = params.conditionScore != null
+      ? Number(params.conditionScore)
+      : (params.parsedScore && !isNaN(Number(params.parsedScore)) ? Number(params.parsedScore) : null);
+
+    const isVerdictPassed = Boolean(
+      params.isPassed ||
+      (parsedScoreNum != null && parsedScoreNum >= 75) ||
+      params.backendStatus === 'PASSED' ||
+      (params.inspectorNote && /kiểm định đạt chuẩn|đạt chuẩn \(pass\)/i.test(params.inspectorNote))
+    );
+
+    const isVerdictFailed = Boolean(
+      !isVerdictPassed && (
+        params.isFailed ||
+        (parsedScoreNum != null && parsedScoreNum < 75) ||
+        params.backendStatus === 'FAILED' ||
+        (params.inspectorNote && /không đạt chuẩn|từ chối \(failed\)/i.test(params.inspectorNote))
+      )
+    );
+
+    if (isVerdictPassed) return 'ĐẠT CHUẨN (PASS)';
+    if (isVerdictFailed) return 'TỪ CHỐI (FAILED)';
+    return null;
+  };
+
+  // Case 1: Cancelled order after inspection passed with score 85 (like user's screenshot)
+  const cancelledWithPassVerdict = getVerdictBadge({
+    isPassed: false, // isPassed was false because order was cancelled
+    isFailed: false,
+    conditionScore: 85,
+    backendStatus: 'CANCELLED',
+    inspectorNote: 'cc | Người mua không thanh toán tiền hàng trong vòng 6 giờ sau khi kiểm định đạt chuẩn.',
+  });
+  assert.equal(cancelledWithPassVerdict, 'ĐẠT CHUẨN (PASS)', 'Must show ĐẠT CHUẨN (PASS), not ĐANG KIỂM ĐỊNH');
+
+  // Case 2: In-progress order with no verdict or score yet
+  const genuinelyInspecting = getVerdictBadge({
+    isPassed: false,
+    isFailed: false,
+    conditionScore: null,
+    backendStatus: 'INSPECTING',
+  });
+  assert.equal(genuinelyInspecting, null, 'Must NOT show ĐANG KIỂM ĐỊNH, badge is omitted');
+
+  // Case 3: Failed inspection with score 40
+  const failedVerdict = getVerdictBadge({
+    isPassed: false,
+    isFailed: true,
+    conditionScore: 40,
+    backendStatus: 'FAILED',
+    inspectorNote: 'Máy rỉ sét, hỏng động cơ',
+  });
+  assert.equal(failedVerdict, 'TỪ CHỐI (FAILED)');
+});

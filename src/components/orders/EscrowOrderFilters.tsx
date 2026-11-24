@@ -23,12 +23,12 @@ export function EscrowOrderFilters({
   const labels: Record<OrderFilterTab, string> = vi ? {
     all: 'Tất cả', awaiting_pickup: 'Chờ lấy hàng', inspecting: 'Đang xử lý kiểm định',
     shipping: 'Đang giao hàng', delivered: seller ? 'Đã giao (48h)' : 'Đã nhận hàng',
-    completed: 'Hoàn thành', cancelled: 'Đã đóng / Hủy', disputed: 'Trả hàng / Tranh chấp',
+    completed: 'Hoàn thành', cancelled: 'Đã đóng / Hủy', disputed: 'Trả hàng / Tranh chấp / Escrow đóng băng',
     with_inspection: 'Có kiểm định', pre_listing: 'Kiểm định trước đăng',
   } : {
     all: 'All', awaiting_pickup: 'Awaiting pickup', inspecting: 'Inspection in progress',
     shipping: 'In delivery', delivered: seller ? 'Delivered (48h)' : 'Delivered',
-    completed: 'Completed', cancelled: 'Closed / Cancelled', disputed: 'Returns / Disputes',
+    completed: 'Completed', cancelled: 'Closed / Cancelled', disputed: 'Returns / Disputes / Frozen Escrow',
     with_inspection: 'With inspection', pre_listing: 'Pre-listing inspections',
   };
   return (

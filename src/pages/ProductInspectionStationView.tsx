@@ -1168,7 +1168,11 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
       }
       setSealConfirmed(true);
     }
-    setIsDigitalSigned(true);
+
+    if (!isDigitalSigned) {
+      notify('Bắt buộc tích vào "Đính kèm chữ ký" thì mới được đi tiếp!', true);
+      return;
+    }
 
     submittingResult.current = true;
     setIsSubmitting(true);
@@ -1447,9 +1451,6 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
         return maxReachedStepIndex > 3 || proofPhotos.length > 0;
       case 'verdict': {
         const isScoreValid = overallVerdict === 'PASS' ? conditionScore > 75 : conditionScore <= 75;
-        if (isAtCenterOrder) {
-          return Boolean(overallVerdict && isScoreValid && (proofPhotos.length >= 1 || isDigitalSigned));
-        }
         return Boolean(overallVerdict && isScoreValid && isDigitalSigned);
       }
       default:
@@ -2884,13 +2885,26 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                   </div>
 
                   {/* Digital signature & Seal check */}
-                  <div className="p-4 rounded-2xl bg-[#faf8f5] border border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                  <div className={`p-4 rounded-2xl border transition flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs ${
+                    !isDigitalSigned
+                      ? 'bg-amber-50/50 border-amber-300 ring-1 ring-amber-200'
+                      : 'bg-emerald-50/30 border-emerald-300'
+                  }`}>
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-[#24263e] text-white flex items-center justify-center font-bold shrink-0">
-                        <ShieldCheck className="w-5 h-5 text-[#fce5da]" />
+                      <div className={`w-10 h-10 rounded-xl text-white flex items-center justify-center font-bold shrink-0 transition ${
+                        isDigitalSigned ? 'bg-emerald-700' : 'bg-[#24263e]'
+                      }`}>
+                        <ShieldCheck className={`w-5 h-5 ${isDigitalSigned ? 'text-white' : 'text-[#fce5da]'}`} />
                       </div>
                       <div>
-                        <div className="font-bold text-slate-900">Chữ Ký Số Kiểm Định Viên: {inspectorName}</div>
+                        <div className="font-bold text-slate-900 flex items-center gap-2">
+                          <span>Chữ Ký Số Kiểm Định Viên: {inspectorName}</span>
+                          {!isDigitalSigned && (
+                            <span className="text-[10px] text-amber-700 font-extrabold uppercase px-1.5 py-0.5 rounded bg-amber-100 border border-amber-300">
+                              Bắt buộc
+                            </span>
+                          )}
+                        </div>
                         <div className="text-[11px] text-gray-500 font-mono">
                           {isAtCenterOrder ? (
                             <span>Chứng thư số: • Hình thức: Kiểm định tại Lab Hub</span>
@@ -2902,7 +2916,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                     </div>
 
                     <div className="flex items-center gap-4">
-                      <label className="flex items-center gap-2 cursor-pointer">
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
                         <input
                           type="checkbox"
                           disabled={isCompletedOrder}
@@ -2910,8 +2924,11 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                           onChange={(e) => setIsDigitalSigned(e.target.checked)}
                           className="w-4 h-4 accent-[#c34c36] rounded cursor-pointer disabled:cursor-not-allowed"
                         />
-                        <span className="font-bold text-gray-800 flex items-center gap-1">
+                        <span className={`font-bold flex items-center gap-1 ${
+                          isDigitalSigned ? 'text-emerald-800' : 'text-slate-800'
+                        }`}>
                           <span>Đính kèm chữ ký</span>
+                          <span className="text-red-500 font-black">*</span>
                           {isDigitalSigned && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 inline" />}
                         </span>
                       </label>
@@ -2954,8 +2971,13 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                           <button
                             type="button"
                             onClick={handleSubmitInspection}
-                            disabled={isSubmitting}
-                            className="w-full sm:w-auto px-8 py-3 bg-[#24263e] hover:bg-black text-white text-sm font-black rounded-xl shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                            disabled={isSubmitting || !isDigitalSigned}
+                            className={`w-full sm:w-auto px-8 py-3 text-white text-sm font-black rounded-xl shadow-md flex items-center justify-center gap-2 transition ${
+                              isSubmitting || !isDigitalSigned
+                                ? 'bg-slate-400 cursor-not-allowed opacity-60'
+                                : 'bg-[#24263e] hover:bg-black cursor-pointer shadow-lg'
+                            }`}
+                            title={!isDigitalSigned ? 'Bắt buộc tích vào "Đính kèm chữ ký" thì mới được đi tiếp' : ''}
                           >
                             {isSubmitting ? (
                               <>

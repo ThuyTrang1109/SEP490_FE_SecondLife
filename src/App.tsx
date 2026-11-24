@@ -29,6 +29,7 @@ import type { PolicyTabKey } from './components/modals/PolicyModal';
 import './utils/dialogService';
 import { clearNotificationsOnLogout, saveScopedLocalNotification } from './utils/notificationStorage';
 import { NotificationItem } from './types/notification';
+import { canOpenOrderDispute } from './utils/orders/orderDispute';
 import { notificationWsClient } from './services/notificationWsClient';
 import { ShieldCheck, Sparkles, CheckCircle2, Store, AlertTriangle } from 'lucide-react';
 import { authService, userService, topupService, walletService, orderService, inspectorService, negotiationService, postService, adminPostService, shippingService, sellerCreditService, chatService, getAccessToken, getRefreshToken, clearAuthTokens, getStoredUser, setStoredUser, isTokenExpired, isTokenExpiringSoon, recordUserActivity, resetActivityTimer, isUserIdle, refreshAccessToken, checkAndRenewSessionOnReturn, ChatRoomDto } from './services';
@@ -357,7 +358,8 @@ export default function App() {
     });
   };
   const openProfile = () => {
-    navigatePath(paths.profile(navigationRole), { state: { returnPath: browserLocation } });
+    const { pathname, search, hash } = window.location;
+    navigatePath(paths.profile, { state: { returnPath: `${pathname}${search}${hash}` } });
   };
   const openChat = (listing: Listing, action?: string, prefill?: InspectionProposalPrefillData) => {
     setSelectedListing(null);
@@ -848,7 +850,7 @@ export default function App() {
   }, [currentUser]);
 
   // Auth Guard Helper
-  const protectedTabs = ['create-listing', 'seller-dashboard', 'orders', 'inspection-hub', 'inspection-center', 'admin-dashboard', 'staff-workspace', 'chat', 'notifications', 'disputes'];
+  const protectedTabs = ['create-listing', 'seller-dashboard', 'orders', 'inspection-hub', 'inspection-center', 'admin-dashboard', 'staff-workspace', 'chat', 'notifications', 'disputes', 'profile'];
 
   const requireAuth = (onSuccessAction?: () => void, customMsg?: string): boolean => {
     if (!currentUser) {
@@ -910,11 +912,16 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleNotificationNavigate = React.useCallback((actionUrl: string | null) => {
+  const handleNotificationNavigate = React.useCallback((actionUrl: string | null, notification?: NotificationItem) => {
     if (!actionUrl) { navigatePath(pathForTab('notifications', currentRole)); return; }
     const target = new URL(actionUrl, window.location.origin);
     if (target.origin !== window.location.origin) return;
     if (target.pathname.includes('/wallet')) { setIsTopUpModalOpen(true); return; }
+    if (notification?.referenceType === 'REPORT' && isValidUUID(notification.referenceId ?? '')) {
+      if (target.pathname.startsWith('/staff/reports/')) {
+        target.pathname = '/staff/disputes/' + encodeURIComponent(notification.referenceId!);
+      }
+    }
     const match = resolveAppRoute(`${target.pathname}${target.search}${target.hash}`, currentRole);
     const access = getRouteAccess(match, currentUser);
     if (access === 'unauthorized') {
@@ -1168,12 +1175,16 @@ export default function App() {
       status: (
         localStorage.getItem(`listing_available_${post.postId || post.id}`) === 'true'
           ? 'active'
-          : (getBoughtListingIds().has(String(post.postId || post.id)) ? 'reserved' : (post.status === 'ACTIVE' ? 'active' : post.status === 'DRAFT' ? 'draft' : 'reserved'))
+          : String(post.status || '').toUpperCase() === 'SOLD'
+            ? 'sold'
+            : (getBoughtListingIds().has(String(post.postId || post.id)) ? 'reserved' : (post.status === 'ACTIVE' ? 'active' : post.status === 'DRAFT' ? 'draft' : post.status === 'REJECTED' ? 'rejected' : 'reserved'))
       ) as any,
       backendStatus: (
         localStorage.getItem(`listing_available_${post.postId || post.id}`) === 'true'
           ? 'ACTIVE'
-          : (getBoughtListingIds().has(String(post.postId || post.id)) ? 'RESERVED' : (post.status || 'ACTIVE'))
+          : String(post.status || '').toUpperCase() === 'SOLD'
+            ? 'SOLD'
+            : (getBoughtListingIds().has(String(post.postId || post.id)) ? 'RESERVED' : (post.status || 'ACTIVE'))
       ),
       rejectionReason: post.rejectionReason,
       createdAt: post.publishedAt || post.createdAt || new Date().toISOString(),
@@ -1907,7 +1918,7 @@ export default function App() {
         ref === 'ESCROW' ||
         ref === 'SHIPMENT' ||
         ref === 'PAYMENT' ||
-        ref === 'DISPUTE'
+          ref === 'DISPUTE' || ref === 'REPORT'
       ) {
         void loadUserOrders(true);
       }
@@ -2314,8 +2325,8 @@ export default function App() {
   };
 
   const handleOpenDispute = (order: EscrowOrder) => {
-    if (currentRole === 'seller' || currentUser?.role === 'seller' || (order.sellerId && String(order.sellerId) === String(currentUser?.id))) {
-      showToast(lang === 'vi' ? 'Tài khoản người bán không có quyền thực hiện tạo khiếu nại.' : 'Seller accounts cannot file disputes.');
+    if (order.buyerId !== currentUser?.id || !canOpenOrderDispute(order)) {
+      showToast(lang === 'vi' ? 'Đơn hàng hiện không đủ điều kiện khiếu nại.' : 'This order is not eligible for a dispute.');
       return;
     }
     setReportingOrderForDispute(order);
@@ -3075,12 +3086,12 @@ export default function App() {
               {activeTab === 'disputes' && (
                 <MyDisputesView
                   currentUser={currentUser}
-                  currentRole={currentRole}
+                  currentRole={route.role ?? currentRole}
                   lang={lang}
                   orders={orders}
-                  onNavigateToOrder={() => {
-                    handleTabChange('orders');
-                  }}
+                  initialReportId={route.params.reportId}
+                  onCloseReport={() => navigatePath(pathForTab('disputes', route.role ?? currentRole), { replace: true })}
+                  onNavigateToOrder={(orderId) => navigatePath(paths.orders(currentRole, orderId))}
                   onNavigateToPost={(postId) => {
                     const item = listings.find((l) => l.id === postId);
                     if (item) openProduct(item);
@@ -3202,20 +3213,11 @@ export default function App() {
           <UserReportModal
             isOpen={!!reportingOrderForDispute}
             onClose={() => setReportingOrderForDispute(null)}
-            orderId={reportingOrderForDispute.id}
+            orderId={reportingOrderForDispute.linkedOrderId || reportingOrderForDispute.id}
+            shippingDeliveredAt={reportingOrderForDispute.shippingDeliveredAt}
             itemTitle={reportingOrderForDispute.listing?.title}
             onNavigateToDisputes={() => handleTabChange('disputes')}
-            onSuccess={() => {
-              if (reportingOrderForDispute?.id) {
-                try {
-                  localStorage.setItem(`order_disputed_${reportingOrderForDispute.id}`, 'true');
-                } catch { }
-              }
-              setOrders((prev) =>
-                prev.map((o) => (o.id === reportingOrderForDispute.id ? { ...o, escrowStatus: 'DISPUTED', status: 'DISPUTED', backendStatus: 'DISPUTED' as any } : o))
-              );
-              loadUserOrders(true);
-            }}
+            onSuccess={() => { void loadUserOrders(true); }}
           />
         )}
 
@@ -3310,6 +3312,10 @@ export default function App() {
             currentUser={currentUser}
             currentRole={currentRole}
             lang={lang}
+            onOpenDisputes={['buyer', 'seller'].includes(currentRole) ? (reportId) => {
+              setIsProfileDialogOpen(false);
+              navigatePath(reportId ? '/buyer/disputes/' + encodeURIComponent(reportId) : pathForTab('disputes', currentRole));
+            } : undefined}
             onUpdateProfile={(updated) => {
               handleUserProfileUpdated(
                 updated,

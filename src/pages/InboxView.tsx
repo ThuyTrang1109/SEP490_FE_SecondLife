@@ -553,8 +553,8 @@ export const InboxView: React.FC<InboxViewProps> = ({
                     type="button"
                     onClick={() => setFilterMode('all')}
                     className={`px-3 py-1 rounded-full text-xs font-bold transition cursor-pointer ${filterMode === 'all'
-                        ? 'bg-[#24263e] text-white shadow-2xs'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      ? 'bg-[#24263e] text-white shadow-2xs'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                       }`}
                   >
                     {lang === 'vi' ? 'Tất cả' : 'All'}
@@ -564,8 +564,8 @@ export const InboxView: React.FC<InboxViewProps> = ({
                     type="button"
                     onClick={() => setFilterMode('unread')}
                     className={`px-3 py-1 rounded-full text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${filterMode === 'unread'
-                        ? 'bg-blue-600 text-white shadow-2xs'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      ? 'bg-blue-600 text-white shadow-2xs'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                       }`}
                   >
                     <span>{lang === 'vi' ? 'Chưa đọc' : 'Unread'}</span>
@@ -614,10 +614,10 @@ export const InboxView: React.FC<InboxViewProps> = ({
                       key={room.id}
                       onClick={() => handleSelectRoom(room)}
                       className={`p-3.5 transition cursor-pointer flex items-center gap-3 relative ${isSelected
-                          ? 'bg-white md:border-l-4 md:border-l-[#c34c36] shadow-2xs'
-                          : unread
-                            ? 'bg-blue-50/40 hover:bg-blue-50/60'
-                            : 'hover:bg-slate-100/60'
+                        ? 'bg-white md:border-l-4 md:border-l-[#c34c36] shadow-2xs'
+                        : unread
+                          ? 'bg-blue-50/40 hover:bg-blue-50/60'
+                          : 'hover:bg-slate-100/60'
                         }`}
                     >
                       {/* Partner avatar */}
@@ -644,8 +644,8 @@ export const InboxView: React.FC<InboxViewProps> = ({
                         {/* Partner role & listing title & status */}
                         <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                           <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded border ${isRoomSeller
-                              ? 'bg-blue-50 text-blue-800 border-blue-200'
-                              : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                            ? 'bg-blue-50 text-blue-800 border-blue-200'
+                            : 'bg-emerald-50 text-emerald-800 border-emerald-200'
                             }`}>
                             {roleLabel}
                           </span>

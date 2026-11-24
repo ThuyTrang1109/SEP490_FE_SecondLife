@@ -751,7 +751,28 @@ export const shippingService = {
       requiresAuth: true,
     });
     const data = (res as any)?.data ?? res;
-    return Array.isArray(data) ? data : [];
+    const list = Array.isArray(data) ? data : [];
+    if (typeof window !== 'undefined' && list.length > 0) {
+      try {
+        const raw = JSON.stringify(list);
+        const prevSl = localStorage.getItem(`sl_order_shipments_${orderId}`);
+        if (prevSl !== raw) {
+          localStorage.setItem(`sl_order_shipments_${orderId}`, raw);
+          localStorage.setItem(`order_shipments_${orderId}`, raw);
+          const allCancelled = list.every((s) => {
+            const st = String(s.status || '').toUpperCase();
+            const pst = String(s.providerStatus || '').toUpperCase();
+            return st === 'CANCELLED' || st === 'CANCELED' || pst === 'CANCELED' || pst === 'CANCELLED';
+          });
+          if (allCancelled) {
+            localStorage.removeItem(`order_packed_${orderId}`);
+            localStorage.removeItem(`order_shipment_created_${orderId}`);
+          }
+          window.dispatchEvent(new CustomEvent('secondlife_shipment_updated', { detail: { orderId, shipments: list } }));
+        }
+      } catch { }
+    }
+    return list;
   },
 
   /**

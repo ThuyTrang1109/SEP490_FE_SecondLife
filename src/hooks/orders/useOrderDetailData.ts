@@ -101,17 +101,23 @@ export function useOrderDetailData(
     }
 
     const fetchAllShipments = async (): Promise<ShipmentBackend[]> => {
+      const map = new Map<string, ShipmentBackend>();
       for (const id of ids) {
         try {
-          const res = detailIsInspection
+          const res1 = detailIsInspection
             ? await shippingService.getInspectionShipments(id).catch(() => shippingService.getOrderShipments(id))
             : await shippingService.getOrderShipments(id).catch(() => shippingService.getInspectionShipments(id));
-          if (Array.isArray(res) && res.length > 0) {
-            return res;
-          }
+          const res2 = detailIsInspection
+            ? await shippingService.getOrderShipments(id).catch(() => [])
+            : await shippingService.getInspectionShipments(id).catch(() => []);
+          [...(Array.isArray(res1) ? res1 : []), ...(Array.isArray(res2) ? res2 : [])].forEach((s) => {
+            if (s && s.shipmentId) {
+              map.set(s.shipmentId, { ...map.get(s.shipmentId), ...s });
+            }
+          });
         } catch { }
       }
-      return [];
+      return Array.from(map.values());
     };
 
     fetchAllShipments()
@@ -129,6 +135,7 @@ export function useOrderDetailData(
               }
             } catch { }
           });
+          setApptTick((t) => t + 1);
         }
       })
       .catch(() => {

@@ -57,6 +57,21 @@ test('sellers retain their existing buyer capabilities without granting internal
   assert.equal(getRouteAccess(resolveAppRoute('/admin/users'), { role: 'seller' }), 'unauthorized');
 });
 
+test('personal profiles open a dedicated /profile route for authenticated customers', () => {
+  for (const role of ['buyer', 'seller'] as const) {
+    const route = resolveAppRoute(pathForTab('profile', role), role);
+    assert.equal(route.url, '/profile');
+    assert.equal(route.tab, 'profile');
+    assert.equal(route.modal, 'profile');
+    assert.equal(getRouteAccess(route, { role }), 'allowed');
+    assert.equal(resolveAppRoute(`/${role}/profile?ref=account`, role).url, '/profile?ref=account');
+  }
+  const profile = resolveAppRoute('/profile');
+  assert.equal(getRouteAccess(profile, null), 'login');
+  assert.equal(getRouteAccess(profile, null, true), 'loading');
+  assert.equal(getRouteAccess(profile, { role: 'staff' }), 'unauthorized');
+});
+
 test('dynamic routes preserve the exact product, order, conversation, inspection and user IDs', () => {
   for (const [url, key, expected] of [
     ['/products/product-1', 'productId', 'product-1'],

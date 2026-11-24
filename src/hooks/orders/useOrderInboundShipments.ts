@@ -3,9 +3,12 @@ import type { EscrowOrder, ShipmentBackend } from '../../types';
 import { ApiError, isUserIdle } from '../../services/apiClient';
 import { notificationWsClient } from '../../services/notificationWsClient';
 import { shippingService } from '../../services/shippingService';
-import { getHubReturnState, getLatestInboundShipment } from '../../utils/inspectionCenterData';
+import { getHubReturnState, getLatestInboundShipment, getLatestReturnShipment } from '../../utils/inspectionCenterData';
 import { getInspectionPurchaseDecision } from '../../utils/inspectionPurchase';
 import { getOrderAllShipments, isHubInboundInProgress } from '../../utils/orders/shipmentCache';
+import { isOrderWithInspection } from '../../utils/orders/orderReceipt';
+import { isOrderEscrowOnHold } from '../../utils/orders/orderDispute';
+import { upsertShipment } from '../../utils/lalamoveTracking';
 
 interface Options {
   userId?: string;
@@ -43,9 +46,17 @@ export function useOrderInboundShipments({
   });
   const [inboundLoadingOrders, setInboundLoadingOrders] = useState<ReadonlySet<string>>(new Set());
   const [sellerReturnShipments, setSellerReturnShipments] = useState<ReadonlyMap<string, ShipmentBackend | null>>(new Map());
-  const [, setDeliveryCacheVersion] = useState(0);
+  // A successful purchase-shipment response, including [], takes precedence over browser caches.
+  const [directShipments, setDirectShipments] = useState<ReadonlyMap<string, ShipmentBackend[]>>(new Map());
+  const [deliveryCacheVersion, setDeliveryCacheVersion] = useState(0);
 
   const failedInboundOrderIdsRef = React.useRef<Set<string>>(new Set());
+
+  const saveDirectShipment = React.useCallback((orderId: string, shipment: ShipmentBackend) => {
+    setDirectShipments((previous) => new Map(previous).set(
+      orderId, upsertShipment(previous.get(orderId) ?? getOrderAllShipments(orderId), shipment),
+    ));
+  }, []);
 
   const saveSellerInboundShipment = React.useCallback((orderId: string, shipment: ShipmentBackend | null) => {
     if (typeof window !== 'undefined' && orderId) {
@@ -93,13 +104,26 @@ export function useOrderInboundShipments({
 
   const sellerInboundOrderKey = userId
     ? Array.from(
-        new Set(
-          userOrders
-            .filter((order) => order.id !== trackingOrderId && order.id !== createShipmentOrderId &&
-              !isAtHomeOrder(order) && isHubInboundInProgress(order))
-            .map((order) => order.id)
-        )
-      ).sort().join(',')
+      new Set(
+        userOrders
+          .filter((order) => order.id !== trackingOrderId && order.id !== createShipmentOrderId &&
+            ((!isAtHomeOrder(order) && isHubInboundInProgress(order)) ||
+              Boolean(order.orderReturn?.reportId || isOrderEscrowOnHold(order))))
+          .map((order) => order.id)
+      )
+    ).sort().join(',')
+    : '';
+
+  const directOrdersKey = userId
+    ? Array.from(
+      new Set(
+        userOrders
+          .filter((order) => order.id !== trackingOrderId && order.id !== createShipmentOrderId &&
+            !isOrderWithInspection(order) &&
+            !['COMPLETED_RELEASED', 'COMPLETED', 'CANCELLED', 'REFUNDED_TO_BUYER'].includes(order.escrowStatus))
+          .map((order) => order.id)
+      )
+    ).sort().join(',')
     : '';
 
   const atHomeDeliveryKey = JSON.stringify(userId ? Array.from(
@@ -119,6 +143,7 @@ export function useOrderInboundShipments({
     if (prevUserIdForInboundRef.current && currentId && prevUserIdForInboundRef.current !== currentId) {
       setSellerInboundShipments(new Map());
       setSellerReturnShipments(new Map());
+      setDirectShipments(new Map());
       failedInboundOrderIdsRef.current.clear();
     }
     prevUserIdForInboundRef.current = currentId;
@@ -126,13 +151,20 @@ export function useOrderInboundShipments({
 
   React.useEffect(() => {
     const inboundIds = sellerInboundOrderKey ? sellerInboundOrderKey.split(',') : [];
+    const directIds = directOrdersKey ? directOrdersKey.split(',') : [];
     const atHomeOrders: Array<{ id: string; purchaseId: string; inspectionOrderId?: string | null }> = JSON.parse(atHomeDeliveryKey);
     const seenTargetIds = new Set<string>();
-    const targets: Array<{ id: string; purchaseId: string | null; inspectionOrderId?: string | null }> = [];
+    const targets: Array<{ id: string; purchaseId: string | null; inspectionOrderId?: string | null; direct?: boolean }> = [];
     for (const id of inboundIds) {
       if (!seenTargetIds.has(id)) {
         seenTargetIds.add(id);
-        targets.push({ id, purchaseId: null, inspectionOrderId: null });
+        targets.push({ id, purchaseId: null, inspectionOrderId: null, direct: directIds.includes(id) });
+      }
+    }
+    for (const id of directIds) {
+      if (!seenTargetIds.has(id)) {
+        seenTargetIds.add(id);
+        targets.push({ id, purchaseId: null, inspectionOrderId: null, direct: true });
       }
     }
     for (const ath of atHomeOrders) {
@@ -160,7 +192,7 @@ export function useOrderInboundShipments({
       let nextIndex = 0;
       const read = async () => {
         while (!controller.signal.aborted && !document.hidden && nextIndex < targets.length) {
-          const { id: orderId, purchaseId, inspectionOrderId } = targets[nextIndex++];
+          const { id: orderId, purchaseId, inspectionOrderId, direct } = targets[nextIndex++];
 
           // Bỏ qua các đơn hàng đã bị 403 Forbidden hoặc 404 để không call lặp vô hạn
           if (failedInboundOrderIdsRef.current.has(orderId)) {
@@ -168,6 +200,21 @@ export function useOrderInboundShipments({
           }
 
           try {
+            if (direct) {
+              const shipments = await shippingService.getOrderShipments(orderId, {
+                signal: controller.signal,
+                isBackground: true,
+              });
+              if (controller.signal.aborted) continue;
+              setDirectShipments((previous) => {
+                if (JSON.stringify(previous.get(orderId)) === JSON.stringify(shipments)) return previous;
+                return new Map(previous).set(orderId, shipments);
+              });
+              if (inboundIds.includes(orderId)) {
+                saveSellerReturnShipment(orderId, getLatestReturnShipment(shipments) || getHubReturnState(shipments).shipment);
+              }
+              continue;
+            }
             if (purchaseId) {
               const shipments = await shippingService.getOrderShipments(purchaseId, {
                 signal: controller.signal,
@@ -187,19 +234,58 @@ export function useOrderInboundShipments({
               if (changed) setDeliveryCacheVersion((previous) => previous + 1);
               continue;
             }
-            const shipments = await shippingService.getInspectionShipments(orderId, {
-              signal: controller.signal,
-              isBackground: true,
-            });
+            let shipments: ShipmentBackend[] = [];
+            try {
+              shipments = await shippingService.getInspectionShipments(orderId, {
+                signal: controller.signal,
+                isBackground: true,
+              });
+            } catch {
+              // Not an inspection order or not found, try getOrderShipments
+            }
+            if (!Array.isArray(shipments) || shipments.length === 0) {
+              try {
+                shipments = await shippingService.getOrderShipments(orderId, {
+                  signal: controller.signal,
+                  isBackground: true,
+                });
+              } catch {
+                // Ignore
+              }
+            }
             if (!controller.signal.aborted) {
               if (Array.isArray(shipments) && shipments.length > 0) {
                 try {
-                  localStorage.setItem(`sl_order_shipments_${orderId}`, JSON.stringify(shipments));
-                  localStorage.setItem(`order_shipments_${orderId}`, JSON.stringify(shipments));
+                  const raw = JSON.stringify(shipments);
+                  const prevSl = localStorage.getItem(`sl_order_shipments_${orderId}`);
+                  if (prevSl !== raw) {
+                    localStorage.setItem(`sl_order_shipments_${orderId}`, raw);
+                    localStorage.setItem(`order_shipments_${orderId}`, raw);
+                    const allCancelled = shipments.every((s) => {
+                      const st = String(s.status || '').toUpperCase();
+                      const pst = String(s.providerStatus || '').toUpperCase();
+                      return ['CANCELLED', 'CANCELED', 'FAILED', 'REJECTED', 'EXPIRED'].includes(st) ||
+                        ['CANCELLED', 'CANCELED', 'FAILED', 'REJECTED', 'EXPIRED'].includes(pst);
+                    });
+                    if (allCancelled) {
+                      localStorage.removeItem(`order_packed_${orderId}`);
+                      localStorage.removeItem(`order_shipment_created_${orderId}`);
+                    }
+                    setDeliveryCacheVersion((previous) => previous + 1);
+                    window.dispatchEvent(new CustomEvent('secondlife_shipment_updated', { detail: { orderId, shipments } }));
+                  }
                 } catch { }
               }
+              const targetOrder = userOrders.find((o) => o.id === orderId);
+              const isHubReturnOrder = Boolean(targetOrder && isHubInboundInProgress(targetOrder));
+              const isDisputeReturnOrder = Boolean(targetOrder && targetOrder.orderReturn && targetOrder.orderReturn.reportId);
+
               saveSellerInboundShipment(orderId, getLatestInboundShipment(shipments));
-              saveSellerReturnShipment(orderId, getHubReturnState(shipments).shipment);
+              if (isHubReturnOrder || isDisputeReturnOrder) {
+                saveSellerReturnShipment(orderId, getLatestReturnShipment(shipments) || getHubReturnState(shipments).shipment);
+              } else {
+                saveSellerReturnShipment(orderId, null);
+              }
             }
           } catch (error) {
             if (!controller.signal.aborted && error instanceof ApiError && [403, 404].includes(error.status)) {
@@ -247,7 +333,7 @@ export function useOrderInboundShipments({
       document.removeEventListener('visibilitychange', refresh);
       unsubWs();
     };
-  }, [userId, sellerInboundOrderKey, atHomeDeliveryKey, saveSellerInboundShipment, saveSellerReturnShipment]);
+  }, [userId, sellerInboundOrderKey, directOrdersKey, atHomeDeliveryKey, saveSellerInboundShipment, saveSellerReturnShipment]);
 
   const getOrderInboundShipment = React.useCallback((order: EscrowOrder | null | undefined): ShipmentBackend | null => {
     if (!order?.id) return null;
@@ -272,5 +358,5 @@ export function useOrderInboundShipments({
     }
     return null;
   }, [sellerInboundShipments, detailOrderId, detailShipments]);
-  return { getOrderInboundShipment, saveSellerInboundShipment, inboundLoadingOrders, sellerInboundShipments, sellerReturnShipments };
+  return { getOrderInboundShipment, saveSellerInboundShipment, inboundLoadingOrders, sellerInboundShipments, sellerReturnShipments, directShipments, saveDirectShipment, deliveryCacheVersion };
 }

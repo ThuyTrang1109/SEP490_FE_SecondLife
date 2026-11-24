@@ -418,15 +418,22 @@ export const getOrderBuyerAddress = (ord: any): string => {
     return null;
   };
 
+  const deliveryLegDestination = ord.shippingLegs && Array.isArray(ord.shippingLegs)
+    ? (ord.shippingLegs.find((l: any) => l.legType === 'SELLER_TO_BUYER' || l.legType === 'CENTER_TO_BUYER' || l.legType === 'DELIVERY')?.destination ||
+       ord.shippingLegs[ord.shippingLegs.length - 1]?.destination)
+    : ord.shippingLegs?.[0]?.destination || ord.shippingLegs?.[1]?.destination;
+
   const directList = [
-    ord.buyerContact?.address,
     ord.buyerAddress,
     ord.deliveryAddress,
+    deliveryLegDestination,
     ord.buyerDeliveryAddressJson,
+    (ord as any).shippingAddress,
+    ord.inspectionOrder?.deliveryAddress,
+    ord.inspectionOrder?.buyerDeliveryAddressJson,
+    ord.buyerContact?.address,
     ord.inspectionOrder?.buyerAddress,
     ord.inspectionOrder?.buyerContact?.address,
-    ord.inspectionOrder?.buyerDeliveryAddressJson,
-    ord.shippingLegs?.[1]?.destination,
     ord.address,
   ];
   for (const c of directList) {
@@ -453,7 +460,7 @@ export const getOrderBuyerAddress = (ord: any): string => {
       if (Array.isArray(list)) {
         const found = list.find((o: any) => targetIds.has(o.id) || targetIds.has(o.linkedOrderId));
         if (found) {
-          const addr = check(found.buyerContact?.address) || check(found.buyerAddress) || check(found.deliveryAddress) || check(found.shippingLegs?.[1]?.destination) || check(found.destinationAddress);
+          const addr = check(found.deliveryAddress) || check(found.shippingLegs?.[0]?.destination) || check(found.shippingLegs?.[1]?.destination) || check(found.destinationAddress) || check(found.buyerContact?.address) || check(found.buyerAddress);
           if (addr) return addr;
         }
       }

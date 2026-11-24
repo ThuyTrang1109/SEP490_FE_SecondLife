@@ -80,7 +80,7 @@ export const translations = {
     inspectionFee: 'Phí kiểm định chứng nhận',
     shippingFee: 'Phí vận chuyển giao nhận',
     platformFee: '',
-    totalEscrow: 'Tổng tiền phong tỏa Escrow',
+    totalEscrow: 'Tổng tiền',
     verifyThenShip: 'Quy trình "Kiểm định trước khi thanh toán"',
     whyInspection: 'Hàng gửi tới Trung tâm giám định SecondLife để chuyên gia mở máy, test linh kiện, dán tem niêm phong trước khi giao cho bạn (quá trình kiểm định tháo máy sẽ làm mất trạng thái zin nguyên bản).',
     inspectionZinLossWarning: 'Thông báo kiểm định: Quá trình kiểm định sẽ tháo sản phẩm để kiểm tra linh kiện và bo mạch, do đó sẽ làm mất trạng thái zin nguyên bản của sản phẩm.',

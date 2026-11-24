@@ -46,6 +46,7 @@ import {
 import { Listing, EscrowOrder, Language, UserProfile } from '../types';
 import { UserAvatar } from '../components/common/UserAvatar';
 import { formatVND } from '../utils/translations';
+import { formatDisputeReason } from '../utils/orders/orderDispute';
 import { staffService, staffListingService, adminPostService, SellerVerificationResponseDto, staffReportService, ReportItemDto, StaffOrderConfirmationResponse, userReportService } from '../services';
 import { dialogService } from '../utils/dialogService';
 import { translateSystemNotification } from '../utils/systemNotificationTranslator';
@@ -191,11 +192,10 @@ const ReportEvidenceItem: React.FC<{
     <button
       type="button"
       onClick={handleClick}
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border transition cursor-pointer text-xs font-bold shadow-2xs group ${
-        hasError
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border transition cursor-pointer text-xs font-bold shadow-2xs group ${hasError
           ? 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100'
           : 'bg-white border-indigo-200 text-indigo-700 hover:bg-indigo-50/80 hover:border-indigo-400'
-      }`}
+        }`}
       title={hasError ? 'Bấm để thử tải lại ảnh' : 'Bấm để xem ảnh phóng to'}
     >
       {loading ? (
@@ -223,6 +223,8 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
   onLogout,
 }) => {
   const [activeTab, setActiveTab] = usePanelTab<StaffTab>('staff', 'overview');
+  const initialReportId = resolveAppRoute(useBrowserLocation(), 'staff').params.reportId;
+  const canHandleReturns = Boolean(currentUser?.permissions?.includes('STAFF_DISPUTE_REVIEW'));
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(256);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -281,11 +283,6 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
   const [restrictTargetUser, setRestrictTargetUser] = useState('hung.spam@gmail.com');
   const [restrictLevel, setRestrictLevel] = useState<'WARN' | 'LOCK_POST' | 'LOCK_ESCROW' | 'SUSPEND'>('LOCK_POST');
   const [restrictReason, setRestrictReason] = useState('Đăng lặp lại 15 tin rác phá giá thị trường');
-
-  // Refund evaluation modal
-  const [selectedRefundModal, setSelectedRefundModal] = useState<any | null>(null);
-  const [refundDecisionType, setRefundDecisionType] = useState<'FULL' | 'PARTIAL' | 'REJECT'>('FULL');
-  const [refundNote, setRefundNote] = useState('');
 
   // 1. Staff Listings & Moderation State
   const [staffListings, setStaffListings] = useState<any[]>([]);
@@ -417,112 +414,13 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
   }, []);
 
   // 5. Disputes & Evidence
-  const [disputes, setDisputes] = useState<any[]>([]);
-
-  // Synchronize disputes from backend reports queue
-  useEffect(() => {
-    if (backendReports && backendReports.length > 0) {
-      const mappedDisputes = backendReports.map((r) => ({
-        id: `DSP-${r.id.slice(0, 8)}`,
-        reportId: r.id,
-        orderId: r.orderId || `ORD-${r.id.slice(0, 6)}`,
-        buyer: r.reporterId ? `Khách hàng #${r.reporterId.slice(0, 6)}` : 'Người mua',
-        seller: r.sellerId ? `Người bán #${r.sellerId.slice(0, 6)}` : 'Người bán',
-        reason: r.description || r.reasonCode || 'Khiếu nại sản phẩm không đúng mô tả',
-        amount: 2500000,
-        buyerEvidence: r.evidenceUrls?.[0] || 'evidence_unboxing.mp4',
-        sellerEvidence: r.evidenceUrls?.[1] || 'seal_handover_report.pdf',
-        status: r.status,
-      }));
-      setDisputes(mappedDisputes);
-    } else {
-      setDisputes([
-        {
-          id: 'DSP-882190',
-          orderId: 'ORD-7721A',
-          buyer: 'Lê Hoàng Nam (0912.888.xxx)',
-          seller: 'Trần Thị Thu Thảo (0933.111.xxx)',
-          amount: 4500000,
-          reason: 'Máy lạnh có vết móp ở lốc tản nhiệt và thiếu ống đồng so với video niêm phong',
-          buyerEvidence: 'unboxing_clip_video.mp4 (Đã tải)',
-          sellerEvidence: 'seal_handover_report.pdf (Đã duyệt Hub)',
-          status: 'OPEN',
-        },
-        {
-          id: 'DSP-882191',
-          orderId: 'ORD-9932B',
-          buyer: 'Vũ Quốc Huy (0988.222.xxx)',
-          seller: 'Nguyễn Văn Mạnh (0909.333.xxx)',
-          amount: 1800000,
-          reason: 'Nồi chiên không dầu không vào điện sau 2 ngày nhận hàng',
-          buyerEvidence: 'power_plug_test.mp4',
-          sellerEvidence: 'hub_test_report.pdf',
-          status: 'IN_REVIEW',
-        }
-      ]);
-    }
-  }, [backendReports]);
-
-  const handleResolveDispute = async (dsp: any, decision: 'BUYER' | 'SELLER') => {
-    if (dsp.reportId) {
-      try {
-        await staffReportService.resolveReport(dsp.reportId, {
-          decision: decision === 'BUYER' ? 'CONFIRMED' : 'DISMISSED',
-          responsibleParty: decision === 'BUYER' ? 'SELLER' : 'NONE',
-          reason: decision === 'BUYER' ? 'Phán quyết hoàn tiền cho người mua sau khi xác minh bằng chứng' : 'Phán quyết bác khiếu nại và giải ngân cho người bán',
-        });
-        triggerNotice(decision === 'BUYER' ? `Đã xử lý tranh chấp: Hoàn tiền Escrow cho Người mua đơn ${dsp.orderId}` : `Đã phán quyết bác khiếu nại & giải ngân cho Người bán đơn ${dsp.orderId}`);
-        loadBackendReports();
-        return;
-      } catch (err: any) {
-        console.warn('Resolve report via API error:', err);
-      }
-    }
-    triggerNotice(decision === 'BUYER' ? `Đã phán quyết hoàn trả 100% tiền Escrow cho Người mua đơn ${dsp.orderId}` : `Đã phán quyết bác khiếu nại & giải ngân cho Người bán đơn ${dsp.orderId}`);
-  };
-
-  // 6. Refund Requests (Đồng bộ từ backendReports và orders thực tế)
-  const [refundRequests, setRefundRequests] = useState<any[]>([]);
-
-  useEffect(() => {
-    const fromReports = (backendReports || [])
-      .filter(
-        (r) =>
-          r.orderId ||
-          r.targetType === 'ORDER' ||
-          r.resolutionAction === 'RETURN_AND_REFUND' ||
-          r.reasonCode === 'RETURN_NOT_AS_DESCRIBED' ||
-          r.reasonCode === 'ITEM_NOT_RECEIVED'
-      )
-      .map((r) => {
-        const relatedOrder = orders.find((o) => o.id === r.orderId);
-        return {
-          id: `REF-${r.id.slice(0, 8)}`,
-          orderId: r.orderId || (relatedOrder ? relatedOrder.id : `ORD-${r.id.slice(0, 6)}`),
-          productName: relatedOrder?.listing?.title || 'Sản phẩm khiếu nại hoàn tiền',
-          buyerName: relatedOrder?.buyerName || (r.reporterId ? `Người mua #${r.reporterId.slice(0, 6)}` : 'Người mua'),
-          amount: r.refundAmount || relatedOrder?.totalPaidVnd || relatedOrder?.itemPriceVnd || 0,
-          reason: r.description || 'Yêu cầu trả hàng hoàn tiền do sản phẩm không đúng cam kết',
-          status: r.status === 'CONFIRMED' ? 'APPROVED' : r.status === 'DISMISSED' ? 'REJECTED' : 'PENDING_APPROVAL',
-          reportId: r.id,
-        };
-      });
-
-    const fromOrders = (orders || [])
-      .filter((o) => o.escrowStatus === 'REFUNDED_TO_BUYER' || o.escrowStatus === 'DISPUTED')
-      .filter((o) => !fromReports.some((fr) => fr.orderId === o.id))
-      .map((o) => ({
-        id: `REF-${o.id.slice(0, 8)}`,
-        orderId: o.id,
-        productName: o.listing?.title || 'Đơn hàng yêu cầu hoàn tiền',
-        buyerName: o.buyerName || 'Người mua',
-        amount: o.totalPaidVnd || o.itemPriceVnd || 0,
-        reason: 'Khiếu nại giao dịch cần hoàn tiền bảo lãnh Escrow',
-        status: o.escrowStatus === 'REFUNDED_TO_BUYER' ? 'APPROVED' : 'PENDING_APPROVAL',
-      }));
-
-    setRefundRequests([...fromReports, ...fromOrders]);
-  }, [backendReports, orders]);
+  const disputes = useMemo(() => backendReports.filter((report) =>
+    report.orderId && (report.status === 'OPEN' || report.status === 'IN_REVIEW')
+  ), [backendReports]);
+  const listingReports = backendReports.filter((report) => !report.orderId);
+  const pendingRefundCount = backendReports.filter((report) =>
+    report.orderId && report.resolutionAction === 'RETURN_AND_REFUND' && !report.refundedAt
+  ).length;
 
   // 7. Payouts & Escrow Hold (Case có tranh chấp)
   const [payouts, setPayouts] = useState<any[]>([]);
@@ -603,7 +501,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
     },
     {
       id: 'disputes' as StaffTab,
-      label: 'TRANH CHẤP & BẰNG CHỨNG ❌',
+      label: 'TRANH CHẤP & BẰNG CHỨNG',
       icon: Scale,
       badge: disputes.length,
       badgeColor: 'bg-[#c34c36] text-white'
@@ -612,7 +510,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
       id: 'refund-requests' as StaffTab,
       label: 'YÊU CẦU HOÀN TIỀN',
       icon: RotateCcw,
-      badge: refundRequests.filter((r) => r.status === 'PENDING_APPROVAL').length,
+      badge: pendingRefundCount,
       badgeColor: 'bg-rose-500 text-white'
     },
     {
@@ -680,44 +578,6 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
   const handleApplyRestriction = (e: React.FormEvent) => {
     e.preventDefault();
     triggerNotice(`Đã áp dụng chế tài thành công đối với người dùng ${restrictTargetUser}.`);
-  };
-
-  const handleProcessRefund = async () => {
-    if (!selectedRefundModal) return;
-    try {
-      if (selectedRefundModal.reportId) {
-        await staffReportService.resolveReport(selectedRefundModal.reportId, {
-          decision: refundDecisionType === 'REJECT' ? 'DISMISSED' : 'CONFIRMED',
-          resolutionAction: refundDecisionType === 'REJECT' ? 'NONE' : 'RETURN_AND_REFUND',
-          reason: refundNote || (refundDecisionType === 'REJECT' ? 'Từ chối yêu cầu hoàn tiền do không đủ căn cứ' : 'Chấp thuận hoàn tiền bảo lãnh Escrow cho người mua'),
-          responsibleParty: refundDecisionType === 'REJECT' ? 'NONE' : 'SELLER',
-        });
-        loadBackendReports();
-      }
-      setRefundRequests((prev) =>
-        prev.map((r) =>
-          r.id === selectedRefundModal.id
-            ? {
-              ...r,
-              status: refundDecisionType === 'REJECT' ? 'REJECTED' : 'APPROVED'
-            }
-            : r
-        )
-      );
-      triggerNotice(
-        `Đã xử lý yêu cầu hoàn tiền #${selectedRefundModal.id}: ${refundDecisionType === 'FULL'
-          ? 'Hoàn trả 100% tiền Escrow'
-          : refundDecisionType === 'PARTIAL'
-            ? 'Hoàn trả một phần (khấu trừ cước)'
-            : 'Từ chối hoàn tiền'
-        }.`
-      );
-    } catch (err: any) {
-      triggerNotice(err?.message || 'Xử lý yêu cầu hoàn tiền thất bại');
-    } finally {
-      setSelectedRefundModal(null);
-      setRefundNote('');
-    }
   };
 
   const handleTogglePayoutHold = (payoutId: string, currentStatus: string) => {
@@ -956,7 +816,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                   ? 'Dashboard Tổng Quan'
                   : navItems.find((n) => n.id === activeTab)?.label}
               </h1>
-              <span className="text-xs text-slate-500 font-normal">Staff Operational Workspace</span>
+              <span className="text-xs text-slate-500 font-normal">Khu Vực Vận Hành Nhân Viên</span>
             </div>
 
             <div className="flex items-center gap-1.5 text-xs text-slate-500">
@@ -1381,12 +1241,12 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                         <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2 text-indigo-600" />
                         <span>Đang tải danh sách báo cáo vi phạm...</span>
                       </div>
-                    ) : backendReports.length > 0 ? (
-                      backendReports.map((rep) => (
+                    ) : listingReports.length > 0 ? (
+                      listingReports.map((rep) => (
                         <div key={rep.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50 text-xs space-y-2">
                           <div className="flex justify-between font-bold text-slate-900">
                             <span className="font-mono text-indigo-900">
-                              #{rep.id.slice(0, 8)} • Lý do: {rep.reasonCode}
+                              #{rep.id.slice(0, 8)} • Lý do: {formatDisputeReason(rep.reasonCode)}
                             </span>
                             <span className="text-slate-400 font-mono text-[11px]">{new Date(rep.createdAt).toLocaleString('vi-VN')}</span>
                           </div>
@@ -1510,13 +1370,13 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
               <div className="bg-white rounded-xl p-4 shadow-xs border border-slate-200 border-t-4 border-t-[#c34c36]">
                 <div className="mb-4">
                   <h3 className="font-extrabold text-sm text-slate-900 uppercase">
-                    GIẢI QUYẾT TRANH CHẤP & VẬN HÀNH HOÀN HÀNG (DISPUTE WORKSPACE)
+                    GIẢI QUYẾT TRANH CHẤP & VẬN HÀNH HOÀN HÀNG
                   </h3>
                   <p className="text-xs text-slate-500">
                     Phân xử khiếu nại giữa Người Mua & Người Bán, đối chiếu bằng chứng hai bên, tạo chuyến hoàn Lalamove và quyết toán hoàn tiền/phí.
                   </p>
                 </div>
-                <StaffDisputeManagement currentUserId={currentUser?.id} />
+                <StaffDisputeManagement currentUserId={currentUser?.id} canHandleReturns={canHandleReturns} initialReportId={initialReportId} />
               </div>
             </div>
           )}
@@ -1526,66 +1386,14 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
           {/* ======================================================== */}
           {activeTab === 'refund-requests' && (
             <div className="space-y-4">
-              <div className="bg-white rounded-xl p-4 shadow-xs border border-slate-200 border-t-4 border-t-rose-600 space-y-4">
-                <div>
-                  <h3 className="font-extrabold text-sm text-slate-900 uppercase">
-                    XEM XÉT CÁC YÊU CẦU HOÀN TIỀN (REFUND REQUESTS)
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Thẩm định yêu cầu hoàn tiền của người mua trong cửa sổ đổi trả/kiểm định và giải ngân hoàn tiền Escrow
-                  </p>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead>
-                      <tr className="border-b border-slate-100 bg-slate-50/70 text-slate-600 text-[11px] font-bold">
-                        <th className="py-2.5 px-3">Mã Hoàn Tiền</th>
-                        <th className="py-2.5 px-3">Mã Đơn Hàng</th>
-                        <th className="py-2.5 px-3">Sản Phẩm</th>
-                        <th className="py-2.5 px-3">Người Mua</th>
-                        <th className="py-2.5 px-3">Số Tiền Yêu Cầu</th>
-                        <th className="py-2.5 px-3">Lý Do Hoàn Tiền</th>
-                        <th className="py-2.5 px-3 text-center">Thao Tác</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {refundRequests.length === 0 ? (
-                        <tr>
-                          <td colSpan={7} className="py-8 text-center text-slate-400">
-                            Hiện không có yêu cầu hoàn tiền nào cần thẩm định.
-                          </td>
-                        </tr>
-                      ) : (
-                        refundRequests.map((item) => (
-                          <tr key={item.id} className="hover:bg-slate-50/70 transition">
-                            <td className="py-3 px-3 font-mono font-bold text-rose-700">{item.id}</td>
-                            <td className="py-3 px-3 font-mono font-bold text-slate-900">{item.orderId}</td>
-                            <td className="py-3 px-3 font-bold text-slate-900">{item.productName}</td>
-                            <td className="py-3 px-3 text-slate-800">{item.buyerName}</td>
-                            <td className="py-3 px-3 font-black text-rose-700 whitespace-nowrap">{formatVND(item.amount)}</td>
-                            <td className="py-3 px-3 text-slate-600 max-w-xs">{item.reason}</td>
-                            <td className="py-3 px-3 text-center">
-                              <button
-                                onClick={() => setSelectedRefundModal(item)}
-                                className="px-3 py-1.5 rounded bg-rose-700 hover:bg-rose-800 text-white text-[11px] font-bold transition cursor-pointer"
-                              >
-                                Thẩm Định Hoàn
-                              </button>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <h3 className="text-sm font-extrabold text-slate-900">Hoàn tiền đơn hàng</h3>
+                <p className="mt-1 text-xs text-slate-500">Hoàn toàn bộ tiền hàng vào ví người mua sau khi vận đơn hoàn đã giao về người bán.</p>
               </div>
+              <StaffDisputeManagement currentUserId={currentUser?.id} canHandleReturns={canHandleReturns} returnOnly />
             </div>
           )}
 
-          {/* ======================================================== */}
-          {/* TAB 7: PAYOUTS & HOLD (XEM XÉT / PHÊ DUYỆT / TẠM GIỮ)      */}
-          {/* ======================================================== */}
           {activeTab === 'payouts' && (
             <div className="space-y-4">
               <div className="bg-white rounded-xl p-4 shadow-xs border border-slate-200 border-t-4 border-t-amber-600 space-y-4">
@@ -1977,106 +1785,6 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
           </div>
         </div>
       )}
-
-      {/* ======================================================== */}
-      {/* MODAL: THẨM ĐỊNH HOÀN TIỀN                               */}
-      {/* ======================================================== */}
-      {selectedRefundModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4 text-xs">
-            <div className="flex items-center justify-between border-b pb-3">
-              <div>
-                <h3 className="font-black text-sm text-slate-900">
-                  THẨM ĐỊNH HOÀN TIỀN #{selectedRefundModal.id}
-                </h3>
-                <p className="text-slate-500 text-[11px]">Đơn hàng: #{selectedRefundModal.orderId}</p>
-              </div>
-              <button
-                onClick={() => setSelectedRefundModal(null)}
-                className="p-1 rounded-full text-slate-400 hover:text-slate-600 transition cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
-              <div className="flex justify-between">
-                <span className="text-slate-500 font-bold">Số tiền yêu cầu hoàn:</span>
-                <span className="font-black text-rose-700 text-sm">{formatVND(selectedRefundModal.amount)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500 font-bold">Người mua:</span>
-                <span className="font-bold text-slate-800">{selectedRefundModal.buyerName}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500 font-bold">Lý do:</span>
-                <span className="font-medium text-slate-700 max-w-xs text-right">{selectedRefundModal.reason}</span>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="font-bold text-slate-800 block">Quyết định thẩm định hoàn tiền:</label>
-              <div className="space-y-1.5">
-                <label className="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 bg-white cursor-pointer hover:bg-slate-50 font-bold text-slate-800">
-                  <input
-                    type="radio"
-                    name="refundDecision"
-                    checked={refundDecisionType === 'FULL'}
-                    onChange={() => setRefundDecisionType('FULL')}
-                  />
-                  <span>Hoàn trả 100% qua Escrow ({formatVND(selectedRefundModal.amount)})</span>
-                </label>
-                <label className="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 bg-white cursor-pointer hover:bg-slate-50 font-bold text-slate-800">
-                  <input
-                    type="radio"
-                    name="refundDecision"
-                    checked={refundDecisionType === 'PARTIAL'}
-                    onChange={() => setRefundDecisionType('PARTIAL')}
-                  />
-                  <span>Hoàn trả một phần (Trừ phí vận chuyển 150.000đ)</span>
-                </label>
-                <label className="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 bg-white cursor-pointer hover:bg-slate-50 font-bold text-rose-700">
-                  <input
-                    type="radio"
-                    name="refundDecision"
-                    checked={refundDecisionType === 'REJECT'}
-                    onChange={() => setRefundDecisionType('REJECT')}
-                  />
-                  <span>Bác bỏ yêu cầu hoàn tiền (Sản phẩm không có lỗi)</span>
-                </label>
-              </div>
-            </div>
-
-            <div>
-              <label className="font-bold text-slate-800 block mb-1">Ghi chú quyết định:</label>
-              <textarea
-                rows={2}
-                value={refundNote}
-                onChange={(e) => setRefundNote(e.target.value)}
-                placeholder="Nhập căn cứ xử lý hoàn tiền..."
-                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none"
-              />
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2 border-t">
-              <button
-                onClick={() => setSelectedRefundModal(null)}
-                className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition cursor-pointer"
-              >
-                Hủy Bỏ
-              </button>
-              <button
-                onClick={handleProcessRefund}
-                className="px-5 py-2 bg-[#24263e] hover:bg-[#c34c36] text-white rounded-xl font-black transition cursor-pointer"
-              >
-                Xác Nhận Xử Lý Hoàn Tiền
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-
 
       {/* ======================================================== */}
       {/* 2-COLUMN COMPARISON MODAL FOR STAFF LISTING REVIEW        */}

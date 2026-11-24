@@ -40,6 +40,7 @@ import { formatVndInput, cleanVndInput, handleVndInputChange, handleVndInputKeyD
 import { clearInspectionChatIntent, inspectionChatDraftFromUrl, isInspectionProposalForPost, matchesInspectionChatDraft } from '../../utils/inspectionChatDraft';
 import { createChatInspectionReader, getChatInspectionOrderId, getCurrentChatInspection, isActiveChatInspection, matchesChatInspection } from '../../utils/chatInspection';
 import { getChatPostStatusBadge } from '../../utils/chatProduct';
+import { formatOrderCancellationReason } from '../../utils/inspectionPurchase';
 import { UserAvatar } from '../common/UserAvatar';
 
 export interface DedicatedChatRoomProps {
@@ -1190,10 +1191,12 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
       } else if (updated.status === 'WAITING_FEE_PAYMENT' || updated.status === 'CONFIRMED_PENDING_DISPATCH') {
         updateNoticeText = `[CHẤP NHẬN ĐỀ XUẤT]: Đề xuất kiểm định đã được đồng ý. Vui lòng tiến hành nộp phí kiểm định theo quy định!`;
       } else if (updated.status === 'CANCELLED') {
-        const reasonDetail = updated.note ? `. Lý do: ${updated.note}` : '.';
+        const cleanNote = formatOrderCancellationReason(updated.note, 'vi') || updated.note;
+        const reasonDetail = cleanNote ? `. Lý do: ${cleanNote}` : '.';
         updateNoticeText = `[HỦY ĐỀ XUẤT]: Đề xuất kiểm định đã được hủy${reasonDetail}`;
       } else if (updated.status === 'REJECTED') {
-        const reasonDetail = updated.note ? `. Lý do: ${updated.note}` : '.';
+        const cleanNote = formatOrderCancellationReason(updated.note, 'vi') || updated.note;
+        const reasonDetail = cleanNote ? `. Lý do: ${cleanNote}` : '.';
         updateNoticeText = `[TỪ CHỐI ĐỀ XUẤT]: Đề xuất kiểm định đã bị từ chối${reasonDetail}`;
       }
 
@@ -1720,7 +1723,18 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
                             : 'bg-white border border-slate-200 text-[#24263e] rounded-bl-xs'
                             }`}
                         >
-                          {msg.text}
+                          {(() => {
+                            if (typeof msg.text === 'string' && (msg.text.includes('[HỦY ĐỀ XUẤT]') || msg.text.includes('[TỪ CHỐI ĐỀ XUẤT]')) && msg.text.includes('. Lý do:')) {
+                              const match = msg.text.match(/^(.*?\. Lý do:\s*)(.+)$/);
+                              if (match) {
+                                const prefix = match[1];
+                                const rawReason = match[2];
+                                const cleanReason = formatOrderCancellationReason(rawReason, 'vi');
+                                return `${prefix}${cleanReason}`;
+                              }
+                            }
+                            return msg.text;
+                          })()}
                         </div>
                         <div className={`text-[10px] text-slate-400 mt-1 flex items-center gap-1 ${isMe ? 'justify-end' : 'justify-start'}`}>
                           <span>{msg.timestamp}</span>

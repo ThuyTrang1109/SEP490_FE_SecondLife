@@ -189,7 +189,7 @@ export const AdminInspectionFundsView: React.FC<AdminInspectionFundsViewProps> =
             {/* 2. THU THEO TỪNG BÊN (COLLECTION BREAKDOWN) */}
             <section className="space-y-2">
               <h4 className="font-bold uppercase tracking-wider text-[11px] text-slate-500">
-                Thu Theo Từng Bên (Buyer / Seller)
+                Thu theo từng bên
               </h4>
               {(() => {
                 const buyer = funds.buyerPayment ?? (funds as any).buyer;
@@ -522,7 +522,7 @@ export const AdminInspectionFundsView: React.FC<AdminInspectionFundsViewProps> =
                         <th className="p-2.5">Mã Lalamove / Đơn</th>
                         <th className="p-2.5">Trạng thái kiện</th>
                         <th className="p-2.5 text-right">Cước thực tế</th>
-                        
+
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">

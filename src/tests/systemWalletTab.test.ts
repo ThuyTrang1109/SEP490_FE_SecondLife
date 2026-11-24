@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { SystemWalletTab } from '../components/admin/SystemWalletTab';
 import { systemWalletService } from '../services/systemWalletService';
 import type { SystemWalletTransaction } from '../types';
-import { toSystemWalletHistoryItem } from '../utils/systemWalletHistory';
+import { toSystemWalletHistoryItem, getSystemWalletBreakdownLines } from '../utils/systemWalletHistory';
 
 test('systemWalletService.getTransactions builds correct query string with filters', async (t) => {
   assert.equal(typeof systemWalletService.getSystemWallet, 'function');
@@ -16,8 +16,7 @@ test('SystemWalletTab renders shipping balance card with holding status and filt
   const html = renderToStaticMarkup(createElement(SystemWalletTab));
 
   // Verify Header
-  assert.match(html, /Ví Hệ Thống &amp; Kế Toán Đối Soát \(System Wallet\)/);
-  assert.match(html, /ADMIN ONLY/);
+  assert.match(html, /Ví Hệ Thống/);
 
   // Verify Shipping Balance Card
   assert.match(html, /Phí vận chuyển đã thu/);
@@ -30,7 +29,10 @@ test('SystemWalletTab renders shipping balance card with holding status and filt
   assert.match(html, /Tất cả/);
   assert.match(html, /Tiền vận chuyển \(Cước ship\)/);
   assert.match(html, /Nhận ký quỹ/);
+  assert.match(html, /Thu phí kiểm định/);
   assert.match(html, /Giải ngân/);
+  assert.match(html, /Chi trả Hub/);
+  assert.match(html, /Hoa hồng sàn/);
   assert.match(html, /Hoàn tiền/);
   assert.match(html, /Thu cước trả hàng/);
 
@@ -41,9 +43,7 @@ test('SystemWalletTab renders shipping balance card with holding status and filt
   assert.match(html, /Mã GD/);
   assert.match(html, /Mã Đơn Hàng \(Order ID\)/);
   assert.match(html, /Phân Loại/);
-  assert.match(html, /Biến Động Phí Ship/);
-  assert.match(html, /Biến Động Ký Quỹ/);
-  assert.match(html, /Biến Động Hoa Hồng/);
+  assert.match(html, /Số Tiền Biến Động/);
   assert.doesNotMatch(html, /Tổng Cước Ship Người Dùng/i);
 });
 
@@ -215,4 +215,166 @@ test('inspection hold parses fees and reserve into individual positive items', (
 
   assert.equal(item.breakdownItems[1].label, 'Cước và dự phòng');
   assert.match(item.breakdownItems[1].formattedText || '', /\+?848\.320/);
+});
+
+test('settlement filter isolates seller payout and excludes commission, hub payouts, and fees', () => {
+  const sellerPayout = toSystemWalletHistoryItem({
+    id: 99, entryId: '99-1', orderId: '37c5eb2e-92f8', type: 'SETTLEMENT',
+    fundCategory: 'PRODUCT_ESCROW', totalDelta: 266_000, deltaAction: 'MINUS',
+    heldDelta: -266_000, shippingDelta: 0, revenueDelta: 0,
+    heldBalanceAfter: 0, shippingBalanceAfter: 0, revenueBalanceAfter: 14_000,
+    createdAt: '2026-11-22T15:59:48Z',
+  });
+
+  const commission = toSystemWalletHistoryItem({
+    id: 99, entryId: '99-4', orderId: '37c5eb2e-92f8', type: 'SETTLEMENT',
+    fundCategory: 'COMMISSION', totalDelta: 14_000, deltaAction: 'PLUS',
+    heldDelta: -14_000, shippingDelta: 0, revenueDelta: 14_000,
+    heldBalanceAfter: 0, shippingBalanceAfter: 0, revenueBalanceAfter: 14_000,
+    createdAt: '2026-11-22T15:59:48Z',
+  });
+
+  const hubPayout = toSystemWalletHistoryItem({
+    id: 135, entryId: '135-2', orderId: null, inspectionOrderId: '96fca143-f737',
+    type: 'INSPECTION_SETTLEMENT', fundCategory: 'HUB_PAYOUT',
+    totalDelta: 529_400, deltaAction: 'MINUS',
+    heldDelta: -529_400, shippingDelta: 0, revenueDelta: 0,
+    heldBalanceAfter: 0, shippingBalanceAfter: 0, revenueBalanceAfter: 0,
+    createdAt: '2026-11-22T10:59:18Z',
+  });
+
+  const inspectionFee = toSystemWalletHistoryItem({
+    id: 141, entryId: '141-1', orderId: null, inspectionOrderId: '8ad26322-821a',
+    type: 'INSPECTION_HOLD', fundCategory: 'USER_SHIPPING',
+    totalDelta: 360_192, deltaAction: 'PLUS',
+    heldDelta: 80_000, shippingDelta: 280_192, revenueDelta: 0,
+    heldBalanceAfter: 80_000, shippingBalanceAfter: 280_192, revenueBalanceAfter: 0,
+    createdAt: '2026-11-22T12:16:56Z',
+  });
+
+  const items = [sellerPayout, commission, hubPayout, inspectionFee];
+
+  // Test SETTLEMENT filter logic
+  const isSettlement = (item: typeof sellerPayout) =>
+    item.typeLabel === 'Giải ngân' ||
+    (
+      (item.type === 'SETTLEMENT' || item.type === 'INSPECTION_SETTLEMENT') &&
+      item.fundCategory !== 'COMMISSION' &&
+      item.fundCategory !== 'HUB_PAYOUT' &&
+      item.typeLabel !== 'Hoa hồng sàn' &&
+      item.typeLabel !== 'Thanh toán ví Hub'
+    );
+
+  const settlements = items.filter(isSettlement);
+  assert.equal(settlements.length, 1);
+  assert.equal(settlements[0].entryId, '99-1');
+  assert.equal(settlements[0].typeLabel, 'Giải ngân');
+
+  // Test COMMISSION filter logic
+  const commissions = items.filter((item) =>
+    item.fundCategory === 'COMMISSION' ||
+    item.typeLabel === 'Hoa hồng sàn' ||
+    (item.transaction.revenueDelta !== 0 && item.fundCategory !== 'HUB_PAYOUT')
+  );
+  assert.equal(commissions.length, 1);
+  assert.equal(commissions[0].entryId, '99-4');
+  assert.equal(commissions[0].typeLabel, 'Hoa hồng sàn');
+
+  // Test HUB_PAYOUT filter logic
+  const hubPayouts = items.filter((item) =>
+    item.fundCategory === 'HUB_PAYOUT' ||
+    item.typeLabel === 'Thanh toán ví Hub'
+  );
+  assert.equal(hubPayouts.length, 1);
+  assert.equal(hubPayouts[0].entryId, '135-2');
+  assert.equal(hubPayouts[0].typeLabel, 'Thanh toán ví Hub');
+
+  // Test INSPECTION_HOLD filter logic
+  const inspectionHolds = items.filter((item) =>
+    item.typeLabel === 'Thu phí kiểm định' ||
+    item.type === 'INSPECTION_HOLD'
+  );
+  assert.equal(inspectionHolds.length, 1);
+  assert.equal(inspectionHolds[0].entryId, '141-1');
+  assert.equal(inspectionHolds[0].typeLabel, 'Thu phí kiểm định');
+});
+
+test('getSystemWalletBreakdownLines parses escrow hold description into separate formatted lines', () => {
+  const item = toSystemWalletHistoryItem({
+    id: 293,
+    entryId: '293-1',
+    orderId: '8dcc045e-97ce-40b9-963d-4cd991fed7a3',
+    type: 'PAYMENT_HOLD',
+    fundCategory: 'PRODUCT_ESCROW',
+    totalDelta: 17_364_800,
+    deltaAction: 'PLUS',
+    heldDelta: 11_200_000,
+    shippingDelta: 6_164_800,
+    revenueDelta: 0,
+    heldBalanceAfter: 11_200_000,
+    shippingBalanceAfter: 6_164_800,
+    revenueBalanceAfter: 0,
+    createdAt: '2026-11-23T15:57:02Z',
+    breakdownDescription: 'Tiền hàng 11200000.00 đ, cước giao hàng 6164800.00 đ.',
+  });
+
+  const lines = getSystemWalletBreakdownLines(item);
+  assert.equal(lines.length, 2);
+  assert.equal(lines[0].label, 'Tiền hàng');
+  assert.match(lines[0].formattedText, /11\.200\.000/);
+  assert.match(lines[0].formattedText, /\+/);
+
+  assert.equal(lines[1].label, 'Cước giao hàng');
+  assert.match(lines[1].formattedText, /6\.164\.800/);
+  assert.match(lines[1].formattedText, /\+/);
+});
+
+test('getSystemWalletBreakdownLines handles refund breakdown with negative delta', () => {
+  const item = toSystemWalletHistoryItem({
+    id: 290,
+    entryId: '290-1',
+    orderId: '6ecb8bae-9681-4320-97dc-2796d447fbc4',
+    type: 'REFUND',
+    fundCategory: 'PRODUCT_ESCROW',
+    totalDelta: 11_200_000,
+    deltaAction: 'MINUS',
+    heldDelta: -11_200_000,
+    shippingDelta: 0,
+    revenueDelta: 0,
+    heldBalanceAfter: 0,
+    shippingBalanceAfter: 0,
+    revenueBalanceAfter: 0,
+    createdAt: '2026-11-23T15:56:15Z',
+    breakdownDescription: 'Hoàn tiền hàng 11200000.00 đ.',
+  });
+
+  const lines = getSystemWalletBreakdownLines(item);
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0].label, 'Hoàn tiền hàng');
+  assert.match(lines[0].formattedText, /11\.200\.000/);
+  assert.match(lines[0].formattedText, /^-/);
+});
+
+test('getSystemWalletBreakdownLines falls back cleanly when description has no amounts', () => {
+  const item = toSystemWalletHistoryItem({
+    id: 135,
+    entryId: '135-2',
+    orderId: null,
+    inspectionOrderId: null,
+    type: 'OPENING_BALANCE',
+    fundCategory: 'PRODUCT_ESCROW',
+    totalDelta: 0,
+    deltaAction: 'ZERO',
+    heldDelta: 0,
+    shippingDelta: 0,
+    revenueDelta: 0,
+    heldBalanceAfter: 0,
+    shippingBalanceAfter: 0,
+    revenueBalanceAfter: 0,
+    createdAt: '2026-11-22T10:59:18Z',
+    breakdownDescription: 'Ghi nhận qua ví hệ thống',
+  });
+
+  const lines = getSystemWalletBreakdownLines(item);
+  assert.equal(lines.length, 0);
 });

@@ -382,8 +382,8 @@ test('AdminInspectionFundsTab renders dedicated tab with KPI cards and inspectio
   assert.match(html, /Đơn Đang Giữ Tiền/);
   assert.match(html, /Quỹ Cước Hoàn Đang Giữ/);
   assert.match(html, /Chờ Quyết Toán Hub/);
-  assert.match(html, /Đối Soát Tiền/);
-  assert.match(html, /17e67687/);
+  assert.match(html, /Danh Sách Đơn Kiểm Định Đang Quản Lý Dòng Tiền/);
+  assert.match(html, /Tìm mã đơn, tên máy, người/);
 });
 
 test('resolveFeeSplitPlan correctly handles explicit split and infers ratio from amounts', () => {

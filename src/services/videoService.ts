@@ -4,6 +4,7 @@ export interface VideoSignatureResponse {
   uploadId: string;
   publicId: string;
   signature: string;
+  apiKey: string;
   parameters: Record<string, string>;
   uploadUrl: string;
   expiresAt: string;
@@ -99,6 +100,9 @@ export const videoService = {
     signal?: AbortSignal
   ): Promise<VideoMetadataResponse> {
     const sig = await videoService.getUploadSignature();
+    if (!sig.apiKey?.trim() || !sig.signature?.trim() || !sig.parameters?.timestamp?.trim()) {
+      throw new Error('Backend chưa trả đủ thông tin xác thực tải video.');
+    }
     if (file.size > sig.maxBytes) {
       throw new Error(`Kích thước video (${Math.round(file.size / (1024 * 1024))}MB) vượt quá giới hạn cho phép (${Math.round(sig.maxBytes / (1024 * 1024))}MB).`);
     }
@@ -113,13 +117,15 @@ export const videoService = {
         throw new Error('Đã hủy tải video.');
       }
       const end = Math.min(offset + chunkSize, totalBytes);
-      const chunk = file.slice(offset, end);
+      const chunk = file.slice(offset, end, file.type);
 
       const formData = new FormData();
       Object.entries(sig.parameters || {}).forEach(([k, v]) => {
         formData.append(k, String(v));
       });
-      formData.append('file', chunk);
+      formData.set('api_key', sig.apiKey);
+      formData.set('signature', sig.signature);
+      formData.append('file', chunk, file.name);
 
       const contentRange = `bytes ${offset}-${end - 1}/${totalBytes}`;
       const uploadHeaders: Record<string, string> = {

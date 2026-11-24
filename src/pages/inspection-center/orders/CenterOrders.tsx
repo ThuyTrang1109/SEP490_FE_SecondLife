@@ -17,6 +17,11 @@ import {
   isHubReturnCase,
 } from '../../../utils/inspectionCenterData';
 import { centerFeeFilters, type CenterFeeFilter } from '../../../utils/inspectionCenterFees';
+import {
+  isExpiredInspectionPurchase,
+  extractInspectionRejectionDetails,
+  getInspectionPurchaseDecision
+} from '../../../utils/inspectionPurchase';
 import { getInspectionTaskStage } from '../../../utils/inspectionTaskStatus';
 import { formatVND } from '../../../utils/translations';
 import type { useCenterInspectionCertificate } from './useCenterInspectionCertificate';
@@ -162,7 +167,13 @@ export function CenterOrders({
                   canReadCenterInspectionShipments(ord, currentUser?.id) && !deniedShipmentOrders.has(ord.id);
                 const returnState = hubReturns.get(ord.id);
                 const returnShipment = returnState?.shipment;
+                const isExpired = isExpiredInspectionPurchase(ord.status, ord.note || (ord as any).rejectionReason);
+                const isRejected = getInspectionPurchaseDecision(null, ord) === 'rejected' ||
+                  extractInspectionRejectionDetails(ord.note || (ord as any).rejectionReason).isBuyerPurchaseRejected;
+                const isCancelledReturn = isAtCenter && ['CANCELLED', 'CANCELED'].includes(ord.status) &&
+                  (isExpired || isRejected || (ord as any).conditionScore != null || Boolean((ord as any).inspectorScore) || Boolean(ord.inspectorId) || Boolean(ord.note));
                 const canBookReturn = canBookCenterReturn(ord, currentUser?.id, currentUser?.role, returnState);
+                const shouldShowReturnSection = canBookReturn || Boolean(returnShipment) || isCancelledReturn;
 
                 const isExpandedFees = expandedFeeOrderId === ord.id;
                 const feeDetailsId = `fee-details-${ord.id}`;
@@ -261,8 +272,8 @@ export function CenterOrders({
                           </div>
                         )}
 
-                        {/* 3. CHẶNG HOÀN TRẢ: HUB ➔ NGƯỜI BÁN (KHI ĐƠN KHÔNG ĐẠT / TỪ CHỐI) */}
-                        {(canBookReturn || returnShipment) && (
+                        {/* 3. CHẶNG HOÀN TRẢ: HUB ➔ NGƯỜI BÁN (KHI ĐƠN KHÔNG ĐẠT / TỪ CHỐI / QUÁ HẠN 6H) */}
+                        {shouldShowReturnSection && (
                           <div className="rounded-xl border border-amber-300 bg-amber-50/70 p-2.5 text-[11px] shadow-2xs">
                             <div className="flex flex-wrap items-center justify-between gap-1.5 font-bold text-amber-950">
                               <span className="flex items-center gap-1.5">
@@ -280,7 +291,7 @@ export function CenterOrders({
                               )}
                             </div>
 
-                            {canBookReturn && (
+                            {(canBookReturn || !returnShipment || returnShipment.status === 'CANCELLED' || returnShipment.status === 'FAILED') && (
                               <div className="mt-2">
                                 <button
                                   type="button"

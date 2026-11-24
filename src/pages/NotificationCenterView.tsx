@@ -28,6 +28,7 @@ import {
   compareNotificationsNewestFirst,
   getScopedLocalNotifications,
   isNotificationForUser,
+  isLegacySellerDisputeLink,
   markScopedLocalNotificationRead,
   deleteScopedLocalNotification,
 } from '../utils/notificationStorage';
@@ -540,7 +541,7 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
 
                 {/* Card Actions */}
                 <div className="flex items-center justify-end gap-2 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-gray-100">
-                  {item.actionUrl && (
+                  {item.actionUrl && !isLegacySellerDisputeLink(item) && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();

@@ -1,4 +1,6 @@
 
+import { getApprovedReturnLabel, isOrderDisputed } from '../../utils/orders/orderDispute';
+import { getDirectShipmentInterruptionLabel, getLatestDirectShipment } from '../../utils/lalamoveTracking';
 import {
   AlertCircle, AlertTriangle, Calendar, CalendarCheck, CalendarSync, CheckCircle2, Clock,
   ShieldCheck, Truck, UserCheck, Wrench, XCircle,
@@ -6,7 +8,7 @@ import {
 import type { EscrowOrder, Language, ShipmentBackend } from '../../types';
 import { formatInspectionDeadline, isInspectionPaymentExpired } from '../../utils/inspectionPaymentDeadline';
 import { buyerInspectionStageLabel, getCustomerInspectionStatus, getInspectionPurchaseDecision } from '../../utils/inspectionPurchase';
-import { getHubReturnProgress, getHubReturnState, getInboundShipmentProgress, getSellerHubReturnStage } from '../../utils/inspectionCenterData';
+import { getHubReturnProgress, getHubReturnState, getInboundShipmentProgress, getSellerHubReturnStage, getLatestReturnShipment } from '../../utils/inspectionCenterData';
 import { formatVND } from '../../utils/translations';
 import { getOrderAppointmentRejection, type OrderAppointment } from '../../utils/orders/orderAppointments';
 import type { OrderCheck } from '../../types/orders/orderTypes';
@@ -46,7 +48,12 @@ export function OrderStatusBadge({
     orderItem?.hasInspectionService ||
     (orderItem?.inspectionFeeVnd && orderItem.inspectionFeeVnd > 0) ||
     orderItem?.inspectionCenterId ||
-    orderItem?.inspectionStatus
+    orderItem?.inspectionStatus ||
+    orderItem?.inspectionMethod ||
+    (orderItem as any)?.orderType === 'AT_HOME' ||
+    (orderItem as any)?.orderType === 'AT_CENTER' ||
+    (orderItem as any)?.inspectionScope ||
+    (orderItem as any)?.inspectionOrder
   );
 
   const isAtHomeOrderCheck = (item: any): boolean => {
@@ -85,6 +92,19 @@ export function OrderStatusBadge({
   const purchaseDecision = orderItem ? getInspectionPurchaseDecision(orderItem) : null;
   const isBuyerPurchaseRejected = purchaseDecision === 'rejected';
 
+  const isApprovedReturnActive = Boolean(
+    orderItem?.orderReturn &&
+    (orderItem.orderReturn.reportId || orderItem.escrowStatus === 'DISPUTED' || orderItem.backendEscrowStatus === 'FROZEN')
+  );
+
+  if (isApprovedReturnActive && orderItem?.orderReturn) {
+    return (
+      <span className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-800">
+        {getApprovedReturnLabel(orderItem.orderReturn, lang)}
+      </span>
+    );
+  }
+
   if (orderItem && !isFailedInsp && !isBuyerPurchaseRejected && isOrderCancelledOrRefunded(orderItem)) {
     return (
       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
@@ -97,20 +117,7 @@ export function OrderStatusBadge({
   }
 
   // 0.8. Kiểm tra đơn hàng đang bị khiếu nại / tranh chấp / đóng băng quỹ Escrow
-  const isDisputedOrder = Boolean(
-    s === 'DISPUTED' ||
-    s === 'FROZEN' ||
-    bStatus === 'DISPUTED' ||
-    bStatus === 'FROZEN' ||
-    orderItem?.escrowStatus === 'DISPUTED' ||
-    (orderItem?.escrowStatus as any) === 'FROZEN' ||
-    orderItem?.backendEscrowStatus === 'FROZEN' ||
-    (orderItem as any)?.status === 'DISPUTED' ||
-    (orderItem as any)?.backendStatus === 'DISPUTED' ||
-    (typeof window !== 'undefined' && orderItem?.id && localStorage.getItem(`order_disputed_${orderItem.id}`) === 'true')
-  );
-
-  if (isDisputedOrder) {
+  if (s === 'DISPUTED' || isOrderDisputed(orderItem)) {
     return (
       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-500/15 text-amber-700 border border-amber-500/30">
         <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
@@ -123,7 +130,7 @@ export function OrderStatusBadge({
   const isReceiptConfirmed = Boolean(
     orderItem && (
       (orderItem as any).receiptConfirmedAt ||
-      (typeof window !== 'undefined' && orderItem.id && localStorage.getItem(`order_receipt_confirmed_${orderItem.id}`) === 'true')
+      (typeof window !== 'undefined' && orderItem.id && (window.localStorage || (typeof localStorage !== 'undefined' ? localStorage : null))?.getItem(`order_receipt_confirmed_${orderItem.id}`) === 'true')
     )
   );
 
@@ -164,7 +171,9 @@ export function OrderStatusBadge({
     s === 'DELIVERED' ||
     (() => {
       if (!orderItem?.id) return false;
-      const ships = getOrderAllShipments(orderItem.id, (orderItem as any).linkedOrderId);
+      const ships = !isInspectionOrder && Array.isArray((orderItem as any).shipments)
+        ? (orderItem as any).shipments as ShipmentBackend[]
+        : getOrderAllShipments(orderItem.id, (orderItem as any).linkedOrderId);
       return ships.some(
         (sh) =>
           (sh.leg === 'SELLER_TO_BUYER' || sh.leg === 'CENTER_TO_BUYER' || sh.leg === 'DELIVERY') &&
@@ -190,19 +199,21 @@ export function OrderStatusBadge({
     );
   }
 
-  // 2. Quyết định mua hàng sau khi kiểm định ĐẠT
+  // 2. Quyết định mua hàng sau khi kiểm định ĐẠT (Chỉ áp dụng cho đơn có dịch vụ kiểm định)
   const isPurchaseAccepted = Boolean(
-    purchaseDecision === 'accepted' ||
-    orderItem?.finalPaymentPaidAt ||
-    (orderItem as any)?.inspectionDecision === 'accepted' ||
-    (orderItem as any)?.buyerDecision === 'accepted' ||
-    orderItem?.linkedOrderId ||
-    (orderItem as any)?.inspectionOrder?.finalPaymentPaidAt ||
-    (orderItem as any)?.inspectionOrder?.orderId ||
-    bStatus === 'DELIVERING_TO_BUYER' ||
-    (orderItem as any)?.status === 'DELIVERING_TO_BUYER' ||
-    (orderItem?.escrowStatus as any) === 'DELIVERING_TO_BUYER' ||
-    (orderItem?.escrowStatus as any) === 'SHIPPED_TO_BUYER'
+    isInspectionOrder && (
+      purchaseDecision === 'accepted' ||
+      orderItem?.finalPaymentPaidAt ||
+      (orderItem as any)?.inspectionDecision === 'accepted' ||
+      (orderItem as any)?.buyerDecision === 'accepted' ||
+      orderItem?.linkedOrderId ||
+      (orderItem as any)?.inspectionOrder?.finalPaymentPaidAt ||
+      (orderItem as any)?.inspectionOrder?.orderId ||
+      bStatus === 'DELIVERING_TO_BUYER' ||
+      (orderItem as any)?.status === 'DELIVERING_TO_BUYER' ||
+      (orderItem?.escrowStatus as any) === 'DELIVERING_TO_BUYER' ||
+      (orderItem?.escrowStatus as any) === 'SHIPPED_TO_BUYER'
+    )
   );
 
   if (isPurchaseAccepted) {
@@ -302,8 +313,7 @@ export function OrderStatusBadge({
       ? (orderItem as any).shipments
       : (orderItem?.id ? getOrderAllShipments(orderItem.id, (orderItem as any).linkedOrderId) : []);
     const returnShipment = (orderItem as any)?.returnShipment ||
-      allOrderShipments.find((s: any) => s.leg === 'CENTER_TO_SELLER' && s.status !== 'CANCELLED') ||
-      allOrderShipments.find((s: any) => s.leg === 'CENTER_TO_SELLER');
+      getLatestReturnShipment(allOrderShipments);
     const isReturnDelivered = returnShipment?.status === 'DELIVERED' || returnShipment?.status === 'COMPLETED' || (returnShipment && getHubReturnProgress(returnShipment, lang).step === 3);
     const isReturnInTransit = returnShipment && (returnShipment.status === 'IN_TRANSIT' || returnShipment.status === 'SHIPPED' || returnShipment.status === 'PICKED_UP' || getHubReturnProgress(returnShipment, lang).step === 2);
 
@@ -344,10 +354,9 @@ export function OrderStatusBadge({
       ? (orderItem as any).shipments
       : (orderItem?.id ? getOrderAllShipments(orderItem.id, (orderItem as any).linkedOrderId) : []);
     const returnShipment = isSellerForThisOrder
-      ? (orderItem?.returnShipment === undefined ? getHubReturnState(allOrderShipments).shipment : orderItem.returnShipment)
+      ? (orderItem?.returnShipment === undefined ? (getLatestReturnShipment(allOrderShipments) || getHubReturnState(allOrderShipments).shipment) : orderItem.returnShipment)
       : orderItem?.returnShipment ||
-        allOrderShipments.find((s: ShipmentBackend) => s.leg === 'CENTER_TO_SELLER' && s.status !== 'CANCELLED') ||
-        allOrderShipments.find((s: ShipmentBackend) => s.leg === 'CENTER_TO_SELLER');
+        getLatestReturnShipment(allOrderShipments);
     const isReturnDelivered = returnShipment?.status === 'DELIVERED' || returnShipment?.status === 'COMPLETED' || (returnShipment && getHubReturnProgress(returnShipment, lang).step === 3);
     const isReturnInProgress = isSellerForThisOrder
       ? getSellerHubReturnStage(returnShipment) === 'returning'
@@ -383,11 +392,66 @@ export function OrderStatusBadge({
     );
   }
   if (orderItem && inbound && inspectionStatus !== 'INSPECTING' && isHubInboundInProgress(orderItem)) {
+    const inStatus = String(inbound.status || '').toUpperCase();
+    const inProvStatus = String(inbound.providerStatus || '').toUpperCase();
     const progress = getInboundShipmentProgress(inbound, lang);
+
+    const isCancelledInbound =
+      inStatus === 'CANCELLED' ||
+      inStatus === 'CANCELED' ||
+      inProvStatus === 'CANCELLED' ||
+      inProvStatus === 'CANCELED' ||
+      progress.label === (lang === 'vi' ? 'Vận đơn đã hủy' : 'Shipment cancelled');
+
+    const isFailedInbound =
+      inStatus === 'FAILED' ||
+      inProvStatus === 'FAILED' ||
+      inProvStatus === 'REJECTED' ||
+      inProvStatus === 'EXPIRED' ||
+      progress.label === (lang === 'vi' ? 'Vận đơn thất bại' : 'Shipment failed');
+
+    const isReturnedInbound =
+      inStatus === 'RETURNED' ||
+      inProvStatus === 'RETURNED' ||
+      progress.label === (lang === 'vi' ? 'Vận đơn đã hoàn trả' : 'Shipment returned');
+
+    if (isCancelledInbound) {
+      return (
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-bold text-rose-700">
+          <XCircle className="h-3.5 w-3.5 text-rose-600" />
+          <span>
+            {lang === 'vi' ? 'Vận đơn đến trung tâm kiểm định đã hủy' : 'Shipment to Hub cancelled'}
+          </span>
+        </span>
+      );
+    }
+
+    if (isFailedInbound) {
+      return (
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-bold text-rose-700">
+          <AlertCircle className="h-3.5 w-3.5 text-rose-600" />
+          <span>
+            {lang === 'vi' ? 'Vận đơn đến trung tâm kiểm định thất bại' : 'Shipment to Hub failed'}
+          </span>
+        </span>
+      );
+    }
+
+    if (isReturnedInbound) {
+      return (
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700">
+          <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
+          <span>
+            {lang === 'vi' ? 'Vận đơn đến trung tâm kiểm định đã hoàn trả' : 'Shipment to Hub returned'}
+          </span>
+        </span>
+      );
+    }
+
     return (
       <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold ${progress.step === 3 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-cyan-200 bg-cyan-50 text-cyan-700'
         }`}>
-        <Truck className="h-3.5 w-3.5" />
+        {progress.step === 3 ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> : <Truck className="h-3.5 w-3.5" />}
         <span>
           {progress.step === 3
             ? (lang === 'vi' ? 'Đã Đến Hub Kiểm Định' : 'Delivered to Hub')
@@ -633,25 +697,40 @@ export function OrderStatusBadge({
       );
     }
     if (!isInspectionOrder) {
-      const allShips = orderItem?.id ? getOrderAllShipments(orderItem.id, (orderItem as any).linkedOrderId) : [];
-      const directShip = allShips.find((sh) => (sh.leg === 'SELLER_TO_BUYER' || sh.leg === 'DELIVERY') && sh.status !== 'CANCELLED');
-      if (directShip) {
-        if (directShip.status === 'IN_TRANSIT' || directShip.status === 'DELIVERING' || directShip.providerStatus === 'ON_GOING' || directShip.providerStatus === 'PICKED_UP') {
-          return (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-500/15 text-blue-600 border border-blue-500/30">
-              <Truck className="w-3.5 h-3.5 text-blue-600" />
-              <span>{lang === 'vi' ? (isSellerForThisOrder ? 'Đang Giao Tới Người Mua' : 'Đang Giao Hàng Tới Bạn') : 'Delivering'}</span>
-            </span>
-          );
-        }
-        if (directShip.status === 'READY_TO_PICK' || directShip.status === 'PENDING' || directShip.providerStatus === 'ASSIGNING_DRIVER') {
-          return (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-300">
-              <Truck className="w-3.5 h-3.5 text-emerald-600" />
-              <span>{lang === 'vi' ? 'Đã tạo vận đơn • Chờ tài xế lấy hàng' : 'Shipment Created • Awaiting Driver Pickup'}</span>
-            </span>
-          );
-        }
+      const allShips = orderItem?.shipments ?? getOrderAllShipments(orderItem?.id, orderItem?.linkedOrderId);
+      const directShip = getLatestDirectShipment(allShips);
+      const interruptionLabel = getDirectShipmentInterruptionLabel(directShip, lang);
+      if (interruptionLabel) {
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
+            <XCircle className="w-3.5 h-3.5 text-rose-600" />
+            <span>{interruptionLabel}</span>
+          </span>
+        );
+      }
+      const isShippedOrInTransit = Boolean(
+        s === 'SHIPPED_TO_BUYER' ||
+        bStatus === 'SHIPPED' ||
+        (orderItem as any)?.status === 'SHIPPED' ||
+        orderItem?.carrierPickedUpAt ||
+        (directShip && (directShip.status === 'IN_TRANSIT' || directShip.status === 'DELIVERING' || directShip.status === 'SHIPPED' || directShip.providerStatus === 'ON_GOING' || directShip.providerStatus === 'PICKED_UP'))
+      );
+
+      if (isShippedOrInTransit) {
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-500/15 text-blue-600 border border-blue-500/30">
+            <Truck className="w-3.5 h-3.5 text-blue-600" />
+            <span>{lang === 'vi' ? (isSellerForThisOrder ? 'Đang Giao Tới Người Mua' : 'Đang Giao Hàng Tới Bạn') : 'Delivering'}</span>
+          </span>
+        );
+      }
+      if (directShip && (directShip.status === 'READY_TO_PICK' || directShip.status === 'PENDING' || directShip.providerStatus === 'ASSIGNING_DRIVER')) {
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-300">
+            <Truck className="w-3.5 h-3.5 text-emerald-600" />
+            <span>{lang === 'vi' ? 'Đã tạo vận đơn • Chờ tài xế lấy hàng' : 'Shipment Created • Awaiting Driver Pickup'}</span>
+          </span>
+        );
       }
       return (
         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
@@ -838,6 +917,16 @@ export function OrderStatusBadge({
           );
         }
         if (!isInspectionOrder) {
+          const allShips = orderItem?.shipments ?? getOrderAllShipments(orderItem?.id, orderItem?.linkedOrderId);
+          const interruptionLabel = getDirectShipmentInterruptionLabel(getLatestDirectShipment(allShips), lang);
+          if (interruptionLabel) {
+            return (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                <XCircle className="w-3.5 h-3.5 text-rose-600" />
+                <span>{interruptionLabel}</span>
+              </span>
+            );
+          }
           return (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
               <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />
@@ -977,12 +1066,11 @@ export function OrderStatusBadge({
           </span>
         </span>
       );
-    case 'DISPUTED':
     case 'FROZEN':
       return (
         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-500/15 text-amber-700 border border-amber-500/30">
           <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-          <span>{lang === 'vi' ? 'Đang Tranh Chấp • Đóng Băng Escrow' : 'Disputed • Escrow Frozen'}</span>
+          <span>{lang === 'vi' ? 'Escrow tạm đóng băng' : 'Escrow Temporarily Frozen'}</span>
         </span>
       );
     case 'CANCELLED':

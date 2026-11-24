@@ -38,6 +38,7 @@ export const panelPaths: Partial<Record<UserRole, Record<string, string>>> = {
 const panelTabs: Partial<Record<UserRole, string>> = {
   admin: 'admin-dashboard', staff: 'staff-workspace', inspector: 'inspection-hub', inspection_center: 'inspection-center',
 };
+const customerProfilePath = '/profile';
 
 const customerRoutes = (role: 'buyer' | 'seller'): AppRoute[] => [
   { path: `/${role}/dashboard`, role, tab: role === 'seller' ? 'seller-dashboard' : 'home' },
@@ -59,7 +60,10 @@ export const routeGroups: Record<string, AppRoute[]> = {
     { path: '/forgot-password', tab: 'home', modal: 'forgot' },
     { path: '/unauthorized', tab: 'unauthorized' }, { path: '/404', tab: 'not-found' },
   ],
-  buyer: customerRoutes('buyer'),
+  account: [
+    { path: customerProfilePath, allowedRoles: ['buyer', 'seller'], tab: 'profile', modal: 'profile' },
+  ],
+  buyer: [...customerRoutes('buyer'), { path: '/buyer/disputes/:reportId', role: 'buyer', tab: 'disputes' }],
   seller: [
     ...customerRoutes('seller'),
     { path: '/seller/products', role: 'seller', tab: 'seller-dashboard' },
@@ -76,22 +80,22 @@ for (const [role, sections] of Object.entries(panelPaths)) {
 }
 routeGroups.admin.push({ path: '/admin/users/:userId', role: 'admin', tab: 'admin-dashboard', section: 'customers' });
 routeGroups.admin.push({ path: '/admin/products/:productId', role: 'admin', tab: 'admin-dashboard', section: 'listings', modal: 'product' });
+routeGroups.staff.push({ path: '/staff/disputes/:reportId', role: 'staff', tab: 'staff-workspace', section: 'disputes' });
 routeGroups.staff.push({ path: '/staff/products/create', role: 'staff', tab: 'create-listing' });
 routeGroups.inspector.push({ path: '/inspector/inspections/:inspectionId', role: 'inspector', tab: 'inspection-hub', section: 'workbench' });
 routeGroups.inspector.push({ path: '/inspector/inspections/:inspectionId/result', role: 'inspector', tab: 'inspection-hub', section: 'result' });
 for (const role of ['buyer', 'seller', 'staff', 'inspector', 'inspection_center', 'admin'] as UserRole[]) {
   const prefix = role.replace('_', '-');
-  routeGroups[role].push(
-    { path: `/${prefix}/profile`, role, tab: panelTabs[role] || (role === 'seller' ? 'seller-dashboard' : 'home'), modal: 'profile' },
-    { path: `/${prefix}/notifications`, role, tab: 'notifications' },
-  );
+  const panelTab = panelTabs[role];
+  if (panelTab) routeGroups[role].push({ path: `/${prefix}/profile`, role, tab: panelTab, modal: 'profile' });
+  routeGroups[role].push({ path: `/${prefix}/notifications`, role, tab: 'notifications' });
 }
 export const routes = Object.values(routeGroups).flat();
 
 export const paths = {
   home: '/', products: '/products', login: '/login', register: '/register', unauthorized: '/unauthorized',
   product: (id: string) => `/products/${encodeURIComponent(id)}`,
-  profile: (role: UserRole) => `/${role.replace('_', '-')}/profile`,
+  profile: customerProfilePath,
   chat: (role: UserRole, id?: string) => `/${role === 'seller' ? 'seller' : 'buyer'}/chat${id ? `/${encodeURIComponent(id)}` : ''}`,
   orders: (role: UserRole, id?: string) => `/${role === 'seller' ? 'seller' : 'buyer'}/orders${id ? `/${encodeURIComponent(id)}` : ''}`,
   decision: (role: UserRole, id: string) => `/${role === 'seller' ? 'seller' : 'buyer'}/inspections/${encodeURIComponent(id)}/decision`,
@@ -105,7 +109,7 @@ export function getRoleLandingPath(role: UserRole = 'buyer'): string {
 
 export function pathForTab(tab: string, role: UserRole = 'buyer'): string {
   const map: Record<string, string> = {
-    home: '/', marketplace: '/products', 'seller-dashboard': '/seller/dashboard',
+    home: '/', marketplace: '/products', 'seller-dashboard': '/seller/dashboard', profile: paths.profile,
     'create-listing': role === 'staff' ? '/staff/products/create' : '/seller/products/create',
     orders: role === 'inspection_center' ? '/inspection-center/orders'
       : role === 'inspector' ? '/inspector/inspections'
@@ -160,6 +164,7 @@ export function resolveAppRoute(input: string, role: UserRole = 'buyer'): RouteM
     '/marketplace': '/products', '/home': '/', '/orders': pathForTab('orders', role),
     '/chat': pathForTab('chat', role), '/negotiations': pathForTab('chat', role),
     '/notifications': pathForTab('notifications', role), '/disputes': pathForTab('disputes', role),
+    '/buyer/profile': paths.profile, '/seller/profile': paths.profile,
     '/seller-dashboard': '/seller/dashboard', '/seller/posts': '/seller/products',
     '/create-listing': pathForTab('create-listing', role), '/admin-dashboard': '/admin/dashboard',
     '/staff-workspace': '/staff/dashboard', '/inspection-hub': pathForTab('inspection-hub', role),
@@ -181,6 +186,8 @@ export function resolveAppRoute(input: string, role: UserRole = 'buyer'): RouteM
       ? paths.decision(role, params.get('orderId') || params.get('id')!) : pathForTab('orders', role),
   };
   target ||= aliases[url.pathname.replace(/\/$/, '')];
+  const reportLink = url.pathname.match(/^\/reports\/([^/]+)\/?$/);
+  if (reportLink) target = '/buyer/disputes/' + encodeURIComponent(decodePart(reportLink[1]));
   const oldOrder = url.pathname.match(/^\/orders?\/([^/]+)$/);
   if (oldOrder) target = paths.orders(role, decodePart(oldOrder[1]));
   const oldInspection = url.pathname.match(/^\/(?:buyer\/inspections|seller\/inspections|inspections|inspection\/orders|inspector\/orders)\/([^/]+)$/);
@@ -241,10 +248,12 @@ export function getUserRoles(user: { role: UserRole; roles?: string[] } | null):
 }
 
 export function getRouteAccess(route: RouteMatch, user: { role: UserRole; roles?: string[] } | null, restoring = false) {
-  if (restoring && route.role) return 'loading';
-  if (!route.role) return 'allowed';
+  const allowedRoles = route.allowedRoles ?? (route.role ? [route.role] : undefined);
+  if (!allowedRoles) return 'allowed';
+  if (restoring) return 'loading';
   if (!user) return 'login';
-  return (route.allowedRoles || [route.role]).some((role) => getUserRoles(user).includes(role)) ? 'allowed' : 'unauthorized';
+  const userRoles = getUserRoles(user);
+  return allowedRoles.some((role) => userRoles.includes(role)) ? 'allowed' : 'unauthorized';
 }
 
 export function safeReturnPath(input: string | null): string | null {

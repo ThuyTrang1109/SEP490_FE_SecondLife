@@ -8,6 +8,10 @@ import { formatInspectionDeadline, isInspectionPaymentExpired } from '../../../u
 import { formatVND } from '../../../utils/translations';
 import { isOrderDeliveredToBuyer, isOrderInTransitToBuyer } from '../../../utils/orders/orderReceipt';
 import { getInspectionPurchaseDecision } from '../../../utils/inspectionPurchase';
+import { isOrderEscrowOnHold } from '../../../utils/orders/orderDispute';
+import { getRebookableDirectShipment } from '../../../utils/orders/directShipment';
+import { getLalamoveInterruption, getLatestDirectShipment } from '../../../utils/lalamoveTracking';
+import { getOrderAllShipments } from '../../../utils/orders/shipmentCache';
 
 export interface OrderCardActionsProps {
   order: EscrowOrder;
@@ -109,13 +113,42 @@ export function OrderCardActions({
     String((ord as any).inspectionStatus || '').toUpperCase() === 'DELIVERING_TO_BUYER' ||
     String((ord as any).inspectionOrder?.status || '').toUpperCase() === 'DELIVERING_TO_BUYER'
   );
-  const isDisputed = Boolean(
-    ord.escrowStatus === 'DISPUTED' ||
-    (ord.escrowStatus as any) === 'FROZEN' ||
-    ord.backendEscrowStatus === 'FROZEN' ||
-    (ord as any).status === 'DISPUTED' ||
-    (ord as any).backendStatus === 'DISPUTED' ||
-    (typeof window !== 'undefined' && ord.id && localStorage.getItem(`order_disputed_${ord.id}`) === 'true')
+  const escrowOnHold = isOrderEscrowOnHold(ord);
+  const isDirectOrder = !hasInspection;
+  const allOrderShipments = ord.shipments ?? (ord?.id ? getOrderAllShipments(ord.id, (ord as any).linkedOrderId) : []);
+  const directShipment = isDirectOrder ? getLatestDirectShipment(allOrderShipments) : null;
+  const isDirectShipInterrupted = directShipment ? Boolean(getLalamoveInterruption(directShipment)) : false;
+  const hasActiveDirectShip = Boolean(directShipment && !isDirectShipInterrupted);
+  const canRebookDirectShipment = Boolean(
+    isDirectOrder &&
+    orderIsSeller &&
+    isOrderSellerConfirmed(ord) &&
+    !isOrderCancelledOrRefunded(ord) &&
+    getRebookableDirectShipment(ord, allOrderShipments)
+  );
+
+  const canSellerCreateDirectShipment = Boolean(
+    isDirectOrder &&
+    orderIsSeller &&
+    isOrderSellerConfirmed(ord) &&
+    !isOrderCancelledOrRefunded(ord) &&
+    !isOrderReceiptConfirmed(ord) &&
+    !escrowOnHold &&
+    ord.backendStatus !== 'COMPLETED' &&
+    ord.backendStatus !== 'DELIVERED' &&
+    ord.escrowStatus !== 'COMPLETED_RELEASED' &&
+    ord.escrowStatus !== 'DELIVERED_INSPECTION_WINDOW' &&
+    !ord.shippingDeliveredAt &&
+    !directShipment
+  );
+
+  const canSellerTrackDirectShipment = Boolean(
+    isDirectOrder &&
+    orderIsSeller &&
+    hasActiveDirectShip &&
+    !ord.orderReturn?.shipmentId &&
+    !ord.orderReturn?.orderCode &&
+    !isOrderCancelledOrRefunded(ord)
   );
 
   return (
@@ -345,8 +378,52 @@ export function OrderCardActions({
                 })()
               )}
 
-              {/* GIAI ĐOẠN 2: ĐÃ XÁC NHẬN • ĐANG ĐÓNG GÓI */}
-              {isOrderSellerConfirmed(ord) &&
+              {/* Nút Tạo Vận Đơn / Tạo Lại Vận Đơn Lalamove cho người bán khi mua trực tiếp sau khi xác nhận đơn */}
+              {(canSellerCreateDirectShipment || canRebookDirectShipment) && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (ord.escrowStatus === 'AWAITING_PAYMENT') {
+                      dialogService.error(
+                        lang === 'vi'
+                          ? 'Đơn hàng đang chờ người mua nộp tiền ký quỹ Escrow. Chỉ có thể tạo vận đơn sau khi tiền đã được giữ trong Escrow.'
+                          : 'Order is awaiting buyer escrow deposit before driver dispatch.'
+                      );
+                      return;
+                    }
+                    setCreateShipmentOrder(ord);
+                  }}
+                  className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:opacity-90 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-sm whitespace-nowrap shrink-0"
+                  title={lang === 'vi' ? 'Tạo vận đơn Lalamove để tài xế đến lấy hàng' : 'Create Lalamove shipment'}
+                >
+                  <Truck className="w-3.5 h-3.5" />
+                  <span>
+                    {canRebookDirectShipment
+                      ? (lang === 'vi' ? 'Tạo lại vận đơn' : 'Rebook shipment')
+                      : (lang === 'vi' ? 'Tạo vận đơn' : 'Create Shipment')}
+                  </span>
+                </button>
+              )}
+
+              {/* Nút Theo Dõi Lalamove cho người bán khi đơn trực tiếp đang có vận đơn hoạt động */}
+              {canSellerTrackDirectShipment && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setTrackingOrder(ord);
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
+                  title={lang === 'vi' ? 'Theo dõi hành trình Lalamove' : 'Track Lalamove shipment'}
+                >
+                  <Truck className="w-3.5 h-3.5 text-blue-600" />
+                  <span>{lang === 'vi' ? 'Theo Dõi Lalamove' : 'Lalamove Tracking'}</span>
+                </button>
+              )}
+
+              {/* GIAI ĐOẠN 2: ĐÃ XÁC NHẬN • ĐANG ĐÓNG GÓI (CHO ĐƠN CÓ KIỂM ĐỊNH) */}
+              {hasInspection && isOrderSellerConfirmed(ord) &&
                 !isPendingApprovalOrFeeInAction &&
                 !['WAITING_SELLER_APPROVAL', 'WAITING_BUYER_APPROVAL', 'WAITING_FEE_PAYMENT', 'PENDING', 'INSPECTION_FAILED', 'FAILED'].includes(String((ord as any)?.backendStatus || (ord as any)?.inspectionStatus || (ord as any)?.inspectionOrder?.status || ord.status || '').toUpperCase()) &&
                 (ord.status as string) !== 'WAITING_SELLER_APPROVAL' &&
@@ -369,15 +446,15 @@ export function OrderCardActions({
                   (isAtHome && isPurchaseAccepted)
                 ) && (
                   <>
-                    {/* Nút Đã Đóng Gói • Tạo Đơn Lalamove cho Chặng 1 hoặc đơn thông thường hoặc đơn AT_HOME sau khi người mua chốt mua */}
-                    {(!hasInspection || !isAtHome || (isAtHome && isPurchaseAccepted && !isOrderPacked(ord))) && (
+                    {/* Nút Đã Đóng Gói • Tạo Đơn Lalamove cho Chặng 1 của AT_CENTER hoặc đơn AT_HOME sau khi người mua chốt mua */}
+                    {!escrowOnHold && (!isAtHome || (isPurchaseAccepted && !isOrderPacked(ord))) && (
                       <button
+                        type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           setCreateShipmentOrder(ord);
                         }}
                         className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:opacity-90 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-sm whitespace-nowrap shrink-0"
-                        title={lang === 'vi' ? 'Kiện hàng đã đóng gói. Bấm để tạo vận đơn Lalamove điều phối tài xế lấy hàng' : 'Package is packed. Click to create Lalamove shipment'}
                       >
                         <Truck className="w-3.5 h-3.5" />
                         <span>
@@ -640,7 +717,7 @@ export function OrderCardActions({
               )}
 
               {/* Nút Đã Nhận Hàng (Giải Ngân): Chỉ hiện khi đơn đã thực sự giao thành công đến Người mua, chưa xác nhận và không có khiếu nại tranh chấp */}
-              {!buyerInspectionStage && !isOrderReceiptConfirmed(ord) && isOrderDeliveredToBuyer(ord) && !isDisputed ? (
+              {!buyerInspectionStage && !isOrderReceiptConfirmed(ord) && isOrderDeliveredToBuyer(ord) && !escrowOnHold ? (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -677,7 +754,7 @@ export function OrderCardActions({
                   <CheckCircle2 className="w-3.5 h-3.5" />
                   <span>{confirmingReceiptIds.has(ord.id) ? (lang === 'vi' ? 'Đang xử lý...' : 'Processing...') : (lang === 'vi' ? 'Xác nhận đơn hàng' : 'Confirm Delivery')}</span>
                 </button>
-              ) : hasInspection && !buyerInspectionStage && !isOrderReceiptConfirmed(ord) && !isAtHome && isOrderInTransitToBuyer(ord) && !isDisputed ? (
+              ) : hasInspection && !buyerInspectionStage && !isOrderReceiptConfirmed(ord) && !isAtHome && isOrderInTransitToBuyer(ord) && !escrowOnHold ? (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -692,7 +769,7 @@ export function OrderCardActions({
               ) : null}
 
               {/* Leave Product Review button for delivered / completed orders (ẩn khi đang có khiếu nại tranh chấp) */}
-              {!buyerInspectionStage && !isDisputed && (isOrderReceiptConfirmed(ord) || ord.escrowStatus === 'COMPLETED_RELEASED' || ord.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' || ord.backendStatus === 'DELIVERED') && (
+              {!buyerInspectionStage && !escrowOnHold && (isOrderReceiptConfirmed(ord) || ord.escrowStatus === 'COMPLETED_RELEASED' || ord.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' || ord.backendStatus === 'DELIVERED') && (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();

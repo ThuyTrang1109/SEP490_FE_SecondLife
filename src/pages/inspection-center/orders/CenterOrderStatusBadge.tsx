@@ -11,10 +11,12 @@ import {
   CreditCard,
   AlertTriangle,
   XCircle,
+  RotateCcw,
 } from 'lucide-react';
 import type { InspectionOrderDto } from '../../../services';
 import type { UserProfile } from '../../../types';
 import { canBookHubBuyerDelivery, canReadCenterInspectionShipments, getHubBuyerShipmentLabel, getInboundShipmentProgress, hasCenterCounterProposal, isPaidHubBuyerDelivery, shouldTrackInboundShipment, isOrderConfirmedByInspector } from '../../../utils/inspectionCenterData';
+import { isExpiredInspectionPurchase, extractInspectionRejectionDetails, getInspectionPurchaseDecision } from '../../../utils/inspectionPurchase';
 import { hasLocalShipmentSignal } from './shipmentTrackingConfig';
 import type { useCenterShipments } from './useCenterShipments';
 
@@ -34,6 +36,25 @@ export function CenterOrderStatusBadge({ order, buyerShipments, currentUser, den
 
   const isCancelled = status === 'CANCELLED' || status === 'CANCELED' || order?.status === 'CANCELLED' || order?.status === 'CANCELED';
   if (isCancelled) {
+    const isExpired = isExpiredInspectionPurchase(status, order.note || (order as any).rejectionReason);
+    const isBuyerReject = getInspectionPurchaseDecision(null, order) === 'rejected' ||
+      extractInspectionRejectionDetails(order.note || (order as any).rejectionReason).isBuyerPurchaseRejected;
+    if (isExpired) {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300 whitespace-nowrap shadow-2xs">
+          <Clock className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+          <span>Hết hạn mua (Chờ trả hàng)</span>
+        </span>
+      );
+    }
+    if (isBuyerReject) {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800 border border-rose-300 whitespace-nowrap shadow-2xs">
+          <RotateCcw className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+          <span>Khách từ chối mua (Chờ trả hàng)</span>
+        </span>
+      );
+    }
     return (
       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-300 whitespace-nowrap shadow-2xs">
         <XCircle className="w-3.5 h-3.5 text-slate-500 shrink-0" />

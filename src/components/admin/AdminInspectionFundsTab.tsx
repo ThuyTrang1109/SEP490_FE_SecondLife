@@ -26,6 +26,138 @@ interface AdminInspectionFundsTabProps {
   onNavigateGovernance?: () => void;
 }
 
+function renderInspectionOrderStatus(status?: string | null) {
+  const s = String(status || '').toUpperCase();
+  switch (s) {
+    case 'DISPATCHED':
+      return (
+        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
+          Đã điều phối
+        </span>
+      );
+    case 'CANCELLED':
+    case 'CANCELED':
+      return (
+        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-300">
+          Đã hủy
+        </span>
+      );
+    case 'COMPLETED':
+      return (
+        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+          Đã hoàn tất
+        </span>
+      );
+    case 'PASSED':
+    case 'INSPECTION_PASSED':
+      return (
+        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+          Đạt chuẩn
+        </span>
+      );
+    case 'FAILED':
+    case 'REJECTED':
+    case 'INSPECTION_FAILED':
+      return (
+        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+          Không đạt chuẩn
+        </span>
+      );
+    case 'INSPECTING':
+    case 'INSPECTION_IN_PROGRESS':
+    case 'IN_PROGRESS':
+      return (
+        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+          Đang kiểm định
+        </span>
+      );
+    case 'RECEIVED_AT_CENTER':
+      return (
+        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-100 text-cyan-800 border border-cyan-200">
+          Đã nhận tại Hub
+        </span>
+      );
+    case 'SHIPPING_TO_CENTER':
+      return (
+        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-100 text-cyan-800 border border-cyan-200">
+          Đang giao đến Hub
+        </span>
+      );
+    case 'WAITING_SELLER_APPROVAL':
+      return (
+        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
+          Chờ người bán duyệt
+        </span>
+      );
+    case 'WAITING_BUYER_APPROVAL':
+      return (
+        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
+          Chờ người mua duyệt
+        </span>
+      );
+    case 'WAITING_FEE_PAYMENT':
+      return (
+        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+          Chờ đóng phí
+        </span>
+      );
+    case 'PAYMENT_EXPIRED':
+      return (
+        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-300">
+          Hết hạn nộp phí
+        </span>
+      );
+    case 'SCHEDULED':
+      return (
+        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-sky-800 border border-sky-200">
+          Đã lên lịch hẹn
+        </span>
+      );
+    case 'CONFIRMED_PENDING_DISPATCH':
+      return (
+        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
+          Chờ điều phối
+        </span>
+      );
+    case 'DELIVERING_TO_BUYER':
+      return (
+        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-100 text-teal-800 border border-teal-200">
+          Đang giao người mua
+        </span>
+      );
+    case 'RETURNING_TO_SELLER':
+      return (
+        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-800 border border-orange-200">
+          Đang hoàn trả
+        </span>
+      );
+    case 'RETURNED_TO_SELLER':
+      return (
+        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+          Đã hoàn trả
+        </span>
+      );
+    case 'DISPUTED':
+      return (
+        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-100 text-yellow-800 border border-yellow-300">
+          Đang khiếu nại
+        </span>
+      );
+    case 'PENDING':
+      return (
+        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+          Chờ xử lý
+        </span>
+      );
+    default:
+      return (
+        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">
+          {status || '—'}
+        </span>
+      );
+  }
+}
+
 export const AdminInspectionFundsTab: React.FC<AdminInspectionFundsTabProps> = ({
   lang = 'vi',
   onOpenFundsAudit,
@@ -38,7 +170,6 @@ export const AdminInspectionFundsTab: React.FC<AdminInspectionFundsTabProps> = (
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [fundFilter, setFundFilter] = useState<'ALL' | 'HELD_MONEY' | 'AWAITING_SETTLEMENT' | 'SETTLED'>('ALL');
-  const [directAuditInput, setDirectAuditInput] = useState<string>('');
 
   // Fetch inspection orders
   const loadOrders = useCallback(async () => {
@@ -238,6 +369,8 @@ export const AdminInspectionFundsTab: React.FC<AdminInspectionFundsTabProps> = (
         const matchSearch =
           !query ||
           ord.id.toLowerCase().includes(query) ||
+          ((ord as any).orderId || '').toLowerCase().includes(query) ||
+          (ord.linkedOrderId || '').toLowerCase().includes(query) ||
           (ord.postTitle || '').toLowerCase().includes(query) ||
           (ord.buyerName || '').toLowerCase().includes(query) ||
           (ord.sellerName || '').toLowerCase().includes(query);
@@ -306,7 +439,7 @@ export const AdminInspectionFundsTab: React.FC<AdminInspectionFundsTabProps> = (
               className="px-3.5 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
             >
               <Building2 className="w-4 h-4 text-amber-600" />
-              <span>Biểu Phí Kiểm Định</span>
+              <span>Biểu phí</span>
             </button>
           )}
 
@@ -381,69 +514,6 @@ export const AdminInspectionFundsTab: React.FC<AdminInspectionFundsTabProps> = (
         </div>
       </div>
 
-      {/* 3. Dedicated Direct Audit Bar */}
-      <div className="bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-amber-500/10 border border-amber-200/90 rounded-2xl p-4 shadow-xs space-y-2.5">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-amber-700" />
-            <h4 className="text-xs font-extrabold uppercase text-amber-950 tracking-wider">
-              Tra Cứu &amp; Đối Soát Trực Tiếp Theo Mã Đơn Kiểm Định
-            </h4>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative flex-1 min-w-[280px]">
-            <input
-              type="text"
-              value={directAuditInput}
-              onChange={(e) => setDirectAuditInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && directAuditInput.trim()) {
-                  e.preventDefault();
-                  onOpenFundsAudit(directAuditInput.trim());
-                }
-              }}
-              placeholder="Dán hoặc nhập mã đơn kiểm định (ví dụ: 17e67687-13fd-411c-8c70-be3e02b69ea9)..."
-              className="w-full pl-3.5 pr-10 py-2 rounded-xl border border-amber-300 bg-white text-xs font-mono font-medium outline-none focus:ring-2 focus:ring-amber-500 shadow-2xs"
-            />
-            {directAuditInput && (
-              <button
-                type="button"
-                onClick={() => setDirectAuditInput('')}
-                className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600 text-xs cursor-pointer"
-              >
-                ✕
-              </button>
-            )}
-          </div>
-
-          <button
-            type="button"
-            disabled={!directAuditInput.trim()}
-            onClick={() => onOpenFundsAudit(directAuditInput.trim())}
-            className="px-4 py-2 rounded-xl bg-amber-700 hover:bg-amber-800 disabled:opacity-50 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
-          >
-            <ShieldCheck className="w-4 h-4" />
-            <span>Mở Đối Soát Đơn Này</span>
-          </button>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-600 pt-0.5">
-          <span>Gợi ý bấm nhanh:</span>
-          <button
-            type="button"
-            onClick={() => {
-              setDirectAuditInput('17e67687-13fd-411c-8c70-be3e02b69ea9');
-              onOpenFundsAudit('17e67687-13fd-411c-8c70-be3e02b69ea9');
-            }}
-            className="px-2.5 py-0.5 rounded-lg bg-white border border-amber-300 hover:bg-amber-100 text-amber-950 font-mono text-[10px] font-bold transition cursor-pointer shadow-2xs"
-          >
-            #17e67687-13fd-411c-8c70-be3e02b69ea9 (Đang giữ 408.000 ₫)
-          </button>
-        </div>
-      </div>
-
       {/* 4. Orders Table Panel */}
       <div className="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
         {/* Table Toolbar */}
@@ -454,9 +524,7 @@ export const AdminInspectionFundsTab: React.FC<AdminInspectionFundsTabProps> = (
               <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-700">
                 {filteredOrders.length} đơn
               </span>
-              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
-                Mới nhất trên cùng
-              </span>
+
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
               Click vào nút <strong>"Đối Soát Tiền Kiểm Định"</strong> của bất kỳ đơn nào để xem toàn bộ luồng tiền, quỹ dự phòng và quyết toán
@@ -469,44 +537,40 @@ export const AdminInspectionFundsTab: React.FC<AdminInspectionFundsTabProps> = (
               <button
                 type="button"
                 onClick={() => setFundFilter('ALL')}
-                className={`px-3 py-1 rounded-lg transition cursor-pointer text-[11px] ${
-                  fundFilter === 'ALL'
-                    ? 'bg-white text-slate-900 shadow-2xs font-bold'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
+                className={`px-3 py-1 rounded-lg transition cursor-pointer text-[11px] ${fundFilter === 'ALL'
+                  ? 'bg-white text-slate-900 shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
+                  }`}
               >
                 Tất cả ({metrics.totalOrders})
               </button>
               <button
                 type="button"
                 onClick={() => setFundFilter('HELD_MONEY')}
-                className={`px-3 py-1 rounded-lg transition cursor-pointer text-[11px] ${
-                  fundFilter === 'HELD_MONEY'
-                    ? 'bg-amber-600 text-white shadow-2xs font-bold'
-                    : 'text-amber-800 hover:text-amber-950'
-                }`}
+                className={`px-3 py-1 rounded-lg transition cursor-pointer text-[11px] ${fundFilter === 'HELD_MONEY'
+                  ? 'bg-amber-600 text-white shadow-2xs font-bold'
+                  : 'text-amber-800 hover:text-amber-950'
+                  }`}
               >
                 Đang giữ tiền ({metrics.heldOrdersCount})
               </button>
               <button
                 type="button"
                 onClick={() => setFundFilter('AWAITING_SETTLEMENT')}
-                className={`px-3 py-1 rounded-lg transition cursor-pointer text-[11px] ${
-                  fundFilter === 'AWAITING_SETTLEMENT'
-                    ? 'bg-blue-600 text-white shadow-2xs font-bold'
-                    : 'text-blue-700 hover:text-blue-900'
-                }`}
+                className={`px-3 py-1 rounded-lg transition cursor-pointer text-[11px] ${fundFilter === 'AWAITING_SETTLEMENT'
+                  ? 'bg-blue-600 text-white shadow-2xs font-bold'
+                  : 'text-blue-700 hover:text-blue-900'
+                  }`}
               >
                 Chờ quyết toán ({metrics.awaitingSettlementCount})
               </button>
               <button
                 type="button"
                 onClick={() => setFundFilter('SETTLED')}
-                className={`px-3 py-1 rounded-lg transition cursor-pointer text-[11px] ${
-                  fundFilter === 'SETTLED'
-                    ? 'bg-emerald-600 text-white shadow-2xs font-bold'
-                    : 'text-emerald-700 hover:text-emerald-900'
-                }`}
+                className={`px-3 py-1 rounded-lg transition cursor-pointer text-[11px] ${fundFilter === 'SETTLED'
+                  ? 'bg-emerald-600 text-white shadow-2xs font-bold'
+                  : 'text-emerald-700 hover:text-emerald-900'
+                  }`}
               >
                 Đã quyết toán ({metrics.settledCount})
               </button>
@@ -542,34 +606,29 @@ export const AdminInspectionFundsTab: React.FC<AdminInspectionFundsTabProps> = (
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50/70 text-slate-500 uppercase text-[10px] tracking-wider">
-                <th className="py-3 px-4 font-bold">Mã Đơn &amp; Sản Phẩm</th>
+                <th className="py-3 px-4 font-bold min-w-[320px]">Mã Đơn &amp; Sản Phẩm</th>
                 <th className="py-3 px-4 font-bold">Người Bán / Mua</th>
                 <th className="py-3 px-4 font-bold text-right">Phí Đã Nộp</th>
-                <th className="py-3 px-4 font-bold text-right">Dự Phòng Hoàn Đang Giữ</th>
                 <th className="py-3 px-4 font-bold text-center">Trạng Thái Đơn</th>
-                <th className="py-3 px-4 font-bold text-center">Quyết Toán Hub</th>
                 <th className="py-3 px-4 font-bold text-center">Hành Động</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-500">
+                  <td colSpan={5} className="py-12 text-center text-slate-500">
                     <p className="text-xs font-semibold">Không tìm thấy đơn kiểm định nào phù hợp bộ lọc.</p>
                     <p className="text-[11px] text-slate-400 mt-1">Thử thay đổi bộ lọc trạng thái hoặc từ khóa tìm kiếm.</p>
                   </td>
                 </tr>
               ) : (
                 filteredOrders.map((ord) => {
-                  const isSettled = Boolean(ord.feeSettledAt);
                   const isSellerPaid = Boolean(ord.sellerPaidAt);
                   const isBuyerPaid = Boolean(ord.buyerPaidAt);
                   const isPaid = isSellerPaid || isBuyerPaid;
                   const totalPaid = (isSellerPaid ? (ord.sellerFeeShare || 0) : 0) +
                     (isBuyerPaid ? (ord.buyerFeeShare || 0) : 0) +
                     (ord.buyerCommitmentDeposit || 0);
-
-                  const reserveFee = Number(ord.returnShippingReserveFee || 0);
 
                   return (
                     <tr
@@ -578,40 +637,44 @@ export const AdminInspectionFundsTab: React.FC<AdminInspectionFundsTabProps> = (
                     >
                       {/* 1. Mã đơn & sản phẩm */}
                       <td className="py-3.5 px-4 align-top">
-                        <div className="font-mono font-bold text-slate-900 group-hover:text-amber-800 flex items-center gap-1.5">
-                          <span>#{ord.id.slice(0, 8)}...</span>
-                          <span className="text-[10px] font-normal text-slate-400 font-mono">
-                            {ord.id.slice(-6)}
+                        <div className="font-mono font-bold text-slate-900 group-hover:text-amber-800 text-xs break-all select-all flex items-center gap-1.5 flex-wrap">
+                          <span className="bg-slate-100 text-slate-900 px-1.5 py-0.5 rounded border border-slate-200">
+                            #{ord.id}
                           </span>
                         </div>
-                        <div className="text-[10px] text-slate-400 font-medium mt-0.5">
+                        {ord.linkedOrderId && ord.linkedOrderId !== ord.id && (
+                          <div className="text-[10px] font-mono text-slate-500 mt-1 break-all select-all flex items-center gap-1">
+                            <span className="font-sans font-medium text-slate-400">Đơn mua:</span>
+                            <span className="bg-slate-50 px-1 py-0.2 rounded border border-slate-200/80">#{ord.linkedOrderId}</span>
+                          </div>
+                        )}
+                        <div className="text-[10px] text-slate-400 font-medium mt-1">
                           {ord.createdAt
                             ? new Date(ord.createdAt).toLocaleString('vi-VN', {
+                              day: '2-digit',
+                              month: '2-digit',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })
+                            : ord.sellerPaidAt
+                              ? new Date(ord.sellerPaidAt).toLocaleString('vi-VN', {
                                 day: '2-digit',
                                 month: '2-digit',
                                 year: 'numeric',
                                 hour: '2-digit',
                                 minute: '2-digit'
                               })
-                            : ord.sellerPaidAt
-                              ? new Date(ord.sellerPaidAt).toLocaleString('vi-VN', {
-                                  day: '2-digit',
-                                  month: '2-digit',
-                                  year: 'numeric',
-                                  hour: '2-digit',
-                                  minute: '2-digit'
-                                })
                               : '—'}
                         </div>
-                        <div className="font-semibold text-slate-800 line-clamp-1 max-w-[240px] mt-0.5" title={ord.postTitle}>
-                          {ord.postTitle}
+                        <div className="font-semibold text-slate-800 text-xs mt-1 break-words max-w-[420px] leading-snug" title={ord.postTitle}>
+                          {ord.postTitle || 'Sản phẩm kiểm định'}
                         </div>
                         <div className="flex items-center gap-1.5 mt-1">
-                          <span className={`text-[9px] px-1.5 py-0.2 rounded font-bold uppercase ${
-                            ord.orderType === 'AT_HOME'
-                              ? 'bg-purple-100 text-purple-800'
-                              : 'bg-blue-100 text-blue-800'
-                          }`}>
+                          <span className={`text-[9px] px-1.5 py-0.2 rounded font-bold uppercase ${ord.orderType === 'AT_HOME'
+                            ? 'bg-purple-100 text-purple-800'
+                            : 'bg-blue-100 text-blue-800'
+                            }`}>
                             {ord.orderType === 'AT_HOME' ? 'Tại nhà' : 'Tại Lab Hub'}
                           </span>
                         </div>
@@ -632,52 +695,18 @@ export const AdminInspectionFundsTab: React.FC<AdminInspectionFundsTabProps> = (
                         <div className="font-bold font-mono text-slate-900">
                           {formatVND(totalPaid)}
                         </div>
-                        <span className={`inline-block mt-0.5 text-[9px] px-1.5 py-0.2 rounded-full font-bold ${
-                          isPaid ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'
-                        }`}>
+                        <span className={`inline-block mt-0.5 text-[9px] px-1.5 py-0.2 rounded-full font-bold ${isPaid ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'
+                          }`}>
                           {isPaid ? 'Đã thu phí' : 'Chưa nộp'}
                         </span>
                       </td>
 
-                      {/* 4. Dự Phòng Hoàn Đang Giữ */}
-                      <td className="py-3.5 px-4 align-top text-right">
-                        <div className="font-black font-mono text-orange-600">
-                          {formatVND(reserveFee)}
-                        </div>
-                        <span className={`inline-block mt-0.5 text-[9px] px-1.5 py-0.2 rounded-full font-bold ${
-                          isSettled
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : isPaid
-                              ? 'bg-amber-100 text-amber-900 border border-amber-200'
-                              : 'bg-slate-100 text-slate-600'
-                        }`}>
-                          {isSettled
-                            ? 'Đã quyết toán'
-                            : isPaid
-                              ? 'Đang giữ dự phòng'
-                              : 'Chưa thu'}
-                        </span>
-                      </td>
-
-                      {/* 5. Trạng thái đơn */}
+                      {/* 4. Trạng thái đơn */}
                       <td className="py-3.5 px-4 align-top text-center">
-                        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">
-                          {ord.status}
-                        </span>
+                        {renderInspectionOrderStatus(ord.status)}
                       </td>
 
-                      {/* 6. Quyết toán Hub */}
-                      <td className="py-3.5 px-4 align-top text-center">
-                        <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          isSettled
-                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                            : 'bg-amber-50 text-amber-800 border border-amber-200'
-                        }`}>
-                          {isSettled ? 'Đã quyết toán' : 'Chưa quyết toán'}
-                        </span>
-                      </td>
-
-                      {/* 7. Hành Động */}
+                      {/* 5. Hành Động */}
                       <td className="py-3.5 px-4 align-top text-center">
                         <button
                           type="button"

@@ -147,6 +147,23 @@ export interface ReturnShippingPolicyResponse {
   markupPercentage: number;
 }
 
+export interface InspectionReturnShippingPolicyHistoryItem {
+  id: number;
+  previousMarkupPercentage: number | null;
+  newMarkupPercentage: number;
+  changedAt: string;
+  changedBy?: string;
+}
+
+export interface ReturnShippingPolicyHistoryPageResponse {
+  items: InspectionReturnShippingPolicyHistoryItem[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+  isLast?: boolean;
+}
+
 export interface CreateInspectionRequest {
   postId: string;
   orderType: 'AT_HOME' | 'AT_CENTER';
@@ -932,7 +949,7 @@ export const inspectorService = {
    * KTV xem danh sách đơn được phân công cho mình
    */
   async getMyOrders(): Promise<InspectionOrderDto[]> {
-    const res = await requestGet<InspectionOrderDto[]>('/inspector/orders', {
+    const res = await requestGet<InspectionOrderDto[]>('/inspector/orders?sort=createdAt,desc', {
       requiresAuth: true,
     });
     const data = (res as any)?.data || res;
@@ -1726,6 +1743,27 @@ export const inspectorService = {
     });
     const data = (res as any)?.data ?? res;
     return data as ReturnShippingPolicyResponse;
+  },
+
+  /**
+   * Lấy lịch sử thay đổi tỷ lệ dự phòng cước trả hàng kiểm định
+   * GET /api/v1/admin/inspection/return-shipping-policy/history?page=0&size=10
+   */
+  async getReturnShippingPolicyHistory(page = 0, size = 10): Promise<ReturnShippingPolicyHistoryPageResponse> {
+    const res = await request<any>(`/admin/inspection/return-shipping-policy/history?page=${page}&size=${size}`, {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    const data = (res as any)?.data ?? res;
+    const items = data?.items || data?.content || [];
+    return {
+      items: Array.isArray(items) ? items : [],
+      page: typeof data?.page === 'number' ? data.page : (data?.number ?? page),
+      size: typeof data?.size === 'number' ? data.size : size,
+      totalElements: typeof data?.totalElements === 'number' ? data.totalElements : items.length,
+      totalPages: typeof data?.totalPages === 'number' ? data.totalPages : 1,
+      isLast: typeof data?.isLast === 'boolean' ? data.isLast : (data?.last ?? true),
+    };
   },
 
   /**

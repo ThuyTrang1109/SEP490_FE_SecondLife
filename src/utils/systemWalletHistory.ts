@@ -161,3 +161,72 @@ export function toSystemWalletHistoryItem(transaction: SystemWalletTransaction) 
     createdAt: transaction.createdAt,
   };
 }
+
+export interface FormattedBreakdownLine {
+  label: string;
+  formattedText: string;
+  delta?: number;
+}
+
+export function getSystemWalletBreakdownLines(
+  item: {
+    transaction?: { breakdownDescription?: string | null };
+    signedDelta?: number;
+    breakdownItems?: SystemWalletBreakdownItem[];
+    breakdownSummary?: string | null;
+  } | null | undefined
+): FormattedBreakdownLine[] {
+  if (!item) return [];
+
+  const signedDelta = item.signedDelta ?? 0;
+  const descToParse = item.transaction?.breakdownDescription || item.breakdownSummary;
+
+  // 1. Try parsing description first if available
+  if (descToParse) {
+    const parsed = parseBreakdownDescription(descToParse, signedDelta);
+    if (parsed.length > 0) {
+      return parsed.map((p) => {
+        let text = p.formattedText;
+        if (!text) {
+          if (p.delta > 0) {
+            text = `+${formatVND(p.delta)}`;
+          } else if (p.delta < 0) {
+            text = formatVND(p.delta);
+          } else {
+            text = '0 ₫';
+          }
+        } else if (p.delta < 0 && !text.startsWith('-') && !p.label.toLowerCase().startsWith('trừ')) {
+          text = `-${text}`;
+        }
+        return {
+          label: p.label,
+          delta: p.delta,
+          formattedText: text,
+        };
+      });
+    }
+  }
+
+  // 2. Fallback to breakdownItems if available
+  if (item.breakdownItems && item.breakdownItems.length > 0) {
+    return item.breakdownItems.map((b) => {
+      let text = b.formattedText;
+      if (!text) {
+        if (b.delta > 0) {
+          text = `+${formatVND(b.delta)}`;
+        } else if (b.delta < 0) {
+          text = formatVND(b.delta);
+        } else {
+          text = '0 ₫';
+        }
+      }
+      return {
+        label: b.label,
+        delta: b.delta,
+        formattedText: text,
+      };
+    });
+  }
+
+  return [];
+}

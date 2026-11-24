@@ -364,3 +364,180 @@ test('OrderStatusBadge renders "Đang Tranh Chấp • Đóng Băng Escrow" when
   const buyerText = buyerBadge.props.children[1].props.children;
   assert.equal(buyerText, 'Đang Tranh Chấp • Đóng Băng Escrow');
 });
+
+test('OrderStatusBadge renders "Vận đơn đã bị hủy" for direct order when shipment is cancelled', () => {
+  const directOrderId = 'cancelled-direct-order-test';
+  const directOrder: any = {
+    id: directOrderId,
+    hasInspectionService: false,
+    status: 'PROCESSING',
+    backendStatus: 'PROCESSING',
+    escrowStatus: 'HELD_IN_ESCROW',
+    sellerConfirmedAt: '2026-11-23T04:00:00Z',
+  };
+
+  const mockStorage: Record<string, string> = {
+    [`sl_order_shipments_${directOrderId}`]: JSON.stringify([
+      {
+        shipmentId: 'ship-canc-1',
+        leg: 'SELLER_TO_BUYER',
+        status: 'CANCELLED',
+        providerStatus: 'CANCELED',
+        orderCode: '3634100250241364943',
+      },
+    ]),
+  };
+
+  const originalWindow = (globalThis as any).window;
+  const originalLocalStorage = (globalThis as any).localStorage;
+
+  try {
+    (globalThis as any).window = {
+      localStorage: {
+        getItem: (key: string) => mockStorage[key] || null,
+        setItem: (key: string, val: string) => { mockStorage[key] = val; },
+        removeItem: (key: string) => { delete mockStorage[key]; },
+      },
+    };
+    (globalThis as any).localStorage = (globalThis as any).window.localStorage;
+
+    const baseProps: any = {
+      status: 'PROCESSING',
+      hasInspection: false,
+      orderItem: directOrder,
+      lang: 'vi',
+      isOrderCancelledOrRefunded: () => false,
+      isOrderReceiptConfirmed: () => false,
+      isOrderSellerConfirmed: () => true,
+      getOrderInboundShipment: () => null,
+      inboundLoadingOrders: new Set(),
+      isInspectorArrivedForOrder: () => false,
+      getOrderAppointment: () => null,
+      autoPaidOrderIds: new Set(),
+      isPartyInspectionFeePending: () => false,
+      getPartyInspectionFee: () => 0,
+      isPartyInspectionFeePaid: () => true,
+    };
+
+    // Seller view
+    const sellerBadge = OrderStatusBadge({ ...baseProps, isSeller: true, isCurrentOrderSeller: true }) as any;
+    assert.ok(sellerBadge);
+    assert.equal(sellerBadge.props.children[1].props.children, 'Vận đơn đã bị hủy');
+
+    // Buyer view
+    const buyerBadge = OrderStatusBadge({ ...baseProps, isSeller: false, isCurrentOrderSeller: false }) as any;
+    assert.ok(buyerBadge);
+    assert.equal(buyerBadge.props.children[1].props.children, 'Vận đơn đã bị hủy');
+  } finally {
+    (globalThis as any).window = originalWindow;
+    (globalThis as any).localStorage = originalLocalStorage;
+  }
+});
+
+test('OrderStatusBadge picks the latest direct shipment when multiple exist in storage', () => {
+  const directOrderId = 'direct-order-multiple-shipments';
+  const directOrder: any = {
+    id: directOrderId,
+    hasInspectionService: false,
+    status: 'PROCESSING',
+    backendStatus: 'PROCESSING',
+    escrowStatus: 'HELD_IN_ESCROW',
+    sellerConfirmedAt: '2026-11-23T04:00:00Z',
+  };
+
+  const mockStorage: Record<string, string> = {
+    [`sl_order_shipments_${directOrderId}`]: JSON.stringify([
+      {
+        shipmentId: 'shipment-old',
+        leg: 'SELLER_TO_BUYER',
+        status: 'PENDING',
+        providerStatus: 'ASSIGNING_DRIVER',
+        createdAt: '2026-11-23T01:00:00Z',
+      },
+      {
+        shipmentId: 'shipment-new-cancelled',
+        leg: 'SELLER_TO_BUYER',
+        status: 'CANCELLED',
+        providerStatus: 'CANCELED',
+        createdAt: '2026-11-23T02:00:00Z',
+      },
+    ]),
+  };
+
+  const originalWindow = (globalThis as any).window;
+  const originalLocalStorage = (globalThis as any).localStorage;
+
+  try {
+    (globalThis as any).window = {
+      localStorage: {
+        getItem: (key: string) => mockStorage[key] || null,
+        setItem: (key: string, val: string) => { mockStorage[key] = val; },
+        removeItem: (key: string) => { delete mockStorage[key]; },
+      },
+    };
+    (globalThis as any).localStorage = (globalThis as any).window.localStorage;
+
+    const baseProps: any = {
+      status: 'PROCESSING',
+      hasInspection: false,
+      orderItem: directOrder,
+      lang: 'vi',
+      isOrderCancelledOrRefunded: () => false,
+      isOrderReceiptConfirmed: () => false,
+      isOrderSellerConfirmed: () => true,
+      getOrderInboundShipment: () => null,
+      inboundLoadingOrders: new Set(),
+      isInspectorArrivedForOrder: () => false,
+      getOrderAppointment: () => null,
+      autoPaidOrderIds: new Set(),
+      isPartyInspectionFeePending: () => false,
+      getPartyInspectionFee: () => 0,
+      isPartyInspectionFeePaid: () => true,
+    };
+
+    const rendered = OrderStatusBadge({ ...baseProps, isSeller: true, isCurrentOrderSeller: true }) as any;
+    assert.ok(rendered);
+    assert.equal(rendered.props.children[1].props.children, 'Vận đơn đã bị hủy');
+  } finally {
+    (globalThis as any).window = originalWindow;
+    (globalThis as any).localStorage = originalLocalStorage;
+  }
+});
+
+test('OrderStatusBadge does not render approved return label if orderReturn has no reportId and is not disputed', () => {
+  const normalOrder: any = {
+    id: 'normal-order-dummy-return',
+    hasInspectionService: false,
+    status: 'PROCESSING',
+    backendStatus: 'PROCESSING',
+    escrowStatus: 'HELD_IN_ESCROW',
+    sellerConfirmedAt: null,
+    orderReturn: {
+      orderId: 'normal-order-dummy-return',
+      reportId: '',
+      shipmentStatus: 'DELIVERED',
+    },
+  };
+
+  const baseProps: any = {
+    status: 'PROCESSING',
+    hasInspection: false,
+    orderItem: normalOrder,
+    lang: 'vi',
+    isOrderCancelledOrRefunded: () => false,
+    isOrderReceiptConfirmed: () => false,
+    isOrderSellerConfirmed: () => false,
+    getOrderInboundShipment: () => null,
+    inboundLoadingOrders: new Set(),
+    isInspectorArrivedForOrder: () => false,
+    getOrderAppointment: () => null,
+    autoPaidOrderIds: new Set(),
+    isPartyInspectionFeePending: () => false,
+    getPartyInspectionFee: () => 0,
+    isPartyInspectionFeePaid: () => true,
+  };
+
+  const rendered = OrderStatusBadge({ ...baseProps, isSeller: true, isCurrentOrderSeller: true }) as any;
+  assert.ok(rendered);
+  assert.notEqual(rendered.props.children[1]?.props?.children, 'Hàng đã về người bán - Chờ hoàn tiền tự động');
+});

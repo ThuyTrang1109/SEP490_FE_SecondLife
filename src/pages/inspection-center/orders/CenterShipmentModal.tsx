@@ -419,19 +419,18 @@ export function CenterShipmentModal({ centerProfile, currentUser, shipmentModalO
                       </div>
 
                       {isCenterToSeller && isInterrupted && canBookReturn && (
-                        // <button
-                        //   type="button"
-                        //   disabled={bookingReturnId !== null}
-                        //   onClick={() => {
-                        //     closeShipmentModal();
-                        //     setReturnQuoteOrder(shipmentModalOrder);
-                        //   }}
-                        //   className="px-2.5 py-1 rounded-lg bg-amber-700 hover:bg-amber-800 text-white font-bold text-[10px] flex items-center gap-1 cursor-pointer transition shadow-2xs"
-                        // >
-                        //   <RefreshCw className="w-2.5 h-2.5" />
-                        //   <span>Tạo lại vận đơn hoàn trả</span>
-                        // </button>
-                        <span></span>
+                        <button
+                          type="button"
+                          disabled={bookingReturnId !== null}
+                          onClick={() => {
+                            closeShipmentModal();
+                            setReturnQuoteOrder(shipmentModalOrder);
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-amber-700 hover:bg-amber-800 text-white font-bold text-[10px] flex items-center gap-1 cursor-pointer transition shadow-2xs"
+                        >
+                          <RefreshCw className="w-2.5 h-2.5" />
+                          <span>Tạo lại vận đơn hoàn trả</span>
+                        </button>
                       )}
                       {isCenterToBuyer && isInterrupted && canBookBuyerDelivery && (
                         <button

@@ -29,7 +29,12 @@ import {
   Filter,
   Loader2,
   Clock,
-  MapPin
+  MapPin,
+  History,
+  ArrowRight,
+  ArrowUpRight,
+  ArrowDownRight,
+  User
 } from 'lucide-react';
 import {
   Language,
@@ -50,6 +55,7 @@ import {
   InspectionTravelTierDto,
   InspectionFeeProposalStatus,
   InspectionChecklistResponse,
+  InspectionReturnShippingPolicyHistoryItem,
   canManageInspectionFee
 } from '../../services/inspectorService';
 
@@ -68,6 +74,13 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
   const [isLoadingPolicy, setIsLoadingPolicy] = useState<boolean>(false);
   const [isSavingPolicy, setIsSavingPolicy] = useState<boolean>(false);
   const [policyValidationError, setPolicyValidationError] = useState<string | null>(null);
+
+  // Return Shipping Policy History state
+  const [policyHistory, setPolicyHistory] = useState<InspectionReturnShippingPolicyHistoryItem[]>([]);
+  const [isLoadingPolicyHistory, setIsLoadingPolicyHistory] = useState<boolean>(false);
+  const [policyHistoryPage, setPolicyHistoryPage] = useState<number>(0);
+  const [policyHistoryTotalPages, setPolicyHistoryTotalPages] = useState<number>(1);
+  const [policyHistoryTotalElements, setPolicyHistoryTotalElements] = useState<number>(0);
 
   // High Value Policy state (Ngưỡng giá bắt buộc kiểm định trước khi đăng)
   const [thresholdPrice, setThresholdPrice] = useState<number>(10000000);
@@ -100,24 +113,42 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
   const [items, setItems] = useState<ItemBackend[]>([]);
   const [centers, setCenters] = useState<InspectionCenter[]>([]);
 
+  const loadReturnShippingPolicy = useCallback(async () => {
+    setIsLoadingPolicy(true);
+    try {
+      const res = await inspectorService.getReturnShippingPolicy();
+      const val = typeof res?.markupPercentage === 'number' ? res.markupPercentage : 20;
+      setPolicyMarkupPercentage(val);
+      setInputMarkupPercentage(String(val));
+    } catch (err) {
+      console.warn('Failed to load return shipping policy:', err);
+    } finally {
+      setIsLoadingPolicy(false);
+    }
+  }, []);
+
+  const loadReturnShippingPolicyHistory = useCallback(async (targetPage = 0) => {
+    setIsLoadingPolicyHistory(true);
+    try {
+      const res = await inspectorService.getReturnShippingPolicyHistory(targetPage, 10);
+      setPolicyHistory(res.items || []);
+      setPolicyHistoryPage(res.page || 0);
+      setPolicyHistoryTotalPages(res.totalPages || 1);
+      setPolicyHistoryTotalElements(res.totalElements || 0);
+    } catch (err) {
+      console.warn('Failed to load return shipping policy history:', err);
+    } finally {
+      setIsLoadingPolicyHistory(false);
+    }
+  }, []);
+
   // Fetch return shipping policy when subtab selected or on mount
   useEffect(() => {
     if (activeSubTab === 'return_shipping_policy') {
       setIsEditingPolicy(false);
       setPolicyValidationError(null);
-      setIsLoadingPolicy(true);
-      inspectorService.getReturnShippingPolicy()
-        .then((res) => {
-          const val = typeof res?.markupPercentage === 'number' ? res.markupPercentage : 20;
-          setPolicyMarkupPercentage(val);
-          setInputMarkupPercentage(String(val));
-        })
-        .catch((err) => {
-          console.warn('Failed to load return shipping policy:', err);
-        })
-        .finally(() => {
-          setIsLoadingPolicy(false);
-        });
+      loadReturnShippingPolicy();
+      loadReturnShippingPolicyHistory(0);
     } else if (activeSubTab === 'high_value_policy') {
       setIsEditingThreshold(false);
       setThresholdValidationError(null);
@@ -136,7 +167,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
           setIsLoadingThreshold(false);
         });
     }
-  }, [activeSubTab]);
+  }, [activeSubTab, loadReturnShippingPolicy, loadReturnShippingPolicyHistory]);
 
   const handleSavePolicy = async () => {
     setPolicyValidationError(null);
@@ -161,6 +192,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
         type: 'success',
         message: `Đã lưu thành công tỷ lệ dự phòng cước trả hàng kiểm định: ${updatedVal}%. Thay đổi sẽ áp dụng khi lấy báo giá mới.`
       });
+      loadReturnShippingPolicyHistory(0);
     } catch (err: any) {
       setFeedback({
         type: 'error',
@@ -308,6 +340,45 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
     checklistCenterFilter,
     checklistActiveFilter,
   ]);
+
+  // Helper dịch trạng thái phê duyệt bộ tiêu chuẩn sang tiếng Việt
+  const getApprovalStatusLabel = (status?: string | null) => {
+    if (!status) return '—';
+    switch (status) {
+      case 'PENDING_APPROVAL':
+      case 'PENDING':
+        return 'Chờ duyệt';
+      case 'APPROVED':
+        return 'Đã duyệt';
+      case 'REJECTED':
+        return 'Đã từ chối';
+      case 'WITHDRAWN':
+        return 'Đã rút';
+      case 'LEGACY':
+        return 'Bản cũ (hệ thống)';
+      default:
+        return status;
+    }
+  };
+
+  // Helper dịch lý do chưa áp dụng sang tiếng Việt
+  const getUnavailableReasonLabel = (reason?: string | null) => {
+    if (!reason) return '';
+    switch (reason) {
+      case 'CHECKLIST_NOT_EFFECTIVE':
+        return 'Bộ tiêu chuẩn chưa có hiệu lực';
+      case 'NO_APPROVED_LEVEL_FEE':
+        return 'Chưa duyệt biểu phí cấp độ';
+      case 'ITEM_NOT_CLASSIFIED':
+        return 'Chưa phân cấp thiết bị';
+      case 'CENTER_UNAVAILABLE':
+        return 'Trung tâm tạm ngừng hoạt động';
+      case 'ITEM_NOT_SELECTABLE':
+        return 'Thiết bị ngừng hỗ trợ';
+      default:
+        return reason;
+    }
+  };
 
   // Helper chuẩn hóa tiếng Việt để so sánh chính xác tuyệt đối
   const normalizeVN = (str?: string | null) => {
@@ -924,10 +995,10 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
           </div>
           <div>
             <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">
-              Quản Trị Biểu Phí & Bậc Thang Kiểm Định
+              Quản trị biểu phí
             </h2>
             <p className="text-xs text-slate-500 font-medium">
-              Xét duyệt đề xuất từ Trung tâm kiểm định và kiểm soát bảng giá bậc thang di chuyển KTV toàn hệ thống
+              Xét duyệt các thông tin về tiêu chuẩn kỹ thuật, cấp độ, biểu phí kỹ thuật viên, cước vận chuyển, dự phòng hoàn...
             </p>
           </div>
         </div>
@@ -940,15 +1011,34 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                 loadChecklistProposals(checklistPage);
               } else if (activeSubTab === 'proposals') {
                 loadProposals(page, proposalStatusFilter);
+              } else if (activeSubTab === 'return_shipping_policy') {
+                loadReturnShippingPolicy();
+                loadReturnShippingPolicyHistory(policyHistoryPage);
+              } else if (activeSubTab === 'high_value_policy') {
+                setIsLoadingThreshold(true);
+                inspectorService
+                  .getAdminHighValueInspectionPolicy()
+                  .then((res) => {
+                    const val = typeof res?.thresholdPrice === 'number' && res.thresholdPrice > 0 ? res.thresholdPrice : 10000000;
+                    setThresholdPrice(val);
+                    setInputThresholdPrice(String(val));
+                    if (res?.version) setThresholdVersion(res.version);
+                  })
+                  .catch((err) => {
+                    console.warn('Failed to load high value inspection policy:', err);
+                  })
+                  .finally(() => {
+                    setIsLoadingThreshold(false);
+                  });
               } else {
                 loadTravelTiers();
               }
             }}
-            disabled={isLoadingChecklistProposals || isLoadingProposals || isLoadingTiers}
+            disabled={isLoadingChecklistProposals || isLoadingProposals || isLoadingTiers || isLoadingPolicy || isLoadingPolicyHistory || isLoadingThreshold}
             className="px-3.5 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 transition flex items-center gap-1.5 text-xs font-bold cursor-pointer shadow-2xs"
             title="Tải lại dữ liệu tab hiện tại"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${(isLoadingChecklistProposals || isLoadingProposals || isLoadingTiers) ? 'animate-spin text-amber-600' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${(isLoadingChecklistProposals || isLoadingProposals || isLoadingTiers || isLoadingPolicy || isLoadingPolicyHistory || isLoadingThreshold) ? 'animate-spin text-amber-600' : ''}`} />
             <span>Làm mới</span>
           </button>
         </div>
@@ -965,7 +1055,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
             }`}
         >
           <CheckSquare className="w-4 h-4 text-emerald-600 shrink-0" />
-          <span className="truncate">Tiêu Chuẩn & Cấp Độ</span>
+          <span className="truncate">Tiêu chuẩn & cấp độ</span>
           <span className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ${activeSubTab === 'checklist_proposals' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'
             }`}>
             {checklistTotalElements}
@@ -981,7 +1071,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
             }`}
         >
           <FileText className="w-4 h-4 text-amber-600 shrink-0" />
-          <span className="truncate">Biểu Phí KTV</span>
+          <span className="truncate">Biểu phí kiểm định</span>
           <span className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ${activeSubTab === 'proposals' ? 'bg-amber-100 text-amber-800' : 'bg-slate-200 text-slate-600'
             }`}>
             {totalElements}
@@ -997,7 +1087,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
             }`}
         >
           <Navigation className="w-4 h-4 text-blue-600 shrink-0" />
-          <span className="truncate">Cước Di Chuyển</span>
+          <span className="truncate">Cước di chuyển</span>
           <span className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ${activeSubTab === 'travel_tiers' ? 'bg-blue-100 text-blue-800' : 'bg-slate-200 text-slate-600'
             }`}>
             {travelTiers.length || 6} bậc
@@ -1013,7 +1103,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
             }`}
         >
           <RotateCcw className="w-4 h-4 text-purple-600 shrink-0" />
-          <span className="truncate">Dự Phòng Trả Hàng</span>
+          <span className="truncate">Dự phòng trả hàng</span>
           <span className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ${activeSubTab === 'return_shipping_policy' ? 'bg-purple-100 text-purple-800' : 'bg-slate-200 text-slate-600'
             }`}>
             {policyMarkupPercentage}%
@@ -1029,11 +1119,8 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
             }`}
         >
           <ShieldCheck className="w-4 h-4 text-cyan-600 shrink-0" />
-          <span className="truncate">Ngưỡng Giá Bắt Buộc</span>
-          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ${activeSubTab === 'high_value_policy' ? 'bg-cyan-100 text-cyan-800' : 'bg-slate-200 text-slate-600'
-            }`}>
-            {formatVND(thresholdPrice)}
-          </span>
+          <span className="truncate">Ngưỡng giá bắt buộc kiểm định</span>
+
         </button>
       </div>
 
@@ -1086,7 +1173,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-100">
             <div>
               <h3 className="text-sm sm:text-base font-black text-slate-900 tracking-tight">
-                Danh Sách Đề Xuất Bộ Tiêu Chuẩn Kỹ Thuật & Cấp Độ (L1–L4)
+                Danh sách đề xuất bộ tiêu chuẩn kỹ thuật & cấp độ (L1–L4)
               </h3>
               <p className="text-xs text-slate-500 font-medium">
                 Mỗi loại thiết bị (Item) chỉ có 1 bộ tiêu chuẩn hiệu lực toàn sàn. Kèm biểu phí theo trung tâm tác giả và cấp độ L1–L4.
@@ -1175,8 +1262,6 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                 { key: 'PENDING_APPROVAL', label: 'Chờ duyệt' },
                 { key: 'APPROVED', label: 'Đã phê duyệt' },
                 { key: 'REJECTED', label: 'Đã từ chối' },
-                { key: 'WITHDRAWN', label: 'Đã rút' },
-                { key: 'LEGACY', label: 'Bản cũ (Hệ thống)' },
               ].map((st) => (
                 <button
                   key={st.key}
@@ -1273,8 +1358,8 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
               <div className="pt-3 border-t border-slate-200/80 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 animate-fadeIn">
                 {/* Complexity Level Filter */}
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                    Cấp Độ Kỹ Thuật
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                    Cấp độ kỹ thuật
                   </label>
                   <select
                     value={checklistComplexityFilter}
@@ -1296,8 +1381,8 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
 
                 {/* Category Filter */}
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                    Danh Mục
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                    Danh mục
                   </label>
                   <select
                     value={checklistCategoryFilter}
@@ -1321,8 +1406,8 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
 
                 {/* Item Filter */}
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                    Loại Thiết Bị (Item)
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                    Loại thiết bị (Item)
                   </label>
                   <select
                     value={checklistItemFilter}
@@ -1345,8 +1430,8 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
 
                 {/* Inspection Center Filter */}
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                    Trung Tâm Tác Giả
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                    Trung tâm tác giả
                   </label>
                   <select
                     value={checklistCenterFilter}
@@ -1370,8 +1455,8 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
 
                 {/* Active version filter */}
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                    Hiệu Lực Toàn Sàn
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                    Hiệu lực toàn sàn
                   </label>
                   <select
                     value={checklistActiveFilter}
@@ -1384,8 +1469,8 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                     className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-hidden focus:border-amber-500"
                   >
                     <option value="ALL">-- Tất cả phiên bản --</option>
-                    <option value="ACTIVE">Đang kích hoạt (Active)</option>
-                    <option value="INACTIVE">Chưa kích hoạt (Inactive)</option>
+                    <option value="ACTIVE">Đang kích hoạt</option>
+                    <option value="INACTIVE">Chưa kích hoạt</option>
                   </select>
                 </div>
               </div>
@@ -1396,16 +1481,16 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
           <div className="border border-slate-200 rounded-2xl bg-white shadow-2xs overflow-hidden">
             <table className="w-full text-left text-xs table-auto">
               <thead>
-                <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold text-[11px] uppercase tracking-wider">
+                <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold text-xs tracking-wide">
                   <th className="py-3 px-2 w-8 text-center">#</th>
-                  <th className="py-3 px-2.5 w-[16%]">Loại Thiết Bị & Danh Mục</th>
-                  <th className="py-3 px-1.5 w-[6%] text-center">Cấp Độ</th>
-                  <th className="py-3 px-2.5 w-[21%]">Bộ Tiêu Chuẩn</th>
-                  <th className="py-3 px-2.5 w-[18%]">Trung Tâm Tác Giả</th>
-                  <th className="py-3 px-2.5 w-[14%] text-right">Biểu Phí Cơ Sở</th>
-                  <th className="py-3 px-1.5 w-[7%] text-center">Hiệu Lực</th>
-                  <th className="py-3 px-1.5 w-[8%] text-center">Trạng Thái</th>
-                  <th className="py-3 px-2 w-[6%] text-center">Thao Tác</th>
+                  <th className="py-3 px-2.5 w-[16%]">Loại thiết bị & danh mục</th>
+                  <th className="py-3 px-1.5 w-[6%] text-center">Cấp độ</th>
+                  <th className="py-3 px-2.5 w-[21%]">Bộ tiêu chuẩn</th>
+                  <th className="py-3 px-2.5 w-[18%]">Trung tâm tác giả</th>
+                  <th className="py-3 px-2.5 w-[14%] text-right">Biểu phí cơ sở</th>
+                  <th className="py-3 px-1.5 w-[7%] text-center">Hiệu lực</th>
+                  <th className="py-3 px-1.5 w-[8%] text-center">Trạng thái</th>
+                  <th className="py-3 px-2 w-[6%] text-center">Thao tác</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -1506,7 +1591,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                             </span>
                             {chk.active && (
                               <span className="px-1.5 py-0.2 rounded text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200">
-                                Active
+                                Đang kích hoạt
                               </span>
                             )}
                           </div>
@@ -1613,15 +1698,15 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                                   className="text-[9px] text-slate-500 mt-0.5 max-w-[90px] truncate"
                                   title={
                                     pricing.unavailableReason === 'CHECKLIST_NOT_EFFECTIVE'
-                                      ? 'Checklist chưa được duyệt hoặc chưa active'
+                                      ? 'Bộ tiêu chuẩn chưa được duyệt hoặc chưa kích hoạt'
                                       : pricing.unavailableReason === 'NO_APPROVED_LEVEL_FEE'
                                         ? 'Trung tâm chưa có giá được duyệt cho cấp này'
                                         : pricing.unavailableReason === 'ITEM_NOT_CLASSIFIED'
-                                          ? 'Chưa gắn Item hoặc là checklist cũ'
+                                          ? 'Chưa gắn loại thiết bị hoặc là bộ tiêu chuẩn cũ'
                                           : pricing.unavailableReason === 'CENTER_UNAVAILABLE'
                                             ? 'Trung tâm không đủ điều kiện hoạt động'
                                             : pricing.unavailableReason === 'ITEM_NOT_SELECTABLE'
-                                              ? 'Item đã ngừng cho chọn'
+                                              ? 'Loại thiết bị đã ngừng hỗ trợ'
                                               : pricing.unavailableReason
                                   }
                                 >
@@ -1645,17 +1730,17 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                         {/* Trạng Thái */}
                         <td className="py-2.5 px-1.5 text-center whitespace-nowrap">
                           {pricing?.pendingBaseInspectionFee != null ? (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-800 animate-pulse border border-amber-200 whitespace-nowrap" title="Trung tâm đang đề xuất đổi biểu phí mới, chờ Admin duyệt">
-                              Chờ Duyệt Giá
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 animate-pulse border border-amber-200 whitespace-nowrap" title="Trung tâm đang đề xuất đổi biểu phí mới, chờ Admin duyệt">
+                              Chờ duyệt giá
                             </span>
                           ) : chk.approvalStatus === 'APPROVED' ? (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 whitespace-nowrap">
-                              Đã Duyệt
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 whitespace-nowrap">
+                              Đã duyệt
                             </span>
                           ) : chk.approvalStatus === 'REJECTED' ? (
                             <div className="inline-flex flex-col items-center">
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-rose-100 text-rose-800 whitespace-nowrap">
-                                Từ Chối
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-800 whitespace-nowrap">
+                                Từ chối
                               </span>
                               {chk.rejectReason && (
                                 <span className="text-[9px] text-rose-600 truncate max-w-[90px] mt-0.5" title={chk.rejectReason}>
@@ -1664,16 +1749,16 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                               )}
                             </div>
                           ) : chk.approvalStatus === 'WITHDRAWN' ? (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-slate-100 text-slate-500 whitespace-nowrap">
-                              Đã Rút
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black bg-slate-100 text-slate-500 whitespace-nowrap">
+                              Đã rút
                             </span>
                           ) : chk.approvalStatus === 'LEGACY' ? (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-slate-100 text-slate-600 border border-slate-200 whitespace-nowrap" title="Checklist hệ thống cũ">
-                              Bản Cũ
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black bg-slate-100 text-slate-600 border border-slate-200 whitespace-nowrap" title="Checklist hệ thống cũ">
+                              Bản cũ
                             </span>
                           ) : (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-800 animate-pulse whitespace-nowrap">
-                              Chờ Duyệt
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 animate-pulse whitespace-nowrap">
+                              Chờ duyệt
                             </span>
                           )}
                         </td>
@@ -1737,7 +1822,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-100">
             <div>
               <h3 className="text-sm sm:text-base font-black text-slate-900 tracking-tight">
-                Danh Sách Đề Xuất Biểu Phí KTV Từ Các Trung Tâm Kiểm Định
+                Danh sách đề xuất biểu phí KTV từ các trung tâm kiểm định
               </h3>
               <p className="text-xs text-slate-500 font-medium">
                 Xét duyệt biểu phí cơ sở L1–L4 hoặc theo danh mục kèm bậc thang cước di chuyển do trung tâm đề xuất
@@ -1805,7 +1890,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                               Đề xuất biểu phí #{proposal.id.slice(0, 8)}
                             </span>
                             <span
-                              className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider whitespace-nowrap ${proposal.status === 'APPROVED'
+                              className={`px-2.5 py-0.5 rounded-full text-[10px] font-black whitespace-nowrap ${proposal.status === 'APPROVED'
                                 ? 'bg-emerald-100 text-emerald-800'
                                 : proposal.status === 'REJECTED'
                                   ? 'bg-rose-100 text-rose-800'
@@ -1813,10 +1898,10 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                                 }`}
                             >
                               {proposal.status === 'PENDING_APPROVAL' || proposal.status === 'PENDING'
-                                ? 'Chờ Duyệt'
+                                ? 'Chờ duyệt'
                                 : proposal.status === 'APPROVED'
-                                  ? 'Đã Phê Duyệt'
-                                  : 'Đã Từ Chối'}
+                                  ? 'Đã phê duyệt'
+                                  : 'Đã từ chối'}
                             </span>
                           </div>
                           <p className="text-xs text-slate-500 mt-0.5">
@@ -1852,13 +1937,13 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                     {/* Proposal Quick Summary */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50/80 p-4 rounded-xl border border-slate-100">
                       <div>
-                        <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">Phí kiểm định cơ sở đề xuất</span>
+                        <span className="text-[11px] font-bold text-slate-500 block">Phí kiểm định cơ sở đề xuất</span>
                         <span className="text-base font-black text-[#c34c36] block mt-0.5">
                           {formatVND(proposal.baseInspectionFee || 0)}
                         </span>
                       </div>
                       <div>
-                        <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">Phạm vi / Cấp độ áp dụng</span>
+                        <span className="text-[11px] font-bold text-slate-500 block">Phạm vi / cấp độ áp dụng</span>
                         {proposal.complexityLevel ? (
                           <div className="flex items-center gap-1.5 mt-0.5">
                             <span className="px-2 py-0.5 rounded text-[11px] font-black uppercase bg-[#24263e] text-white">
@@ -1875,7 +1960,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                         )}
                       </div>
                       <div>
-                        <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">Người xét duyệt</span>
+                        <span className="text-[11px] font-bold text-slate-500 block">Người xét duyệt</span>
                         <span className="text-xs font-bold text-slate-800 block mt-0.5">
                           {proposal.reviewedByName ? `${proposal.reviewedByName} (Đã xử lý)` : 'Chờ Admin xử lý'}
                         </span>
@@ -1898,7 +1983,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
                           {proposal.tiers.map((t, idx) => (
                             <div key={idx} className="p-2.5 rounded-xl border border-slate-200 bg-white text-center shadow-2xs">
-                              <span className="text-[10px] font-bold text-slate-400 block uppercase">
+                              <span className="text-[10px] font-bold text-slate-400 block">
                                 {t.name || `Bậc ${t.tierNumber || idx + 1}`}
                               </span>
                               <span className="text-xs font-bold text-slate-700 block mt-0.5">
@@ -1957,10 +2042,10 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-100">
             <div>
               <h3 className="text-sm sm:text-base font-black text-slate-900 tracking-tight">
-                Bảng 6 Bậc Thang Cước Di Chuyển Kỹ Thuật Viên
+                Bảng 6 bậc thang cước di chuyển kỹ thuật viên
               </h3>
               <p className="text-xs text-slate-500 font-medium">
-                Công thức tính phí di chuyển thực tế khi kiểm định tận nhà (Gói AT_HOME) dựa trên khoảng cách km
+                Công thức tính phí di chuyển thực tế khi kiểm định tận nhà dựa trên khoảng cách km
               </p>
             </div>
 
@@ -1976,7 +2061,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                     }}
                     className="px-3.5 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-bold transition cursor-pointer"
                   >
-                    Hủy Bỏ
+                    Hủy bỏ
                   </button>
                   <button
                     type="button"
@@ -1984,7 +2069,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                     className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
                   >
                     <Save className="w-3.5 h-3.5" />
-                    <span>Xem Lại & Lưu Mới</span>
+                    <span>Xem lại & lưu mới</span>
                   </button>
                 </>
               ) : (
@@ -1999,7 +2084,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                     className="px-4 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
                   >
                     <Edit2 className="w-3.5 h-3.5" />
-                    <span>Chỉnh Sửa Trực Tiếp</span>
+                    <span>Chỉnh sửa trực tiếp</span>
                   </button>
                 )
               )}
@@ -2013,13 +2098,13 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
               <span>Quy tắc vận hành bậc thang di chuyển</span>
             </div>
             <p>
-              • Biểu phí gồm 6 bậc thang cố định áp dụng chung toàn quốc cho hình thức kiểm định tận nhà (AT_HOME).
+              • Biểu phí gồm 6 bậc thang cố định áp dụng chung toàn quốc cho hình thức kiểm định tận nhà.
             </p>
             <p>
               • Bậc cuối cùng được cấu hình với khoảng cách đến là <em>Không giới hạn (∞)</em> bằng cách để trống ô cự ly đến.
             </p>
             <p>
-              • Phí vận chuyển hàng hóa về Trung tâm (Lab Hub) là khoản do đối tác giao vận (Lalamove) thực hiện, không quản trị tại bảng này.
+              • Phí vận chuyển hàng hóa về trung tâm kiểm định là khoản do đối tác giao vận thực hiện, không quản trị tại bảng này.
             </p>
           </div>
 
@@ -2040,7 +2125,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
             <div className="overflow-x-auto border border-slate-200 rounded-2xl bg-white shadow-2xs">
               <table className="w-full text-left text-xs">
                 <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50 text-slate-600 font-bold uppercase tracking-wider text-[11px]">
+                  <tr className="border-b border-slate-200 bg-slate-50 text-slate-600 font-bold tracking-wide text-xs">
                     <th className="py-3 px-3.5 w-20 text-center">Bậc thang</th>
                     <th className="py-3 px-4 min-w-[180px]">Tên hiển thị</th>
                     <th className="py-3 px-3 w-36 text-center">Khoảng cách từ (km)</th>
@@ -2118,9 +2203,9 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                       </td>
 
                       <td className="py-3.5 px-3.5 text-center whitespace-nowrap">
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
                           <CheckCircle2 className="w-3 h-3" />
-                          <span>{tier.status || 'ACTIVE'}</span>
+                          <span>{tier.status === 'ACTIVE' || !tier.status ? 'Đang kích hoạt' : tier.status}</span>
                         </span>
                       </td>
                     </tr>
@@ -2141,10 +2226,10 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
             <div>
               <h3 className="text-sm sm:text-base font-black text-slate-900 tracking-tight flex items-center gap-2">
                 <RotateCcw className="w-4 h-4 text-purple-600" />
-                <span>Cấu Hình Tỷ Lệ Dự Phòng Cước Trả Hàng Kiểm Định</span>
+                <span>Cấu hình tỷ lệ dự phòng cước trả hàng kiểm định</span>
               </h3>
               <p className="text-xs text-slate-500 font-medium">
-                Tỷ lệ phần trăm dự phòng cước trả hàng từ Trung tâm về cho Người bán đối với đơn kiểm định tại trung tâm (AT_CENTER)
+                Tỷ lệ phần trăm dự phòng cước trả hàng từ Trung tâm về cho Người bán đối với đơn kiểm định tại trung tâm.
               </p>
             </div>
 
@@ -2162,7 +2247,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                       disabled={isSavingPolicy}
                       className="px-3.5 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-bold transition cursor-pointer"
                     >
-                      Hủy Bỏ
+                      Hủy bỏ
                     </button>
                     <button
                       type="button"
@@ -2178,7 +2263,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                       ) : (
                         <>
                           <Save className="w-3.5 h-3.5" />
-                          <span>Lưu Cấu Hình</span>
+                          <span>Lưu cấu hình</span>
                         </>
                       )}
                     </button>
@@ -2195,7 +2280,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                     className="px-4 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
                   >
                     <Edit2 className="w-3.5 h-3.5" />
-                    <span>Chỉnh Sửa</span>
+                    <span>Chỉnh sửa</span>
                   </button>
                 )}
               </div>
@@ -2219,7 +2304,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                   </label>
                   {!isEditingPolicy && hasFeeManagePermission && (
                     <span className="text-[11px] font-semibold text-slate-400">
-                      (Chế độ chỉ xem — bấm Chỉnh Sửa để thay đổi)
+
                     </span>
                   )}
                 </div>
@@ -2258,7 +2343,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                         className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-xs disabled:opacity-50 shrink-0"
                       >
                         <Edit2 className="w-4 h-4" />
-                        <span>Chỉnh Sửa</span>
+                        <span>Chỉnh sửa</span>
                       </button>
                     )
                   ) : (
@@ -2289,7 +2374,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                         ) : (
                           <>
                             <Save className="w-4 h-4" />
-                            <span>Lưu Cấu Hình</span>
+                            <span>Lưu cấu hình</span>
                           </>
                         )}
                       </button>
@@ -2319,19 +2404,23 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
 
             {/* Bảng diễn giải công thức và ví dụ */}
             <div className="bg-slate-50 rounded-3xl p-5 border border-slate-200/80 space-y-3 text-xs">
-              <h4 className="font-black text-slate-900 flex items-center gap-1.5 uppercase tracking-wider text-[11px]">
-                <span>📐 Ví Dụ Minh Họa Tính Toán</span>
+              <h4 className="font-black text-slate-900 flex items-center gap-1.5 text-xs">
+                <span>📐 Ví dụ minh họa tính toán</span>
               </h4>
               <p className="text-slate-600 text-[11px] leading-relaxed">
-                Khi người mua chọn kiểm định <strong>Đưa đến trung tâm (AT_CENTER)</strong>:
+                Khi người mua chọn kiểm định <strong>đưa đến trung tâm</strong>:
               </p>
               <div className="space-y-2 bg-white p-3 rounded-2xl border border-slate-200/60 font-mono text-[11px] text-slate-700">
+                <div className="flex justify-between">
+                  <span>Ví dụ:</span>
+
+                </div>
                 <div className="flex justify-between">
                   <span>Phí kiểm định cơ sở:</span>
                   <span className="font-bold text-slate-900">50.000 đ</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>Cước chiều đi (Seller → Hub):</span>
+                  <span>Cước chiều đi (Người bán → Trung tâm):</span>
                   <span className="font-bold text-slate-900">30.000 đ</span>
                 </div>
                 <div className="flex justify-between text-purple-700">
@@ -2352,6 +2441,200 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
               </p>
             </div>
           </div>
+
+          {/* Lịch sử thay đổi tỷ lệ dự phòng */}
+          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-purple-50 text-purple-700">
+                  <History className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-black text-slate-900 tracking-tight flex items-center gap-2">
+                    <span>Lịch sử thay đổi tỷ lệ dự phòng</span>
+                    {policyHistoryTotalElements > 0 && (
+                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                        {policyHistoryTotalElements} lần thay đổi
+                      </span>
+                    )}
+                  </h4>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Ghi nhận mọi lần điều chỉnh tỷ lệ dự phòng cước trả hàng kiểm định trên hệ thống
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => loadReturnShippingPolicyHistory(policyHistoryPage)}
+                disabled={isLoadingPolicyHistory}
+                className="px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 transition flex items-center gap-1.5 text-xs font-bold cursor-pointer shrink-0 shadow-2xs"
+                title="Tải lại lịch sử thay đổi"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isLoadingPolicyHistory ? 'animate-spin text-purple-600' : ''}`} />
+                <span>Tải lại</span>
+              </button>
+            </div>
+
+            {/* Table or Loading / Empty state */}
+            {isLoadingPolicyHistory ? (
+              <div className="py-12 flex flex-col items-center justify-center gap-2 text-slate-400">
+                <Loader2 className="w-6 h-6 animate-spin text-purple-600" />
+                <span className="text-xs font-medium">Đang tải lịch sử thay đổi...</span>
+              </div>
+            ) : policyHistory.length === 0 ? (
+              <div className="py-10 text-center text-slate-400 space-y-2">
+                <History className="w-8 h-8 mx-auto stroke-1 opacity-50" />
+                <p className="text-xs font-semibold text-slate-500">Chưa có bản ghi lịch sử thay đổi nào</p>
+                <p className="text-[11px] text-slate-400">
+                  Khi quản trị viên cập nhật tỷ lệ dự phòng, các phiên bản thay đổi sẽ được lưu trữ tại đây.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider bg-slate-50/70">
+                      <th className="py-2.5 px-3 rounded-l-xl">#</th>
+                      <th className="py-2.5 px-3">Thời gian thay đổi</th>
+                      <th className="py-2.5 px-3 text-right">Tỷ lệ trước</th>
+                      <th className="py-2.5 px-2 text-center w-8"></th>
+                      <th className="py-2.5 px-3 text-left">Tỷ lệ mới</th>
+                      <th className="py-2.5 px-3 text-right">Biến động</th>
+                      <th className="py-2.5 px-3 rounded-r-xl">Người thực hiện</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {policyHistory.map((item, idx) => {
+                      const prev = item.previousMarkupPercentage != null ? Number(item.previousMarkupPercentage) : null;
+                      const next = Number(item.newMarkupPercentage);
+                      const diff = prev != null ? next - prev : null;
+                      const isCurrentUser =
+                        currentUser?.id &&
+                        item.changedBy &&
+                        String(currentUser.id).toLowerCase() === String(item.changedBy).toLowerCase();
+
+                      return (
+                        <tr key={item.id || idx} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="py-3 px-3 font-mono text-slate-400 text-[11px]">
+                            {policyHistoryPage * 10 + idx + 1}
+                          </td>
+                          <td className="py-3 px-3">
+                            <div className="flex items-center gap-1.5 text-slate-800 font-medium whitespace-nowrap">
+                              <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                              <span>
+                                {item.changedAt
+                                  ? new Date(item.changedAt).toLocaleString('vi-VN', {
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    second: '2-digit',
+                                    day: '2-digit',
+                                    month: '2-digit',
+                                    year: 'numeric',
+                                  })
+                                  : '—'}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="py-3 px-3 text-right font-mono font-bold text-slate-600">
+                            {prev != null ? `${prev}%` : <span className="text-slate-400 font-normal italic">Khởi tạo</span>}
+                          </td>
+                          <td className="py-3 px-2 text-center text-slate-400">
+                            <ArrowRight className="w-3.5 h-3.5 mx-auto" />
+                          </td>
+                          <td className="py-3 px-3 text-left font-mono font-black text-purple-700">
+                            {next}%
+                          </td>
+                          <td className="py-3 px-3 text-right font-mono">
+                            {diff === null ? (
+                              <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-100 text-slate-500 font-medium">
+                                Ban đầu
+                              </span>
+                            ) : diff > 0 ? (
+                              <span className="inline-flex items-center gap-0.5 text-[11px] px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 font-bold border border-amber-200/60">
+                                <ArrowUpRight className="w-3 h-3" />
+                                +{Number(diff.toFixed(2))}%
+                              </span>
+                            ) : diff < 0 ? (
+                              <span className="inline-flex items-center gap-0.5 text-[11px] px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-bold border border-emerald-200/60">
+                                <ArrowDownRight className="w-3 h-3" />
+                                {Number(diff.toFixed(2))}%
+                              </span>
+                            ) : (
+                              <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 font-medium">
+                                0%
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-3">
+                            {isCurrentUser ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-purple-50 text-purple-700 text-[11px] font-bold border border-purple-200/60">
+                                <User className="w-3 h-3" />
+                                <span>Bạn (Quản trị viên)</span>
+                              </span>
+                            ) : item.changedBy ? (
+                              <span
+                                className="inline-flex items-center gap-1 font-mono text-[11px] text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md"
+                                title={`Mã định danh quản trị viên: ${item.changedBy}`}
+                              >
+                                <User className="w-3 h-3 text-slate-400" />
+                                <span>Quản trị viên ({item.changedBy.slice(0, 8)})</span>
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 italic text-[11px]">Hệ thống</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Pagination Controls */}
+            {policyHistoryTotalPages > 1 && (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-100 text-xs">
+                <span className="text-slate-500 font-medium text-[11px]">
+                  Hiển thị trang <strong className="text-slate-700">{policyHistoryPage + 1}</strong> / <strong className="text-slate-700">{policyHistoryTotalPages}</strong> (Tổng số {policyHistoryTotalElements} lượt thay đổi)
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => loadReturnShippingPolicyHistory(policyHistoryPage - 1)}
+                    disabled={policyHistoryPage === 0 || isLoadingPolicyHistory}
+                    className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed text-slate-600 transition cursor-pointer"
+                    title="Trang trước"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  {Array.from({ length: policyHistoryTotalPages }, (_, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => loadReturnShippingPolicyHistory(i)}
+                      disabled={isLoadingPolicyHistory}
+                      className={`min-w-7 h-7 px-2 rounded-lg text-xs font-bold transition cursor-pointer ${i === policyHistoryPage
+                        ? 'bg-purple-600 text-white'
+                        : 'border border-slate-200 hover:bg-slate-50 text-slate-700'
+                        }`}
+                    >
+                      {i + 1}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => loadReturnShippingPolicyHistory(policyHistoryPage + 1)}
+                    disabled={policyHistoryPage >= policyHistoryTotalPages - 1 || isLoadingPolicyHistory}
+                    className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed text-slate-600 transition cursor-pointer"
+                    title="Trang sau"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -2364,7 +2647,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
             <div>
               <h3 className="text-sm sm:text-base font-black text-slate-900 tracking-tight flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-cyan-600" />
-                <span>Cấu Hình Ngưỡng Giá Bắt Buộc Kiểm Định Trước Khi Đăng</span>
+                <span>Cấu hình ngưỡng giá bắt buộc kiểm định trước khi đăng</span>
               </h3>
               <p className="text-xs text-slate-500 font-medium">
                 Sản phẩm có giá cao hơn ngưỡng này phải kiểm định trước khi đăng.
@@ -2385,7 +2668,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                       disabled={isSavingThreshold}
                       className="px-3.5 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-bold transition cursor-pointer"
                     >
-                      Hủy Bỏ
+                      Hủy bỏ
                     </button>
                     <button
                       type="button"
@@ -2401,7 +2684,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                       ) : (
                         <>
                           <Save className="w-3.5 h-3.5" />
-                          <span>Lưu Cấu Hình</span>
+                          <span>Lưu cấu hình</span>
                         </>
                       )}
                     </button>
@@ -2418,7 +2701,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                     className="px-4 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
                   >
                     <Edit2 className="w-4 h-4" />
-                    <span>Chỉnh Sửa</span>
+                    <span>Chỉnh sửa</span>
                   </button>
                 )}
               </div>
@@ -2447,7 +2730,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                   </label>
                   {!isEditingThreshold && hasAdminConfigPermission && (
                     <span className="text-[11px] font-semibold text-slate-400">
-                      (Chế độ chỉ xem — bấm Chỉnh Sửa để thay đổi)
+                      (Chế độ chỉ xem — bấm chỉnh sửa để thay đổi)
                     </span>
                   )}
                 </div>
@@ -2485,7 +2768,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                         className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-xs disabled:opacity-50 shrink-0"
                       >
                         <Edit2 className="w-4 h-4" />
-                        <span>Chỉnh Sửa</span>
+                        <span>Chỉnh sửa</span>
                       </button>
                     )
                   ) : (
@@ -2516,7 +2799,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                         ) : (
                           <>
                             <Save className="w-4 h-4" />
-                            <span>Lưu Ngưỡng Giá</span>
+                            <span>Lưu ngưỡng giá</span>
                           </>
                         )}
                       </button>
@@ -2557,7 +2840,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
             {/* Hướng dẫn & Lưu ý chính sách */}
             <div className="bg-slate-50/80 rounded-3xl p-6 border border-slate-200/80 space-y-3 text-xs">
               <span className="font-bold text-slate-900 block text-sm">
-                Lưu ý quản trị & Quyền hạn
+                Lưu ý quản trị & quyền hạn
               </span>
               <p className="text-slate-600 leading-relaxed">
                 Ngưỡng giá này áp dụng ngay lập tức cho tất cả các bài đăng mới được gửi duyệt sau thời điểm lưu.
@@ -2565,7 +2848,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
               <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-1.5">
                 <div className="flex items-center justify-between text-[11px]">
                   <span className="text-slate-500">Quyền yêu cầu:</span>
-                  <span className="font-mono font-bold text-slate-800">ADMIN_CONFIG_MANAGE</span>
+                  <span className="font-mono font-bold text-slate-800">ADMIN</span>
                 </div>
                 <div className="flex items-center justify-between text-[11px]">
                   <span className="text-slate-500">Đối tượng chịu phí:</span>
@@ -2591,7 +2874,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                 </div>
                 <div>
                   <h3 className="text-base font-black text-slate-900">
-                    Chi Tiết & So Sánh Đề Xuất Biểu Phí #{viewingProposal.id.slice(0, 8)}
+                    Chi tiết & so sánh đề xuất biểu phí #{viewingProposal.id.slice(0, 8)}
                   </h3>
                   <p className="text-xs text-slate-500">
                     Đề xuất bởi {viewingProposal.proposedByName || viewingProposal.proposedByEmail} •{' '}
@@ -2610,7 +2893,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
             {/* Proposal Key Info */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50 p-4 rounded-2xl">
               <div>
-                <span className="text-[11px] font-bold text-slate-400 block uppercase">Phí kiểm định cơ sở đề xuất</span>
+                <span className="text-[11px] font-bold text-slate-400 block">Phí kiểm định cơ sở đề xuất</span>
                 <span className="text-lg font-black text-[#c34c36]">
                   {formatVND(viewingProposal.baseInspectionFee || 0)}
                 </span>
@@ -2619,15 +2902,15 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                 </p>
               </div>
               <div>
-                <span className="text-[11px] font-bold text-slate-400 block uppercase">Danh mục áp dụng</span>
+                <span className="text-[11px] font-bold text-slate-400 block">Danh mục áp dụng</span>
                 <span className="text-xs font-bold text-slate-800">
                   {viewingProposal.categoryName || 'Tất cả danh mục sản phẩm'}
                 </span>
               </div>
               <div>
-                <span className="text-[11px] font-bold text-slate-400 block uppercase">Trạng thái</span>
+                <span className="text-[11px] font-bold text-slate-400 block">Trạng thái</span>
                 <span
-                  className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase mt-1 ${viewingProposal.status === 'APPROVED'
+                  className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black mt-1 ${viewingProposal.status === 'APPROVED'
                     ? 'bg-emerald-100 text-emerald-800'
                     : viewingProposal.status === 'REJECTED'
                       ? 'bg-rose-100 text-rose-800'
@@ -2635,10 +2918,10 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                     }`}
                 >
                   {viewingProposal.status === 'PENDING_APPROVAL' || viewingProposal.status === 'PENDING'
-                    ? 'Chờ Duyệt'
+                    ? 'Chờ duyệt'
                     : viewingProposal.status === 'APPROVED'
-                      ? 'Đã Phê Duyệt'
-                      : 'Đã Từ Chối'}
+                      ? 'Đã phê duyệt'
+                      : 'Đã từ chối'}
                 </span>
                 {viewingProposal.rejectReason && (
                   <p className="text-[11px] text-rose-600 font-semibold mt-1">
@@ -2650,13 +2933,13 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
 
             {/* Side-by-Side Comparison Table */}
             <div className="space-y-2">
-              <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                Bảng so sánh cước bậc thang di chuyển (Hiện hành vs Đề xuất)
+              <h4 className="text-xs font-bold text-slate-800 tracking-wide">
+                Bảng so sánh cước bậc thang di chuyển (Hiện hành vs đề xuất)
               </h4>
               <div className="overflow-x-auto border border-gray-100 rounded-2xl">
                 <table className="w-full text-left text-xs">
                   <thead>
-                    <tr className="bg-slate-50 text-slate-600 font-bold border-b border-gray-100 uppercase text-[11px]">
+                    <tr className="bg-slate-50 text-slate-600 font-bold border-b border-gray-100 text-xs">
                       <th className="py-2.5 px-3">Bậc</th>
                       <th className="py-2.5 px-3">Tên bậc</th>
                       <th className="py-2.5 px-3">Cự ly hiện hành</th>
@@ -2736,7 +3019,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                     className="px-4 py-2 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-bold transition cursor-pointer flex items-center gap-1.5"
                   >
                     <X className="w-4 h-4" />
-                    <span>Từ Chối Đề Xuất</span>
+                    <span>Từ chối đề xuất</span>
                   </button>
                   <button
                     onClick={() => {
@@ -2747,7 +3030,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                     className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-xs"
                   >
                     <Check className="w-4 h-4" />
-                    <span>Phê Duyệt Đề Xuất</span>
+                    <span>Phê duyệt đề xuất</span>
                   </button>
                 </div>
               )}
@@ -2771,7 +3054,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                   {reviewAction === 'APPROVE' ? <Check className="w-5 h-5" /> : <X className="w-5 h-5" />}
                 </div>
                 <h3 className="text-base font-black text-slate-900">
-                  {reviewAction === 'APPROVE' ? 'Phê Duyệt Đề Xuất Biểu Phí' : 'Từ Chối Đề Xuất Biểu Phí'}
+                  {reviewAction === 'APPROVE' ? 'Phê duyệt đề xuất biểu phí' : 'Từ chối đề xuất biểu phí'}
                 </h3>
               </div>
               <button
@@ -2796,7 +3079,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
 
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-slate-700">
-                Ghi chú / Ý kiến phản hồi {reviewAction === 'REJECT' && <span className="text-rose-500">* (Bắt buộc)</span>}:
+                Ghi chú / ý kiến phản hồi {reviewAction === 'REJECT' && <span className="text-rose-500">* (Bắt buộc)</span>}:
               </label>
               <textarea
                 rows={3}
@@ -2827,7 +3110,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                   }`}
               >
                 {isSubmittingReview && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
-                <span>{reviewAction === 'APPROVE' ? 'Xác Nhận Phê Duyệt' : 'Xác Nhận Từ Chối'}</span>
+                <span>{reviewAction === 'APPROVE' ? 'Xác nhận phê duyệt' : 'Xác nhận từ chối'}</span>
               </button>
             </div>
           </div>
@@ -2846,7 +3129,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                   <Save className="w-5 h-5" />
                 </div>
                 <h3 className="text-base font-black text-slate-900">
-                  Xem Lại Thay Đổi Bảng Bậc Thang Trước Khi Lưu
+                  Xem lại thay đổi bảng bậc thang trước khi lưu
                 </h3>
               </div>
               <button
@@ -2864,7 +3147,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
             <div className="overflow-x-auto border border-gray-100 rounded-2xl">
               <table className="w-full text-left text-xs">
                 <thead>
-                  <tr className="bg-slate-50 text-slate-600 font-bold border-b border-gray-100 text-[11px] uppercase">
+                  <tr className="bg-slate-50 text-slate-600 font-bold border-b border-gray-100 text-xs">
                     <th className="py-2.5 px-3">Bậc</th>
                     <th className="py-2.5 px-3">Tên bậc</th>
                     <th className="py-2.5 px-3">Khoảng cách</th>
@@ -2893,7 +3176,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                 onClick={() => setIsPreviewSaveTiersOpen(false)}
                 className="px-4 py-2 rounded-xl border border-gray-200 text-xs font-bold text-slate-600 hover:bg-gray-50 cursor-pointer"
               >
-                Quay Lại Sửa
+                Quay lại sửa
               </button>
               <button
                 onClick={handleConfirmSaveTiers}
@@ -2901,7 +3184,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                 className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs disabled:opacity-50 cursor-pointer"
               >
                 {isSavingTiers && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
-                <span>Xác Nhận Lưu Vào Hệ Thống</span>
+                <span>Xác nhận lưu vào hệ thống</span>
               </button>
             </div>
           </div>
@@ -2910,7 +3193,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
       {/* MODAL: XEM CHI TIẾT BỘ TIÊU CHUẨN ĐỀ XUẤT */}
       {viewingChecklistProposal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-fadeIn backdrop-blur-xs">
-          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 space-y-4 shadow-2xl border border-gray-100 max-h-[90vh] flex flex-col text-xs">
+          <div className="bg-white rounded-3xl max-w-3xl w-full p-6 space-y-4 shadow-2xl border border-slate-100 max-h-[90vh] flex flex-col text-xs">
             <div className="flex items-center justify-between pb-3 border-b border-gray-100 shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-[#24263e] text-white flex items-center justify-center font-bold">
@@ -2918,10 +3201,10 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                 </div>
                 <div>
                   <h3 className="font-black text-sm text-slate-900">
-                    Chi Tiết Bộ Tiêu Chuẩn: {viewingChecklistProposal.title}
+                    Chi tiết bộ tiêu chuẩn: {viewingChecklistProposal.title}
                   </h3>
                   <p className="text-[11px] text-slate-500">
-                    Loại thiết bị: <strong>{viewingChecklistProposal.itemName || 'Chưa gắn Item cụ thể'}</strong>{' '}
+                    Loại thiết bị: <strong>{viewingChecklistProposal.itemName || 'Chưa gắn loại thiết bị cụ thể'}</strong>{' '}
                     {viewingChecklistProposal.categoryName ? `(Danh mục: ${viewingChecklistProposal.categoryName})` : ''} • Cấp độ: <strong>{viewingChecklistProposal.complexityLevel ? `Cấp ${viewingChecklistProposal.complexityLevel}` : 'Chưa phân cấp'}</strong> • Phiên bản: <strong>v{viewingChecklistProposal.revision || 1}</strong>
                   </p>
                 </div>
@@ -2941,7 +3224,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                 <div className="flex items-center justify-between pb-1.5 border-b border-slate-200/60">
                   <div className="flex items-center gap-1.5 font-bold text-xs text-slate-900">
                     <Building2 className="w-4 h-4 text-amber-600" />
-                    <span>Biểu Phí Kiểm Định Của Trung Tâm Tác Giả</span>
+                    <span>Biểu phí kiểm định của trung tâm tác giả</span>
                   </div>
                   {(() => {
                     const centerInfo = getCenterDetails(viewingChecklistProposal);
@@ -2961,7 +3244,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs pt-0.5">
                   <div className="bg-white p-2 rounded-xl border border-slate-200/70">
-                    <span className="text-[10px] font-bold text-slate-400 block uppercase">Cấp độ áp dụng</span>
+                    <span className="text-[10px] font-bold text-slate-400 block">Cấp độ áp dụng</span>
                     <span className="font-black text-slate-900 mt-0.5 block">
                       {viewingChecklistProposal.pricing.complexityLevel ? `Cấp ${viewingChecklistProposal.pricing.complexityLevel}` : 'Chưa phân cấp'}
                     </span>
@@ -2970,12 +3253,12 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                   {viewingChecklistProposal.pricing.pendingBaseInspectionFee != null ? (
                     <>
                       <div className="bg-amber-50/70 p-2 rounded-xl border border-amber-300">
-                        <span className="text-[10px] font-bold text-amber-700 block uppercase">Biểu phí đang đề xuất</span>
+                        <span className="text-[10px] font-bold text-amber-700 block">Biểu phí đang đề xuất</span>
                         <span className="font-black text-[#c34c36] mt-0.5 block">
                           {formatVND(viewingChecklistProposal.pricing.pendingBaseInspectionFee)}
                         </span>
                         <span className="text-[9px] font-bold text-amber-800 bg-amber-200/60 px-1 py-0.2 rounded mt-0.5 inline-block">
-                          Chờ Admin duyệt
+                          Chờ quản trị viên duyệt
                         </span>
                         {viewingChecklistProposal.pricing.baseInspectionFee != null && (
                           <div className="text-[10px] text-slate-400 line-through mt-0.5">
@@ -2985,15 +3268,15 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                       </div>
 
                       <div className="bg-white p-2 rounded-xl border border-slate-200/70">
-                        <span className="text-[10px] font-bold text-slate-400 block uppercase">Trạng thái biểu phí</span>
-                        <span className="inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase bg-amber-100 text-amber-800 mt-1">
-                          Chờ Duyệt Giá Mới
+                        <span className="text-[10px] font-bold text-slate-400 block">Trạng thái biểu phí</span>
+                        <span className="inline-block px-2 py-0.5 rounded text-[10px] font-black bg-amber-100 text-amber-800 mt-1">
+                          Chờ duyệt giá mới
                         </span>
                       </div>
                     </>
                   ) : (
                     <div className="bg-white p-2 rounded-xl border border-slate-200/70 sm:col-span-2">
-                      <span className="text-[10px] font-bold text-slate-400 block uppercase">Biểu phí cơ sở đã duyệt</span>
+                      <span className="text-[10px] font-bold text-slate-400 block">Biểu phí cơ sở đã duyệt</span>
                       <span className="font-black text-emerald-700 mt-0.5 block">
                         {viewingChecklistProposal.pricing.baseInspectionFee != null
                           ? formatVND(viewingChecklistProposal.pricing.baseInspectionFee)
@@ -3006,7 +3289,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                   )}
 
                   <div className="bg-white p-2 rounded-xl border border-slate-200/70">
-                    <span className="text-[10px] font-bold text-slate-400 block uppercase">Hiệu lực áp dụng</span>
+                    <span className="text-[10px] font-bold text-slate-400 block">Hiệu lực áp dụng</span>
                     <div className="mt-0.5">
                       {viewingChecklistProposal.pricing.pendingBaseInspectionFee != null ? (
                         <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700">
@@ -3018,7 +3301,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                         </span>
                       ) : (
                         <span className="text-[10px] font-bold text-slate-500">
-                          Chưa hiệu lực {viewingChecklistProposal.pricing.unavailableReason ? `(${viewingChecklistProposal.pricing.unavailableReason})` : ''}
+                          Chưa hiệu lực {viewingChecklistProposal.pricing.unavailableReason ? `(${getUnavailableReasonLabel(viewingChecklistProposal.pricing.unavailableReason)})` : ''}
                         </span>
                       )}
                     </div>
@@ -3043,13 +3326,13 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                       }}
                       className="px-3 py-1.5 rounded-lg bg-[#24263e] hover:bg-black text-white text-[11px] font-bold shrink-0 cursor-pointer shadow-xs"
                     >
-                      Sang Tab Biểu Phí KTV Để Duyệt
+                      Sang tab Biểu phí KTV để duyệt
                     </button>
                   </div>
                 )}
 
                 <p className="text-[10px] text-slate-500 italic">
-                  * Biểu phí cơ sở tính theo cấp độ tại trung tâm tác giả. Không có một giá chung duy nhất cho mỗi Item trên toàn sàn; người mua chọn trung tâm nào sẽ tính phí theo bảng giá cấp độ của trung tâm đó.
+                  * Biểu phí cơ sở tính theo cấp độ tại trung tâm tác giả. Không có một giá chung duy nhất cho mỗi loại thiết bị trên toàn sàn; người mua chọn trung tâm nào sẽ tính phí theo bảng giá cấp độ của trung tâm đó.
                 </p>
               </div>
             )}
@@ -3060,43 +3343,68 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
               </div>
             )}
 
-            <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-              <div className="font-bold text-slate-800 text-xs mb-2">
-                Danh sách {(viewingChecklistProposal.items || []).length} tiêu chí đo kiểm chi tiết:
+            <div className="flex-1 overflow-y-auto space-y-2.5 pr-2">
+              <div className="font-bold text-slate-800 text-xs mb-2 flex items-center justify-between">
+                <span>Danh sách {(viewingChecklistProposal.items || []).length} tiêu chí đo kiểm chi tiết:</span>
+                <span className="text-[11px] font-normal text-slate-500">
+                  (Bắt buộc: {(viewingChecklistProposal.items || []).filter((i) => i.mandatory !== false).length} / {(viewingChecklistProposal.items || []).length})
+                </span>
               </div>
               {(viewingChecklistProposal.items || []).map((it, idx) => (
                 <div
                   key={it.id || idx}
-                  className="p-3 rounded-xl border border-slate-200 bg-white flex items-start justify-between gap-3"
+                  className="p-3.5 rounded-2xl border border-slate-200 bg-white hover:border-slate-300 transition-all shadow-2xs flex items-start justify-between gap-4"
                 >
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-slate-400 font-bold">#{idx + 1}</span>
-                      <span className="font-bold text-slate-900">{it.itemTitle}</span>
-                      {it.mandatory !== false ? (
-                        <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-rose-50 text-rose-700 border border-rose-200">
-                          Bắt buộc (Pass/Fail)
-                        </span>
-                      ) : (
-                        <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600">
-                          Tùy chọn
-                        </span>
-                      )}
+                  <div className="flex-1 min-w-0 space-y-1.5">
+                    <div className="flex items-start gap-2.5">
+                      <span className="font-mono text-slate-400 font-bold shrink-0 mt-0.5 text-xs">
+                        #{idx + 1}
+                      </span>
+                      <span className="font-bold text-slate-900 text-xs break-words leading-relaxed">
+                        {it.itemTitle}
+                      </span>
                     </div>
                     {it.criteriaDescription && (
-                      <p className="text-[11px] text-slate-600 pl-6">
+                      <p className="text-[11px] text-slate-600 pl-6 break-words leading-relaxed">
                         {it.criteriaDescription}
                       </p>
+                    )}
+                  </div>
+
+                  <div className="shrink-0 self-start pt-0.5">
+                    {it.mandatory !== false ? (
+                      <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200/80 whitespace-nowrap shadow-2xs">
+                        Bắt buộc (Đạt/Không đạt)
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200/60 whitespace-nowrap shadow-2xs">
+                        Tùy chọn
+                      </span>
                     )}
                   </div>
                 </div>
               ))}
             </div>
 
-            <div className="pt-3 border-t border-gray-100 flex items-center justify-between shrink-0">
-              <span className="text-[11px] text-slate-400">
-                Trạng thái: <strong>{viewingChecklistProposal.approvalStatus}</strong>
-              </span>
+            <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-1.5 text-xs text-slate-600">
+                <span>Trạng thái:</span>
+                <span
+                  className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${viewingChecklistProposal.approvalStatus === 'APPROVED'
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : viewingChecklistProposal.approvalStatus === 'REJECTED'
+                      ? 'bg-rose-50 text-rose-700 border-rose-200'
+                      : viewingChecklistProposal.approvalStatus === 'PENDING_APPROVAL' ||
+                        (viewingChecklistProposal.approvalStatus as string) === 'PENDING'
+                        ? 'bg-amber-50 text-amber-700 border-amber-200'
+                        : viewingChecklistProposal.approvalStatus === 'WITHDRAWN'
+                          ? 'bg-slate-100 text-slate-600 border-slate-300'
+                          : 'bg-slate-100 text-slate-700 border-slate-300'
+                    }`}
+                >
+                  {getApprovalStatusLabel(viewingChecklistProposal.approvalStatus)}
+                </span>
+              </div>
               <div className="flex items-center gap-2">
                 {viewingChecklistProposal.approvalStatus === 'PENDING_APPROVAL' && hasFeeManagePermission && (
                   <>
@@ -3108,7 +3416,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                       className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold cursor-pointer inline-flex items-center gap-1.5 shadow-xs transition"
                     >
                       <X className="w-4 h-4" />
-                      <span>Từ Chối Đề Xuất</span>
+                      <span>Từ chối đề xuất</span>
                     </button>
                     <button
                       type="button"
@@ -3118,7 +3426,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                       className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold cursor-pointer inline-flex items-center gap-1.5 shadow-xs transition"
                     >
                       <Check className="w-4 h-4" />
-                      <span>Phê Duyệt Đề Xuất</span>
+                      <span>Phê duyệt đề xuất</span>
                     </button>
                   </>
                 )}
@@ -3147,7 +3455,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                   <AlertCircle className="w-5 h-5 text-rose-600" />
                 )}
                 <span>
-                  {checklistReviewAction === 'APPROVE' ? 'Phê Duyệt Bộ Tiêu Chuẩn' : 'Từ Chối Đề Xuất Bộ Tiêu Chuẩn'}
+                  {checklistReviewAction === 'APPROVE' ? 'Phê duyệt bộ tiêu chuẩn' : 'Từ chối đề xuất bộ tiêu chuẩn'}
                 </span>
               </h3>
               <button
@@ -3200,7 +3508,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                   onClick={() => setIsReviewChecklistModalOpen(false)}
                   className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold cursor-pointer"
                 >
-                  Hủy Bỏ
+                  Hủy bỏ
                 </button>
                 <button
                   type="submit"
@@ -3210,7 +3518,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                     : 'bg-rose-600 hover:bg-rose-700'
                     }`}
                 >
-                  {isSubmittingChecklistReview ? 'Đang xử lý...' : checklistReviewAction === 'APPROVE' ? 'Xác Nhận Phê Duyệt' : 'Xác Nhận Từ Chối'}
+                  {isSubmittingChecklistReview ? 'Đang xử lý...' : checklistReviewAction === 'APPROVE' ? 'Xác nhận phê duyệt' : 'Xác nhận từ chối'}
                 </button>
               </div>
             </form>

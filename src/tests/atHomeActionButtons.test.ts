@@ -573,9 +573,9 @@ test('At-Home Inspection Modal and Card Action Buttons Rules', async (t) => {
     assert.strictEqual(shouldShowChangeApptButtonInAssignModal(pendingOrder), true, 'Unconfirmed order allows review/reschedule');
   });
 
-  await t.test('[TEST 19] Buyer with passed inspection decision has action button to decide, redundant static badge "Chờ quyết định từ bạn" is removed at bottom', () => {
+  await t.test('[TEST 19] Buyer with passed inspection decision has action button to decide, redundant static badge "Chờ người mua quyết định" / "Chờ quyết định từ bạn" is removed at bottom for both roles', () => {
     const shouldShowBottomDecisionBadge = (decision: string | null, isSeller: boolean, isInsideDetailModal: boolean) => {
-      return !isInsideDetailModal && !(decision === 'pending' && !isSeller);
+      return !isInsideDetailModal && decision !== 'pending';
     };
 
     // Outside card: Buyer with pending decision -> Hide redundant static badge
@@ -585,11 +585,11 @@ test('At-Home Inspection Modal and Card Action Buttons Rules', async (t) => {
       'Buyer card should NOT display static "Chờ quyết định từ bạn" badge at the bottom row next to the decision button'
     );
 
-    // Outside card: Seller with pending decision -> Still show status badge "Chờ người mua quyết định"
+    // Outside card: Seller with pending decision -> Hide redundant static badge as well
     assert.strictEqual(
       shouldShowBottomDecisionBadge('pending', true, false),
-      true,
-      'Seller card should display "Chờ người mua quyết định" badge as seller has no decision button'
+      false,
+      'Seller card should NOT display redundant "Chờ người mua quyết định" badge at the bottom row'
     );
 
     // Rejected decision -> Show decision badge

@@ -132,8 +132,8 @@ export function getReputationWarningMeta(warningCode?: string | null): {
       };
     default:
       return {
-        title: warningCode,
-        desc: 'Cảnh báo chỉ số uy tín từ hệ thống.',
+        title: 'Cảnh báo chỉ số uy tín',
+        desc: 'Tài khoản có cảnh báo chỉ số uy tín từ hệ thống.',
         severity: 'info',
         badgeClass: 'bg-blue-50 text-blue-800 border-blue-300',
       };
@@ -152,7 +152,7 @@ export function getReputationEventMeta(eventType: string): {
     case 'ORDER_COMPLETED':
       return {
         label: 'Đánh giá giao dịch hoàn tất',
-        desc: 'Đơn hàng hoàn tất và tiền ký quỹ giải ngân thành công (GOOD +1)',
+        desc: 'Đơn hàng hoàn tất và tiền ký quỹ giải ngân thành công (+1 đơn thành công)',
         type: 'positive',
       };
     case 'ORDER_CONFIRMATION_LATE':
@@ -170,13 +170,13 @@ export function getReputationEventMeta(eventType: string): {
     case 'SELLER_CANCELLED_ORDER':
       return {
         label: 'Hủy do lỗi người bán',
-        desc: 'Đơn hàng bị hủy do người bán hoặc quá hạn xử lý (BAD +1)',
+        desc: 'Đơn hàng bị hủy do người bán hoặc quá hạn xử lý (+1 đơn lỗi Người bán)',
         type: 'negative',
       };
     case 'SELLER_FAULT_CONFIRMED':
       return {
         label: 'Xác nhận lỗi người bán',
-        desc: 'Đơn trả hàng hoặc khiếu nại xác định có lỗi của người bán (BAD +1)',
+        desc: 'Đơn trả hàng hoặc khiếu nại xác định có lỗi của người bán (+1 đơn lỗi Người bán)',
         type: 'negative',
       };
     case 'SERIOUS_VIOLATION_CONFIRMED':
@@ -205,11 +205,42 @@ export function getReputationEventMeta(eventType: string): {
       };
     default:
       return {
-        label: eventType || 'Biến động uy tín',
-        desc: 'Ghi nhận biến động chỉ số',
+        label: 'Biến động uy tín',
+        desc: 'Ghi nhận biến động chỉ số uy tín',
         type: 'neutral',
       };
   }
+}
+
+/**
+ * Định dạng lý do biến động uy tín thành tiếng Việt hoàn toàn, loại bỏ các từ tiếng Anh (GOOD, BAD, SELLER, v.v.)
+ */
+export function formatReputationReason(text?: string | null): string {
+  if (!text) return '';
+  return text
+    .replace(/Completed sale evaluated once/gi, 'Giao dịch bán thành công được ghi nhận')
+    .replace(/Seller missed confirmation deadline;\s*deducted\s*([0-9.]+)\s*points/gi, 'Quá hạn xác nhận đơn hàng; bị trừ $1 điểm phạt')
+    .replace(/Seller missed confirmation deadline/gi, 'Quá hạn xác nhận đơn hàng')
+    .replace(/\(BAD \+1\)/gi, '(+1 đơn lỗi Người bán)')
+    .replace(/\(GOOD \+1\)/gi, '(+1 đơn thành công)')
+    .replace(/\bSELLER\b/gi, 'Người bán')
+    .replace(/\bBUYER\b/gi, 'Người mua')
+    .replace(/\bGOOD\b/gi, 'Thành công')
+    .replace(/\bBAD\b/gi, 'Lỗi')
+    .replace(/ORDER_CONFIRMATION_TIMEOUT/gi, 'Quá hạn hủy đơn (48h)')
+    .replace(/ORDER_CONFIRMATION_LATE/gi, 'Quá hạn xác nhận (24h)')
+    .replace(/SELLER_CANCELLED_ORDER/gi, 'Hủy do người bán');
+}
+
+/**
+ * Định dạng phiên bản công thức tính điểm sang tiếng Việt chuẩn
+ */
+export function formatFormulaVersion(version?: string | null): string {
+  if (!version) return '';
+  if (version.includes('TRANSACTION_SUCCESS_RATE_V3')) return 'Công thức: Tỷ lệ giao dịch v3';
+  if (version.includes('TRANSACTION_SUCCESS_RATE_V2')) return 'Công thức: Tỷ lệ giao dịch v2';
+  if (version.includes('TRANSACTION_SUCCESS_RATE')) return 'Công thức: Tỷ lệ giao dịch';
+  return `Công thức: ${version}`;
 }
 
 const reputationCache = new Map<string, { data: SellerReputationDto | null; timestamp: number }>();

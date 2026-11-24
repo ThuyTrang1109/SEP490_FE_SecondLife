@@ -15,7 +15,7 @@ import {
 import { NotificationItem, NotificationType } from '../../types/notification';
 import { notificationWsClient } from '../../services/notificationWsClient';
 import { Language, UserProfile, UserRole } from '../../types';
-import { isNotificationForUser } from '../../utils/notificationStorage';
+import { isNotificationForUser, isLegacySellerDisputeLink } from '../../utils/notificationStorage';
 import { translateSystemNotification } from '../../utils/systemNotificationTranslator';
 
 interface RealtimeNotificationToastProps {
@@ -171,7 +171,7 @@ export const RealtimeNotificationToast: React.FC<RealtimeNotificationToastProps>
         </p>
 
         <div className="pt-1 flex items-center justify-end gap-2">
-          {currentToast.actionUrl && (
+          {currentToast.actionUrl && !isLegacySellerDisputeLink(currentToast) && (
             <button
               onClick={() => {
                 const url = currentToast.actionUrl;

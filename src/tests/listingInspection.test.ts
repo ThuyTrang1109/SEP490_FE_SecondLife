@@ -1,20 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  normalizeListingTitle,
   isOrderInspectionVerdictPassed,
   isListingInspectionPassed,
-  markListingInspectionPassed,
-  invalidateInspectedRegistry,
+  resolveSellerListingInspectionState,
+  getListingInspectionBadgeText,
 } from '../utils/listingInspection';
-
-test('normalizeListingTitle strips prefix, trims and lowercases', () => {
-  assert.equal(normalizeListingTitle('  Tiêu đề: Máy Hút Bụi Philips  '), 'máy hút bụi philips');
-  assert.equal(normalizeListingTitle('Bàn ủi Rowenta'), 'bàn ủi rowenta');
-  assert.equal(normalizeListingTitle(''), '');
-  assert.equal(normalizeListingTitle(null), '');
-  assert.equal(normalizeListingTitle(undefined), '');
-});
 
 test('isOrderInspectionVerdictPassed detects passed inspections correctly', () => {
   // Direct PASSED
@@ -48,130 +39,89 @@ test('isOrderInspectionVerdictPassed detects passed inspections correctly', () =
   assert.equal(isOrderInspectionVerdictPassed(undefined), false);
 });
 
-test('isListingInspectionPassed matches items by flag, id, and orders list', () => {
-  invalidateInspectedRegistry();
-
-  // 1. Direct item flags
-  assert.equal(isListingInspectionPassed({ id: 'item-1', isInspected: true }), true);
-  assert.equal(isListingInspectionPassed({ id: 'item-2', inspectionPassed: true }), true);
-  assert.equal(isListingInspectionPassed({ id: 'item-3', inspectionStatus: 'PASSED' }), true);
-  assert.equal(isListingInspectionPassed({ id: 'item-4', tamperSealId: 'SEAL-9988' }), true);
-
-  // 2. Uninspected item
-  assert.equal(isListingInspectionPassed({ id: 'item-5', title: 'Nồi Cơm Điện Sharp' }), false);
-
-  // 3. Matched via in-memory orders argument
-  const orders = [
-    {
-      id: 'ord-101',
-      postId: 'post-101',
-      postTitle: 'Máy Hút Bụi Cầm Tay Philips 1000W-1600W - Dùng Gia Đình Nguyên Zin Lực Mạnh',
-      status: 'CANCELLED',
-      note: 'Đơn hàng đã tự động hủy do người mua không thanh toán tiền hàng Giai đoạn 2 trong vòng 6 giờ sau khi kiểm định đạt chuẩn.',
-    },
-    {
-      id: 'ord-102',
-      postId: 'post-102',
-      postTitle: 'Bàn ủi Rowenta Khô Cầm Tay',
-      status: 'FAILED',
-      note: 'Thiết bị không đạt yêu cầu kiểm định kỹ thuật',
-    },
-  ];
-
-  // Matched by postId
-  assert.equal(isListingInspectionPassed({ id: 'post-101', title: 'Máy Hút Bụi' }, orders), true);
-
-  // Matched by title (Philips vacuum cleaner)
-  assert.equal(
-    isListingInspectionPassed(
-      {
-        id: 'some-other-listing-id',
-        title: 'Máy Hút Bụi Cầm Tay Philips 1000W-1600W - Dùng Gia Đình Nguyên Zin Lực Mạnh',
-      },
-      orders
-    ),
-    true
-  );
-
-  // Failed inspection must NOT pass
-  assert.equal(
-    isListingInspectionPassed(
-      {
-        id: 'post-102',
-        title: 'Bàn ủi Rowenta Khô Cầm Tay',
-      },
-      orders
-    ),
-    false
-  );
-
-  // Title truncated with ellipsis (e.g. from UI truncation)
-  assert.equal(
-    isListingInspectionPassed(
-      {
-        id: 'item-philips-truncated',
-        title: 'Máy Hút Bụi Cầm Tay Philips 1000W-1600W...',
-      },
-      orders
-    ),
-    true
-  );
+test('listing badges require a positive inspection result from the marketplace API', () => {
+  const failedListing = {
+    isInspected: false,
+    inspectionPassed: true,
+    tamperSealId: 'EXAMPLE-SEAL',
+    conditionGrade: 'Fair',
+  };
+  assert.equal(isListingInspectionPassed(failedListing), false);
+  assert.equal(isListingInspectionPassed({ ...failedListing, isInspected: undefined }), false);
+  assert.equal(isListingInspectionPassed({ isInspected: true }), true);
+  assert.equal(isListingInspectionPassed(undefined), false);
 });
 
-test('markListingInspectionPassed registers item and notifies listeners', () => {
-  invalidateInspectedRegistry();
-  const testId = 'test-pass-999';
-  const testTitle = 'Tủ Lạnh Panasonic Inverter 300L';
-
-  assert.equal(isListingInspectionPassed({ id: testId, title: testTitle }), false);
-
-  markListingInspectionPassed(testId, testTitle);
-
-  assert.equal(isListingInspectionPassed({ id: testId }), true);
-  assert.equal(isListingInspectionPassed({ id: 'other-id', title: testTitle }), true);
-});
-
-test('buyer rejected purchase after pass maintains "Đã đạt kiểm định tại Hub"', () => {
-  invalidateInspectedRegistry();
-
-  const buyerDefaultOrder = {
-    id: 'ord-buyer-reject-101',
-    postId: 'post-wardrobe-999',
-    postTitle: 'Tủ quần áo Hàng nhập khẩu - Nguyên Bản Chạy Tốt',
-    status: 'CANCELLED',
-    tamperSealId: 'SL-SEAL-20261115-342d33',
-    note: 'Người mua từ chối mua tiếp sau kiểm định. Lý do: Tôi đổi ý',
-    settlementOutcome: 'PASSED_BUYER_DEFAULTED',
-    conditionScore: 90,
-    conditionGrade: 'A',
+test('resolveSellerListingInspectionState shows at-home passed badge strictly when post passed inspection', () => {
+  const wmfPost = {
+    id: '541f5d0a-61aa-40b6-bea6-4270532fdcdd',
+    isInspected: false,
   };
 
-  // 1. Order verdict check must recognize this as inspection passed
-  assert.equal(isOrderInspectionVerdictPassed(buyerDefaultOrder), true);
+  // No passed inspection -> false
+  assert.deepEqual(resolveSellerListingInspectionState(wmfPost, null, []), { passed: false });
 
-  // 2. Listing matching by ID via orders list
-  assert.equal(
-    isListingInspectionPassed(
-      { id: 'post-wardrobe-999', title: 'Tủ quần áo Hàng nhập khẩu' },
-      [buyerDefaultOrder]
-    ),
-    true
+  // Pending or failed order -> false
+  assert.deepEqual(
+    resolveSellerListingInspectionState(wmfPost, null, [
+      { id: 'ord-pending', postId: wmfPost.id, inspectionMethod: 'AT_HOME', status: 'DISPATCHED' },
+      { id: 'ord-fail', postId: wmfPost.id, inspectionMethod: 'AT_HOME', inspectionStatus: 'FAILED', updatedAt: '2026-11-25T08:00:00Z' },
+    ]),
+    { passed: false },
   );
 
-  // 3. Title matching with slight truncation
-  assert.equal(
-    isListingInspectionPassed(
-      { id: 'post-wardrobe-other-id', title: 'Tủ quần áo Hàng nhập khẩu - ...' },
-      [buyerDefaultOrder]
-    ),
-    true
+  // Passed AT_HOME inspection for exact postId -> passed with AT_HOME method
+  assert.deepEqual(
+    resolveSellerListingInspectionState(wmfPost, null, [
+      {
+        id: 'ord-pass-home',
+        postId: wmfPost.id,
+        inspectionMethod: 'AT_HOME',
+        inspectionStatus: 'PASSED',
+        updatedAt: '2026-11-25T09:00:00Z',
+      },
+    ]),
+    { passed: true, method: 'AT_HOME' },
   );
 
-  // 4. Mark listing passed explicitly (as done when buyer clicks Reject Purchase)
-  markListingInspectionPassed('post-wardrobe-999', 'Tủ quần áo Hàng nhập khẩu - Nguyên Bản Chạy Tốt');
-  assert.equal(isListingInspectionPassed({ id: 'post-wardrobe-999' }), true);
-  assert.equal(
-    isListingInspectionPassed({ id: 'any-id', title: 'Tủ quần áo Hàng nhập khẩu - Nguyên Bản Chạy Tốt' }),
-    true
+  // Older pass followed by a newer failed inspection -> must NOT show passed badge
+  assert.deepEqual(
+    resolveSellerListingInspectionState(wmfPost, null, [
+      {
+        id: 'ord-pass-old',
+        postId: wmfPost.id,
+        inspectionMethod: 'AT_HOME',
+        inspectionStatus: 'PASSED',
+        updatedAt: '2026-11-24T09:00:00Z',
+      },
+      {
+        id: 'ord-fail-new',
+        postId: wmfPost.id,
+        inspectionMethod: 'AT_HOME',
+        inspectionStatus: 'FAILED',
+        updatedAt: '2026-11-25T09:00:00Z',
+      },
+    ]),
+    { passed: false },
   );
+
+  // Order for a different postId must never match
+  assert.deepEqual(
+    resolveSellerListingInspectionState(wmfPost, null, [
+      {
+        id: 'ord-other-post',
+        postId: 'other-post-id',
+        inspectionMethod: 'AT_HOME',
+        inspectionStatus: 'PASSED',
+      },
+    ]),
+    { passed: false },
+  );
+});
+
+test('getListingInspectionBadgeText formats AT_HOME, AT_CENTER, and generic inspected labels cleanly', () => {
+  assert.equal(getListingInspectionBadgeText('AT_HOME', 'vi'), 'Đã đạt kiểm định tại nhà');
+  assert.equal(getListingInspectionBadgeText('AT_CENTER', 'vi'), 'Đã đạt kiểm định tại Hub');
+  assert.equal(getListingInspectionBadgeText(undefined, 'vi'), 'Đã đạt kiểm định');
+  assert.equal(getListingInspectionBadgeText('AT_HOME', 'en', true), 'Home Inspected');
 });

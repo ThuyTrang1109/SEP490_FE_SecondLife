@@ -59,8 +59,17 @@ import { InspectionSealVerificationModal } from '../components/modals/Inspection
 import { ScannableQRCode } from '../components/common/ScannableQRCode';
 import { resolveListingCategory, resolveOrderListing } from '../utils/catalogCache';
 import { translateSystemNotification } from '../utils/systemNotificationTranslator';
-import { getInspectionRemoteMediaUrl, isInspectionProofImage } from '../utils/inspectionDecisionData';
-import { markListingInspectionPassed } from '../utils/listingInspection';
+import { getInspectionRemoteMediaUrl } from '../utils/inspectionDecisionData';
+import { InspectionEvidenceErrors } from '../components/inspection/InspectionEvidenceErrors';
+import {
+  getInspectionBatchPhotoError,
+  getInspectionEvidenceStepError,
+  getInspectionPhotoUploadError,
+  getInspectionPhotoSelectionErrors,
+  getUploadedInspectionPhotoUrl,
+  INSPECTION_PHOTO_ACCEPT,
+  INSPECTION_PHOTO_LIMIT,
+} from '../utils/inspectionEvidencePhotos';
 import { getAtHomeIntakeCode } from '../components/inspection/AtHomeIntakeBarcode';
 import { getOrderSellerAddress, getOrderSellerName, getOrderSellerPhone } from './inspection-center/dispatch/orderContacts';
 import { canInspectorCheckIn, getOrderScheduledAppointmentTime } from '../utils/inspectionAppointmentTime';
@@ -345,9 +354,18 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
     'SL-SEAL-' + Math.floor(1000000 + Math.random() * 9000000)
   );
   const [photoUploadItems, setPhotoUploadItems] = useState<PhotoUploadItem[]>([]);
+  const [photoSelectionErrors, setPhotoSelectionErrors] = useState<string[]>([]);
+  const [hasTriedEvidenceStep, setHasTriedEvidenceStep] = useState(false);
   const proofPhotos = useMemo(
-    () => photoUploadItems.filter((p) => p.status === 'success' && p.remoteUrl).map((p) => p.remoteUrl!),
+    () => [...new Set(photoUploadItems
+      .filter((photo) => photo.status === 'success')
+      .map((photo) => getUploadedInspectionPhotoUrl(photo.remoteUrl))
+      .filter(Boolean))],
     [photoUploadItems]
+  );
+  const evidenceStepError = getInspectionEvidenceStepError(
+    proofPhotos.length,
+    photoUploadItems.some((photo) => photo.status === 'uploading')
   );
   const [videoProofUrl, setVideoProofUrl] = useState('');
   const [unboxingVideoUrl, setUnboxingVideoUrl] = useState('');
@@ -500,6 +518,8 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
 
   // Reset or populate fields when activeOrder changes
   useEffect(() => {
+    setPhotoSelectionErrors([]);
+    setHasTriedEvidenceStep(false);
     if (activeOrder) {
       const effectiveReport = getStationReport(activeOrder);
 
@@ -994,82 +1014,59 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
     });
   };
 
-  const handleUploadFiles = async (files: FileList | File[]) => {
-    const fileList = Array.from(files).filter((f) => f && f.type.startsWith('image/'));
-    if (fileList.length === 0) return;
+  const updatePhoto = (id: string, change: Pick<PhotoUploadItem, 'status' | 'remoteUrl' | 'errorMessage'>) => {
+    setPhotoUploadItems((previous) => previous.map((item) => item.id === id ? { ...item, ...change } : item));
+  };
 
-    if (photoUploadItems.length + fileList.length > 10) {
-      notify(`Chỉ được tải lên tối đa 10 ảnh bằng chứng (hiện có ${photoUploadItems.length} ảnh, bạn chọn thêm ${fileList.length} ảnh)!`, true);
-      return;
+  const uploadProofPhoto = async (id: string, file: File) => {
+    try {
+      const result = await mediaService.uploadImage(file, 'secondlife/inspections/proofs');
+      const remoteUrl = getUploadedInspectionPhotoUrl(result?.url);
+      if (!remoteUrl) throw new Error('Máy chủ không trả về URL ảnh.');
+      updatePhoto(id, { status: 'success', remoteUrl, errorMessage: undefined });
+    } catch (error) {
+      updatePhoto(id, { status: 'error', errorMessage: getInspectionPhotoUploadError(error) });
     }
+  };
 
-    const newItems: PhotoUploadItem[] = fileList.map((file) => ({
+  const handleUploadFiles = async (files: FileList | File[]) => {
+    const fileList = Array.from(files);
+    if (fileList.length === 0 || isUploadingPhoto || isCompletedOrder) return;
+
+    const errors = getInspectionPhotoSelectionErrors(fileList, photoUploadItems.length);
+    setPhotoSelectionErrors(errors);
+    if (errors.length) return;
+
+    const newItems = fileList.map((file) => ({
       id: `proof-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       file,
       previewUrl: URL.createObjectURL(file),
-      status: 'uploading',
+      status: 'uploading' as const,
     }));
 
-    setPhotoUploadItems((prev) => [...prev, ...newItems]);
+    setPhotoUploadItems((previous) => [...previous, ...newItems]);
     setIsUploadingPhoto(true);
-
     try {
-      if (fileList.length === 1) {
-        const item = newItems[0];
-        try {
-          const res = await mediaService.uploadImage(item.file!, 'secondlife/inspections/proofs');
-          const uploadedUrl = (res as any)?.url || (res as any)?.data?.url;
-          if (uploadedUrl) {
-            setPhotoUploadItems((prev) =>
-              prev.map((p) => (p.id === item.id ? { ...p, status: 'success', remoteUrl: uploadedUrl, errorMessage: undefined } : p))
-            );
-            notify('Đã tải ảnh bằng chứng lên máy chủ thành công');
-          } else {
-            throw new Error('Máy chủ không trả về URL ảnh');
-          }
-        } catch (uploadErr: any) {
-          setPhotoUploadItems((prev) =>
-            prev.map((p) => (p.id === item.id ? { ...p, status: 'error', errorMessage: uploadErr?.message || 'Tải ảnh thất bại' } : p))
-          );
-          notify(uploadErr?.message || 'Tải ảnh thất bại', true);
-        }
-      } else {
-        try {
-          const resList = await mediaService.uploadMultipleImages(fileList, 'secondlife/inspections/proofs');
-          const urlList = Array.isArray(resList) ? resList.map((r: any) => r?.url || r?.data?.url || r).filter(Boolean) : [];
-          setPhotoUploadItems((prev) =>
-            prev.map((p) => {
-              const matchedIdx = newItems.findIndex((ni) => ni.id === p.id);
-              if (matchedIdx !== -1) {
-                const url = urlList[matchedIdx];
-                if (url && typeof url === 'string') {
-                  return { ...p, status: 'success', remoteUrl: url, errorMessage: undefined };
-                } else {
-                  return { ...p, status: 'error', errorMessage: 'Lỗi tải ảnh lên máy chủ' };
-                }
-              }
-              return p;
-            })
-          );
-          notify(`Đã tải lên ${urlList.length}/${fileList.length} ảnh bằng chứng`);
-        } catch (multiErr: any) {
-          for (const item of newItems) {
-            try {
-              const res = await mediaService.uploadImage(item.file!, 'secondlife/inspections/proofs');
-              const url = (res as any)?.url || (res as any)?.data?.url;
-              if (url) {
-                setPhotoUploadItems((prev) =>
-                  prev.map((p) => (p.id === item.id ? { ...p, status: 'success', remoteUrl: url, errorMessage: undefined } : p))
-                );
-              } else {
-                throw new Error('Không nhận được URL');
-              }
-            } catch (singleErr: any) {
-              setPhotoUploadItems((prev) =>
-                prev.map((p) => (p.id === item.id ? { ...p, status: 'error', errorMessage: singleErr?.message || 'Lỗi tải ảnh' } : p))
-              );
-            }
-          }
+      if (newItems.length === 1) {
+        const [item] = newItems;
+        await uploadProofPhoto(item.id, item.file);
+        return;
+      }
+
+      try {
+        const results = await mediaService.uploadMultipleImages(fileList, 'secondlife/inspections/proofs');
+        newItems.forEach((item, index) => {
+          const remoteUrl = getUploadedInspectionPhotoUrl(results?.[index]?.url);
+          updatePhoto(item.id, remoteUrl
+            ? { status: 'success', remoteUrl }
+            : { status: 'error', errorMessage: 'Máy chủ không trả về URL ảnh.' });
+        });
+      } catch (error) {
+        // An indexed validation failure rejects the whole batch before storage.
+        for (const [index, item] of newItems.entries()) {
+          const message = getInspectionBatchPhotoError(error, index);
+          if (message) updatePhoto(item.id, { status: 'error', errorMessage: message });
+          else await uploadProofPhoto(item.id, item.file);
         }
       }
     } finally {
@@ -1078,34 +1075,26 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
   };
 
   const handleRetryUpload = async (id: string) => {
-    const target = photoUploadItems.find((p) => p.id === id);
-    if (!target || !target.file) return;
+    const target = photoUploadItems.find((item) => item.id === id);
+    if (!target?.file || target.status !== 'error' || isCompletedOrder) return;
 
-    setPhotoUploadItems((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, status: 'uploading', errorMessage: undefined } : p))
-    );
+    const errors = getInspectionPhotoSelectionErrors([target.file], photoUploadItems.length - 1);
+    setPhotoSelectionErrors(errors);
+    if (errors.length) return;
 
-    try {
-      const res = await mediaService.uploadImage(target.file, 'secondlife/inspections/proofs');
-      const uploadedUrl = (res as any)?.url || (res as any)?.data?.url;
-      if (uploadedUrl) {
-        setPhotoUploadItems((prev) =>
-          prev.map((p) => (p.id === id ? { ...p, status: 'success', remoteUrl: uploadedUrl, errorMessage: undefined } : p))
-        );
-        notify('Đã tải lại ảnh thành công!');
-      } else {
-        throw new Error('Máy chủ không trả về URL ảnh');
-      }
-    } catch (err: any) {
-      setPhotoUploadItems((prev) =>
-        prev.map((p) => (p.id === id ? { ...p, status: 'error', errorMessage: err?.message || 'Tải ảnh thất bại' } : p))
-      );
-      notify(err?.message || 'Tải ảnh thất bại, vui lòng thử lại', true);
-    }
+    updatePhoto(id, { status: 'uploading', errorMessage: undefined });
+    await uploadProofPhoto(id, target.file);
   };
 
   const handleUploadProofPhoto = async (file: File) => {
     return handleUploadFiles([file]);
+  };
+
+  const requireUploadedEvidence = () => {
+    if (isCompletedOrder || !evidenceStepError) return true;
+    setHasTriedEvidenceStep(true);
+    setCurrentStep('proofs');
+    return false;
   };
 
   // Submit Final Result
@@ -1120,6 +1109,8 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
       notify('Đơn hàng này đã có kết quả kiểm định chính thức, không thể kiểm định lại.', true);
       return;
     }
+
+    if (!requireUploadedEvidence()) return;
 
     if (!canUseChecklist) {
       notify('Cần tải checklist của đơn trước khi nộp biên bản.', true);
@@ -1148,18 +1139,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
       return;
     }
 
-    // Với AT_CENTER: kiểm tra số lượng ảnh hợp lệ 1-10
-    const validEvidencePhotoUrls = proofPhotos
-      .map((url) => url.trim())
-      .filter((url) => getInspectionRemoteMediaUrl(url) || isInspectionProofImage(url));
-
-    if (isAtCenterOrder) {
-      if (validEvidencePhotoUrls.length < 1 || validEvidencePhotoUrls.length > 10) {
-        notify('Yêu cầu từ 1 đến 10 ảnh bằng chứng đã upload thành công lên máy chủ trước khi nộp!', true);
-        return;
-      }
-    }
-
+    const validEvidencePhotoUrls = proofPhotos;
     let effectiveSeal = tamperSealInput;
     if (!isAtCenterOrder) {
       if (!effectiveSeal) {
@@ -1243,12 +1223,6 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
       try {
         const resultStatus = overallVerdict === 'PASS' ? 'PASSED' : 'FAILED';
         localStorage.setItem(`inspection_status_${activeOrder.id}`, resultStatus);
-        if (overallVerdict === 'PASS') {
-          markListingInspectionPassed(
-            (activeOrder as any).postId || activeOrder.listing?.id || (activeOrder as any).listingId,
-            activeOrder.listing?.title || (activeOrder as any).postTitle || (activeOrder as any).title
-          );
-        }
         if (!isAtCenterOrder) {
           localStorage.setItem(`inspection_seal_${activeOrder.id}`, effectiveSeal);
         }
@@ -1346,7 +1320,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
 
   const stepsList: { key: InspectionStep; title: string; desc: string; icon: any }[] = [
     { key: 'intake', title: '1. Tiếp Nhận', desc: 'Đối chiếu hồ sơ máy', icon: QrCode },
-    { key: 'exterior', title: '2. Ngoại Quan', desc: 'Phân hạng Grade vỏ máy', icon: Layers },
+    { key: 'exterior', title: '2. Ngoại Quan', desc: 'Phân hạng ngoại quan vỏ máy', icon: Layers },
     { key: 'technical', title: '3. Kỹ Thuật', desc: 'Đo đạc & Test chức năng', icon: Wrench },
     {
       key: 'proofs',
@@ -1382,6 +1356,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
       notify(`Không thể nhảy cóc sang "${stepsList[targetIdx]?.title || 'bước này'}"! Quy trình kiểm định yêu cầu hoàn thành tuần tự từ Bước 1 đến Bước 5.`, true);
       return;
     }
+    if (targetStep === 'verdict' && !requireUploadedEvidence()) return;
     setCurrentStep(targetStep);
   };
 
@@ -1402,23 +1377,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
       }
     }
 
-    if (currentStep === 'proofs' && !isCompletedOrder) {
-      if (isAtCenterOrder) {
-        if (proofPhotos.length < 1) {
-          notify('Vui lòng tải lên ít nhất 1 ảnh bằng chứng hiện trạng trước khi chuyển sang Bước 5!', true);
-          return;
-        }
-        if (proofPhotos.length > 10) {
-          notify('Tối đa 10 ảnh bằng chứng được phép nộp!', true);
-          return;
-        }
-      } else {
-        if (proofPhotos.length === 0) {
-          notify('Vui lòng thêm ảnh bằng chứng trước khi chuyển bước!', true);
-          return;
-        }
-      }
-    }
+    if (nextStep === 'verdict' && !requireUploadedEvidence()) return;
 
     if (nextIdx > maxReachedStepIndex) {
       setMaxReachedStepIndex(nextIdx);
@@ -1430,6 +1389,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
   const isStepCompleted = (stepKey: InspectionStep, idx: number): boolean => {
     const isCompleted = isOrderInspectionCompleted(activeOrder);
     if (isCompleted) return true;
+    if (stepKey === 'proofs') return !evidenceStepError;
 
     // Nếu KTV đã hoàn thành bước này và tiến tới các bước tiếp theo
     if (idx < maxReachedStepIndex) return true;
@@ -1444,11 +1404,6 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
         const pendingMandatory = checklist.filter((item) => item.mandatory && item.status === 'pending');
         return canUseChecklist && (maxReachedStepIndex > 2 || pendingMandatory.length === 0);
       }
-      case 'proofs':
-        if (isAtCenterOrder) {
-          return maxReachedStepIndex > 3 || (proofPhotos.length >= 1 && proofPhotos.length <= 10);
-        }
-        return maxReachedStepIndex > 3 || proofPhotos.length > 0;
       case 'verdict': {
         const isScoreValid = overallVerdict === 'PASS' ? conditionScore > 75 : conditionScore <= 75;
         return Boolean(overallVerdict && isScoreValid && isDigitalSigned);
@@ -2055,7 +2010,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                         </span>
                       </div>
                       <p className="text-[11px] text-amber-800 mt-0.5">
-                        Biên bản nghiệm thu và chữ ký số đã được phát hành chính thức. Tất cả các nút thao tác và biểu mẫu đã bị khóa để bảo toàn tính toàn vẹn của hồ sơ.
+                        Biên bản nghiệm thu và chữ ký đã được phát hành chính thức. Tất cả các nút thao tác và biểu mẫu đã bị khóa để bảo toàn tính toàn vẹn của hồ sơ.
                       </p>
                     </div>
                   </div>
@@ -2265,7 +2220,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                   <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-200 flex items-start gap-3 text-xs text-blue-900">
                     <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                     <div>
-                      <strong>Bước 2 - Kiểm tra Ngoại Quan & Phân Hạng Grade:</strong> Đánh giá mức độ trầy xước, cấn móp, độ nguyên vẹn của khung vỏ, kính chịu lực và các khớp nối.
+                      <strong>Bước 2 - Kiểm tra Ngoại Quan & Phân Hạng:</strong> Đánh giá mức độ trầy xước, cấn móp, độ nguyên vẹn của khung vỏ, kính chịu lực và các khớp nối.
                     </div>
                   </div>
 
@@ -2278,15 +2233,15 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                       {selectedGrade && (
                         <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                          Đã chọn {selectedGrade}
+                          Đã chọn {selectedGrade === 'Like New' ? 'Hạng S / A+ (Như mới)' : selectedGrade === 'Good' ? 'Hạng A / B (Rất đẹp)' : 'Hạng C (Cấn móp / Trầy xước)'}
                         </span>
                       )}
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                       {[
-                        { id: 'Like New' as ConditionGrade, label: 'Grade S / A+', desc: 'Như mới, không tì vết' },
-                        { id: 'Good' as ConditionGrade, label: 'Grade A / B ', desc: 'Rất đẹp, trầy xước dăm siêu nhẹ' },
-                        { id: 'Fair' as ConditionGrade, label: 'Grade C', desc: 'Cấn móp / Trầy xước nhìn thấy rõ' },
+                        { id: 'Like New' as ConditionGrade, label: 'Hạng S / A+', desc: 'Như mới, không tì vết' },
+                        { id: 'Good' as ConditionGrade, label: 'Hạng A / B', desc: 'Rất đẹp, trầy xước dăm siêu nhẹ' },
+                        { id: 'Fair' as ConditionGrade, label: 'Hạng C', desc: 'Cấn móp / Trầy xước nhìn thấy rõ' },
                       ].map((gr) => (
                         <div
                           key={gr.id}
@@ -2561,15 +2516,23 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                       {proofPhotos.length > 0 ? (
                         <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                          Đã có {proofPhotos.length}/10 ảnh đã tải lên thành công (Đã ổn)
+                          Đã tải lên {proofPhotos.length}/{INSPECTION_PHOTO_LIMIT} ảnh
                         </span>
-                      ) : isAtCenterOrder ? (
+                      ) : !isCompletedOrder ? (
                         <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
                           <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                          Yêu cầu từ 1 đến 10 ảnh bằng chứng đã upload thành công
+                          Cần ít nhất 1 ảnh tải lên thành công
                         </span>
                       ) : null}
                     </div>
+
+                    {!isCompletedOrder && (
+                      <InspectionEvidenceErrors
+                        photos={photoUploadItems}
+                        selectionErrors={photoSelectionErrors}
+                        stepError={hasTriedEvidenceStep ? evidenceStepError : null}
+                      />
+                    )}
 
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       {photoUploadItems.map((item, idx) => (
@@ -2599,14 +2562,13 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                           {item.status === 'error' && (
                             <div className="absolute inset-0 bg-rose-950/80 backdrop-blur-xs flex flex-col items-center justify-center text-white p-2 text-center">
                               <AlertTriangle className="w-4 h-4 text-rose-300 mb-1" />
-                              <span className="text-[9px] font-bold text-rose-100 line-clamp-2 mb-1.5">
-                                {item.errorMessage || 'Tải ảnh thất bại'}
-                              </span>
+                              <span className="mb-1.5 text-[10px] font-bold text-rose-100">Tải ảnh thất bại</span>
                               {!isCompletedOrder && (
                                 <div className="flex items-center gap-1">
                                   <button
                                     type="button"
                                     onClick={() => handleRetryUpload(item.id)}
+                                    aria-label={`Thử lại ảnh #${idx + 1}`}
                                     className="px-2 py-0.5 rounded bg-white text-rose-900 font-bold text-[10px] hover:bg-rose-50 flex items-center gap-1 cursor-pointer"
                                   >
                                     <RefreshCw className="w-2.5 h-2.5" />
@@ -2615,6 +2577,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                                   <button
                                     type="button"
                                     onClick={() => handleRemovePhoto(item.id)}
+                                    aria-label={`Xóa ảnh #${idx + 1}`}
                                     className="p-1 rounded bg-black/50 hover:bg-black text-white cursor-pointer"
                                   >
                                     <Trash2 className="w-3 h-3" />
@@ -2643,7 +2606,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                         </div>
                       ))}
 
-                      {!isCompletedOrder && photoUploadItems.length < 10 && (
+                      {!isCompletedOrder && photoUploadItems.length < INSPECTION_PHOTO_LIMIT && (
                         <label className="border-2 border-dashed border-gray-300 hover:border-[#c34c36] rounded-xl flex flex-col items-center justify-center p-3 text-center cursor-pointer hover:bg-orange-50/30 transition aspect-video relative">
                           {isUploadingPhoto ? (
                             <div className="flex flex-col items-center gap-1.5 text-xs text-[#c34c36]">
@@ -2654,12 +2617,12 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                             <>
                               <Camera className="w-5 h-5 text-gray-400 mb-1" />
                               <span className="text-[11px] font-bold text-gray-600">Thêm ảnh mới</span>
-                              <span className="text-[9px] text-gray-400">JPG, PNG, WEBP (Tối đa 10 ảnh)</span>
+                              <span className="text-[10px] text-gray-500">JPG, PNG, WebP · Dưới 5 MB mỗi ảnh</span>
                             </>
                           )}
                           <input
                             type="file"
-                            accept="image/*"
+                            accept={INSPECTION_PHOTO_ACCEPT}
                             multiple
                             disabled={isUploadingPhoto}
                             className="hidden"
@@ -2769,8 +2732,8 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
 
                   {/* Quality score slider */}
                   <div className={`p-4 rounded-2xl border space-y-3 text-xs transition ${(overallVerdict === 'PASS' && conditionScore <= 75) || (overallVerdict === 'FAIL' && conditionScore > 75)
-                      ? 'bg-rose-50/40 border-rose-300 ring-1 ring-rose-200'
-                      : 'bg-[#faf8f5] border-gray-200'
+                    ? 'bg-rose-50/40 border-rose-300 ring-1 ring-rose-200'
+                    : 'bg-[#faf8f5] border-gray-200'
                     }`}>
                     <div className="flex justify-between items-center">
                       <div>
@@ -2795,8 +2758,8 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                             setConditionScore(val);
                           }}
                           className={`w-20 px-2 py-1 text-center font-mono font-black text-xl rounded-lg border outline-none transition [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${(overallVerdict === 'PASS' && conditionScore <= 75) || (overallVerdict === 'FAIL' && conditionScore > 75)
-                              ? 'border-rose-400 text-rose-600 bg-white ring-1 ring-rose-300'
-                              : 'border-gray-300 text-[#c34c36] bg-white focus:border-[#c34c36]'
+                            ? 'border-rose-400 text-rose-600 bg-white ring-1 ring-rose-300'
+                            : 'border-gray-300 text-[#c34c36] bg-white focus:border-[#c34c36]'
                             } ${isCompletedOrder ? 'cursor-not-allowed opacity-60' : ''}`}
                         />
                         <span className="font-mono font-bold text-gray-500 text-sm">/ 100</span>
@@ -2842,12 +2805,12 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                             type="button"
                             onClick={() => setConditionScore(preset.score)}
                             className={`px-2 py-0.5 rounded-lg text-[11px] font-bold border transition cursor-pointer ${conditionScore === preset.score
-                                ? overallVerdict === 'FAIL'
-                                  ? 'bg-red-600 text-white border-red-600'
-                                  : 'bg-[#c34c36] text-white border-[#c34c36]'
-                                : overallVerdict === 'FAIL'
-                                  ? 'bg-white text-gray-700 border-gray-200 hover:border-red-600'
-                                  : 'bg-white text-gray-700 border-gray-200 hover:border-[#c34c36]'
+                              ? overallVerdict === 'FAIL'
+                                ? 'bg-red-600 text-white border-red-600'
+                                : 'bg-[#c34c36] text-white border-[#c34c36]'
+                              : overallVerdict === 'FAIL'
+                                ? 'bg-white text-gray-700 border-gray-200 hover:border-red-600'
+                                : 'bg-white text-gray-700 border-gray-200 hover:border-[#c34c36]'
                               }`}
                           >
                             {preset.label}
@@ -2885,15 +2848,13 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                   </div>
 
                   {/* Digital signature & Seal check */}
-                  <div className={`p-4 rounded-2xl border transition flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs ${
-                    !isDigitalSigned
+                  <div className={`p-4 rounded-2xl border transition flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs ${!isDigitalSigned
                       ? 'bg-amber-50/50 border-amber-300 ring-1 ring-amber-200'
                       : 'bg-emerald-50/30 border-emerald-300'
-                  }`}>
+                    }`}>
                     <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-xl text-white flex items-center justify-center font-bold shrink-0 transition ${
-                        isDigitalSigned ? 'bg-emerald-700' : 'bg-[#24263e]'
-                      }`}>
+                      <div className={`w-10 h-10 rounded-xl text-white flex items-center justify-center font-bold shrink-0 transition ${isDigitalSigned ? 'bg-emerald-700' : 'bg-[#24263e]'
+                        }`}>
                         <ShieldCheck className={`w-5 h-5 ${isDigitalSigned ? 'text-white' : 'text-[#fce5da]'}`} />
                       </div>
                       <div>
@@ -2924,9 +2885,8 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                           onChange={(e) => setIsDigitalSigned(e.target.checked)}
                           className="w-4 h-4 accent-[#c34c36] rounded cursor-pointer disabled:cursor-not-allowed"
                         />
-                        <span className={`font-bold flex items-center gap-1 ${
-                          isDigitalSigned ? 'text-emerald-800' : 'text-slate-800'
-                        }`}>
+                        <span className={`font-bold flex items-center gap-1 ${isDigitalSigned ? 'text-emerald-800' : 'text-slate-800'
+                          }`}>
                           <span>Đính kèm chữ ký</span>
                           <span className="text-red-500 font-black">*</span>
                           {isDigitalSigned && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 inline" />}
@@ -2972,11 +2932,10 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                             type="button"
                             onClick={handleSubmitInspection}
                             disabled={isSubmitting || !isDigitalSigned}
-                            className={`w-full sm:w-auto px-8 py-3 text-white text-sm font-black rounded-xl shadow-md flex items-center justify-center gap-2 transition ${
-                              isSubmitting || !isDigitalSigned
+                            className={`w-full sm:w-auto px-8 py-3 text-white text-sm font-black rounded-xl shadow-md flex items-center justify-center gap-2 transition ${isSubmitting || !isDigitalSigned
                                 ? 'bg-slate-400 cursor-not-allowed opacity-60'
                                 : 'bg-[#24263e] hover:bg-black cursor-pointer shadow-lg'
-                            }`}
+                              }`}
                             title={!isDigitalSigned ? 'Bắt buộc tích vào "Đính kèm chữ ký" thì mới được đi tiếp' : ''}
                           >
                             {isSubmitting ? (

@@ -97,9 +97,20 @@ export const paths = {
   product: (id: string) => `/products/${encodeURIComponent(id)}`,
   profile: customerProfilePath,
   chat: (role: UserRole, id?: string) => `/${role === 'seller' ? 'seller' : 'buyer'}/chat${id ? `/${encodeURIComponent(id)}` : ''}`,
-  orders: (role: UserRole, id?: string) => `/${role === 'seller' ? 'seller' : 'buyer'}/orders${id ? `/${encodeURIComponent(id)}` : ''}`,
-  decision: (role: UserRole, id: string) => `/${role === 'seller' ? 'seller' : 'buyer'}/inspections/${encodeURIComponent(id)}/decision`,
+  orders: (role: UserRole, id?: string) => {
+    if (role === 'inspector') return id ? `/inspector/inspections/${encodeURIComponent(id)}` : '/inspector/inspections';
+    if (role === 'inspection_center') return '/inspection-center/orders';
+    if (role === 'admin') return '/admin/orders';
+    if (role === 'staff') return '/staff/transactions';
+    return `/${role === 'seller' ? 'seller' : 'buyer'}/orders${id ? `/${encodeURIComponent(id)}` : ''}`;
+  },
+  decision: (role: UserRole, id: string) => {
+    if (role === 'inspector') return `/inspector/inspections/${encodeURIComponent(id)}`;
+    if (role === 'inspection_center') return '/inspection-center/orders';
+    return `/${role === 'seller' ? 'seller' : 'buyer'}/inspections/${encodeURIComponent(id)}/decision`;
+  },
   inspectorResult: (id: string) => `/inspector/inspections/${encodeURIComponent(id)}/result`,
+  sellerProduct: (id: string) => `/seller/products/${encodeURIComponent(id)}`,
   editProduct: (id: string) => `/seller/products/${encodeURIComponent(id)}/edit`,
 };
 
@@ -108,18 +119,24 @@ export function getRoleLandingPath(role: UserRole = 'buyer'): string {
 }
 
 export function pathForTab(tab: string, role: UserRole = 'buyer'): string {
+  const isInternal = ['admin', 'inspector', 'inspection_center', 'staff'].includes(role);
   const map: Record<string, string> = {
-    home: '/', marketplace: '/products', 'seller-dashboard': '/seller/dashboard', profile: paths.profile,
+    home: isInternal ? getRoleLandingPath(role) : '/',
+    marketplace: isInternal ? getRoleLandingPath(role) : '/products',
+    'seller-dashboard': '/seller/dashboard',
+    profile: paths.profile,
     'create-listing': role === 'staff' ? '/staff/products/create' : '/seller/products/create',
     orders: role === 'inspection_center' ? '/inspection-center/orders'
       : role === 'inspector' ? '/inspector/inspections'
       : role === 'admin' ? '/admin/orders' : role === 'staff' ? '/staff/transactions' : paths.orders(role),
-    chat: paths.chat(role), notifications: `/${role.replace('_', '-')}/notifications`,
+    chat: paths.chat(role),
+    notifications: `/${role.replace('_', '-')}/notifications`,
     disputes: role === 'staff' ? '/staff/disputes' : `/${role === 'seller' ? 'seller' : 'buyer'}/disputes`,
     'inspection-center': '/inspection-center/dashboard',
     'inspection-hub': role === 'inspection_center' ? '/inspection-center/dashboard' : '/inspector/dashboard',
-    'staff-workspace': '/staff/dashboard', 'admin-dashboard': '/admin/dashboard',
-    'buyer-inspection-decision': `/${role === 'seller' ? 'seller' : 'buyer'}/inspections`,
+    'staff-workspace': '/staff/dashboard',
+    'admin-dashboard': '/admin/dashboard',
+    'buyer-inspection-decision': role === 'inspector' ? '/inspector/inspections' : role === 'inspection_center' ? '/inspection-center/orders' : `/${role === 'seller' ? 'seller' : 'buyer'}/inspections`,
   };
   return map[tab] || '/404';
 }
@@ -158,10 +175,12 @@ export function resolveAppRoute(input: string, role: UserRole = 'buyer'): RouteM
     if (legacyTab.replace(/_/g, '-') === 'buyer-inspection-decision' && params.get('orderId')) {
       target = paths.decision(role, params.get('orderId')!);
     }
+  } else if ((url.pathname === '/' || url.pathname === '') && ['admin', 'inspector', 'inspection_center'].includes(role)) {
+    target = getRoleLandingPath(role);
   }
   const decodePart = (part: string) => { try { return decodeURIComponent(part); } catch { return part; } };
   const aliases: Record<string, string> = {
-    '/marketplace': '/products', '/home': '/', '/orders': pathForTab('orders', role),
+    '/marketplace': pathForTab('marketplace', role), '/home': pathForTab('home', role), '/orders': pathForTab('orders', role),
     '/chat': pathForTab('chat', role), '/negotiations': pathForTab('chat', role),
     '/notifications': pathForTab('notifications', role), '/disputes': pathForTab('disputes', role),
     '/buyer/profile': paths.profile, '/seller/profile': paths.profile,
@@ -188,9 +207,13 @@ export function resolveAppRoute(input: string, role: UserRole = 'buyer'): RouteM
   target ||= aliases[url.pathname.replace(/\/$/, '')];
   const reportLink = url.pathname.match(/^\/reports\/([^/]+)\/?$/);
   if (reportLink) target = '/buyer/disputes/' + encodeURIComponent(decodePart(reportLink[1]));
-  const oldOrder = url.pathname.match(/^\/orders?\/([^/]+)$/);
-  if (oldOrder) target = paths.orders(role, decodePart(oldOrder[1]));
-  const oldInspection = url.pathname.match(/^\/(?:buyer\/inspections|seller\/inspections|inspections|inspection\/orders|inspector\/orders)\/([^/]+)$/);
+  const oldOrder = url.pathname.match(/^\/(?:buyer\/orders|seller\/orders|orders?)\/([^/]+)$/);
+  if (oldOrder && role === 'inspector') {
+    target = `/inspector/inspections/${encodeURIComponent(decodePart(oldOrder[1]))}`;
+  } else if (oldOrder) {
+    target = paths.orders(role, decodePart(oldOrder[1]));
+  }
+  const oldInspection = url.pathname.match(/^\/(?:buyer\/inspections|seller\/inspections|inspections|inspection\/orders|inspector\/orders)\/([^/]+)(?:\/decision)?$/);
   if (oldInspection) {
     const id = decodePart(oldInspection[1]);
     const targetRole = url.pathname.startsWith('/seller') ? 'seller' : (url.pathname.startsWith('/buyer') ? 'buyer' : (role === 'seller' ? 'seller' : 'buyer'));

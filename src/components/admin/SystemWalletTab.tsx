@@ -29,7 +29,6 @@ import {
 } from '../../services';
 import { inspectorService, InspectionOrderDto } from '../../services/inspectorService';
 import { AdminInspectionFundsModal } from './AdminInspectionFundsModal';
-import { markListingInspectionPassed, isOrderInspectionVerdictPassed } from '../../utils/listingInspection';
 import { isValidUUID } from '../../utils/negotiationHelper';
 import { toSystemWalletHistoryItem, getSystemWalletBreakdownLines } from '../../utils/systemWalletHistory';
 import {
@@ -179,19 +178,10 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
       const list: InspectionOrderDto[] = Array.isArray(extracted) ? [...extracted] : [];
       setInspectionOrders(list);
 
-      // Đồng bộ vào cache và ghi nhận trạng thái đạt kiểm định của bài đăng
+      // Đồng bộ danh sách đơn kiểm định vào cache
       try {
         localStorage.setItem('all_inspection_orders_cache', JSON.stringify(list));
       } catch { }
-      list.forEach((ord) => {
-        if (isOrderInspectionVerdictPassed(ord)) {
-          const pid = ord.postId || (ord as any).listingId || (ord as any).listing?.id;
-          const ptitle = ord.postTitle || (ord as any).listing?.title || (ord as any).title;
-          if (pid) {
-            markListingInspectionPassed(String(pid), ptitle);
-          }
-        }
-      });
     } catch (err: any) {
       console.warn('Could not fetch inspection orders in SystemWalletTab:', err);
       setInspectionOrders([]);

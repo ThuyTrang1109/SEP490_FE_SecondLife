@@ -4,11 +4,22 @@ export const adminPostService = {
   /**
    * Admin lấy danh sách các bài đăng (lọc theo status / category)
    */
-  async getAdminPosts(status?: string, categoryId?: string, itemId?: string): Promise<any> {
+  async getAdminPosts(
+    status?: string,
+    categoryId?: string,
+    itemId?: string,
+    pagination?: { page: number; size: number }
+  ): Promise<any> {
     const params = new URLSearchParams();
     if (status) params.append('status', status);
     if (categoryId) params.append('categoryId', categoryId);
     if (itemId) params.append('itemId', itemId);
+    if (pagination) {
+      params.set('page', String(pagination.page));
+      params.set('size', String(pagination.size));
+      params.append('sort', 'createdAt,desc');
+      params.append('sort', 'id,desc');
+    }
 
     const queryString = params.toString() ? `?${params.toString()}` : '';
     const response = await request<any>(`/v1/admin/posts${queryString}`, {

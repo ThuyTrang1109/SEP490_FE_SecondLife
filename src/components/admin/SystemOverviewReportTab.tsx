@@ -34,6 +34,10 @@ import { adminCommissionService, CommissionRuleResponse } from '../../services/a
 import { resolveCategoryAndItem } from '../../utils/catalogCache';
 import { isOrderInspectionVerdictPassed } from '../../utils/listingInspection';
 import { parseDateMs } from './SystemWalletTab';
+import { AdminReportPeriodFilter } from './AdminReportPeriodFilter';
+import {
+  formatReportBounds, isInReportPeriod, reportBucket, reportGrouping, reportPeriodBounds, type ReportPeriod
+} from '../../utils/adminReportPeriod';
 import {
   EscrowOrder,
   Listing,
@@ -43,8 +47,6 @@ import {
   InspectionCenter
 } from '../../types';
 import { formatVND } from '../../utils/translations';
-
-export type ReportDateRange = '7D' | '30D' | '90D' | 'ALL';
 
 export interface SystemOverviewReportTabProps {
   lang?: Language;
@@ -295,6 +297,10 @@ const SvgRadialGauge: React.FC<{
   );
 };
 
+function orderGmv(order: AdminOrderResponse): number {
+  return order.status === 'CANCELLED' ? 0 : Number(order.finalPrice ?? order.totalAmount ?? 0);
+}
+
 export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = ({
   lang = 'vi',
   initialListings = [],
@@ -302,9 +308,10 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
   initialVerifications = [],
   onNavigateTab
 }) => {
-  const [dateRange, setDateRange] = useState<ReportDateRange>('ALL');
+  const [period, setPeriod] = useState<ReportPeriod>({ kind: 'ALL' });
   const [reportSection, setReportSection] = useState<'ALL' | 'FINANCE' | 'ORDERS_INSPECTION' | 'USERS_LISTINGS'>('ALL');
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [hasPartialData, setHasPartialData] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date>(new Date());
   const [hoveredTrendIdx, setHoveredTrendIdx] = useState<number | null>(null);
   const [hoveredBarIdx, setHoveredBarIdx] = useState<number | null>(null);
@@ -420,7 +427,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
         fetchAllPages((page, size) => systemWalletService.getTransactions({ page, size }), 100),
         fetchAllPages((page, size) => adminService.getAdminUsers({ page, size }), 50),
         fetchAllPages((page, size) => adminService.getSellerVerifications({ page, size }), 50),
-        adminPostService.getAdminPosts(),
+        fetchAllPages((page, size) => adminPostService.getAdminPosts(undefined, undefined, undefined, { page, size }), 50),
         fetchAllPages((page, size) => walletService.getAdminWithdrawals('ALL', page, size), 100),
         fetchAllPages((page, size) => inspectorService.getAllOrders(undefined, page, size), 100),
         inspectorService.getInspectionCenters(true),
@@ -452,13 +459,8 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
         setVerifications(verifRes.value.items);
       }
 
-      if (postsRes.status === 'fulfilled' && postsRes.value) {
-        const rawPosts = Array.isArray(postsRes.value)
-          ? postsRes.value
-          : postsRes.value.items || postsRes.value.content || postsRes.value.data || [];
-        if (Array.isArray(rawPosts) && rawPosts.length > 0) {
-          setPosts(rawPosts);
-        }
+      if (postsRes.status === 'fulfilled') {
+        setPosts(postsRes.value.items);
       }
 
       if (withdrawalsRes.status === 'fulfilled' && withdrawalsRes.value) {
@@ -477,6 +479,11 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
         setCommissionRules(commRes.value.items);
       }
 
+      const pages = [ordersRes, walletTxRes, usersRes, verifRes, postsRes, withdrawalsRes, inspOrdersRes];
+      setHasPartialData(
+        pages.some((res) => res.status === 'rejected' || res.value.items.length < res.value.totalElements)
+        || [statsRes, walletRes, hubsRes, commRes].some((res) => res.status === 'rejected')
+      );
       setLastSyncedAt(new Date());
     } catch (err) {
       console.warn('Error loading system overview report data from backend:', err);
@@ -489,18 +496,19 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
     loadAllReportData();
   }, [loadAllReportData]);
 
-  // Filter helper by date range using robust timestamp parser (supports ISO, SQL timestamp, Jackson array)
+  const reportNow = lastSyncedAt.getTime();
+  const bounds = useMemo(() => reportPeriodBounds(period, reportNow) ?? undefined, [period, reportNow]);
+  const allTime = period.kind === 'ALL';
+  const periodLabel = bounds ? `${formatReportBounds(bounds)} (GMT+7)` : (lang === 'vi' ? 'Toàn thời gian' : 'All time');
+  const trendGrouping = reportGrouping(bounds);
   const isWithinDateRange = useCallback(
-    (dateVal?: any): boolean => {
-      if (dateRange === 'ALL' || !dateVal) return true;
-      const ts = parseDateMs(dateVal);
-      if (!ts || ts <= 0) return true;
-      const now = Date.now();
-      const days = dateRange === '7D' ? 7 : dateRange === '30D' ? 30 : 90;
-      return now - ts <= days * 24 * 60 * 60 * 1000;
-    },
-    [dateRange]
+    (dateVal?: unknown) => isInReportPeriod(parseDateMs(dateVal), bounds),
+    [bounds]
   );
+  const applyPeriod = (next: ReportPeriod) => {
+    setHoveredTrendIdx(null);
+    setPeriod(next);
+  };
 
   // ============================================================================
   // 1. REAL FINANCIAL & SYSTEM WALLET ANALYTICS FROM DATABASE
@@ -516,16 +524,14 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
     const effectiveRatePercent = (rawRate > 1 ? rawRate : rawRate * 100).toFixed(1);
 
     // Real GMV from DB (/v1/admin/orders/stats or sum of real DB orders or PAYMENT_HOLD ledger entries)
-    const totalGmvFromOrders = filteredOrders.reduce((sum, o) => sum + Number(o.totalAmount || o.finalPrice || 0), 0);
+    const totalGmvFromOrders = filteredOrders.reduce((sum, order) => sum + orderGmv(order), 0);
     const totalGmvFromLedger = filteredWalletTxs
       .filter((tx) => tx.type === 'PAYMENT_HOLD')
       .reduce((sum, tx) => sum + Math.max(0, Number(tx.heldDelta || 0) + Number(tx.shippingDelta || 0)), 0);
     const totalGmv =
-      dateRange === 'ALL' && orderStats?.totalGmv !== undefined && Number(orderStats.totalGmv) > 0
+      allTime && orderStats?.totalGmv != null
         ? Number(orderStats.totalGmv)
-        : totalGmvFromOrders > 0
-          ? totalGmvFromOrders
-          : totalGmvFromLedger;
+        : adminOrders.length > 0 ? totalGmvFromOrders : totalGmvFromLedger;
 
     // Real System Wallet balances from DB (/v1/admin/system-wallet)
     const heldEscrow =
@@ -533,7 +539,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
         ? Number(systemWallet.heldBalance)
         : orderStats?.heldEscrowAmount !== undefined
           ? Number(orderStats.heldEscrowAmount)
-          : filteredOrders
+          : adminOrders
               .filter((o) => o.escrowStatus === 'HELD' || o.escrowStatus === 'FROZEN')
               .reduce((sum, o) => sum + Number(o.totalAmount || o.finalPrice || 0), 0);
 
@@ -545,14 +551,16 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
       0
     );
     const platformRevenue =
-      dateRange === 'ALL' && systemWallet?.revenueBalance !== undefined
+      allTime && systemWallet?.revenueBalance !== undefined
         ? Number(systemWallet.revenueBalance)
         : ledgerRevenueSum;
 
     const totalSystemBalance =
       systemWallet?.totalBalance !== undefined
         ? Number(systemWallet.totalBalance)
-        : heldEscrow + shippingPoolBalance + Number(systemWallet?.revenueBalance ?? platformRevenue);
+        : heldEscrow + shippingPoolBalance + Number(systemWallet?.revenueBalance ?? walletTxs.reduce(
+          (sum, tx) => sum + Number(tx.revenueDelta || 0), 0
+        ));
 
     // Released vs Refunded from real DB Orders or System Wallet Ledger
     const releasedFromOrders = filteredOrders
@@ -600,7 +608,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
       rejectedWithdrawalAmount,
       totalWithdrawalsCount: filteredWithdrawals.length
     };
-  }, [adminOrders, orderStats, systemWallet, walletTxs, commissionRules, withdrawals, dateRange, isWithinDateRange]);
+  }, [adminOrders, orderStats, systemWallet, walletTxs, commissionRules, withdrawals, allTime, isWithinDateRange]);
 
   // ============================================================================
   // 2. REAL TIME-SERIES TREND CHART DATA (FROM REAL DB ORDERS & LEDGER TRANSACTIONS)
@@ -614,34 +622,29 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
       { sortKey: string; label: string; gmv: number; revenue: number; orders: number }
     >();
 
-    // 1. Group real orders by actual date (DD/MM)
     filteredOrders.forEach((ord) => {
       const ts = parseDateMs(ord.createdAt || ord.paidAt || ord.updatedAt);
-      if (!ts) return;
-      const d = new Date(ts);
-      const sortKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      const label = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+      if (!Number.isFinite(ts) || !ts) return;
+      const { sortKey, label } = reportBucket(ts, trendGrouping);
       const prev = bucketMap.get(sortKey) || { sortKey, label, gmv: 0, revenue: 0, orders: 0 };
-      prev.gmv += Number(ord.totalAmount || ord.finalPrice || 0);
+      prev.gmv += orderGmv(ord);
       prev.orders += 1;
       bucketMap.set(sortKey, prev);
     });
 
-    // 2. Group real commission revenue (and GMV if orders list wasn't returned) from System Wallet ledger transactions by actual date
-    const seenLedgerOrderIds = new Set(filteredOrders.map((o) => o.id));
+    // Use ledger holds for GMV only when the orders list is unavailable.
+    const seenLedgerOrderIds = new Set<string>();
     filteredTxs.forEach((tx) => {
       const ts = parseDateMs(tx.createdAt);
-      if (!ts) return;
-      const d = new Date(ts);
-      const sortKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      const label = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+      if (!Number.isFinite(ts) || !ts) return;
+      const { sortKey, label } = reportBucket(ts, trendGrouping);
       const prev = bucketMap.get(sortKey) || { sortKey, label, gmv: 0, revenue: 0, orders: 0 };
 
       const revDelta = Number(tx.revenueDelta || 0);
       if (revDelta > 0) {
         prev.revenue += revDelta;
       }
-      if (tx.type === 'PAYMENT_HOLD' && (!tx.orderId || !seenLedgerOrderIds.has(tx.orderId))) {
+      if (adminOrders.length === 0 && tx.type === 'PAYMENT_HOLD' && (!tx.orderId || !seenLedgerOrderIds.has(tx.orderId))) {
         if (tx.orderId) seenLedgerOrderIds.add(tx.orderId);
         prev.gmv += Math.max(0, Number(tx.heldDelta || 0) + Number(tx.shippingDelta || 0));
         prev.orders += 1;
@@ -649,11 +652,9 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
       bucketMap.set(sortKey, prev);
     });
 
-    // If orders exist on a day without an explicit settlement tx yet, derive actual commission only if revenue is 0 and order is COMPLETED
     const sorted = Array.from(bucketMap.values()).sort((a, b) => a.sortKey.localeCompare(b.sortKey));
-
-    return sorted.slice(-10);
-  }, [adminOrders, walletTxs, isWithinDateRange]);
+    return allTime ? sorted.slice(-10) : sorted;
+  }, [adminOrders, walletTxs, isWithinDateRange, trendGrouping, allTime]);
 
   // Real Sparkline heights derived strictly from real trendSeriesData
   const realSparklineHeights = useMemo(() => {
@@ -672,7 +673,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
   const orderAnalytics = useMemo(() => {
     const filteredOrders = adminOrders.filter((o) => isWithinDateRange(o.createdAt));
     const filteredTxs = walletTxs.filter((tx) => isWithinDateRange(tx.createdAt));
-    const useStats = dateRange === 'ALL' && orderStats !== null && Number(orderStats.totalOrders ?? 0) > 0;
+    const useStats = allTime && orderStats !== null && Number(orderStats.totalOrders ?? 0) > 0;
 
     // Fallback to ledger transaction order IDs if /v1/admin/orders is empty
     const ledgerHoldOrderIds = new Set(
@@ -685,10 +686,12 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
       filteredTxs.filter((tx) => tx.type === 'REFUND' && tx.orderId).map((tx) => tx.orderId!)
     );
     const ledgerInspectionOrderIds = new Set(
-      filteredTxs.filter((tx) => Boolean(tx.inspectionOrderId) || tx.type.startsWith('INSPECTION_')).map((tx) => tx.inspectionOrderId || tx.orderId || String(tx.id))
+      filteredTxs
+        .filter((tx) => tx.orderId && ledgerHoldOrderIds.has(tx.orderId) && (tx.inspectionOrderId || tx.type.startsWith('INSPECTION_')))
+        .map((tx) => tx.orderId!)
     );
 
-    const hasAdminOrders = filteredOrders.length > 0;
+    const hasAdminOrders = adminOrders.length > 0;
 
     const total = useStats
       ? Number(orderStats!.totalOrders)
@@ -726,11 +729,9 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
         ? filteredOrders.filter((o) => o.escrowStatus === 'FROZEN').length
         : 0;
 
-    const withInspection = useStats
-      ? Number(orderStats!.withInspectionCount ?? 0)
-      : hasAdminOrders
-        ? filteredOrders.filter((o) => Boolean(o.hasInspection)).length
-        : Math.max(inspectionOrders.length, ledgerInspectionOrderIds.size);
+    const withInspection = hasAdminOrders
+      ? filteredOrders.filter((o) => Boolean(o.hasInspection)).length
+      : ledgerInspectionOrderIds.size;
 
     const directOrders = Math.max(0, total - withInspection);
 
@@ -751,7 +752,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
       cancelRate,
       inspectionAdoptionRate
     };
-  }, [adminOrders, orderStats, dateRange, isWithinDateRange]);
+  }, [adminOrders, orderStats, walletTxs, allTime, isWithinDateRange]);
 
   // ============================================================================
   // 4. REAL INSPECTION & HUB CENTER ANALYTICS FROM DATABASE
@@ -835,7 +836,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
   const userAndListingAnalytics = useMemo(() => {
     const filteredUsers = users.filter((u) => isWithinDateRange(u.createdAt));
 
-    const totalUsers = dateRange === 'ALL' && totalUsersElements > filteredUsers.length ? totalUsersElements : filteredUsers.length;
+    const totalUsers = allTime && totalUsersElements > filteredUsers.length ? totalUsersElements : filteredUsers.length;
     const activeUsers = filteredUsers.filter((u) => u.accountStatus === 'ACTIVE').length;
     const lockedUsers = filteredUsers.filter((u) => u.accountStatus !== 'ACTIVE').length;
 
@@ -926,20 +927,21 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
       rejectedOrSoldCount,
       topCategories
     };
-  }, [users, totalUsersElements, verifications, posts, dateRange, isWithinDateRange]);
+  }, [users, totalUsersElements, verifications, posts, allTime, isWithinDateRange]);
 
   // ============================================================================
   // EXPORT FULL SYSTEM OVERVIEW REPORT CSV (100% REAL DATABASE DATA)
   // ============================================================================
   const handleExportReportCSV = () => {
-    const nowStr = new Date().toLocaleString('vi-VN');
+    const nowStr = new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
     const rows: Array<[string, string, string, string]> = [
       ['NHÓM CHỈ SỐ', 'TÊN CHỈ SỐ BÁO CÁO (DATABASE)', 'GIÁ TRỊ THỰC TẾ', 'GHI CHÚ / ĐƠN VỊ'],
-      ['THÔNG TIN CHUNG', 'Thời điểm xuất báo cáo', nowStr, `Kỳ lọc: ${dateRange}`],
+      ['THÔNG TIN CHUNG', 'Thời điểm xuất báo cáo', nowStr, `Kỳ lọc: ${periodLabel}`],
+      ['THÔNG TIN CHUNG', 'Phạm vi dữ liệu', hasPartialData ? 'Một phần dữ liệu chưa tải đủ' : 'Dữ liệu báo cáo', 'Số dư ví và ký quỹ là số dư hiện tại'],
       ['TÀI CHÍNH & DOANH THU', 'Tổng giá trị giao dịch toàn sàn (GMV)', String(financialAnalytics.totalGmv), 'VND'],
-      ['TÀI CHÍNH & DOANH THU', 'Tổng số dư Ví Hệ Thống (System Wallet)', String(financialAnalytics.totalSystemBalance), 'VND'],
-      ['TÀI CHÍNH & DOANH THU', 'Tiền ký quỹ đang tạm giữ (Escrow Held)', String(financialAnalytics.heldEscrow), 'VND'],
-      ['TÀI CHÍNH & DOANH THU', 'Quỹ vận chuyển & đối soát (Shipping Balance)', String(financialAnalytics.shippingPoolBalance), 'VND'],
+      ['TÀI CHÍNH & DOANH THU', 'Số dư hiện tại của Ví Hệ Thống (System Wallet)', String(financialAnalytics.totalSystemBalance), 'VND'],
+      ['TÀI CHÍNH & DOANH THU', 'Tiền ký quỹ đang giữ hiện tại (Escrow Held)', String(financialAnalytics.heldEscrow), 'VND'],
+      ['TÀI CHÍNH & DOANH THU', 'Số dư hiện tại của quỹ vận chuyển (Shipping Balance)', String(financialAnalytics.shippingPoolBalance), 'VND'],
       ['TÀI CHÍNH & DOANH THU', 'Doanh thu hoa hồng sàn (Platform Revenue)', String(financialAnalytics.platformRevenue), `Tỷ lệ cấu hình: ${financialAnalytics.effectiveRatePercent}%`],
       ['TÀI CHÍNH & DOANH THU', 'Tổng tiền đã giải ngân cho Người bán', String(financialAnalytics.releasedAmount), 'VND'],
       ['TÀI CHÍNH & DOANH THU', 'Tổng tiền đã hoàn trả Người mua', String(financialAnalytics.refundedAmount), 'VND'],
@@ -1148,32 +1150,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
             </div>
           </div>
 
-          {/* Right Toolbar: Time Range Filter + Refresh + Export CSV */}
           <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
-              {(
-                [
-                  { id: '7D', label: lang === 'vi' ? '7 ngày' : '7 Days' },
-                  { id: '30D', label: lang === 'vi' ? '30 ngày' : '30 Days' },
-                  { id: '90D', label: lang === 'vi' ? '90 ngày' : '90 Days' },
-                  { id: 'ALL', label: lang === 'vi' ? 'Toàn thời gian' : 'All Time' }
-                ] as Array<{ id: ReportDateRange; label: string }>
-              ).map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setDateRange(item.id)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                    dateRange === item.id
-                      ? 'bg-[#24263e] text-white shadow-2xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-
             <button
               type="button"
               onClick={loadAllReportData}
@@ -1197,7 +1174,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
         </div>
 
         {/* Sub-navigation pills */}
-        <div className="mt-4 pt-3.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
+        <div className="my-4 pt-3.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-1.5">
             {[
               { id: 'ALL', label: lang === 'vi' ? 'Tất cả biểu đồ tổng quan' : 'All Visual Charts', icon: Layers },
@@ -1226,9 +1203,16 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
           </div>
 
           <span className="text-[11px] text-slate-400 font-mono">
-            Cập nhật lúc: {lastSyncedAt.toLocaleTimeString('vi-VN')}
+            Cập nhật lúc: {lastSyncedAt.toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}
           </span>
         </div>
+        <AdminReportPeriodFilter lang={lang} now={reportNow} appliedLabel={periodLabel} onApply={applyPeriod} />
+        {hasPartialData && (
+          <p role="status" className="mt-2 text-xs font-semibold text-amber-700">
+            {lang === 'vi' ? 'Một phần dữ liệu chưa tải đủ. Báo cáo và CSV phản ánh dữ liệu đã tải.'
+              : 'Some records could not be loaded. The report and CSV reflect the records available.'}
+          </p>
+        )}
       </div>
 
       {/* ============================================================================ */}
@@ -1268,7 +1252,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
           </div>
           <div className="flex items-center justify-between text-[11px] text-slate-300 mt-2">
             <span>
-              Ví hệ thống: <strong className="text-white font-mono">{formatVND(financialAnalytics.totalSystemBalance)}</strong>
+              Ví hệ thống hiện tại: <strong className="text-white font-mono">{formatVND(financialAnalytics.totalSystemBalance)}</strong>
             </span>
             <span className="text-emerald-300 font-bold">{orderAnalytics.total} đơn</span>
           </div>
@@ -1292,7 +1276,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
 
           <div className="mt-3 space-y-1.5">
             <div className="flex items-center justify-between text-[11px]">
-              <span className="text-slate-500 font-semibold">Tiền ký quỹ đang giữ:</span>
+              <span className="text-slate-500 font-semibold">Ký quỹ đang giữ hiện tại:</span>
               <span className="font-mono font-bold text-amber-800">{formatVND(financialAnalytics.heldEscrow)}</span>
             </div>
             <div className="w-full h-2 rounded-full bg-slate-100 overflow-hidden flex">
@@ -1445,7 +1429,10 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
                       BIỂU ĐỒ DÒNG TIỀN GIAO DỊCH & DOANH THU HOA HỒNG
                     </h3>
                     <p className="text-[11px] text-slate-500 truncate">
-                      Tổng hợp theo ngày giao dịch thực tế từ đơn hàng và sổ cái Ví hệ thống
+                      {allTime ? '10 ngày gần nhất có phát sinh'
+                        : trendGrouping === 'month' ? 'Tổng hợp theo tháng trong kỳ'
+                          : trendGrouping === 'week' ? 'Tổng hợp theo tuần trong kỳ, bắt đầu từ thứ Hai'
+                            : 'Tổng hợp theo ngày trong kỳ'}
                     </p>
                   </div>
                 </div>
@@ -1602,17 +1589,18 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
                             </g>
                           )}
 
-                          {/* X-Axis Period Label */}
-                          <text
-                            x={pt.x}
-                            y={areaChartGeometry.height - 8}
-                            textAnchor="middle"
-                            fill={isHovered ? '#c34c36' : '#64748b'}
-                            fontSize="10.5"
-                            fontWeight={isHovered ? '800' : '600'}
-                          >
-                            {pt.data.label}
-                          </text>
+                          {(isHovered || idx % Math.ceil(areaChartGeometry.points.length / 10) === 0) && (
+                            <text
+                              x={pt.x}
+                              y={areaChartGeometry.height - 8}
+                              textAnchor="middle"
+                              fill={isHovered ? '#c34c36' : '#64748b'}
+                              fontSize="10.5"
+                              fontWeight={isHovered ? '800' : '600'}
+                            >
+                              {pt.data.label}
+                            </text>
+                          )}
                         </g>
                       );
                     })}
@@ -1637,7 +1625,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
                       </div>
                       <div className="flex items-center gap-4 font-mono">
                         <span>
-                          Giá trị ngày: <strong className="text-[#c34c36]">{formatVND(trendSeriesData[hoveredTrendIdx].gmv)}</strong>
+                          Giá trị giao dịch: <strong className="text-[#c34c36]">{formatVND(trendSeriesData[hoveredTrendIdx].gmv)}</strong>
                         </span>
                         <span>
                           Hoa hồng thu: <strong className="text-emerald-700">{formatVND(trendSeriesData[hoveredTrendIdx].revenue)}</strong>
@@ -2275,7 +2263,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
             <tbody className="divide-y divide-slate-100">
               <tr className="hover:bg-slate-50/70 transition">
                 <td className="py-3 px-4 font-bold text-slate-800">Tài chính & Ví Hệ Thống</td>
-                <td className="py-3 px-4 text-slate-600">Tổng số dư Ví Hệ Thống / Ký quỹ đang giữ</td>
+                <td className="py-3 px-4 text-slate-600">Số dư ví / Ký quỹ đang giữ hiện tại</td>
                 <td className="py-3 px-4 text-right font-mono font-black text-slate-900">
                   {formatVND(financialAnalytics.totalSystemBalance)} / {formatVND(financialAnalytics.heldEscrow)}
                 </td>

@@ -506,7 +506,10 @@ export function getInboundShipmentProgress(
   switch (shipment.status.toUpperCase()) {
     case 'DELIVERED':
     case 'COMPLETED': return progress(3, 'Lalamove đã giao tới Hub', 'Delivered to Hub');
+    case 'CANCELED':
     case 'CANCELLED': return progress(null, 'Vận đơn đã hủy', 'Shipment cancelled');
+    case 'EXPIRED':
+    case 'REJECTED':
     case 'FAILED': return progress(null, 'Vận đơn thất bại', 'Shipment failed');
     case 'RETURNED': return progress(null, 'Vận đơn đã hoàn trả', 'Shipment returned');
     case 'CREATING': return progress(null, 'Đang tạo vận đơn', 'Creating shipment');
@@ -522,7 +525,9 @@ export function getInboundShipmentProgress(
     case 'SHIPPED':
     case 'DELIVERING': return progress(2, 'Đang giao hàng đến Hub', 'On the way to Hub');
     case 'COMPLETED': return progress(3, 'Lalamove đã giao tới Hub', 'Delivered to Hub');
+    case 'CANCELLED':
     case 'CANCELED': return progress(null, 'Vận đơn đã hủy', 'Shipment cancelled');
+    case 'FAILED':
     case 'REJECTED':
     case 'EXPIRED': return progress(null, 'Vận đơn thất bại', 'Shipment failed');
     case 'CREATING': return progress(null, 'Đang tạo vận đơn', 'Creating shipment');

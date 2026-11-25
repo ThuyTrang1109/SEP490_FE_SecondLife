@@ -768,27 +768,56 @@ export function OrderCardActions({
                 </button>
               ) : null}
 
-              {/* Leave Product Review button for delivered / completed orders (ẩn khi đang có khiếu nại tranh chấp) */}
-              {!buyerInspectionStage && !escrowOnHold && (isOrderReceiptConfirmed(ord) || ord.escrowStatus === 'COMPLETED_RELEASED' || ord.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' || ord.backendStatus === 'DELIVERED') && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setReviewModalOrder(ord);
-                  }}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0 ${reviewedOrderIds.includes(ord.id)
-                    ? 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
-                    : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:opacity-90 text-white'
-                    }`}
-                  title="Đánh giá chất lượng sản phẩm & mức độ uy tín người bán"
-                >
-                  <Star className="w-3.5 h-3.5 fill-current" />
-                  <span>
-                    {reviewedOrderIds.includes(ord.id)
-                      ? (lang === 'vi' ? 'Xem / Sửa Đánh Giá' : 'Edit Review')
-                      : (lang === 'vi' ? 'Đánh Giá Sản Phẩm' : 'Write Review')}
-                  </span>
-                </button>
-              )}
+              {/* Nút Đánh Giá Người Bán & Đơn Hàng (hiện ngay khi bưu tá giao hàng thành công, ẩn khi đang có tranh chấp) */}
+              {!buyerInspectionStage && !escrowOnHold && (
+                isOrderDeliveredToBuyer(ord) ||
+                Boolean(ord.shippingDeliveredAt) ||
+                isOrderReceiptConfirmed(ord) ||
+                ord.escrowStatus === 'COMPLETED_RELEASED' ||
+                ord.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' ||
+                ord.backendStatus === 'DELIVERED' ||
+                (ord as any).backendStatus === 'COMPLETED' ||
+                ord.status === 'DELIVERED' ||
+                ord.status === 'COMPLETED'
+              ) && (() => {
+                const deliveredTime = ord.shippingDeliveredAt
+                  ? new Date(ord.shippingDeliveredAt).getTime()
+                  : (ord.updatedAt ? new Date(ord.updatedAt).getTime() : null);
+                const isDelivered48hExpired = deliveredTime ? (Date.now() - deliveredTime > 48 * 3600 * 1000) : false;
+                const isReviewed = reviewedOrderIds.includes(ord.id);
+
+                if (isDelivered48hExpired && !isReviewed) {
+                  return (
+                    <span className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed whitespace-nowrap shrink-0 flex items-center gap-1">
+                      <Star className="w-3.5 h-3.5 text-slate-300" />
+                      <span>{lang === 'vi' ? 'Hết hạn đánh giá (48h)' : 'Review expired (48h)'}</span>
+                    </span>
+                  );
+                }
+
+                return (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setReviewModalOrder(ord);
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0 ${isReviewed
+                      ? 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
+                      : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:opacity-90 text-white'
+                      }`}
+                    title={isReviewed ? "Xem hoặc chỉnh sửa đánh giá người bán" : "Đánh giá chất lượng phục vụ & mức độ uy tín của người bán"}
+                  >
+                    <Star className="w-3.5 h-3.5 fill-current" />
+                    <span>
+                      {isReviewed
+                        ? (isDelivered48hExpired
+                          ? (lang === 'vi' ? 'Xem Đánh Giá' : 'View Review')
+                          : (lang === 'vi' ? 'Xem / Sửa Đánh Giá' : 'Edit Review'))
+                        : (lang === 'vi' ? 'Đánh Giá Người Bán' : 'Review Seller')}
+                    </span>
+                  </button>
+                );
+              })()}
             </>
           )
         )}

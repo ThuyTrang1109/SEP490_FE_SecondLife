@@ -281,7 +281,7 @@ export const DigitalInspectionCertificateModal: React.FC<DigitalInspectionCertif
           category: item.category || resolveListingCategory(order.listing),
           standard: item.testedValue
             ? `Đánh giá của kiểm tra viên: ${item.testedValue}`
-            : (item.inspectorNote || item.description || item.notes || (itemPassed ? 'Đạt quy chuẩn kỹ thuật phòng Lab ISO/IEC 17025' : 'Không đạt tiêu chuẩn kiểm định kỹ thuật')),
+            : (item.inspectorNote || item.description || item.notes || (itemPassed ? 'Đạt quy chuẩn kỹ thuật phòng kiểm định' : 'Không đạt tiêu chuẩn kiểm định kỹ thuật')),
           status: itemPassed ? 'PASSED' : 'FAILED',
         };
       });
@@ -789,7 +789,7 @@ export const DigitalInspectionCertificateModal: React.FC<DigitalInspectionCertif
                 <div className="pt-3 pb-1 print:pt-2 print:pb-0.5">
                   <div className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-emerald-50 text-emerald-800 border border-emerald-300 text-[9px] print:text-[8px] font-bold font-mono">
                     <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                    <span>ĐÃ XÁC THỰC CHỮ KÝ SỐ</span>
+                    <span>ĐÃ XÁC THỰC CHỮ KÝ</span>
                   </div>
                 </div>
                 <div className="font-black text-slate-900 text-xs print:text-[10px]">{inspectorName}</div>

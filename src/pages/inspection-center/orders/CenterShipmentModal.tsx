@@ -5,7 +5,6 @@ import { UserProfile } from '../../../types';
 import {
   canBookCenterBuyerDelivery,
   canBookCenterReturn,
-  canBookHubBuyerDelivery,
   getHubReturnProgress,
   getInboundShipmentProgress,
   getReturnReserveMessage,
@@ -40,9 +39,7 @@ interface Props {
     | 'shipmentModalRequestRef'
     | 'shipmentSuccess'
     | 'syncingShipments'
-  > & {
-    isOrderReceivedAtHub?: ReturnType<typeof useCenterShipments>['isOrderReceivedAtHub'];
-  };
+  >;
 }
 
 export function CenterShipmentModal({ centerProfile, currentUser, shipmentModalOrder, shipments }: Props) {
@@ -59,7 +56,6 @@ export function CenterShipmentModal({ centerProfile, currentUser, shipmentModalO
     inboundShipments,
     inspectionShipments,
     isLoadingShipments,
-    isOrderReceivedAtHub,
     setReturnQuoteOrder,
     setShipmentError,
     setShipmentSuccess,
@@ -133,7 +129,7 @@ export function CenterShipmentModal({ centerProfile, currentUser, shipmentModalO
             <Package className="w-3.5 h-3.5" />
             <span>Lộ Trình Vận Đơn ({effectiveShipments.length})</span>
           </div>
-          {canBookReturn && (
+          {canBookReturn && !effectiveShipments.some((s) => s.leg === 'CENTER_TO_SELLER') && (
             <button
               type="button"
               disabled={bookingReturnId !== null}
@@ -144,10 +140,10 @@ export function CenterShipmentModal({ centerProfile, currentUser, shipmentModalO
               className="inline-flex items-center gap-1.5 rounded-xl bg-amber-700 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-amber-800 disabled:opacity-60 cursor-pointer shadow-xs"
             >
               <Plus className="w-3.5 h-3.5" />
-              {effectiveShipments.some((s) => s.leg === 'CENTER_TO_SELLER') ? 'Tạo lại vận đơn trả người bán' : 'Tạo vận đơn trả người bán'}
+              Tạo vận đơn trả người bán
             </button>
           )}
-          {canBookBuyerDelivery && (
+          {canBookBuyerDelivery && !effectiveShipments.some((s) => s.leg === 'CENTER_TO_BUYER') && (
             <button
               type="button"
               disabled={bookingBuyerOrderId !== null}
@@ -155,11 +151,7 @@ export function CenterShipmentModal({ centerProfile, currentUser, shipmentModalO
               className="inline-flex items-center gap-1.5 rounded-xl bg-teal-700 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-teal-800 disabled:opacity-60 cursor-pointer shadow-xs"
             >
               <Plus className="w-3.5 h-3.5" />
-              {bookingBuyerOrderId === orderId
-                ? 'Đang xử lý…'
-                : effectiveShipments.some((s) => s.leg === 'CENTER_TO_BUYER')
-                  ? 'Tạo lại vận đơn giao người mua'
-                  : 'Tạo vận đơn giao người mua'}
+              {bookingBuyerOrderId === orderId ? 'Đang xử lý…' : 'Tạo vận đơn giao người mua'}
             </button>
           )}
         </div>
@@ -182,7 +174,16 @@ export function CenterShipmentModal({ centerProfile, currentUser, shipmentModalO
                 const isCenterToBuyer = s.leg === 'CENTER_TO_BUYER';
                 const isCenterToSeller = s.leg === 'CENTER_TO_SELLER';
                 const isSyncing = syncingShipments.has(s.shipmentId);
-                const isInterrupted = isShipmentInterrupted(s);
+                const progress = isCenterToSeller ? getHubReturnProgress(s) : getInboundShipmentProgress(s);
+                const isDelivered = progress.step === 3;
+                const isInterrupted = !isDelivered && isShipmentInterrupted(s);
+                const statusLabel = isDelivered && isSellerToCenter ? 'Đã nhận tại Hub'
+                  : isDelivered && isCenterToBuyer ? 'Đã giao tới người mua'
+                    : isSellerToCenter || isCenterToBuyer || isCenterToSeller ? progress.label
+                      : s.providerStatus || s.status || 'Đang điều phối';
+                const statusColorClass = isInterrupted ? 'bg-rose-100 text-rose-800 border-rose-300'
+                  : isDelivered ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                    : 'bg-slate-100 text-slate-700 border-slate-200';
 
                 const legBadgeTitle = isSellerToCenter
                   ? 'Chặng 1: Người Bán ➔ Lab Hub'
@@ -209,90 +210,77 @@ export function CenterShipmentModal({ centerProfile, currentUser, shipmentModalO
                           {legBadgeTitle}
                         </span>
                       </div>
-                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${isInterrupted ? 'bg-rose-100 text-rose-800 border-rose-300' : 'bg-emerald-100 text-emerald-800 border-emerald-300'}`}>
-                        {isCenterToSeller
-                          ? getHubReturnProgress(s).label
-                          : isSellerToCenter
-                            ? ((s.status === 'DELIVERED' || s.status === 'COMPLETED' || s.providerStatus === 'COMPLETED' || Boolean(isOrderReceivedAtHub?.(shipmentModalOrder)))
-                              ? 'Đã nhận tại Hub'
-                              : (getInboundShipmentProgress(s).label || s.providerStatus || s.status || 'Đang điều phối'))
-                            : isCenterToBuyer
-                              ? ((s.status === 'DELIVERED' || s.status === 'COMPLETED' || s.providerStatus === 'COMPLETED')
-                                ? 'Đã giao tới người mua'
-                                : (getInboundShipmentProgress(s).label || s.providerStatus || s.status || 'Đang điều phối'))
-                              : (s.providerStatus || s.status || 'Đang điều phối')}
+                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${statusColorClass}`}>
+                        {statusLabel}
                       </span>
                     </div>
 
                     <InspectionCashShipmentStatus shipment={s} />
 
-                    {isSellerToCenter && (() => {
-                      const rawProg = getInboundShipmentProgress(s);
-                      const isDelivered = s.status === 'DELIVERED' || s.status === 'COMPLETED' || s.providerStatus === 'COMPLETED' || rawProg.step === 3 || Boolean(isOrderReceivedAtHub?.(shipmentModalOrder));
-                      const step = isDelivered ? 3 : rawProg.step;
-                      return (
-                        <div className="space-y-2 text-[11px] text-slate-700">
+                    {isSellerToCenter && (
+                      <div className="space-y-2 text-[11px] text-slate-700">
+                        {!isInterrupted && (
                           <LalamoveProgress
                             title="Tiến trình vận chuyển Lalamove (Người bán → Hub)"
                             routeBadge="Chặng 1: Seller ➔ Hub"
-                            currentStep={step}
+                            currentStep={progress.step}
                             completeCurrentStep={isDelivered}
                           />
-                          {s.shareLink && (
-                            <a href={s.shareLink} target="_blank" rel="noreferrer" className="font-bold text-blue-700 hover:underline inline-block">
-                              Theo dõi trên Lalamove
-                            </a>
-                          )}
-                          {s.lastError && <p className="text-rose-700">{s.lastError}</p>}
-                        </div>
-                      );
-                    })()}
+                        )}
+                        {s.shareLink && (
+                          <a href={s.shareLink} target="_blank" rel="noreferrer" className="font-bold text-blue-700 hover:underline inline-block">
+                            Theo dõi trên Lalamove
+                          </a>
+                        )}
+                        {s.lastError && <p className="text-rose-700">{s.lastError}</p>}
+                      </div>
+                    )}
 
-                    {isCenterToBuyer && (() => {
-                      const buyerProg = getInboundShipmentProgress(s);
-                      const isDelivered = s.status === 'DELIVERED' || s.status === 'COMPLETED' || s.providerStatus === 'COMPLETED' || buyerProg.step === 3;
-                      return (
-                        <div className="space-y-2 text-[11px] text-slate-700">
+                    {isCenterToBuyer && (
+                      <div className="space-y-2 text-[11px] text-slate-700">
+                        {!isInterrupted && (
                           <LalamoveProgress
                             title="Tiến trình giao hàng Lalamove (Hub → Người mua)"
                             routeBadge="Chặng 2: Hub ➔ Buyer"
-                            currentStep={buyerProg.step}
+                            currentStep={progress.step}
                             completeCurrentStep={isDelivered}
                           />
-                          {s.shareLink && (
-                            <a href={s.shareLink} target="_blank" rel="noreferrer" className="font-bold text-blue-700 hover:underline inline-block">
-                              Theo dõi trên Lalamove
-                            </a>
-                          )}
-                          {s.lastError && <p className="text-rose-700">{s.lastError}</p>}
-                          {isInterrupted && canBookBuyerDelivery && (
-                            <div className="p-3 bg-teal-50 border border-teal-200 rounded-xl flex flex-wrap items-center justify-between gap-2 text-teal-900 mt-2">
-                              <div className="text-[11px]">
-                                <span className="font-bold">Vận đơn này đã bị hủy hoặc giao thất bại.</span> Bạn có thể đặt lại vận đơn mới để giao hàng cho người mua.
-                              </div>
-                              <button
-                                type="button"
-                                disabled={bookingBuyerOrderId !== null}
-                                onClick={() => void handleBookBuyerDelivery(shipmentModalOrder)}
-                                className="inline-flex items-center gap-1.5 rounded-lg bg-teal-700 hover:bg-teal-800 text-white px-3 py-1.5 text-xs font-bold shrink-0 transition cursor-pointer shadow-xs"
-                              >
-                                <RefreshCw className="w-3.5 h-3.5" />
-                                {bookingBuyerOrderId === orderId ? 'Đang xử lý…' : 'Tạo lại vận đơn giao người mua'}
-                              </button>
+                        )}
+                        {s.shareLink && (
+                          <a href={s.shareLink} target="_blank" rel="noreferrer" className="font-bold text-blue-700 hover:underline inline-block">
+                            Theo dõi trên Lalamove
+                          </a>
+                        )}
+                        {s.lastError && <p className="text-rose-700">{s.lastError}</p>}
+                        {isInterrupted && canBookBuyerDelivery && (
+                          <div className="p-3 bg-teal-50 border border-teal-200 rounded-xl flex flex-wrap items-center justify-between gap-2 text-teal-900 mt-2">
+                            <div className="text-[11px]">
+                              <span className="font-bold">Vận đơn này đã bị hủy hoặc giao thất bại.</span> Bạn có thể đặt lại vận đơn mới để giao hàng cho người mua.
                             </div>
-                          )}
-                        </div>
-                      );
-                    })()}
+                            <button
+                              type="button"
+                              disabled={bookingBuyerOrderId !== null}
+                              onClick={() => void handleBookBuyerDelivery(shipmentModalOrder)}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-teal-700 hover:bg-teal-800 text-white px-3 py-1.5 text-xs font-bold shrink-0 transition cursor-pointer shadow-xs"
+                            >
+                              <RefreshCw className="w-3.5 h-3.5" />
+                              {bookingBuyerOrderId === orderId ? 'Đang xử lý…' : 'Tạo lại vận đơn giao người mua'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {isCenterToSeller && (
                       <div className="space-y-2 text-[11px] text-slate-700">
-                        <LalamoveProgress
-                          title="Tiến trình hoàn trả Lalamove (Hub → Người bán)"
-                          routeBadge="Chặng Hoàn Trả: Hub ➔ Seller"
-                          currentStep={getHubReturnProgress(s).step}
-                          completeCurrentStep={s.status === 'DELIVERED'}
-                        />
+                        {!isInterrupted && (
+                          <LalamoveProgress
+                            title="Tiến trình hoàn trả Lalamove (Hub → Người bán)"
+                            routeBadge="Chặng Hoàn Trả: Hub ➔ Seller"
+                            currentStep={progress.step}
+                            completeCurrentStep={isDelivered}
+                          />
+                        )}
                         <p>Dự phòng {shipmentModalOrder.returnShippingReserveFee == null ? '—' : formatVND(shipmentModalOrder.returnShippingReserveFee)} · Cước thực tế {s.actualFee == null ? 'Chưa có' : formatVND(s.actualFee)}</p>
                         {s.deliveredAt && <p>Giao hoàn lúc {new Date(s.deliveredAt).toLocaleString('vi-VN')}</p>}
                         <p>{getReturnReserveMessage(shipmentModalOrder.returnShippingReserveFee, s)}</p>
@@ -417,32 +405,6 @@ export function CenterShipmentModal({ centerProfile, currentUser, shipmentModalO
                           <span>{isSyncing ? 'Đang đồng bộ…' : 'Đồng bộ'}</span>
                         </button>
                       </div>
-
-                      {isCenterToSeller && isInterrupted && canBookReturn && (
-                        <button
-                          type="button"
-                          disabled={bookingReturnId !== null}
-                          onClick={() => {
-                            closeShipmentModal();
-                            setReturnQuoteOrder(shipmentModalOrder);
-                          }}
-                          className="px-2.5 py-1 rounded-lg bg-amber-700 hover:bg-amber-800 text-white font-bold text-[10px] flex items-center gap-1 cursor-pointer transition shadow-2xs"
-                        >
-                          <RefreshCw className="w-2.5 h-2.5" />
-                          <span>Tạo lại vận đơn hoàn trả</span>
-                        </button>
-                      )}
-                      {isCenterToBuyer && isInterrupted && canBookBuyerDelivery && (
-                        <button
-                          type="button"
-                          disabled={bookingBuyerOrderId !== null}
-                          onClick={() => void handleBookBuyerDelivery(shipmentModalOrder)}
-                          className="px-2.5 py-1 rounded-lg bg-teal-700 hover:bg-teal-800 text-white font-bold text-[10px] flex items-center gap-1 cursor-pointer transition shadow-2xs"
-                        >
-                          <RefreshCw className="w-2.5 h-2.5" />
-                          <span>{bookingBuyerOrderId === orderId ? 'Đang xử lý…' : 'Tạo lại vận đơn giao người mua'}</span>
-                        </button>
-                      )}
                     </div>
                   </div>
                 );

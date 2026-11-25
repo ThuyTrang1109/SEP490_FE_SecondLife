@@ -30,6 +30,7 @@ import {
 import { formatVND } from '../utils/translations';
 import { DedicatedChatRoom } from '../components/chat/DedicatedChatRoom';
 import { buildChatProductListing, getChatPostStatusBadge } from '../utils/chatProduct';
+import { isPostUnderInspectionOrReturning } from '../utils/orderUtils';
 import { inspectionChatParams, isInspectionProposalForPost, resolveChatRoomPath } from '../utils/inspectionChatDraft';
 import { UserAvatar } from '../components/common/UserAvatar';
 
@@ -650,6 +651,14 @@ export const InboxView: React.FC<InboxViewProps> = ({
                             {roleLabel}
                           </span>
                           {room.postStatus && (() => {
+                            const isReturning = isPostUnderInspectionOrReturning({ postId: room.postId, postTitle: room.postTitle }) || isPostUnderInspectionOrReturning(room.postId);
+                            if (isReturning) {
+                              return (
+                                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded border bg-amber-50 text-amber-800 border-amber-300">
+                                  {lang === 'vi' ? '' : 'Returning'}
+                                </span>
+                              );
+                            }
                             const badge = getChatPostStatusBadge(room.postStatus, lang);
                             return badge ? (
                               <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded border ${badge.className}`}>

@@ -23,19 +23,20 @@ import {
 import { Listing, Language, ProductReview, UserProfile, SellerPostDetailDto } from '../../types';
 import { translations, formatConditionGrade, formatVND } from '../../utils/translations';
 import { cleanFullAddress, extractWardAndCity } from '../../utils/addressUtils';
-import { getBoughtListingIds, getResolvedPostParcel } from '../../utils/orderUtils';
+import { getBoughtListingIds, getResolvedPostParcel, isPostUnderInspectionOrReturning } from '../../utils/orderUtils';
 import { soundFx } from '../../utils/soundEffects';
-import { reviewService } from '../../data/mockReviews';
-import { reputationService, postService, SellerReputationDto, getStoredUser, getAssessmentStatusMeta } from '../../services';
+import { reputationService, postService, SellerReputationDto, getStoredUser, getAssessmentStatusMeta, orderReviewService } from '../../services';
 import { UserReportModal } from './UserReportModal';
-import { isListingInspectionPassed } from '../../utils/listingInspection';
+import { isListingInspectionPassed, getListingInspectionBadgeText } from '../../utils/listingInspection';
 import { formatInspectionFailureReason } from '../../utils/inspectionPurchase';
+import type { AiPriceEstimationResponse } from '../../services/postService';
 import { resolveCategoryAndItem, extractSellerOriginalPrice, getPostMetadata } from '../../utils/catalogCache';
 import { MarkdownContent } from '../common/MarkdownDescription';
 
 interface ListingDetailModalProps {
   listing: Listing | null;
   currentUser?: UserProfile | null;
+  initialSellerDetail?: SellerPostDetailDto | null;
   onClose: () => void;
   onBuyClick: (listing: Listing) => void;
   onChatClick: (listing: Listing) => void;
@@ -57,6 +58,7 @@ const cleanDisplayDescription = (desc: string | undefined, lang: Language): stri
 export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
   listing,
   currentUser: propCurrentUser,
+  initialSellerDetail,
   onClose,
   onBuyClick,
   onChatClick,
@@ -67,12 +69,14 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
   if (!listing) return null;
   const t = translations[lang];
   const user = propCurrentUser || getStoredUser();
-  const [sellerDetail, setSellerDetail] = useState<SellerPostDetailDto | null>(null);
+  const [sellerDetail, setSellerDetail] = useState<SellerPostDetailDto | null>(initialSellerDetail ?? null);
   const [publicDetail, setPublicDetail] = useState<any | null>(null);
   const [isLoadingSellerDetail, setIsLoadingSellerDetail] = useState(false);
   const [sellerDetailError, setSellerDetailError] = useState<string | null>(null);
 
   const activeDetail = sellerDetail || publicDetail;
+  const effectivePrice = Number(activeDetail?.price ?? listing.priceVnd);
+  const effectiveTitle = activeDetail?.title || listing.title;
   const declaredCondition = activeDetail?.itemCondition || listing.declaredConditionText;
   const conditionLabel = declaredCondition === 'NEW'
     ? (lang === 'vi' ? 'Hàng Mới / Nguyên Bản' : 'Brand New')
@@ -125,7 +129,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
   const effectiveRejectionReason = formatInspectionFailureReason(sellerDetail?.rejectionReason ?? listing.rejectionReason, lang);
   const effectiveCreditCharged = sellerDetail?.listingCreditCharged ?? listing.listingCreditCharged;
   const effectiveSellerAddress = cleanFullAddress(
-    activeDetail ? activeDetail.sellerAddress ?? activeDetail.user?.address ?? '' : listing.sellerAddress ?? ''
+    activeDetail?.sellerAddress ?? activeDetail?.user?.address ?? listing.sellerAddress ?? ''
   );
   const sellerLocation = extractWardAndCity(effectiveSellerAddress);
   const displaySellerLocation = (sellerLocation || effectiveSellerAddress)
@@ -162,9 +166,9 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
   }, [listing]);
 
   const discountPercent = React.useMemo(() => {
-    if (!effectiveOriginalPrice || !listing.priceVnd || effectiveOriginalPrice <= listing.priceVnd) return 0;
-    return Math.round(((effectiveOriginalPrice - listing.priceVnd) / effectiveOriginalPrice) * 100);
-  }, [effectiveOriginalPrice, listing.priceVnd]);
+    if (!effectiveOriginalPrice || !effectivePrice || effectiveOriginalPrice <= effectivePrice) return 0;
+    return Math.round(((effectiveOriginalPrice - effectivePrice) / effectiveOriginalPrice) * 100);
+  }, [effectiveOriginalPrice, effectivePrice]);
 
   // Lấy chính xác danh sách ảnh thực tế của bài đăng (không nhân bản / không lặp lại ảnh)
   const galleryImages: string[] = React.useMemo(() => {
@@ -195,15 +199,16 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
     if (!activeDetail) return listing;
     return {
       ...listing,
+      priceVnd: effectivePrice,
       shippingWeight: effectiveWeight,
       shippingLength: effectiveLength,
       shippingWidth: effectiveWidth,
       shippingHeight: effectiveHeight,
       sellerAddress: effectiveSellerAddress,
       location: sellerLocation,
-      sellerName: activeDetail.sellerName || listing.sellerName,
-      sellerAvatar: activeDetail.sellerAvatar || listing.sellerAvatar,
-      sellerId: activeDetail.sellerId || listing.sellerId,
+      sellerName: activeDetail.sellerName || activeDetail.user?.fullName || listing.sellerName,
+      sellerAvatar: activeDetail.sellerAvatar || activeDetail.user?.avatarUrl || listing.sellerAvatar,
+      sellerId: activeDetail.sellerId || activeDetail.user?.id || listing.sellerId,
       description: activeDetail.description || listing.description,
       title: activeDetail.title || listing.title,
       photos: {
@@ -212,137 +217,136 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
       },
       photoGallery: galleryImages.length > 0 ? galleryImages : listing.photoGallery,
     };
-  }, [listing, activeDetail, effectiveWeight, effectiveLength, effectiveWidth, effectiveHeight, effectiveSellerAddress, sellerLocation, galleryImages]);
+  }, [listing, activeDetail, effectivePrice, effectiveWeight, effectiveLength, effectiveWidth, effectiveHeight, effectiveSellerAddress, sellerLocation, galleryImages]);
 
   const [activePhotoIndex, setActivePhotoIndex] = useState<number>(0);
 
   useEffect(() => {
     setActivePhotoIndex(0);
-    setSellerDetail(null);
     setPublicDetail(null);
     setSellerDetailError(null);
+    setSellerReviewPage(1);
   }, [listing.id]);
-  const [reviewsTab, setReviewsTab] = useState<'product' | 'seller'>('product');
+  const [sellerReviewPage, setSellerReviewPage] = useState<number>(1);
+  const REVIEWS_PER_PAGE = 5;
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
 
-  // Load reviews & trust profile
-  const productReviews = reviewService.getReviewsByListing(listing.id);
-  const sellerReviews = reviewService.getReviewsBySeller(listing.sellerId);
-  const sellerTrust = reviewService.getSellerTrustProfile(listing.sellerId, listing.sellerName);
+  // Load verified reviews & reputation from Backend (bỏ hoàn toàn mock data)
   const [realReputation, setRealReputation] = useState<SellerReputationDto | null>(null);
-  const [aiEstimate, setAiEstimate] = useState<any>(null);
+  const [realSellerReviews, setRealSellerReviews] = useState<ProductReview[]>([]);
+  const [isLoadingReviews, setIsLoadingReviews] = useState<boolean>(true);
+  const [latestEstimate, setLatestEstimate] = useState<AiPriceEstimationResponse | null>(null);
   useEffect(() => {
     let cancelled = false;
     if (listing.sellerId) {
+      setIsLoadingReviews(true);
       reputationService.getSellerReputation(listing.sellerId).then((rep) => {
         if (!cancelled && rep) setRealReputation(rep);
       });
+      orderReviewService.getSellerReviews(listing.sellerId, 0, 50)
+        .then((res) => {
+          if (cancelled) return;
+          const mapped: ProductReview[] = ((res as any)?.items || []).map((r: any) => ({
+            id: r.id,
+            orderId: r.orderId,
+            listingId: r.postId || '',
+            productName: r.productTitle || 'Sản phẩm giao dịch',
+            productImage: r.productImage,
+            sellerId: r.sellerId,
+            sellerName: r.sellerName,
+            buyerId: r.buyerId,
+            buyerName: r.buyerName,
+            buyerAvatar: r.buyerAvatar,
+            rating: r.rating,
+            comment: r.comment,
+            tags: r.tags || [],
+            photos: r.photos || [],
+            createdAt: r.createdAt,
+            isVerifiedPurchase: r.verifiedPurchase ?? true,
+            conditionGrade: r.conditionGrade,
+          }));
+          setRealSellerReviews(mapped);
+        })
+        .catch(() => {
+          if (!cancelled) setRealSellerReviews([]);
+        })
+        .finally(() => {
+          if (!cancelled) setIsLoadingReviews(false);
+        });
+    } else {
+      setIsLoadingReviews(false);
+      setRealSellerReviews([]);
     }
     return () => {
       cancelled = true;
     };
   }, [listing.sellerId]);
 
-  useEffect(() => {
-    let cancelled = false;
-    if (listing.id) {
-      // 1. Luôn tải chi tiết bài đăng công khai để lấy đầy đủ hình ảnh, thông số kiện hàng vận chuyển & địa chỉ chuẩn
-      postService.getListingDetail(listing.id).then((detail) => {
-        if (cancelled) return;
-        if (detail) {
-          setPublicDetail(detail);
-          if (detail.aiSuggestedPrice) {
-            setAiEstimate({
-              suggestedPriceMin: Math.round(Number(detail.aiSuggestedPrice) * 0.9),
-              suggestedPriceMax: Math.round(Number(detail.aiSuggestedPrice) * 1.1),
-              confidenceScore: 0.95,
-              reasoningNotes: 'Giá gợi ý tham khảo theo định giá hệ thống AI'
-            });
-          }
-        }
-      }).catch((err) => {
-        if (!cancelled) {
-          console.warn('[ListingDetailModal] Lỗi lấy chi tiết bài đăng công khai:', err);
-        }
-      });
-
-      // 2. Nếu là chính chủ người bán xem, tải thêm thông tin quản trị riêng của bài đăng
-      if (isOwnListing) {
-        setIsLoadingSellerDetail(true);
-        setSellerDetailError(null);
-        postService.getMyPostDetail(listing.id)
-          .then((detail) => {
-            if (cancelled) return;
-            if (detail) {
-              setSellerDetail(detail);
-              if (detail.aiSuggestedPrice) {
-                setAiEstimate({
-                  suggestedPriceMin: Math.round(Number(detail.aiSuggestedPrice) * 0.9),
-                  suggestedPriceMax: Math.round(Number(detail.aiSuggestedPrice) * 1.1),
-                  confidenceScore: 0.95,
-                  reasoningNotes: 'Giá gợi ý tham khảo theo định giá hệ thống AI'
-                });
-              }
-            }
-          })
-          .catch((err: any) => {
-            if (cancelled) return;
-            console.warn('[ListingDetailModal] Lỗi lấy chi tiết bài đăng qua GET /api/v1/posts/my-posts/{postId}:', err);
-            if (err?.status === 404) {
-              setSellerDetailError(lang === 'vi' ? 'Bài đăng không tồn tại trên hệ thống.' : 'Listing not found.');
-            } else if (err?.status === 403) {
-              setSellerDetailError(lang === 'vi' ? 'Bạn không có quyền xem chi tiết bài đăng này.' : 'You do not have permission to view this listing.');
-            } else if (err?.status === 400) {
-              setSellerDetailError(lang === 'vi' ? 'Mã bài đăng không hợp lệ.' : 'Invalid listing ID.');
-            }
-          })
-          .finally(() => {
-            if (!cancelled) {
-              setIsLoadingSellerDetail(false);
-            }
-          });
-
-        postService.getLatestPriceEstimate(listing.id).then((est) => {
-          if (!cancelled && est) setAiEstimate(est);
-        }).catch(() => { });
-      } else {
-        if (listing.aiPriceEstimation) {
-          setAiEstimate({
-            suggestedPriceMin: listing.aiPriceEstimation.minVnd,
-            suggestedPriceMax: listing.aiPriceEstimation.maxVnd,
-            confidenceScore: 0.95,
-            reasoningNotes: 'Giá gợi ý tham khảo theo định giá hệ thống AI'
-          });
-        } else if (listing.aiSuggestedPrice && listing.aiSuggestedPrice > 0) {
-          setAiEstimate({
-            suggestedPriceMin: Math.round(Number(listing.aiSuggestedPrice) * 0.9),
-            suggestedPriceMax: Math.round(Number(listing.aiSuggestedPrice) * 1.1),
-            confidenceScore: 0.95,
-            reasoningNotes: 'Giá gợi ý tham khảo theo định giá hệ thống AI'
-          });
-        } else {
-          setAiEstimate(null);
-        }
-      }
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, [listing.id, isOwnListing, listing.aiSuggestedPrice, listing.aiPriceEstimation, lang]);
-
-  const displayReviews = reviewsTab === 'product' ? productReviews : sellerReviews;
-  const avgProductRating = productReviews.length > 0
-    ? (productReviews.reduce((sum, r) => sum + r.rating, 0) / productReviews.length).toFixed(1)
-    : null;
-
-  const totalSellerEvaluated = Math.max(
-    sellerReviews.length,
-    Number(realReputation?.evaluatedOrders ?? 0)
+  const listingId = listing.id;
+  const isPublicListing = ['ACTIVE', 'RESERVED'].includes(
+    String(sellerDetail?.status ?? listing.backendStatus ?? listing.status).toUpperCase(),
   );
 
+  useEffect(() => {
+    if (!listingId || (isOwnListing && !isPublicListing)) return;
+    let cancelled = false;
+    void postService.getListingDetail(listingId).then((detail) => {
+      if (!cancelled && detail) setPublicDetail(detail);
+    });
+    return () => { cancelled = true; };
+  }, [listingId, isOwnListing, isPublicListing]);
+
+  useEffect(() => {
+    if (!listingId || !isOwnListing || initialSellerDetail?.id === listingId) return;
+    const controller = new AbortController();
+    setIsLoadingSellerDetail(true);
+    setSellerDetailError(null);
+    void postService.getMyPostDetail(listingId, controller.signal)
+      .then((detail) => {
+        if (!controller.signal.aborted) setSellerDetail(detail);
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) {
+          setSellerDetailError(error.message || (lang === 'vi' ? 'Không thể tải chi tiết bài đăng.' : 'Could not load the listing.'));
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setIsLoadingSellerDetail(false);
+      });
+    return () => controller.abort();
+  }, [listingId, isOwnListing, initialSellerDetail, lang]);
+
+  const hasSellerEstimate = isOwnListing && Number(sellerDetail?.aiSuggestedPrice) > 0;
+  useEffect(() => {
+    if (!listingId || !hasSellerEstimate) return;
+    const controller = new AbortController();
+    void postService.getLatestPriceEstimate(listingId, controller.signal)
+      .then((estimate) => {
+        if (!controller.signal.aborted) setLatestEstimate(estimate);
+      })
+      .catch(() => { });
+    return () => controller.abort();
+  }, [listingId, hasSellerEstimate]);
+
+  const suggestedPrice = Number(sellerDetail?.aiSuggestedPrice ?? publicDetail?.aiSuggestedPrice
+    ?? listing.aiPriceEstimation?.suggestedVnd ?? listing.aiSuggestedPrice ?? 0);
+  const minEstimate = latestEstimate?.fairPriceMin ?? listing.aiPriceEstimation?.minVnd
+    ?? Math.round(suggestedPrice * 0.9);
+  const maxEstimate = latestEstimate?.fairPriceMax ?? listing.aiPriceEstimation?.maxVnd
+    ?? Math.round(suggestedPrice * 1.1);
+
+  // Dữ liệu đánh giá thật 100% từ Database backend qua orderReviewService (bỏ hoàn toàn mock data)
+  const totalReviewPages = Math.max(1, Math.ceil(realSellerReviews.length / REVIEWS_PER_PAGE));
+  const currentSellerPageReviews = realSellerReviews.slice(
+    (sellerReviewPage - 1) * REVIEWS_PER_PAGE,
+    sellerReviewPage * REVIEWS_PER_PAGE
+  );
+
+  const totalSellerEvaluated = realSellerReviews.length;
+
   const realSellerRating = (() => {
-    if (sellerReviews.length > 0) {
-      return (sellerReviews.reduce((sum, r) => sum + r.rating, 0) / sellerReviews.length).toFixed(1);
+    if (realSellerReviews.length > 0) {
+      return (realSellerReviews.reduce((sum, r) => sum + r.rating, 0) / realSellerReviews.length).toFixed(1);
     }
     const evaluated = Number(realReputation?.evaluatedOrders ?? 0);
     if (evaluated > 0) {
@@ -355,9 +359,18 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
     return listing.sellerRating && listing.sellerRating > 0 ? String(listing.sellerRating) : null;
   })();
 
-  const isInspected = React.useMemo(() => {
-    return isListingInspectionPassed(listing);
-  }, [listing]);
+  const inspectionSource = isOwnListing
+    ? {
+        ...listing,
+        ...publicDetail,
+        ...sellerDetail,
+        isInspected: Boolean(sellerDetail?.isInspected ?? (publicDetail?.isInspected || listing.isInspected)),
+        inspectionMethod: sellerDetail?.inspectionMethod ?? publicDetail?.inspectionMethod ?? listing.inspectionMethod,
+      }
+    : (publicDetail ?? listing);
+  const isInspected = isListingInspectionPassed(inspectionSource);
+  const inspectedMethod = String(inspectionSource?.inspectionMethod || '').trim().toUpperCase();
+  const isUnderInspectionOrReturning = isPostUnderInspectionOrReturning(listing);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/75 backdrop-blur-md overflow-y-auto animate-fadeIn">
@@ -372,7 +385,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
             {isInspected && (
               <span className="bg-emerald-600 text-white text-[10px] font-black px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-xs border border-emerald-400/30">
                 <ShieldCheck className="w-3 h-3 text-emerald-100" />
-                <span>{lang === 'vi' ? 'Đã đạt kiểm định tại Hub' : 'Hub Inspected & Passed'}</span>
+                <span>{getListingInspectionBadgeText(inspectedMethod, lang)}</span>
               </span>
             )}
             <span className="text-[10px] text-[#24263e]/80 font-bold truncate max-w-[220px]">
@@ -411,7 +424,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
               <div className="relative aspect-4/3 min-h-[240px] max-h-[340px] w-full bg-[#f8f9fa] rounded-xl overflow-hidden border border-gray-200 flex items-center justify-center p-2">
                 <img
                   src={galleryImages[activePhotoIndex] || galleryImages[0]}
-                  alt={listing.title}
+                  alt={effectiveTitle}
                   className="w-full h-full object-contain"
                 />
               </div>
@@ -463,7 +476,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                 </div>
 
                 <h1 className="text-xs sm:text-[14px] font-bold text-[#24263e] leading-snug line-clamp-2">
-                  {listing.title}
+                  {effectiveTitle}
                 </h1>
 
                 {/* Price block */}
@@ -491,7 +504,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                     </div>
                     <div className="flex items-baseline gap-2 flex-wrap">
                       <span className="text-xl sm:text-2xl font-black text-[#c34c36] leading-tight">
-                        {formatVND(listing.priceVnd)}
+                        {formatVND(effectivePrice)}
                       </span>
                       {effectiveOriginalPrice > 0 && (
                         <span className="text-xs text-slate-400 line-through font-semibold">
@@ -513,42 +526,45 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5 text-xs font-black text-emerald-950">
                         <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                        <span>{lang === 'vi' ? 'Sản Phẩm Đã Được Kiểm Định Đạt Chuẩn' : 'Hub Inspected & Passed Product'}</span>
+                        <span>
+                          {inspectedMethod === 'AT_HOME'
+                            ? (lang === 'vi' ? 'Sản Phẩm Đã Đạt Kiểm Định Tại Nhà' : 'On-site Inspected & Passed Product')
+                            : inspectedMethod === 'AT_CENTER'
+                              ? (lang === 'vi' ? 'Sản Phẩm Đã Đạt Kiểm Định Tại Hub' : 'Hub Inspected & Passed Product')
+                              : (lang === 'vi' ? 'Sản Phẩm Đã Được Kiểm Định Đạt Chuẩn' : 'Inspected & Passed Product')}
+                        </span>
                       </div>
                       <span className="px-2 py-0.5 rounded-md bg-emerald-600 text-white font-extrabold text-[9px] shadow-2xs">
                         PASSED
                       </span>
                     </div>
                     <p className="text-[10px] text-emerald-900 leading-snug">
-                      {lang === 'vi'
-                        ? 'Thiết bị đã vượt qua quy trình kiểm tra kỹ thuật phần cứng nghiêm ngặt tại SecondLife Hub và đạt chuẩn chất lượng giao dịch.'
-                        : 'This device passed technical hardware inspection at SecondLife Hub and meets verified transaction standards.'}
+                      {inspectedMethod === 'AT_HOME'
+                        ? (lang === 'vi'
+                          ? 'Thiết bị đã được kỹ thuật viên SecondLife kiểm tra kỹ thuật trực tiếp tại nhà và đạt chuẩn chất lượng giao dịch.'
+                          : 'This device passed on-site technical hardware inspection by SecondLife technicians and meets verified transaction standards.')
+                        : inspectedMethod === 'AT_CENTER'
+                          ? (lang === 'vi'
+                            ? 'Thiết bị đã vượt qua quy trình kiểm tra kỹ thuật phần cứng nghiêm ngặt tại SecondLife Hub và đạt chuẩn chất lượng giao dịch.'
+                            : 'This device passed technical hardware inspection at SecondLife Hub and meets verified transaction standards.')
+                          : (lang === 'vi'
+                            ? 'Thiết bị đã vượt qua quy trình kiểm tra kỹ thuật phần cứng nghiêm ngặt của SecondLife và đạt chuẩn chất lượng giao dịch.'
+                            : 'This device passed SecondLife technical hardware inspection and meets verified transaction standards.')}
                     </p>
                   </div>
                 )}
 
-                {/* AI Suggested Price Range Widget (GET /posts/{postId}/ai-price-estimation) */}
-                {aiEstimate && (aiEstimate.suggestedPriceMin || aiEstimate.suggestedPriceMax) && (
+                {(minEstimate > 0 || maxEstimate > 0) && (
                   <div className="p-2.5 rounded-xl bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200/80 space-y-1">
                     <div className="flex items-center justify-between text-[10px]">
                       <span className="font-extrabold text-purple-900 flex items-center gap-1">
                         <Sparkles className="w-3 h-3 text-purple-600" />
                         <span>Khoảng Giá Gợi Ý Bởi AI:</span>
                       </span>
-                      {aiEstimate.confidenceScore && (
-                        <span className="px-1.5 py-0.2 rounded bg-purple-200/70 text-purple-900 font-bold text-[9px]">
-                          Độ tin cậy: {Math.round(aiEstimate.confidenceScore * 100)}%
-                        </span>
-                      )}
                     </div>
                     <div className="text-xs font-black text-purple-950 font-mono">
-                      {formatVND(aiEstimate.suggestedPriceMin)} ~ {formatVND(aiEstimate.suggestedPriceMax)}
+                      {formatVND(minEstimate)} ~ {formatVND(maxEstimate)}
                     </div>
-                    {aiEstimate.reasoningNotes && (
-                      <p className="text-[10px] text-purple-800/80 leading-tight italic">
-                        "{aiEstimate.reasoningNotes}"
-                      </p>
-                    )}
                   </div>
                 )}
 
@@ -606,7 +622,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                         </div>
                       )}
                       <div className="text-[9px] font-bold text-amber-700 mt-0.5">
-                        {realReputation ? getAssessmentStatusMeta(realReputation.assessmentStatus).shortLabel : sellerTrust.tier}
+                        {realReputation?.assessmentStatus ? getAssessmentStatusMeta(realReputation.assessmentStatus).shortLabel : (lang === 'vi' ? 'Người bán mới' : 'New Seller')}
                       </div>
                     </div>
                   </div>
@@ -617,15 +633,6 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                       {lang === 'vi' ? 'Đơn hoàn thành: ' : 'Completed: '}
                       <strong className="text-emerald-700">{realReputation?.evaluatedOrders ?? 0} đơn</strong>
                     </span>
-
-                    <button
-                      type="button"
-                      onClick={() => onOpenSellerReviews?.(listing.sellerId, listing.sellerName)}
-                      className="font-bold text-[#c34c36] hover:underline cursor-pointer flex items-center gap-0.5"
-                    >
-                      <span>{lang === 'vi' ? 'Xem đánh giá buyer' : 'View feedback'}</span>
-                      <ChevronRight className="w-3 h-3" />
-                    </button>
                   </div>
                 </div>
               </div>
@@ -646,37 +653,45 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                       {/* Status badge */}
                       <span className={`text-[10px] font-black px-2 py-0.5 rounded-md shadow-2xs ${effectiveStatus === 'ACTIVE'
                         ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                        : effectiveStatus === 'RESERVED' || effectiveStatus === 'PAYMENT_PENDING'
+                        : effectiveStatus === 'RETURNING'
                           ? 'bg-amber-100 text-amber-800 border border-amber-300'
-                          : effectiveStatus === 'SOLD'
-                            ? 'bg-indigo-100 text-indigo-800 border border-indigo-300'
-                            : effectiveStatus === 'REJECTED'
-                              ? 'bg-rose-100 text-rose-800 border border-rose-300'
-                              : effectiveStatus === 'DRAFT'
-                                ? 'bg-slate-100 text-slate-700 border border-slate-300'
-                                : effectiveStatus === 'PENDING_INSPECTION' || effectiveStatus === 'READY_TO_PUBLISH'
-                                  ? (isInspected || effectiveStatus === 'READY_TO_PUBLISH'
-                                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                                    : 'bg-amber-100 text-amber-800 border border-amber-300')
-                                  : 'bg-purple-100 text-purple-800 border border-purple-300'
+                          : effectiveStatus === 'RETURNED'
+                            ? 'bg-purple-100 text-purple-800 border border-purple-300'
+                            : effectiveStatus === 'RESERVED' || effectiveStatus === 'PAYMENT_PENDING'
+                              ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                              : effectiveStatus === 'SOLD'
+                                ? 'bg-indigo-100 text-indigo-800 border border-indigo-300'
+                                : effectiveStatus === 'REJECTED'
+                                  ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                                  : effectiveStatus === 'DRAFT'
+                                    ? 'bg-slate-100 text-slate-700 border border-slate-300'
+                                    : effectiveStatus === 'PENDING_INSPECTION' || effectiveStatus === 'READY_TO_PUBLISH'
+                                      ? (isInspected || effectiveStatus === 'READY_TO_PUBLISH'
+                                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                        : 'bg-amber-100 text-amber-800 border border-amber-300')
+                                      : 'bg-purple-100 text-purple-800 border border-purple-300'
                         }`}>
                         {effectiveStatus === 'ACTIVE'
                           ? (lang === 'vi' ? '● Đang bán' : '● Active')
-                          : effectiveStatus === 'RESERVED' || effectiveStatus === 'PAYMENT_PENDING'
-                            ? (lang === 'vi' ? '● Đã Đặt Mua / Ký Quỹ' : '● Reserved')
-                            : effectiveStatus === 'SOLD'
-                              ? (lang === 'vi' ? '● Đã Bán' : '● Sold')
-                              : effectiveStatus === 'REJECTED'
-                                ? (lang === 'vi' ? '● Bị Từ Chối' : '● Rejected')
-                                : effectiveStatus === 'DRAFT'
-                                  ? (lang === 'vi' ? '● Bản Nháp' : '● Draft')
-                                  : effectiveStatus === 'READY_TO_PUBLISH'
-                                    ? (lang === 'vi' ? '● Sẵn sàng đăng bán' : '● Ready to publish')
-                                    : effectiveStatus === 'PENDING_INSPECTION'
-                                      ? (isInspected
-                                        ? (lang === 'vi' ? '● Đã kiểm định · Chờ nhận lại hàng' : '● Inspected · Awaiting return')
-                                        : (lang === 'vi' ? '● Chờ kiểm định' : '● Pending Inspection'))
-                                      : (lang === 'vi' ? '● Chờ Duyệt Hub' : '● Pending')}
+                          : effectiveStatus === 'RETURNING'
+                            ? (lang === 'vi' ? '● Đang hoàn trả' : '● Returning')
+                            : effectiveStatus === 'RETURNED'
+                              ? (lang === 'vi' ? '● Đã hoàn trả' : '● Returned')
+                              : effectiveStatus === 'RESERVED' || effectiveStatus === 'PAYMENT_PENDING'
+                                ? (lang === 'vi' ? '● Đã Đặt Mua / Ký Quỹ' : '● Reserved')
+                                : effectiveStatus === 'SOLD'
+                                  ? (lang === 'vi' ? '● Đã Bán' : '● Sold')
+                                  : effectiveStatus === 'REJECTED'
+                                    ? (lang === 'vi' ? '● Bị Từ Chối' : '● Rejected')
+                                    : effectiveStatus === 'DRAFT'
+                                      ? (lang === 'vi' ? '● Bản Nháp' : '● Draft')
+                                      : effectiveStatus === 'READY_TO_PUBLISH'
+                                        ? (lang === 'vi' ? '● Sẵn sàng đăng bán' : '● Ready to publish')
+                                        : effectiveStatus === 'PENDING_INSPECTION'
+                                          ? (isInspected
+                                            ? (lang === 'vi' ? '● Đã kiểm định · Chờ nhận lại hàng' : '● Inspected · Awaiting return')
+                                            : (lang === 'vi' ? '● Chờ kiểm định' : '● Pending Inspection'))
+                                          : (lang === 'vi' ? '● Chờ Duyệt Hub' : '● Pending')}
                       </span>
                     </div>
 
@@ -730,10 +745,10 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                     {lang === 'vi' ? 'Quản trị viên không thể mua hàng hoặc chat' : 'Admin cannot purchase or chat'}
                   </div>
                 </div>
-              ) : (localStorage.getItem(`listing_available_${listing.id}`) !== 'true' && (listing.status === 'RESERVED' || listing.backendStatus === 'RESERVED' || listing.status === 'reserved' || listing.status === 'sold' || listing.backendStatus === 'SOLD' || getBoughtListingIds().has(String(listing.id)))) ? (
+              ) : (isUnderInspectionOrReturning || (localStorage.getItem(`listing_available_${listing.id}`) !== 'true' && (listing.status === 'RESERVED' || listing.backendStatus === 'RESERVED' || listing.status === 'reserved' || listing.status === 'sold' || listing.backendStatus === 'SOLD' || getBoughtListingIds().has(String(listing.id))))) ? (
                 <div className="space-y-1.5 pt-1">
                   <div className="w-full py-2.5 px-3 bg-amber-50 text-amber-800 rounded-xl font-bold text-xs text-center border border-amber-200">
-                    {lang === 'vi' ? 'Sản phẩm đã có người đặt mua' : 'Item is currently reserved'}
+                    {lang === 'vi' ? 'Sản phẩm đang trong quá trình kiểm định / hoàn trả về người bán' : 'Item is currently under inspection / returning to seller'}
                   </div>
                 </div>
               ) : (
@@ -752,15 +767,6 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                   >
                     <MessageSquare className="w-3.5 h-3.5 text-[#c34c36]" />
                     <span>{lang === 'vi' ? 'Chat & Đàm Phán Trả Giá Với Người Bán' : 'Chat & Make Counter Offer'}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setIsReportModalOpen(true)}
-                    className="w-full py-1.5 px-3 text-slate-400 hover:text-rose-600 font-bold text-[11px] transition flex items-center justify-center gap-1 cursor-pointer"
-                  >
-                    <Flag className="w-3 h-3" />
-                    <span>{lang === 'vi' ? 'Báo cáo bài đăng vi phạm' : 'Report this listing'}</span>
                   </button>
                 </div>
               )}
@@ -897,61 +903,36 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
           {/* Customer Reviews Section */}
           <div className="space-y-2.5 pt-1">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-200 pb-2">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setReviewsTab('product')}
-                  className={`text-xs font-extrabold pb-0.5 transition cursor-pointer flex items-center gap-1 ${reviewsTab === 'product'
-                    ? 'text-[#24263e] border-b-2 border-[#c34c36]'
-                    : 'text-slate-400 hover:text-slate-600'
-                    }`}
-                >
-                  <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                  <span>{lang === 'vi' ? `Đánh Giá Sản Phẩm (${productReviews.length})` : `Item Reviews (${productReviews.length})`}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setReviewsTab('seller')}
-                  className={`text-xs font-extrabold pb-0.5 transition cursor-pointer flex items-center gap-1 ${reviewsTab === 'seller'
-                    ? 'text-[#24263e] border-b-2 border-[#c34c36]'
-                    : 'text-slate-400 hover:text-slate-600'
-                    }`}
-                >
-                  <UserCheck className="w-3.5 h-3.5 text-[#c34c36]" />
-                  <span>{lang === 'vi' ? `Đánh Giá Người Bán (${totalSellerEvaluated})` : `Seller Reviews (${totalSellerEvaluated})`}</span>
-                </button>
+              <div className="flex items-center gap-1.5 text-xs font-black text-[#24263e]">
+                <UserCheck className="w-4 h-4 text-[#c34c36]" />
+                <span>{lang === 'vi' ? `Đánh Giá Người Bán (${totalSellerEvaluated})` : `Seller Reviews (${totalSellerEvaluated})`}</span>
               </div>
 
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-bold text-slate-700">
-                  {reviewsTab === 'product'
-                    ? (avgProductRating ? `${avgProductRating} ⭐` : (lang === 'vi' ? 'Chưa có điểm' : 'No rating'))
-                    : (realSellerRating ? `${realSellerRating} ⭐` : (lang === 'vi' ? 'Người bán mới' : 'New Seller'))}
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-bold text-slate-700 bg-amber-50 text-amber-800 px-2 py-0.5 rounded-md border border-amber-200/80">
+                  {realSellerRating ? `${realSellerRating} ⭐` : (lang === 'vi' ? 'Người bán mới' : 'New Seller')}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => onOpenSellerReviews?.(listing.sellerId, listing.sellerName)}
-                  className="px-2 py-0.5 rounded-md bg-amber-50 hover:bg-amber-100 text-amber-800 text-[10px] font-bold border border-amber-200 cursor-pointer transition"
-                >
-                  {lang === 'vi' ? 'Xem hồ sơ seller' : 'View profile'}
-                </button>
               </div>
             </div>
 
             {/* List of Reviews */}
-            {displayReviews.length === 0 ? (
+            {isLoadingReviews ? (
+              <div className="flex items-center justify-center py-6 gap-2 text-slate-400 text-xs bg-[#faf8f5] rounded-xl border border-gray-200">
+                <Loader2 className="w-4 h-4 animate-spin text-[#c34c36]" />
+                <span>{lang === 'vi' ? 'Đang tải đánh giá thực tế...' : 'Loading verified reviews...'}</span>
+              </div>
+            ) : realSellerReviews.length === 0 ? (
               <div className="text-center py-5 bg-[#faf8f5] rounded-xl border border-gray-200 text-slate-400 text-xs">
                 <Star className="w-5 h-5 mx-auto mb-1 text-gray-300" />
                 <p>
-                  {reviewsTab === 'product'
-                    ? (lang === 'vi' ? 'Chưa có đánh giá nào cho sản phẩm này từ người mua đã kiểm định.' : 'No reviews yet for this listing.')
-                    : (lang === 'vi' ? `Người bán chưa có nhận xét văn bản nào (${totalSellerEvaluated} đơn hàng đã hoàn tất).` : `No text reviews yet for this seller (${totalSellerEvaluated} orders completed).`)}
+                  {lang === 'vi'
+                    ? 'Người bán chưa có nhận xét văn bản nào từ người mua.'
+                    : 'No verified reviews yet for this seller.'}
                 </p>
               </div>
             ) : (
               <div className="space-y-2">
-                {displayReviews.map((rev) => (
+                {currentSellerPageReviews.map((rev) => (
                   <div
                     key={rev.id}
                     className="p-2.5 rounded-xl bg-[#faf8f5] border border-gray-200 space-y-1.5 hover:border-gray-300 transition"
@@ -991,7 +972,37 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                       </div>
                     </div>
 
+                    {/* Hiển thị sản phẩm đã mua kèm ảnh */}
+                    {rev.productName && (
+                      <div className="flex items-center gap-1.5 px-2 py-1 bg-white rounded-lg border border-gray-200/90 text-[10px] text-slate-600 w-fit">
+                        {rev.productImage && (
+                          <img
+                            src={rev.productImage}
+                            alt=""
+                            className="w-4 h-4 rounded object-cover border border-slate-200 shrink-0"
+                          />
+                        )}
+                        <span>
+                          {lang === 'vi' ? 'Sản phẩm đã mua:' : 'Item purchased:'}{' '}
+                          <strong className="text-slate-800 font-semibold">{rev.productName}</strong>
+                        </span>
+                      </div>
+                    )}
+
                     <p className="text-xs text-slate-700 leading-relaxed">{rev.comment}</p>
+
+                    {rev.photos && rev.photos.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 pt-0.5">
+                        {rev.photos.map((p, pIdx) => (
+                          <img
+                            key={pIdx}
+                            src={p}
+                            alt=""
+                            className="w-12 h-12 rounded-lg object-cover border border-gray-200"
+                          />
+                        ))}
+                      </div>
+                    )}
 
                     {rev.tags && rev.tags.length > 0 && (
                       <div className="flex flex-wrap gap-1 pt-0.5">
@@ -1014,6 +1025,38 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                     )}
                   </div>
                 ))}
+
+                {/* Pagination Controls (5 reviews per page) */}
+                {totalReviewPages > 1 && (
+                  <div className="flex items-center justify-between pt-2 px-1 text-xs text-slate-500 border-t border-gray-100">
+                    <span className="text-[11px] font-medium text-slate-500">
+                      {lang === 'vi'
+                        ? `Trang ${sellerReviewPage} / ${totalReviewPages} (${realSellerReviews.length} đánh giá)`
+                        : `Page ${sellerReviewPage} of ${totalReviewPages} (${realSellerReviews.length} reviews)`}
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        disabled={sellerReviewPage <= 1}
+                        onClick={() => setSellerReviewPage((prev) => Math.max(1, prev - 1))}
+                        className="px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed font-bold text-[11px] text-[#24263e] transition cursor-pointer shadow-2xs"
+                      >
+                        {lang === 'vi' ? '← Trước' : '← Prev'}
+                      </button>
+                      <span className="px-2 py-0.5 rounded-md bg-[#24263e] text-white font-black text-[11px]">
+                        {sellerReviewPage}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={sellerReviewPage >= totalReviewPages}
+                        onClick={() => setSellerReviewPage((prev) => Math.min(totalReviewPages, prev + 1))}
+                        className="px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed font-bold text-[11px] text-[#24263e] transition cursor-pointer shadow-2xs"
+                      >
+                        {lang === 'vi' ? 'Sau →' : 'Next →'}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1036,14 +1079,20 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => onChatClick(listing)}
-              className="text-[11px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-xl whitespace-nowrap shadow-xs flex items-center gap-1.5 cursor-pointer transition shrink-0"
-            >
-              <MessageSquare className="w-3.5 h-3.5" />
-              <span>{lang === 'vi' ? 'Thương Lượng Kiểm Định' : 'Negotiate Inspection'}</span>
-            </button>
+            {(isUnderInspectionOrReturning) ? (
+              <span className="text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-300 px-3 py-1.5 rounded-xl whitespace-nowrap shadow-xs flex items-center gap-1.5 shrink-0 cursor-not-allowed">
+                <span>{lang === 'vi' ? 'Đang kiểm định / hoàn trả' : 'Under inspection / returning'}</span>
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onChatClick(listing)}
+                className="text-[11px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-xl whitespace-nowrap shadow-xs flex items-center gap-1.5 cursor-pointer transition shrink-0"
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                <span>{lang === 'vi' ? 'Thương Lượng Kiểm Định' : 'Negotiate Inspection'}</span>
+              </button>
+            )}
           </div>
         </div>
       </div>

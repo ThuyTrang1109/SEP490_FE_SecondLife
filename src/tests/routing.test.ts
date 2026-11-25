@@ -219,3 +219,28 @@ test('admin login redirects fall back safely to admin dashboard when returnTo is
   // /unauthorized is rejected by safeReturnPath
   assert.equal(safeReturnPath('/unauthorized'), null);
 });
+
+test('inspector routes resolve safely to inspector workbench instead of customer home or unauthorized links', () => {
+  const inspectorUser = { role: 'inspector' as const, roles: ['INSPECTOR'] };
+
+  // Inspector visiting / redirects to /inspector/dashboard
+  const rootRoute = resolveAppRoute('/', 'inspector');
+  assert.equal(rootRoute.url, '/inspector/dashboard');
+  assert.equal(getRouteAccess(rootRoute, inspectorUser), 'allowed');
+
+  // Inspector pathForTab home and marketplace go to inspector workbench
+  assert.equal(pathForTab('home', 'inspector'), '/inspector/dashboard');
+  assert.equal(pathForTab('marketplace', 'inspector'), '/inspector/dashboard');
+  assert.equal(pathForTab('orders', 'inspector'), '/inspector/inspections');
+
+  // paths.decision and paths.orders generate valid inspector routes instead of buyer ones
+  assert.equal(paths.decision('inspector', 'insp-123'), '/inspector/inspections/insp-123');
+  assert.equal(paths.orders('inspector', 'ord-123'), '/inspector/inspections/ord-123');
+  assert.equal(paths.orders('inspector'), '/inspector/inspections');
+
+  // Legacy inspection decision URLs resolve to inspector inspection detail
+  assert.equal(resolveAppRoute('/buyer/inspections/insp-99/decision', 'inspector').url, '/inspector/inspections/insp-99');
+  assert.equal(resolveAppRoute('/inspections/insp-99', 'inspector').url, '/inspector/inspections/insp-99');
+  assert.equal(resolveAppRoute('/orders/ord-99', 'inspector').url, '/inspector/inspections/ord-99');
+  assert.equal(resolveAppRoute('/marketplace', 'inspector').url, '/inspector/dashboard');
+});

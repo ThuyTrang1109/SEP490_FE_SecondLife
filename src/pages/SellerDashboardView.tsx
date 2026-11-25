@@ -7,7 +7,6 @@ import {
   Clock,
   Tag,
   Eye,
-  Edit3,
   Star,
   TrendingUp,
   AlertCircle,
@@ -30,10 +29,10 @@ import {
   PackageCheck,
   Package
 } from 'lucide-react';
-import { Listing, Language, UserProfile, ItemBackend } from '../types';
+import { Listing, Language, UserProfile, ItemBackend, EscrowOrder } from '../types';
 import { itemService } from '../services/itemService';
 import { formatConditionGrade, formatVND } from '../utils/translations';
-import { getBoughtListingIds, getSortablePostTimestamp } from '../utils/orderUtils';
+import { getSortablePostTimestamp } from '../utils/orderUtils';
 import { sellerService, SellerVerificationResponseDto } from '../services/sellerService';
 import { sellerCreditService, CreditBalanceResponseDto } from '../services/sellerCreditService';
 import { mediaService } from '../services/mediaService';
@@ -47,9 +46,15 @@ import { WithdrawalModal } from '../components/modals/WithdrawalModal';
 import { extractWardAndCity, cleanFullAddress } from '../utils/addressUtils';
 import { dialogService } from '../utils/dialogService';
 import { resolveCategoryAndItem } from '../utils/catalogCache';
-import { isListingInspectionPassed } from '../utils/listingInspection';
+import {
+  isListingInspectionPassed,
+  getListingInspectionBadgeText,
+  resolveSellerListingInspectionState,
+} from '../utils/listingInspection';
 import { UserAvatar } from '../components/common/UserAvatar';
 import { PreListingInspectionWorkflow } from '../components/listing/PreListingInspectionWorkflow';
+import { SellerListingEditActions } from '../components/listing/SellerListingEditActions';
+import { ListingShippingPackageModal } from '../components/listing/ListingShippingPackageModal';
 import { DigitalInspectionCertificateModal } from '../components/modals/DigitalInspectionCertificateModal';
 import { getSellerPreListingInspections, hasPreListingInspectionResult } from '../services/orderFeedService';
 import { inspectorService, type InspectionOrderDto } from '../services/inspectorService';
@@ -58,10 +63,13 @@ import { getPreListingHomeAppointmentStage } from '../utils/inspectionTaskStatus
 import { formatInspectionFailureReason } from '../utils/inspectionPurchase';
 import { getLatestInboundShipment } from '../utils/inspectionCenterData';
 import { getSellerHubShipmentBadge, type SellerHubShipmentSnapshot } from '../utils/sellerHighValueInspection';
-import { shippingService } from '../services/shippingService';
+import { shippingService, type ShippingParcel } from '../services/shippingService';
+import { getPostReturnStatus } from '../utils/orderUtils';
+import { userReportService, type SellerOrderDisputeDto } from '../services/userReportService';
 
 interface SellerDashboardViewProps {
   listings: Listing[];
+  orders?: EscrowOrder[];
   onSelectListing: (listing: Listing) => void;
   onCreateListing: (draft?: Listing) => void;
   onViewOrders?: () => void;
@@ -94,6 +102,7 @@ function getPaginationRange(current: number, total: number): (number | '...')[] 
 
 export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
   listings,
+  orders,
   onSelectListing,
   onCreateListing,
   onViewOrders,
@@ -106,6 +115,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
   const [draftToDelete, setDraftToDelete] = useState<{ id: string; title: string } | null>(null);
   const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null);
   const [toastNotice, setToastNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [sellerDisputes, setSellerDisputes] = useState<SellerOrderDisputeDto[]>([]);
   const [preListingPost, setPreListingPost] = useState<Listing | null>(null);
   const [publishingPostId, setPublishingPostId] = useState<string | null>(null);
   const [resultListing, setResultListing] = useState<Listing | null>(null);
@@ -158,86 +168,6 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
     }
   };
 
-  const [loadingDetailPostId, setLoadingDetailPostId] = useState<string | null>(null);
-
-  const handleOpenSellerPostDetail = async (item: Listing) => {
-    try {
-      setLoadingDetailPostId(item.id);
-      const detail = await postService.getMyPostDetail(item.id);
-      if (detail && detail.id) {
-        const rawImages: string[] = Array.isArray(detail.imageUrls) && detail.imageUrls.length > 0
-          ? detail.imageUrls
-          : (item.photoGallery || []);
-
-        const enriched: Listing = {
-          ...item,
-          id: detail.id,
-          categoryId: detail.categoryId || item.categoryId,
-          itemId: detail.itemId || item.itemId,
-          title: detail.title || item.title,
-          description: detail.description || item.description,
-          priceVnd: Number(detail.price ?? item.priceVnd),
-          originalPriceVnd: Number(detail.aiSuggestedPrice || detail.price || item.originalPriceVnd),
-          declaredConditionText: detail.itemCondition || item.declaredConditionText,
-          conditionGrade: (detail.itemCondition || item.conditionGrade) as any,
-          status: (
-            detail.status === 'ACTIVE'
-              ? 'active'
-              : detail.status === 'DRAFT'
-                ? 'draft'
-                : detail.status === 'REJECTED'
-                  ? 'rejected'
-                  : 'reserved'
-          ) as any,
-          backendStatus: detail.status || item.backendStatus,
-          rejectionReason: detail.rejectionReason ?? item.rejectionReason,
-          listingCreditCharged: detail.listingCreditCharged ?? item.listingCreditCharged,
-          shippingWeight: detail.shippingWeight != null ? Number(detail.shippingWeight) : item.shippingWeight,
-          shippingLength: detail.shippingLength != null ? Number(detail.shippingLength) : item.shippingLength,
-          shippingWidth: detail.shippingWidth != null ? Number(detail.shippingWidth) : item.shippingWidth,
-          shippingHeight: detail.shippingHeight != null ? Number(detail.shippingHeight) : item.shippingHeight,
-          sellerAddress: cleanFullAddress(detail.user?.address ?? ''),
-          location: extractWardAndCity(detail.user?.address ?? ''),
-          sellerName: detail.user?.fullName || currentUser?.name || item.sellerName,
-          sellerId: detail.user?.id || item.sellerId,
-          photoGallery: rawImages,
-          photos: {
-            ...item.photos,
-            front: rawImages[0] || item.photos?.front || '',
-            back: rawImages[1] || item.photos?.back || '',
-            screenOrDetails: rawImages[2] || item.photos?.screenOrDetails || '',
-            accessoriesOrBox: rawImages[3] || item.photos?.accessoriesOrBox || '',
-            serialOrReceipt: rawImages[4] || item.photos?.serialOrReceipt || '',
-            extraDetail: rawImages[5] || item.photos?.extraDetail || '',
-          },
-          createdAt: detail.createdAt || item.createdAt,
-        };
-
-        onSelectListing(enriched);
-        return;
-      }
-    } catch (err: any) {
-      console.warn('Lỗi gọi API GET /v1/posts/my-posts/{postId}, fallback sang item hiện tại:', err);
-      if (err?.status === 404) {
-        showToastNotice('error', lang === 'vi' ? 'Bài đăng không tồn tại hoặc đã bị xóa.' : 'Listing not found.');
-        fetchSellerData();
-        return;
-      }
-      if (err?.status === 403) {
-        showToastNotice('error', lang === 'vi' ? 'Bạn không có quyền xem chi tiết bài đăng này.' : 'You do not have permission to view this listing.');
-        return;
-      }
-      if (err?.status === 400) {
-        showToastNotice('error', lang === 'vi' ? 'Mã bài đăng không hợp lệ.' : 'Invalid listing ID.');
-        return;
-      }
-    } finally {
-      setLoadingDetailPostId(null);
-    }
-    // Fallback nếu có lỗi mạng
-    onSelectListing(item);
-  };
-
   const [isPayoutModalOpen, setIsPayoutModalOpen] = useState(false);
   const [bankName, setBankName] = useState(currentUser?.bankAccount?.bankName || '');
   const [accountNumber, setAccountNumber] = useState(currentUser?.bankAccount?.accountNumber || '');
@@ -272,6 +202,19 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
 
   // Real Backend Posts State
   const [myServerPosts, setMyServerPosts] = useState<Listing[]>([]);
+  const [editingPackagePost, setEditingPackagePost] = useState<Listing | null>(null);
+
+  const handlePackageSaved = (postId: string, parcel: ShippingParcel) => {
+    setMyServerPosts((posts) => posts.map((post) => post.id === postId ? {
+      ...post,
+      shippingWeight: parcel.weight,
+      shippingLength: parcel.length,
+      shippingWidth: parcel.width,
+      shippingHeight: parcel.height,
+    } : post));
+    setEditingPackagePost(null);
+    showToastNotice('success', lang === 'vi' ? 'Đã cập nhật thông tin kiện hàng.' : 'Shipping package updated.');
+  };
   const [isLoadingPosts, setIsLoadingPosts] = useState(false);
 
   // Reclassify Item Modal State (chọn lại loại thiết bị khi danh mục tách item)
@@ -284,16 +227,15 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
 
   const handleOpenReclassifyModal = async (item: Listing) => {
     setReclassifyingPost(item);
+    setReclassifyItems([]);
     setSelectedReclassifyItemId(item.itemId || '');
     setReclassifyError(null);
     setIsLoadingReclassifyItems(true);
     try {
       const itms = await itemService.getItemsByCategory(item.categoryId || '');
-      const selectable = (Array.isArray(itms) ? itms : []).filter((i: any) => i.selectable !== false);
+      const selectable = itms.filter((item) => item.selectable !== false);
       setReclassifyItems(selectable);
-      if (selectable.length > 0 && !selectable.some((i: any) => i.id === item.itemId)) {
-        setSelectedReclassifyItemId(selectable[0].id);
-      }
+      setSelectedReclassifyItemId(selectable[0]?.id ?? '');
     } catch (err: any) {
       setReclassifyError(err?.message || 'Không thể tải danh sách thiết bị');
     } finally {
@@ -315,6 +257,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
               ...p,
               itemId: selectedReclassifyItemId,
               itemName: chosenItem?.name || p.itemName,
+              sellerActions: p.sellerActions && { ...p.sellerActions, reclassifyItem: false },
             };
           }
           return p;
@@ -592,6 +535,16 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
         })
         .catch(() => { });
 
+      userReportService.getSellerDisputes(0, 50)
+        .then((dispRes) => {
+          const items = dispRes?.items || [];
+          setSellerDisputes(items);
+          try {
+            localStorage.setItem('sl_seller_disputes', JSON.stringify(items));
+          } catch {}
+        })
+        .catch(() => { });
+
       const res = await postService.getMyPosts(0, 50);
       const posts = (res as any)?.items || (res as any)?.data?.items || (res as any)?.content || (res as any)?.data || (Array.isArray(res) ? res : []);
       if (posts && posts.length > 0) {
@@ -606,7 +559,10 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
           const loc = extractWardAndCity(sellerAddr);
 
           const isDraft = p.status === 'DRAFT';
-          const isSold = String(p.status || '').toUpperCase() === 'SOLD';
+          const returnStatus = getPostReturnStatus(p, orders, sellerDisputes);
+          const isReturning = Boolean(returnStatus?.isReturning);
+          const isReturned = Boolean(returnStatus?.isReturned);
+          const isSold = !isReturning && !isReturned && String(p.status || '').toUpperCase() === 'SOLD';
           const isAwaitingInspectionPublication = p.status === 'PENDING_INSPECTION' || p.status === 'READY_TO_PUBLISH';
           const draftTitle = p.title || (isDraft ? 'Bản nháp sản phẩm' : 'Thiết bị gia dụng SecondLife');
           const draftDesc = p.description || p.aiDescription || '';
@@ -649,26 +605,23 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             })(),
             sellerCompletedOrders: 0,
             sellerVerified: true,
-            status: (
-              isAwaitingInspectionPublication ? 'pending_inspection'
-                : localStorage.getItem(`listing_available_${p.postId || p.id}`) === 'true'
-                  ? 'active'
-                  : isSold
-                    ? 'sold'
-                    : (getBoughtListingIds().has(String(p.postId || p.id)) ? 'reserved' : (p.status === 'ACTIVE' ? 'active' : p.status === 'DRAFT' ? 'draft' : p.status === 'REJECTED' ? 'rejected' : 'reserved'))
-            ) as any,
-            backendStatus: (
-              isAwaitingInspectionPublication ? p.status
-                : localStorage.getItem(`listing_available_${p.postId || p.id}`) === 'true'
-                  ? 'ACTIVE'
-                  : isSold
-                    ? 'SOLD'
-                    : (getBoughtListingIds().has(String(p.postId || p.id)) ? 'RESERVED' : p.status)
-            ),
+            status: isAwaitingInspectionPublication ? 'pending_inspection'
+              : isReturning ? 'reserved'
+                : isReturned ? 'draft'
+                  : isSold ? 'sold'
+                    : p.status === 'ACTIVE' ? 'active'
+                      : isDraft ? 'draft'
+                        : p.status === 'REJECTED' ? 'rejected' : 'reserved',
+            backendStatus: isReturning ? 'RETURNING'
+              : isReturned ? 'RETURNED'
+                : p.status,
+            sellerActions: p.sellerActions,
             rejectionReason: p.rejectionReason,
             createdAt: p.createdAt || p.createdDate || p.created_at || p.publishedAt || p.updatedAt || new Date().toISOString(),
             isInspectionGuaranteed: true,
             requiresInspection: Number(p.price || 0) > 5000000,
+            isInspected: typeof p.isInspected === 'boolean' ? p.isInspected : undefined,
+            inspectionMethod: p.inspectionMethod || p.orderType || undefined,
             photos: {
               front: rawImages[0] || primaryImage,
               back: rawImages[1] || '',
@@ -775,7 +728,16 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
 
   // Chỉ lấy bài đăng thuộc về chính tài khoản người bán hiện tại (tuyệt đối không lấy bài/bản nháp của người bán khác)
   const combinedListings = React.useMemo(() => {
-    const list = [...myServerPosts];
+    const listingsById = new Map(listings.map((item) => [item.id, item]));
+    const list = myServerPosts.map((post) => {
+      const fromApp = listingsById.get(post.id);
+      if (!fromApp) return post;
+      return {
+        ...post,
+        isInspected: post.isInspected ?? fromApp.isInspected,
+        inspectionMethod: post.inspectionMethod ?? fromApp.inspectionMethod,
+      };
+    });
     const existingIds = new Set(myServerPosts.map(p => p.id));
     for (const item of listings) {
       const isMine =
@@ -816,7 +778,11 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
     if (currentUser?.completedOrdersCount !== undefined && currentUser?.completedOrdersCount !== null && currentUser.completedOrdersCount > 0) {
       return currentUser.completedOrdersCount;
     }
-    const soldListingsCount = combinedListings.filter((l) => l.status === 'sold' || (l as any).backendStatus === 'SOLD').length;
+    const soldListingsCount = combinedListings.filter((l) =>
+      (l.status === 'sold' || (l as any).backendStatus === 'SOLD') &&
+      (l as any).backendStatus !== 'RETURNING' &&
+      (l as any).backendStatus !== 'RETURNED'
+    ).length;
     return soldListingsCount > 0 ? soldListingsCount : (myReputation?.goodTransactions ?? 0);
   }, [myReputation?.goodTransactions, currentUser?.completedOrdersCount, combinedListings]);
 
@@ -958,21 +924,10 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       if (filterStatus === 'rejected') {
         return l.backendStatus === 'REJECTED';
       }
-      if (filterStatus === 'active') {
-        const isExplicitlyAvail = localStorage.getItem(`listing_available_${l.id}`) === 'true';
-        if (!isExplicitlyAvail && (getBoughtListingIds().has(String(l.id)) || l.backendStatus === 'RESERVED' || l.backendStatus === 'SOLD' || l.status === 'reserved' || l.status === 'sold')) {
-          return false;
-        }
-        return l.backendStatus === 'ACTIVE' || l.status === 'active' || isExplicitlyAvail;
-      }
-      if (filterStatus === 'reserved') {
-        const isExplicitlyAvail = localStorage.getItem(`listing_available_${l.id}`) === 'true';
-        if (isExplicitlyAvail) return false;
-        if (l.backendStatus === 'SOLD' || l.status === 'sold') return false;
-        return getBoughtListingIds().has(String(l.id)) || l.backendStatus === 'RESERVED' || l.status === 'reserved';
-      }
+      if (filterStatus === 'active') return (l.backendStatus === 'ACTIVE' || l.status === 'active') && l.backendStatus !== 'RETURNING' && l.backendStatus !== 'RETURNED';
+      if (filterStatus === 'reserved') return l.backendStatus === 'RESERVED' || l.status === 'reserved' || l.backendStatus === 'RETURNING';
       if (filterStatus === 'sold') {
-        return l.backendStatus === 'SOLD' || l.status === 'sold';
+        return (l.backendStatus === 'SOLD' || l.status === 'sold') && l.backendStatus !== 'RETURNING' && l.backendStatus !== 'RETURNED';
       }
       return l.status === filterStatus;
     });
@@ -1122,6 +1077,10 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
         label = vi ? '● Đang bán' : '● Active';
       } else if (item.backendStatus === 'RESERVED' || item.backendStatus === 'PAYMENT_PENDING') {
         label = vi ? '● Đã Cọc Ký Quỹ' : '● Escrow Deposited';
+      } else if (item.backendStatus === 'RETURNING') {
+        label = vi ? '● Đang hoàn trả' : '● Returning';
+      } else if (item.backendStatus === 'RETURNED') {
+        label = vi ? '● Đã hoàn trả' : '● Returned';
       } else if (item.backendStatus === 'SOLD') {
         label = vi ? '● Đã bán' : '● Sold';
       } else if (item.backendStatus === 'PENDING_INSPECTION' && insp?.orderType === 'AT_CENTER') {
@@ -1715,6 +1674,8 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                 const insp = getItemInspectionOrder(item);
                 const appointmentStage = getPreListingHomeAppointmentStage(insp);
                 const canPublish = item.backendStatus === 'READY_TO_PUBLISH';
+                const canTrackInspection = item.backendStatus === 'PENDING_INSPECTION' || canPublish
+                  || (item.backendStatus === 'REJECTED' && stage === 'failed' && Boolean(insp));
                 const badgeInfo = getHighValueBadgeInfo(item);
                 const failureReason = stage === 'failed'
                   ? formatInspectionFailureReason(item.rejectionReason, lang) ||
@@ -1745,7 +1706,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                           {badgeInfo.isPassed && (
                             <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
                               <ShieldCheck className="w-3 h-3 text-emerald-600" />
-                              <span>{lang === 'vi' ? 'Đã đạt kiểm định tại Hub' : 'Hub Inspected'}</span>
+                              <span>{getListingInspectionBadgeText(insp?.orderType || item.inspectionMethod, lang, true)}</span>
                             </span>
                           )}
                         </div>
@@ -1803,20 +1764,14 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                         </button>
                       )}
                       <button
-                        onClick={() => handleOpenSellerPostDetail(item)}
-                        disabled={loadingDetailPostId === item.id}
+                        onClick={() => onSelectListing(item)}
                         className="h-9 px-3.5 w-[124px] bg-[#24263e] hover:bg-black border border-[#24263e] rounded-xl text-xs font-bold text-white flex items-center justify-center gap-1.5 cursor-pointer transition shadow-xs disabled:opacity-60 shrink-0"
                       >
-                        {loadingDetailPostId === item.id ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <Eye className="w-3.5 h-3.5" />
-                        )}
+                        <Eye className="w-3.5 h-3.5" />
                         <span>{lang === 'vi' ? 'Chi tiết' : 'View Details'}</span>
                       </button>
 
-                      {/* Nút quy trình kiểm định */}
-                      <button
+                      {canTrackInspection && <button
                         type="button"
                         onClick={() => setPreListingPost(item)}
                         className={`h-9 px-3.5 min-w-[145px] rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition shadow-xs shrink-0 ${stage === 'passed'
@@ -1845,7 +1800,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                               ? (lang === 'vi' ? 'Thủ tục hoàn hàng' : 'Return Process')
                               : (lang === 'vi' ? 'Tiếp tục kiểm định' : 'Resume Inspection')}
                         </span>
-                      </button>
+                      </button>}
 
                       {hasPreListingInspectionResult(insp) && (
                         <button
@@ -1858,22 +1813,13 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                         </button>
                       )}
 
-                      <button
-                        onClick={() => onCreateListing(item)}
-                        className="w-9 h-9 bg-white hover:bg-slate-100 border border-slate-200 text-[#24263e] rounded-xl text-xs font-semibold flex items-center justify-center cursor-pointer transition shadow-2xs shrink-0"
-                        title={lang === 'vi' ? 'Sửa tin đăng' : 'Edit listing'}
-                      >
-                        <Edit3 className="w-4 h-4 text-slate-700" />
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleOpenReclassifyModal(item)}
-                        className="w-9 h-9 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-xl text-xs font-semibold flex items-center justify-center cursor-pointer transition shadow-2xs shrink-0"
-                        title={lang === 'vi' ? 'Chọn lại loại thiết bị cụ thể' : 'Reclassify item'}
-                      >
-                        <Sliders className="w-4 h-4 text-slate-600" />
-                      </button>
+                      <SellerListingEditActions
+                        actions={item.sellerActions}
+                        lang={lang}
+                        onEdit={() => onCreateListing(item)}
+                        onUpdateShippingPackage={() => setEditingPackagePost(item)}
+                        onReclassify={() => handleOpenReclassifyModal(item)}
+                      />
                     </div>
                   </div>
                 );
@@ -1998,21 +1944,10 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                 const isActive = filterStatus === st;
                 const count = normalListings.filter(item => {
                   if (st === 'ALL') return true;
-                  if (st === 'active') {
-                    const isExplicitlyAvail = localStorage.getItem(`listing_available_${item.id}`) === 'true';
-                    if (!isExplicitlyAvail && (getBoughtListingIds().has(String(item.id)) || item.backendStatus === 'RESERVED' || item.backendStatus === 'SOLD' || item.status === 'reserved' || item.status === 'sold')) {
-                      return false;
-                    }
-                    return item.status === 'active' || item.backendStatus === 'ACTIVE' || isExplicitlyAvail;
-                  }
-                  if (st === 'draft') return item.backendStatus === 'DRAFT' || item.status === 'draft';
-                  if (st === 'reserved') {
-                    const isExplicitlyAvail = localStorage.getItem(`listing_available_${item.id}`) === 'true';
-                    if (isExplicitlyAvail) return false;
-                    if (item.backendStatus === 'SOLD' || item.status === 'sold') return false;
-                    return item.status === 'reserved' || item.backendStatus === 'RESERVED' || getBoughtListingIds().has(String(item.id));
-                  }
-                  if (st === 'sold') return item.status === 'sold' || item.backendStatus === 'SOLD';
+                  if (st === 'active') return (item.backendStatus === 'ACTIVE' || item.status === 'active') && item.backendStatus !== 'RETURNING' && item.backendStatus !== 'RETURNED';
+                  if (st === 'draft') return item.backendStatus === 'DRAFT' || item.status === 'draft' || item.backendStatus === 'RETURNED';
+                  if (st === 'reserved') return item.backendStatus === 'RESERVED' || item.status === 'reserved' || item.backendStatus === 'RETURNING';
+                  if (st === 'sold') return (item.status === 'sold' || item.backendStatus === 'SOLD') && item.backendStatus !== 'RETURNING' && item.backendStatus !== 'RETURNED';
                   if (st === 'rejected') return item.backendStatus === 'REJECTED' || item.status === 'rejected';
                   return true;
                 }).length;
@@ -2061,7 +1996,20 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             </div>
           ) : (
             <div className="space-y-4">
-              {paginatedNormalListings.map((item) => (
+              {paginatedNormalListings.map((item) => {
+                const sellerInspectionState = resolveSellerListingInspectionState(
+                  item,
+                  inspectionByPost?.get(item.id),
+                  orders,
+                );
+                const detailListing = sellerInspectionState.passed
+                  ? {
+                      ...item,
+                      isInspected: true,
+                      inspectionMethod: sellerInspectionState.method ?? item.inspectionMethod,
+                    }
+                  : item;
+                return (
                 <div
                   key={item.id}
                   className="bg-white hover:bg-slate-50/70 rounded-2xl p-4 sm:p-5 border border-slate-200 hover:border-slate-300 hover:shadow-md transition-all duration-200 flex flex-col lg:flex-row lg:items-center justify-between gap-5 group"
@@ -2076,28 +2024,36 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                       <div className="flex flex-wrap items-center gap-2">
                         <span className={`inline-block text-[11px] font-bold px-2.5 py-1 rounded-full ${item.backendStatus === 'REJECTED'
                           ? 'bg-rose-600 text-white'
-                          : item.backendStatus === 'DRAFT' || item.status === 'draft'
-                            ? 'bg-slate-500 text-white'
-                            : item.status === 'sold' || item.backendStatus === 'SOLD'
-                              ? 'bg-slate-700 text-white'
-                              : item.status === 'active'
-                                ? 'bg-[#24263e] text-white'
-                                : 'bg-[#c34c36] text-white'
+                          : item.backendStatus === 'RETURNING'
+                            ? 'bg-amber-600 text-white'
+                            : item.backendStatus === 'RETURNED'
+                              ? 'bg-purple-600 text-white'
+                              : item.backendStatus === 'DRAFT' || item.status === 'draft'
+                                ? 'bg-slate-500 text-white'
+                                : item.status === 'sold' || item.backendStatus === 'SOLD'
+                                  ? 'bg-slate-700 text-white'
+                                  : item.status === 'active'
+                                    ? 'bg-[#24263e] text-white'
+                                    : 'bg-[#c34c36] text-white'
                           }`}>
                           {item.backendStatus === 'REJECTED'
                             ? (lang === 'vi' ? '● Bị Từ Chối' : '● Rejected')
-                            : item.backendStatus === 'DRAFT' || item.status === 'draft'
-                              ? (lang === 'vi' ? '● Bản Nháp' : '● Draft')
-                              : item.status === 'sold' || item.backendStatus === 'SOLD'
-                                ? (lang === 'vi' ? '● Đã bán' : '● Sold')
-                                : item.status === 'active'
-                                  ? (lang === 'vi' ? '● Đang bán' : '● Active')
-                                  : (lang === 'vi' ? '● Đã Cọc Ký Quỹ' : '● Escrow Deposited')}
+                            : item.backendStatus === 'RETURNING'
+                              ? (lang === 'vi' ? '● Đang hoàn trả' : '● Returning')
+                              : item.backendStatus === 'RETURNED'
+                                ? (lang === 'vi' ? '● Đã hoàn trả' : '● Returned')
+                                : item.backendStatus === 'DRAFT' || item.status === 'draft'
+                                  ? (lang === 'vi' ? '● Bản Nháp' : '● Draft')
+                                  : item.status === 'sold' || item.backendStatus === 'SOLD'
+                                    ? (lang === 'vi' ? '● Đã bán' : '● Sold')
+                                    : item.status === 'active'
+                                      ? (lang === 'vi' ? '● Đang bán' : '● Active')
+                                      : (lang === 'vi' ? '● Đã Cọc Ký Quỹ' : '● Escrow Deposited')}
                         </span>
-                        {isListingInspectionPassed(item) && (
+                        {sellerInspectionState.passed && (
                           <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-600 text-white shadow-2xs">
                             <ShieldCheck className="w-3 h-3 text-emerald-100" />
-                            <span>{lang === 'vi' ? 'Đã đạt kiểm định tại Hub' : 'Hub Inspected'}</span>
+                            <span>{getListingInspectionBadgeText(sellerInspectionState.method, lang, true)}</span>
                           </span>
                         )}
                       </div>
@@ -2138,17 +2094,12 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                     </div>
                   </div>
 
-                  <div className="pt-3 lg:pt-0 border-t lg:border-t-0 border-slate-100 flex items-center justify-end gap-2 flex-wrap sm:flex-nowrap shrink-0 lg:w-[256px] lg:self-center">
+                  <div className="pt-3 lg:pt-0 border-t lg:border-t-0 border-slate-100 flex items-center justify-end gap-2 flex-wrap shrink-0 lg:max-w-[55%] lg:self-center">
                     <button
-                      onClick={() => handleOpenSellerPostDetail(item)}
-                      disabled={loadingDetailPostId === item.id}
+                      onClick={() => onSelectListing(detailListing)}
                       className="h-9 px-3.5 w-[124px] bg-[#24263e] hover:bg-black border border-[#24263e] rounded-xl text-xs font-bold text-white flex items-center justify-center gap-1.5 cursor-pointer transition shadow-xs disabled:opacity-60 shrink-0"
                     >
-                      {loadingDetailPostId === item.id ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <Eye className="w-3.5 h-3.5" />
-                      )}
+                      <Eye className="w-3.5 h-3.5" />
                       <span>{lang === 'vi' ? 'Chi tiết' : 'View Details'}</span>
                     </button>
                     {hasPreListingInspectionResult(inspectionByPost?.get(item.id)) && (
@@ -2161,26 +2112,14 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                         <span>{lang === 'vi' ? 'Xem kết quả' : 'Result'}</span>
                       </button>
                     )}
-                    <button
-                      onClick={() => onCreateListing(item)}
-                      className="w-9 h-9 bg-white hover:bg-slate-100 border border-slate-200 text-[#24263e] rounded-xl text-xs font-semibold flex items-center justify-center cursor-pointer transition shadow-2xs shrink-0"
-                      title={
-                        item.backendStatus === 'DRAFT' || item.status === 'draft'
-                          ? (lang === 'vi' ? 'Tiếp tục soạn bản nháp' : 'Resume draft')
-                          : (lang === 'vi' ? 'Sửa tin đăng' : 'Edit listing')
-                      }
-                    >
-                      <Edit3 className="w-4 h-4 text-slate-700" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleOpenReclassifyModal(item)}
-                      className="w-9 h-9 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-xl text-xs font-semibold flex items-center justify-center cursor-pointer transition shadow-2xs shrink-0"
-                      title={lang === 'vi' ? 'Chọn lại loại thiết bị cụ thể' : 'Reclassify item'}
-                    >
-                      <Sliders className="w-4 h-4 text-slate-600" />
-                    </button>
-                    {(item.backendStatus === 'DRAFT' || item.status === 'draft') ? (
+                    <SellerListingEditActions
+                      actions={item.sellerActions}
+                      lang={lang}
+                      onEdit={() => onCreateListing(item)}
+                      onUpdateShippingPackage={() => setEditingPackagePost(item)}
+                      onReclassify={() => handleOpenReclassifyModal(item)}
+                    />
+                    {item.backendStatus === 'DRAFT' && item.sellerActions?.editContent && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -2192,12 +2131,11 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                       >
                         <Trash2 className="w-4 h-4 text-rose-600" />
                       </button>
-                    ) : (
-                      <div className="w-9 h-9 shrink-0 hidden lg:block pointer-events-none" aria-hidden="true" />
                     )}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
@@ -2277,6 +2215,17 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
           setTimeout(() => setPayoutSuccessMsg(null), 5000);
         }}
       />
+
+      {editingPackagePost && (
+        <ListingShippingPackageModal
+          key={editingPackagePost.id}
+          postId={editingPackagePost.id}
+          title={editingPackagePost.title}
+          lang={lang}
+          onClose={() => setEditingPackagePost(null)}
+          onSaved={(parcel) => handlePackageSaved(editingPackagePost.id, parcel)}
+        />
+      )}
 
       {/* Modal Chọn lại loại thiết bị (Reclassify Item Modal) */}
       {reclassifyingPost && (

@@ -69,7 +69,7 @@ export function getAssessmentStatusMeta(status?: string | null): {
     case 'EVALUATED':
       return {
         label: 'Đủ số đơn tham chiếu',
-        shortLabel: 'Đã thẩm định (≥5 đơn)',
+        shortLabel: '',
         badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
         desc: 'Đã tích lũy đủ từ 5 đơn hàng đánh giá trở lên. Điểm có độ tin cậy chuẩn.',
       };
@@ -328,10 +328,10 @@ export const reputationService = {
       const rawList = Array.isArray(data?.items)
         ? data.items
         : Array.isArray(data?.content)
-        ? data.content
-        : Array.isArray(data)
-        ? data
-        : [];
+          ? data.content
+          : Array.isArray(data)
+            ? data
+            : [];
 
       return {
         items: rawList,

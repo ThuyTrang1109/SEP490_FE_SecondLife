@@ -35,6 +35,7 @@ import { SellerDisputeFees } from '../components/seller/SellerDisputeFees';
 import { SellerOrderDisputes } from '../components/seller/SellerOrderDisputes';
 import { shippingService } from '../services/shippingService';
 import { formatVND } from '../utils/translations';
+import { formatDisputeDateTime } from '../utils/orders/orderDispute';
 import {
   userReportService,
   UserReportResponseDto,
@@ -729,7 +730,7 @@ export const MyDisputesView: React.FC<MyDisputesViewProps> = ({
                                   <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                                   <span>
                                     {lang === 'vi' ? 'Ra quyết định: ' : 'Resolved: '}
-                                    {new Date(report.resolvedAt).toLocaleDateString('vi-VN')}
+                                    {formatDisputeDateTime(report.resolvedAt)}
                                   </span>
                                 </div>
                               )}
@@ -953,7 +954,8 @@ export const MyDisputesView: React.FC<MyDisputesViewProps> = ({
                           </p>
                         )}
                         <div className="text-[10px] text-slate-500 pt-1">
-                          Ngày ra quyết định: {new Date(selectedReport.resolvedAt).toLocaleString('vi-VN')}
+                          {lang === 'vi' ? 'Thời gian ra quyết định: ' : 'Decision time: '}
+                          {formatDisputeDateTime(selectedReport.resolvedAt)}
                         </div>
                       </div>
                     ) : (

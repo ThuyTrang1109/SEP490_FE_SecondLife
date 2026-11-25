@@ -1022,19 +1022,22 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
     updateCombinedAddress(selectedProvinceId, selectedWardId, text);
   };
 
-  // Load provinces and saved pickup address on open
+  // Load provinces when editing/settings and saved pickup address on open
   useEffect(() => {
-    if (isOpen) {
-      shippingService.getProvinces()
-        .then((pList) => {
-          if (Array.isArray(pList) && pList.length > 0) {
-            setProvinces(pList);
-          }
-        })
-        .catch((err) => console.warn('Load provinces fallback:', err));
-      fetchAddressFromBackend(false);
-    }
+    if (!isOpen) return;
+    fetchAddressFromBackend(false);
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || (!isEditing && activeTab !== 'settings')) return;
+    shippingService.getProvinces()
+      .then((pList) => {
+        if (Array.isArray(pList) && pList.length > 0) {
+          setProvinces(pList);
+        }
+      })
+      .catch(() => { });
+  }, [isOpen, isEditing, activeTab]);
 
   // Định vị GPS trực tiếp & tự động điền địa chỉ kho
   const handleUseCurrentLocation = () => {
@@ -3695,14 +3698,20 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                             type="email"
                             required
                             value={shopEmail}
+                            disabled={isShopEmailVerified}
+                            readOnly={isShopEmailVerified}
                             onChange={(e) => {
+                              if (isShopEmailVerified) return;
                               setShopEmail(e.target.value);
                               setIsShopEmailVerified(false);
                               setShopOtpSuccess(null);
                               setShopOtpError(null);
                             }}
                             placeholder="seller@example.com"
-                            className="flex-1 px-3 py-2 rounded-xl border border-gray-200 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none text-xs bg-white text-slate-900"
+                            className={`flex-1 px-3 py-2 rounded-xl border border-gray-200 outline-none text-xs ${isShopEmailVerified
+                              ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200'
+                              : 'bg-white text-slate-900 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36]'
+                              }`}
                           />
 
                           <button
@@ -3710,7 +3719,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                             onClick={handleSendShopOtp}
                             disabled={isSendingShopOtp || shopOtpCountdown > 0 || isShopEmailVerified}
                             className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer ${isShopEmailVerified
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-default'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-not-allowed'
                               : 'bg-[#24263e] hover:bg-black text-white disabled:opacity-50'
                               }`}
                           >
@@ -3972,9 +3981,6 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                               <label className="text-[10px] font-bold text-slate-700 block truncate">
                                 {lang === 'vi' ? '3. Ảnh Chân Dung Selfie' : '3. Selfie Photo'} <span className="text-red-500">*</span>
                               </label>
-                              <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 shrink-0">
-                                {lang === 'vi' ? 'AI So Khớp' : 'AI Match'}
-                              </span>
                             </div>
                             <div className="relative border border-dashed border-slate-300 hover:border-[#c34c36] rounded-2xl p-2.5 bg-white text-center transition h-[145px] flex flex-col justify-between">
                               {selfieUrl ? (
@@ -3998,19 +4004,15 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                                       {vnptClientSession ? 'VNPT eKYC' : 'OK'}
                                     </div>
                                   </div>
-                                  <div className="flex items-center justify-between px-0.5 text-[10px]">
+                                  <div className="flex items-center justify-center px-0.5 text-[10px]">
                                     <button
                                       type="button"
                                       onClick={() => setIsFaceScannerOpen(true)}
-                                      className="text-[#c34c36] font-bold hover:underline cursor-pointer flex items-center gap-0.5"
+                                      className="text-[#c34c36] font-bold hover:underline cursor-pointer flex items-center gap-1"
                                     >
                                       <Camera className="w-3 h-3" />
                                       <span>{lang === 'vi' ? 'Quét lại' : 'Rescan'}</span>
                                     </button>
-                                    <label className="text-slate-500 hover:text-slate-800 font-bold underline cursor-pointer">
-                                      {lang === 'vi' ? 'Đổi tệp' : 'Upload'}
-                                      <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, 'selfie')} />
-                                    </label>
                                   </div>
                                 </div>
                               ) : (
@@ -4020,15 +4022,12 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                                     onClick={() => setIsFaceScannerOpen(true)}
                                     className="w-full py-2 px-2 bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-slate-900 rounded-xl text-[10px] font-bold shadow-xs hover:opacity-95 transition flex items-center justify-center gap-1 cursor-pointer"
                                   >
-                                    <Camera className="w-3.5 h-3.5 text-slate-900" />
+                                    <Camera className="w-3.5 h-3.5 text-slate-900 shrink-0" />
                                     <span>{lang === 'vi' ? 'Mở Camera Quét Mặt' : 'Scan Face'}</span>
                                   </button>
-                                  <label className="text-[9px] text-slate-500 hover:text-[#24263e] underline font-bold cursor-pointer block text-center">
-                                    {uploadingField === 'selfie'
-                                      ? (lang === 'vi' ? 'Đang tải lên...' : 'Uploading...')
-                                      : (lang === 'vi' ? 'Hoặc chọn ảnh từ máy' : 'Or select photo')}
-                                    <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, 'selfie')} />
-                                  </label>
+                                  <span className="text-[9px] text-slate-500 font-medium block text-center">
+                                    {lang === 'vi' ? 'Bắt buộc quét camera trực tiếp' : 'Live camera scan required'}
+                                  </span>
                                 </div>
                               )}
                             </div>

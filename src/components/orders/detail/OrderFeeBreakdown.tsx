@@ -513,7 +513,7 @@ export function OrderFeeBreakdown({
                   ) : (
                     <span className="text-emerald-700 font-semibold flex items-center justify-end gap-1">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>{lang === 'vi' ? 'Đã nộp đủ phí kiểm định GĐ 1' : 'Phase 1 inspection fee paid in full'}</span>
+                      <span>{lang === 'vi' ? 'Đã nộp đủ phí kiểm định giai đoạn 1' : 'Phase 1 inspection fee paid in full'}</span>
                     </span>
                   )}
                 </div>
@@ -546,7 +546,7 @@ export function OrderFeeBreakdown({
                   </div>
                 )}
                 <div className="pt-1.5 border-t border-blue-200/80 flex justify-between font-bold text-xs text-blue-950">
-                  <span>{lang === 'vi' ? 'Tổng thanh toán mua hàng GĐ 2:' : 'Total Phase 2 Payment Due:'}</span>
+                  <span>{lang === 'vi' ? 'Tổng thanh toán mua hàng giai đoạn 2:' : 'Total Phase 2 Payment Due:'}</span>
                   <span className="font-black text-blue-900">
                     {formatVND((detailModalOrder.itemPriceVnd || detailInspectionDto?.postPrice || 0) + hubToBuyerShippingFee - buyerCommitmentDeposit)}
                   </span>

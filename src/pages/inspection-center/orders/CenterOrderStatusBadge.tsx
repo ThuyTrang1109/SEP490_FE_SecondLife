@@ -192,7 +192,7 @@ export function CenterOrderStatusBadge({ order, buyerShipments, currentUser, den
                 localStorage.setItem(`order_appointment_${id}`, JSON.stringify(parsed));
               }
             }
-          } catch {}
+          } catch { }
         }
       } else {
         for (const id of possibleIds) {

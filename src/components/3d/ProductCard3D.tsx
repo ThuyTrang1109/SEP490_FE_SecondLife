@@ -5,7 +5,7 @@ import { formatVND } from '../../utils/translations';
 import { soundFx } from '../../utils/soundEffects';
 import { extractWardAndCity } from '../../utils/addressUtils';
 import { extractSellerOriginalPrice } from '../../utils/catalogCache';
-import { isListingInspectionPassed } from '../../utils/listingInspection';
+import { isListingInspectionPassed, getListingInspectionBadgeText } from '../../utils/listingInspection';
 import { reviewService } from '../../data/mockReviews';
 import { reputationService, SellerReputationDto } from '../../services';
 
@@ -196,11 +196,11 @@ export const ProductCard3D: React.FC<ProductCard3DProps> = ({
             {item.title}
           </h3>
 
-          {/* Inspected Hub Status Flag */}
+          {/* Inspected Status Flag */}
           {isInspected && (
             <div className="flex items-center gap-1 text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/80 w-fit mt-1">
               <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
-              <span>{lang === 'vi' ? 'Đã đạt kiểm định tại Hub' : 'Hub Inspected & Passed'}</span>
+              <span>{getListingInspectionBadgeText(item.inspectionMethod, lang)}</span>
             </div>
           )}
         </div>

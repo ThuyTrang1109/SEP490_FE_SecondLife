@@ -18,6 +18,7 @@ import {
   getReputationEventMeta,
   orderService,
   getStoredUser,
+  orderReviewService,
 } from '../../services';
 
 interface SellerReviewsModalProps {
@@ -38,6 +39,7 @@ export const SellerReviewsModal: React.FC<SellerReviewsModalProps> = ({
   const [filterRating, setFilterRating] = useState<number | 'ALL'>('ALL');
   const [reputation, setReputation] = useState<SellerReputationDto | null>(null);
   const [historyItems, setHistoryItems] = useState<ReputationHistoryDto[]>([]);
+  const [realBackendReviews, setRealBackendReviews] = useState<ProductReview[]>([]);
   const [orderMap, setOrderMap] = useState<Record<string, any>>({});
   const [isLoadingRep, setIsLoadingRep] = useState(false);
 
@@ -57,11 +59,34 @@ export const SellerReviewsModal: React.FC<SellerReviewsModalProps> = ({
       isSelf
         ? orderService.getSellerOrders(0, 50).then((r) => r.content || []).catch(() => [] as any[])
         : orderService.getBuyerOrders(0, 50).then((r) => r.content || []).catch(() => [] as any[]),
+      orderReviewService.getSellerReviews(sellerId, 0, 50).catch(() => ({ items: [] })),
     ])
-      .then(([rep, historyRes, myOrders]) => {
+      .then(([rep, historyRes, myOrders, backendReviewsRes]) => {
         if (!isMounted) return;
         if (rep) setReputation(rep);
         setHistoryItems(historyRes?.items || []);
+
+        const mapped: ProductReview[] = ((backendReviewsRes as any)?.items || []).map((r: any) => ({
+          id: r.id,
+          orderId: r.orderId,
+          listingId: r.postId || '',
+          productName: r.productTitle || 'Sản phẩm giao dịch',
+          productImage: r.productImage,
+          sellerId: r.sellerId,
+          sellerName: r.sellerName,
+          buyerId: r.buyerId,
+          buyerName: r.buyerName,
+          buyerAvatar: r.buyerAvatar,
+          rating: r.rating,
+          comment: r.comment,
+          tags: r.tags || [],
+          photos: r.photos || [],
+          createdAt: r.createdAt,
+          isVerifiedPurchase: r.verifiedPurchase ?? true,
+          conditionGrade: r.conditionGrade,
+        }));
+        setRealBackendReviews(mapped);
+
         const map: Record<string, any> = {};
         if (Array.isArray(myOrders)) {
           myOrders.forEach((o: any) => {
@@ -83,10 +108,11 @@ export const SellerReviewsModal: React.FC<SellerReviewsModalProps> = ({
   if (!isOpen) return null;
 
   const directReviews = reviewService.getReviewsBySeller(sellerId);
+  const realOrderIds = new Set(realBackendReviews.map((r) => String(r.orderId || '')).filter(Boolean));
   const directOrderIds = new Set(directReviews.map((r) => String(r.orderId || '')).filter(Boolean));
 
   const historyReviews: ProductReview[] = historyItems
-    .filter((item) => !item.orderId || !directOrderIds.has(String(item.orderId)))
+    .filter((item) => (!item.orderId || (!directOrderIds.has(String(item.orderId)) && !realOrderIds.has(String(item.orderId)))))
     .map((item) => {
       const meta = getReputationEventMeta(item.eventType);
       const isGood =
@@ -145,7 +171,11 @@ export const SellerReviewsModal: React.FC<SellerReviewsModalProps> = ({
       };
     });
 
-  const allReviews: ProductReview[] = [...directReviews, ...historyReviews];
+  const allReviews: ProductReview[] = [
+    ...realBackendReviews,
+    ...directReviews.filter((d) => !realOrderIds.has(String(d.orderId || ''))),
+    ...historyReviews,
+  ];
 
   const filteredReviews = allReviews.filter((r) => {
     if (filterRating === 'ALL') return true;

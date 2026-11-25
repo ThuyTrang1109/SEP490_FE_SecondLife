@@ -8,6 +8,7 @@ import {
   Building2,
   Clock,
   Truck,
+  Package,
   Info,
   CheckCircle2,
 } from 'lucide-react';
@@ -21,6 +22,7 @@ import {
   resolveShipmentStatusLabel,
   getShipmentStatusBadgeStyle,
   resolveShipmentLegLabel,
+  resolveProviderStatusLabel,
   formatAuditDateTime,
   resolveReturnReserveDetails,
 } from '../../utils/adminInspectionFunds';
@@ -199,7 +201,7 @@ export const AdminInspectionFundsView: React.FC<AdminInspectionFundsViewProps> =
                     {/* Buyer */}
                     <div className="p-3 rounded-xl border border-slate-200 bg-white space-y-2">
                       <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
-                        <span className="font-bold text-slate-900">Người mua (Buyer)</span>
+                        <span className="font-bold text-slate-900">Người mua</span>
                         <span className="text-[10px] text-slate-400 font-mono">
                           {buyer?.paidAt
                             ? `Đã nộp: ${formatAuditDateTime(buyer.paidAt)}`
@@ -227,7 +229,7 @@ export const AdminInspectionFundsView: React.FC<AdminInspectionFundsViewProps> =
                     {/* Seller */}
                     <div className="p-3 rounded-xl border border-slate-200 bg-white space-y-2">
                       <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
-                        <span className="font-bold text-slate-900">Người bán (Seller)</span>
+                        <span className="font-bold text-slate-900">Người bán</span>
                         <span className="text-[10px] text-slate-400 font-mono">
                           {seller?.paidAt
                             ? `Đã nộp: ${formatAuditDateTime(seller.paidAt)}`
@@ -262,7 +264,6 @@ export const AdminInspectionFundsView: React.FC<AdminInspectionFundsViewProps> =
                 inspectionFee: (funds as any).inspectionFee,
                 travelFee: (funds as any).travelFee,
                 shippingFee: (funds as any).shippingFee,
-                buyerCommitmentDeposit: (funds as any).buyerCommitmentDeposit,
                 cashShippingSimulation: (funds as any).cashShippingSimulation,
                 outboundCashPendingAmount: (funds as any).outboundCashPendingAmount,
               };
@@ -271,32 +272,25 @@ export const AdminInspectionFundsView: React.FC<AdminInspectionFundsViewProps> =
                   <h4 className="font-bold uppercase tracking-wider text-[11px] text-slate-500">
                     Chi Tiết Cấu Thành Phí
                   </h4>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                    <div className="p-2.5 rounded-lg bg-white border border-slate-100">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <div className="p-2.5 rounded-lg bg-white border border-slate-100 shadow-2xs">
                       <span className="text-[10px] text-slate-400 block">Phí kiểm định cơ sở</span>
                       <span className="font-bold font-mono text-slate-900">
                         {formatVND(fees?.inspectionFee ?? 0)}
                       </span>
                     </div>
 
-                    <div className="p-2.5 rounded-lg bg-white border border-slate-100">
+                    <div className="p-2.5 rounded-lg bg-white border border-slate-100 shadow-2xs">
                       <span className="text-[10px] text-slate-400 block">Phụ phí di chuyển KTV</span>
                       <span className="font-bold font-mono text-slate-900">
                         {fees?.travelFee != null ? formatVND(fees.travelFee) : '0 ₫'}
                       </span>
                     </div>
 
-                    <div className="p-2.5 rounded-lg bg-white border border-slate-100">
+                    <div className="p-2.5 rounded-lg bg-white border border-slate-100 shadow-2xs">
                       <span className="text-[10px] text-slate-400 block">Cước vận chuyển</span>
                       <span className="font-bold font-mono text-slate-900">
                         {formatVND(fees?.shippingFee ?? 0)}
-                      </span>
-                    </div>
-
-                    <div className="p-2.5 rounded-lg bg-white border border-slate-100">
-                      <span className="text-[10px] text-slate-400 block">Cọc cam kết người mua</span>
-                      <span className="font-bold font-mono text-slate-900">
-                        {formatVND(fees?.buyerCommitmentDeposit ?? 0)}
                       </span>
                     </div>
                   </div>
@@ -304,7 +298,7 @@ export const AdminInspectionFundsView: React.FC<AdminInspectionFundsViewProps> =
               );
             })()}
 
-            {/* 4. DỰ PHÒNG CƯỚC HOÀN (RETURN RESERVE) - HIDE IF NOT_REQUIRED */}
+            {/* 4. DỰ PHÒNG CƯỚC TRẢ HÀNG - HIDE IF NOT_REQUIRED */}
             {funds.returnReserve && funds.returnReserve.status !== 'NOT_REQUIRED' && (() => {
               const reserveDetails = resolveReturnReserveDetails(funds);
               const {
@@ -314,6 +308,7 @@ export const AdminInspectionFundsView: React.FC<AdminInspectionFundsViewProps> =
                 hasActualReturnFee,
                 returnShipmentCode,
                 returnShipmentStatus,
+                returnShipments,
                 isInterruptedReturn,
                 splitPlan,
                 surplusAmount,
@@ -333,7 +328,7 @@ export const AdminInspectionFundsView: React.FC<AdminInspectionFundsViewProps> =
                     <div className="flex items-center gap-2">
                       <Truck className="w-4 h-4 text-amber-700" />
                       <h4 className="font-bold uppercase tracking-wider text-[11px] text-amber-900">
-                        Dự Phòng Cước Trả Hàng (Return Reserve)
+                        Dự Phòng Cước Trả Hàng
                       </h4>
                     </div>
                     <span
@@ -343,7 +338,7 @@ export const AdminInspectionFundsView: React.FC<AdminInspectionFundsViewProps> =
                     </span>
                   </div>
 
-                  {/* 4 KPI Cards: Kế hoạch, Cước hoàn thực tế, Phương án chia, Tiền dư sau cước */}
+                  {/* 4 Thẻ KPI: Kế hoạch, Cước hoàn thực tế, Phương án chia, Tiền dư sau cước */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                     <div className="p-2.5 rounded-lg bg-white border border-amber-100 shadow-2xs">
                       <span className="text-[10px] text-slate-500 block font-medium">Dự phòng kế hoạch</span>
@@ -356,7 +351,7 @@ export const AdminInspectionFundsView: React.FC<AdminInspectionFundsViewProps> =
                     </div>
 
                     <div className="p-2.5 rounded-lg bg-white border border-amber-100 shadow-2xs">
-                      <span className="text-[10px] text-slate-500 block font-medium">Cước hoàn thực tế (Hub → Seller)</span>
+                      <span className="text-[10px] text-slate-500 block font-medium">Cước hoàn thực tế (Hub → Người bán)</span>
                       <span className="font-bold font-mono text-slate-900 text-sm">
                         {isInterruptedReturn
                           ? `${formatVND(actualReturnFee)} (Tạm tính)`
@@ -364,10 +359,10 @@ export const AdminInspectionFundsView: React.FC<AdminInspectionFundsViewProps> =
                             ? formatVND(actualReturnFee)
                             : 'Chưa phát sinh (0 đ)'}
                       </span>
-                      <div className="text-[10px] text-slate-500 mt-0.5 truncate">
+                      <div className="text-[10px] text-slate-500 mt-0.5">
                         {returnShipmentCode ? (
-                          <span title={returnShipmentCode} className={isInterruptedReturn ? 'text-rose-600 font-semibold' : ''}>
-                            Mã: {returnShipmentCode} {isInterruptedReturn ? '· Vận đơn thất bại (Chưa trừ)' : ''}
+                          <span title={returnShipmentCode} className={isInterruptedReturn ? 'text-rose-600 font-semibold' : 'text-slate-700 font-medium'}>
+                            Mã: <strong className="font-mono">{returnShipmentCode}</strong> {isInterruptedReturn ? '· Vận đơn thất bại (Chưa trừ)' : ''}
                           </span>
                         ) : (
                           <span>{returnShipmentStatus ? resolveShipmentStatusLabel(returnShipmentStatus) : 'Chưa tạo chuyến hoàn'}</span>
@@ -377,11 +372,11 @@ export const AdminInspectionFundsView: React.FC<AdminInspectionFundsViewProps> =
 
                     <div className="p-2.5 rounded-lg bg-white border border-amber-100 shadow-2xs">
                       <span className="text-[10px] text-slate-500 block font-medium">Phương án chia tỉ lệ đơn</span>
-                      {/* <span className="font-bold text-slate-900 text-xs block truncate mt-0.5" title={splitPlan.label}>
-                        {splitPlan.label}
-                      </span> */}
-                      <span className="text-[13px] text-slate-700 block mt-0.5">
+                      <span className="text-[13px] text-slate-700 block mt-0.5 font-semibold">
                         Mua: {splitPlan.buyerPercent}% · Bán: {splitPlan.sellerPercent}%
+                      </span>
+                      <span className="text-[10px] text-slate-400 block truncate" title={splitPlan.label}>
+                        {splitPlan.label}
                       </span>
                     </div>
 
@@ -390,45 +385,119 @@ export const AdminInspectionFundsView: React.FC<AdminInspectionFundsViewProps> =
                       <span className="font-black font-mono text-emerald-800 text-sm">
                         {formatVND(surplusAmount)}
                       </span>
-                      <span className="text-[10px] text-emerald-700 block mt-0.5">
+                      <span className="text-[10px] text-emerald-700 block mt-0.5 font-medium">
                         {isInterruptedReturn ? 'Chưa trừ (Vận đơn hủy)' : hasActualReturnFee ? 'Đã trừ cước hoàn' : 'Dự kiến hoàn trả'}
                       </span>
                     </div>
                   </div>
 
-                  {/* Phân bổ tiền dư theo tỷ lệ */}
-                  <div className="p-2.5 rounded-lg bg-white/90 border border-amber-200/80 space-y-1.5">
-                    <div className="flex items-center justify-between text-[11px]">
-                      <span className="font-bold text-slate-700">{refundAmountsRecorded
-                        ? 'Tiền dư đã hoàn vào ví theo hạch toán:'
-                        : 'Phân bổ tiền dư dự kiến theo tỉ lệ chia của đơn:'}</span>
-                      <span className="text-[10px] text-slate-500 font-mono">Tổng tiền dư: {formatVND(surplusAmount)}</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div className="p-2 rounded-md bg-slate-50 border border-slate-100 flex items-center justify-between">
-                        <span className="text-slate-600 text-[11px]">{refundAmountsRecorded
-                          ? 'Đã hoàn Người mua:' : `Hoàn Người mua (${splitPlan.buyerPercent}%):`}</span>
-                        <strong className="font-mono text-emerald-700">{formatVND(buyerSurplusShare)}</strong>
+                  {/* Chi tiết từng vận đơn hoàn trả & cước phí vận chuyển kèm trạng thái */}
+                  {returnShipments && returnShipments.length > 0 && (
+                    <div className="p-2.5 rounded-lg bg-white border border-amber-200/80 space-y-1.5 shadow-2xs">
+                      <div className="flex items-center justify-between text-[11px] font-bold text-amber-950 pb-1 border-b border-amber-100/70">
+                        <span className="flex items-center gap-1.5">
+                          <Package className="w-3.5 h-3.5 text-amber-700" />
+                          Chi tiết vận đơn hoàn trả & cước phí:
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-normal">
+                          {returnShipments.length} kiện hoàn trả
+                        </span>
                       </div>
-                      <div className="p-2 rounded-md bg-slate-50 border border-slate-100 flex items-center justify-between">
-                        <span className="text-slate-600 text-[11px]">{refundAmountsRecorded
-                          ? 'Đã hoàn Người bán:' : `Hoàn Người bán (${splitPlan.sellerPercent}%):`}</span>
-                        <strong className="font-mono text-emerald-700">{formatVND(sellerSurplusShare)}</strong>
-                      </div>
-                    </div>
-                  </div>
+                      <div className="divide-y divide-amber-100/60 rounded-md border border-amber-100 bg-amber-50/20 overflow-hidden">
+                        {returnShipments.map((s, idx) => {
+                          const isInterrupted = ['CANCELLED', 'CANCELED', 'FAILED', 'EXPIRED', 'REJECTED'].includes((s.status || '').toUpperCase());
+                          const isDelivered = ['DELIVERED', 'COMPLETED'].includes((s.status || '').toUpperCase());
+                          const statusBadge = getShipmentStatusBadgeStyle(s.status);
 
-                  {/* Trạng thái đã hoàn */}
-                  <div className="p-2.5 rounded-lg bg-amber-100/50 border border-amber-200/70 space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] font-bold text-amber-900">Trạng thái hoàn trả tiền dư:</span>
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${refundStatusBadge.bg} ${refundStatusBadge.text} ${refundStatusBadge.border}`}>
-                        {refundStatusLabel}
+                          return (
+                            <div key={s.shipmentId || idx} className="p-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-xs">
+                              <div className="space-y-1 min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-bold text-slate-800 text-[11px]">
+                                    {resolveShipmentLegLabel(s.leg)}
+                                  </span>
+                                  <span className="font-mono text-slate-700 bg-white px-1.5 py-0.5 rounded border border-slate-200 text-[10px] select-all font-semibold">
+                                    Mã VĐ: #{s.orderCode || s.shipmentId || 'Chưa có mã'}
+                                  </span>
+                                  {s.providerStatus && (
+                                    <span className="text-[10px] text-slate-400">
+                                      (NVC: {resolveProviderStatusLabel(s.providerStatus)})
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[10px] text-slate-500 flex items-center gap-1.5 flex-wrap">
+                                  <span>Trạng thái:</span>
+                                  <span className={`inline-flex items-center px-1.5 py-0.2 rounded-full text-[9px] font-bold border ${statusBadge.bg} ${statusBadge.text} ${statusBadge.border}`}>
+                                    {resolveShipmentStatusLabel(s.status)}
+                                  </span>
+                                  <span className="text-slate-300">•</span>
+                                  <span className={isInterrupted ? 'text-amber-700 font-semibold' : isDelivered ? 'text-emerald-700 font-semibold' : 'text-sky-700'}>
+                                    {isInterrupted ? 'Chưa trừ vào dự phòng (Vận đơn hủy/thất bại)' : isDelivered ? 'Đã cấn trừ vào quỹ dự phòng' : 'Đang tạm tính'}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="text-left sm:text-right shrink-0">
+                                <span className="text-[10px] text-slate-400 block">Cước vận chuyển</span>
+                                <span className={`font-mono font-bold text-xs ${isInterrupted ? 'text-slate-500 line-through' : 'text-slate-900'}`}>
+                                  {s.actualFee != null ? formatVND(s.actualFee) : 'Chưa có cước'}
+                                </span>
+                                {isInterrupted && (
+                                  <span className="block text-[9px] text-amber-700 font-semibold">
+                                    (0 ₫ thực trừ)
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Phân bổ & Trạng thái hoàn trả tiền dư vào ví (Không lặp lại nội dung) */}
+                  <div className="p-2.5 rounded-lg bg-white/95 border border-amber-200/80 space-y-2 shadow-2xs">
+                    <div className="flex items-center justify-between text-[11px] pb-1.5 border-b border-amber-100/70 flex-wrap gap-1">
+                      <span className="font-bold text-slate-800">
+                        {refundAmountsRecorded
+                          ? 'Tiền dư đã hoàn vào ví theo hạch toán:'
+                          : 'Phân bổ tiền dư dự kiến theo tỉ lệ chia của đơn:'}
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        Tổng tiền dư: <strong className="text-slate-900 font-bold">{formatVND(surplusAmount)}</strong>
                       </span>
                     </div>
-                    <p className="text-[11px] text-slate-700 leading-relaxed">
-                      {refundDescription}
-                    </p>
+
+                    {/* Thẻ tiền hoàn Người mua & Người bán */}
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="p-2 rounded-md bg-slate-50 border border-slate-100 flex items-center justify-between">
+                        <span className="text-slate-600 text-[11px]">
+                          {refundAmountsRecorded ? 'Đã hoàn Người mua:' : `Hoàn Người mua (${splitPlan.buyerPercent}%):`}
+                        </span>
+                        <strong className="font-mono text-emerald-700 text-xs">{formatVND(buyerSurplusShare)}</strong>
+                      </div>
+                      <div className="p-2 rounded-md bg-slate-50 border border-slate-100 flex items-center justify-between">
+                        <span className="text-slate-600 text-[11px]">
+                          {refundAmountsRecorded ? 'Đã hoàn Người bán:' : `Hoàn Người bán (${splitPlan.sellerPercent}%):`}
+                        </span>
+                        <strong className="font-mono text-emerald-700 text-xs">{formatVND(sellerSurplusShare)}</strong>
+                      </div>
+                    </div>
+
+                    {/* Trạng thái hoàn trả tiền dư & diễn giải súc tích */}
+                    <div className="pt-1 border-t border-amber-100/60 space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] font-bold text-slate-800">Trạng thái hoàn trả tiền dư:</span>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${refundStatusBadge.bg} ${refundStatusBadge.text} ${refundStatusBadge.border}`}>
+                          {refundStatusLabel}
+                        </span>
+                      </div>
+                      {refundDescription && (
+                        <p className="text-[11px] text-slate-600 leading-relaxed">
+                          {refundDescription}
+                        </p>
+                      )}
+                    </div>
                   </div>
 
                   <p className="text-[10px] text-amber-800 italic">
@@ -442,7 +511,7 @@ export const AdminInspectionFundsView: React.FC<AdminInspectionFundsViewProps> =
             <section className="p-3.5 rounded-xl border border-slate-200 bg-white space-y-2.5">
               <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
                 <h4 className="font-bold uppercase tracking-wider text-[11px] text-slate-500">
-                  Quyết Toán Tài Chính Đơn Hàng (Settlement)
+                  Quyết Toán Tài Chính Đơn Hàng
                 </h4>
                 {funds.settlement?.settledAt ? (
                   <span className="text-[10px] text-emerald-700 font-mono flex items-center gap-1 font-bold">
@@ -489,7 +558,7 @@ export const AdminInspectionFundsView: React.FC<AdminInspectionFundsViewProps> =
                   {funds.settlement.sellerCompensationAmount != null &&
                     funds.settlement.sellerCompensationAmount > 0 && (
                       <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-800 flex items-center justify-between">
-                        <span>Bồi thường người bán (Seller Compensation):</span>
+                        <span>Bồi thường người bán:</span>
                         <strong className="font-mono text-emerald-900">
                           {formatVND(funds.settlement.sellerCompensationAmount)}
                         </strong>
@@ -519,7 +588,7 @@ export const AdminInspectionFundsView: React.FC<AdminInspectionFundsViewProps> =
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase text-[10px] font-bold">
                         <th className="p-2.5">Chặng vận chuyển</th>
-                        <th className="p-2.5">Mã Lalamove / Đơn</th>
+                        <th className="p-2.5">Mã vận đơn / Đơn vị giao</th>
                         <th className="p-2.5">Trạng thái kiện</th>
                         <th className="p-2.5 text-right">Cước thực tế</th>
 
@@ -546,7 +615,7 @@ export const AdminInspectionFundsView: React.FC<AdminInspectionFundsViewProps> =
                               </span>
                               {s.providerStatus && (
                                 <span className="block text-[10px] text-slate-400">
-                                  NVC: {s.providerStatus}
+                                  NVC: {resolveProviderStatusLabel(s.providerStatus)}
                                 </span>
                               )}
                             </td>

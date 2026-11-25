@@ -46,7 +46,6 @@ import { shippingService } from '../services/shippingService';
 import { ShipmentBackend, ShippingQuoteResponseDto } from '../types';
 import { walletService, WalletBackend, notifyWalletBalanceUpdated } from '../services/walletService';
 import { saveScopedLocalNotification } from '../utils/notificationStorage';
-import { markListingInspectionPassed } from '../utils/listingInspection';
 import { getCustomerInspectionStatus, getInspectionPurchaseDecision, inspectionPurchaseDecisionLabel, isExpiredInspectionPurchase, extractInspectionRejectionDetails, parseInspectorVerdictNote } from '../utils/inspectionPurchase';
 import { notificationWsClient } from '../services/notificationWsClient';
 import { getInspectionBuyerDestination, getInspectionDecisionStatus, getInspectionReportMedia, getInspectionStageOne, getInspectionStageTwo } from '../utils/inspectionDecisionData';
@@ -629,31 +628,47 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
     : 'từ người bán đến bạn';
 
   const isWaitingSellerApproval = !isFailed && !isCancelled && (
-    backendStatus === 'WAITING_SELLER_APPROVAL' ||
-    backendStatus === 'PENDING_SELLER_APPROVAL' ||
-    backendStatus === 'AWAITING_SELLER_APPROVAL' ||
-    inspectionDto?.status === 'WAITING_SELLER_APPROVAL' ||
-    (order as any)?.status === 'WAITING_SELLER_APPROVAL' ||
-    (order as any)?.inspectionStatus === 'WAITING_SELLER_APPROVAL'
+    inspectionDto ? (
+      inspectionDto.status === 'WAITING_SELLER_APPROVAL' ||
+      inspectionDto.status === 'PENDING_SELLER_APPROVAL' ||
+      inspectionDto.status === 'AWAITING_SELLER_APPROVAL'
+    ) : (
+      backendStatus === 'WAITING_SELLER_APPROVAL' ||
+      backendStatus === 'PENDING_SELLER_APPROVAL' ||
+      backendStatus === 'AWAITING_SELLER_APPROVAL' ||
+      (order as any)?.status === 'WAITING_SELLER_APPROVAL' ||
+      (order as any)?.inspectionStatus === 'WAITING_SELLER_APPROVAL'
+    )
   );
 
   const isWaitingBuyerApproval = !isFailed && !isCancelled && (
-    backendStatus === 'WAITING_BUYER_APPROVAL' ||
-    backendStatus === 'PENDING_BUYER_APPROVAL' ||
-    backendStatus === 'AWAITING_BUYER_APPROVAL' ||
-    inspectionDto?.status === 'WAITING_BUYER_APPROVAL' ||
-    (order as any)?.status === 'WAITING_BUYER_APPROVAL' ||
-    (order as any)?.inspectionStatus === 'WAITING_BUYER_APPROVAL'
+    inspectionDto ? (
+      inspectionDto.status === 'WAITING_BUYER_APPROVAL' ||
+      inspectionDto.status === 'PENDING_BUYER_APPROVAL' ||
+      inspectionDto.status === 'AWAITING_BUYER_APPROVAL'
+    ) : (
+      backendStatus === 'WAITING_BUYER_APPROVAL' ||
+      backendStatus === 'PENDING_BUYER_APPROVAL' ||
+      backendStatus === 'AWAITING_BUYER_APPROVAL' ||
+      (order as any)?.status === 'WAITING_BUYER_APPROVAL' ||
+      (order as any)?.inspectionStatus === 'WAITING_BUYER_APPROVAL'
+    )
   );
 
   const feesPaid = Boolean((buyerFeeShare === 0 || inspectionDto?.buyerPaidAt) && (sellerFeeShare === 0 || inspectionDto?.sellerPaidAt));
 
   const isWaitingFeePayment = !isFailed && !isCancelled && (
-    backendStatus === 'WAITING_FEE_PAYMENT' ||
-    backendStatus === 'PENDING_PAYMENT' ||
-    backendStatus === 'WAITING_PAYMENT' ||
-    inspectionDto?.status === 'WAITING_FEE_PAYMENT' ||
-    (!feesPaid && !isWaitingSellerApproval && !isWaitingBuyerApproval && !isPassed && !isFailed && !isInspecting)
+    inspectionDto ? (
+      inspectionDto.status === 'WAITING_FEE_PAYMENT' ||
+      inspectionDto.status === 'PENDING_PAYMENT' ||
+      inspectionDto.status === 'WAITING_PAYMENT' ||
+      (!feesPaid && !isWaitingSellerApproval && !isWaitingBuyerApproval && !isPassed && !isFailed && !isInspecting)
+    ) : (
+      backendStatus === 'WAITING_FEE_PAYMENT' ||
+      backendStatus === 'PENDING_PAYMENT' ||
+      backendStatus === 'WAITING_PAYMENT' ||
+      (!feesPaid && !isWaitingSellerApproval && !isWaitingBuyerApproval && !isPassed && !isFailed && !isInspecting)
+    )
   );
 
   const feePaymentLabel = isCancelled ? 'ĐÃ HỦY / TỪ CHỐI'
@@ -928,12 +943,6 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
         (order as any)?.listingId ||
         ''
       ).trim();
-      const targetPostTitle =
-        rejectedOrder?.postTitle ||
-        inspectionDto?.postTitle ||
-        (order as any)?.postTitle ||
-        (order as any)?.listing?.title ||
-        postTitle;
       const targetTamperSealId =
         rejectedOrder?.tamperSealId ||
         inspectionDto?.tamperSealId ||
@@ -947,19 +956,12 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
         inspectionDto?.conditionScore ??
         (order as any)?.conditionScore;
 
-      // Register inspection pass so this listing continues to show "Đã đạt kiểm định tại Hub"
       if (targetPostId) {
-        markListingInspectionPassed(targetPostId, targetPostTitle);
         try {
-          localStorage.setItem(`inspection_passed_${targetPostId}`, 'true');
-          localStorage.setItem(`inspection_status_${targetPostId}`, 'PASSED');
-          localStorage.setItem(`inspection_status_post_${targetPostId}`, 'PASSED');
           localStorage.setItem(`listing_available_${targetPostId}`, 'true');
         } catch { }
       }
-      if (targetPostTitle) {
-        markListingInspectionPassed(undefined, targetPostTitle);
-      }
+      window.dispatchEvent(new Event('secondlife_listing_status_changed'));
 
       // Restore listing availability in bought_listing_ids
       try {
@@ -1085,6 +1087,33 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
         sellerConsentZin: true,
       });
       setInspectionDto(res);
+      if (order) {
+        (order as any).status = res.status;
+        (order as any).inspectionStatus = res.status;
+        (order as any).backendStatus = res.status;
+        if ((order as any).inspectionOrder) {
+          (order as any).inspectionOrder.status = res.status;
+        }
+      }
+      try {
+        const updateCache = (key: string) => {
+          const raw = localStorage.getItem(key);
+          if (raw) {
+            const list = JSON.parse(raw);
+            if (Array.isArray(list)) {
+              const updated = list.map((o: any) => {
+                if (o.id === effectiveOrderId || o.inspectionOrderId === effectiveOrderId) {
+                  return { ...o, status: res.status, inspectionStatus: res.status, backendStatus: res.status };
+                }
+                return o;
+              });
+              localStorage.setItem(key, JSON.stringify(updated));
+            }
+          }
+        };
+        updateCache('recent_placed_orders');
+        updateCache('all_orders_cache');
+      } catch { }
       setAlertNotice({
         type: 'success',
         message: 'Bạn đã chấp nhận đề xuất kiểm định thành công. Đơn hàng chuyển sang trạng thái chờ nạp phí kiểm định.',
@@ -1109,6 +1138,33 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
         rejectionReason: customRejectNote.trim() || selectedRejectReason || 'Người bán từ chối kiểm định',
       });
       setInspectionDto(res);
+      if (order) {
+        (order as any).status = res.status;
+        (order as any).inspectionStatus = res.status;
+        (order as any).backendStatus = res.status;
+        if ((order as any).inspectionOrder) {
+          (order as any).inspectionOrder.status = res.status;
+        }
+      }
+      try {
+        const updateCache = (key: string) => {
+          const raw = localStorage.getItem(key);
+          if (raw) {
+            const list = JSON.parse(raw);
+            if (Array.isArray(list)) {
+              const updated = list.map((o: any) => {
+                if (o.id === effectiveOrderId || o.inspectionOrderId === effectiveOrderId) {
+                  return { ...o, status: res.status, inspectionStatus: res.status, backendStatus: res.status };
+                }
+                return o;
+              });
+              localStorage.setItem(key, JSON.stringify(updated));
+            }
+          }
+        };
+        updateCache('recent_placed_orders');
+        updateCache('all_orders_cache');
+      } catch { }
       setShowRejectModal(false);
       setAlertNotice({
         type: 'success',
@@ -1990,7 +2046,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                                 : feesPaid || backendStatus === 'CONFIRMED_PENDING_DISPATCH'
                                   ? (isAtHome
                                     ? (hasNoAppt
-                                      ? 'Hai bên đã nộp đủ phí kiểm định GĐ 1. Đang chờ người bán chọn ngày giờ để Kỹ thuật viên SecondLife đến tận nhà kiểm định thiết bị.'
+                                      ? 'Hai bên đã nộp đủ phí kiểm định giai đoạn 1. Đang chờ người bán chọn ngày giờ để Kỹ thuật viên SecondLife đến tận nhà kiểm định thiết bị.'
                                       : isApptPendingApproval
                                         ? `Lịch hẹn đón KTV đã được gửi${currentAppt?.scheduledAt || inspectionDto?.appointmentScheduledAt ? `: ${new Date(currentAppt?.scheduledAt || inspectionDto?.appointmentScheduledAt!).toLocaleString('vi-VN')}` : ''}. Trung tâm đang xem xét điều phối KTV.`
                                         : isApptCountered
@@ -3262,7 +3318,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                 </span>
               </div>
               <div className="flex justify-between pt-2 border-t border-slate-200 text-slate-600">
-                <span className="font-bold">Tổng thanh toán GĐ 2:</span>
+                <span className="font-bold">Tổng thanh toán giai đoạn 2:</span>
                 <span className="font-extrabold text-[#c34c36] text-sm">{finalShippingQuote ? formatVND(finalPriceToPay) : '—'}</span>
               </div>
               <div className="flex justify-between text-slate-600">

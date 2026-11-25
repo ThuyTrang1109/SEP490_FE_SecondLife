@@ -38,6 +38,24 @@
     .vnpt-bg-white {
       background-color: transparent !important;
     }
+
+    /* Đảm bảo không hiển thị popup video hướng dẫn đè lên camera */
+    .ant-modal-root,
+    .ant-modal-mask,
+    .ant-modal-wrap,
+    .ant-modal,
+    [role="dialog"] {
+      display: none !important;
+    }
+  
+    /* Ẩn thanh hiển thị bước (Bước x/y) */
+    .vnpt-bg-primary.vnpt-h-1,
+    .vnpt-bg-gray-500.vnpt-h-1,
+    p.vnpt-text-gray-0,
+    .vnpt-justify-center > p.vnpt-text-gray-0 {
+      display: none !important;
+    }
+  
   </style>
 </head>
 
@@ -109,6 +127,7 @@
       HAS_BACKGROUND_IMAGE: false,
       MAX_SIZE_IMAGE: 1,
       SDK_FLOW: flow,
+      SHOW_STEP: false,
       DOCUMENT_TYPE_START: 4,
       LIST_TYPE_DOCUMENT: [-1, 4, 5, 6, 7],
       URL_WEB_OVAL: '/lib/web-oval.json',

@@ -242,6 +242,8 @@ export function mapEscrowOrder(bOrd: any, {
       mappedEscrowStatus = 'INSPECTION_IN_PROGRESS';
     } else if (s === 'DELIVERING_TO_BUYER') {
       mappedEscrowStatus = 'SHIPPED_TO_BUYER';
+    } else if (s === 'DELIVERED' || Boolean(bOrd.shippingDeliveredAt)) {
+      mappedEscrowStatus = 'DELIVERED_INSPECTION_WINDOW';
     } else if (s === 'COMPLETED') {
       mappedEscrowStatus = 'COMPLETED_RELEASED';
     } else if (s === 'DISPUTED') {
@@ -492,7 +494,7 @@ export function mapEscrowOrder(bOrd: any, {
     escrowStatus: isCompletedOrReleased ? 'COMPLETED_RELEASED' : (isCancelledOrRefund ? 'REFUNDED_TO_BUYER' : mappedEscrowStatus),
     backendEscrowStatus: ['PENDING', 'HELD', 'FROZEN', 'RELEASED', 'REFUNDED'].includes(bOrd.escrowStatus)
       ? bOrd.escrowStatus : undefined,
-    backendStatus: isCompletedOrReleased ? 'COMPLETED' : (isCancelledOrRefund ? 'CANCELLED' : (mappedEscrowStatus === 'DISPUTED' ? 'DISPUTED' : ((mappedEscrowStatus === 'INSPECTION_PASSED' ? 'PASSED' : mappedEscrowStatus === 'INSPECTION_FAILED' ? 'FAILED' : bOrd.backendStatus || bOrd.status || (isInspectionOrder ? 'WAITING_SELLER_APPROVAL' : 'PROCESSING')) as any))),
+    backendStatus: isCompletedOrReleased ? 'COMPLETED' : (isCancelledOrRefund ? 'CANCELLED' : (mappedEscrowStatus === 'DISPUTED' ? 'DISPUTED' : ((mappedEscrowStatus === 'INSPECTION_PASSED' ? 'PASSED' : mappedEscrowStatus === 'INSPECTION_FAILED' ? 'FAILED' : (mappedEscrowStatus === 'DELIVERED_INSPECTION_WINDOW' || bOrd.shippingDeliveredAt ? 'DELIVERED' : (bOrd.backendStatus || bOrd.status || (isInspectionOrder ? 'WAITING_SELLER_APPROVAL' : 'PROCESSING')))) as any))),
     status: isCompletedOrReleased ? 'COMPLETED' : (isCancelledOrRefund ? 'CANCELLED' : (mappedEscrowStatus === 'DISPUTED' ? 'DISPUTED' : (mappedEscrowStatus === 'INSPECTION_PASSED' ? 'PASSED' : mappedEscrowStatus === 'INSPECTION_FAILED' ? 'FAILED' : (bOrd.status || bOrd.backendStatus || 'INSPECTING')))),
     inspectorId: resolvedInspectorId || undefined,
     inspectorName: resolvedInspectorName || undefined,
@@ -597,7 +599,7 @@ export function mapEscrowOrder(bOrd: any, {
           timeline: [
             {
               timestamp: bOrd.createdAt ? new Date(bOrd.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '--:--',
-              description: 'Khởi tạo đơn hàng kiểm định Hub. Chờ bưu tá Lalamove chuyển kiện hàng đến Hub.',
+              description: '',
               location: 'Hệ thống SecondLife Hub'
             }
           ]
@@ -614,7 +616,7 @@ export function mapEscrowOrder(bOrd: any, {
           timeline: [
             {
               timestamp: '--:--',
-              description: 'Chờ hoàn tất kiểm định tại Hub và niêm phong giao đến người mua.',
+              description: '',
               location: buyerAddr
             }
           ]

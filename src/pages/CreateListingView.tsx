@@ -937,6 +937,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     }
     setIsLoadingDraft(true);
     try {
+      const post = await postService.getMyPostDetail(cleanId);
+      if (!post.sellerActions?.editContent) {
+        showToast(lang === 'vi' ? 'Bài đăng này đã khóa chỉnh sửa.' : 'Editing is locked for this listing.');
+        return;
+      }
       const draft = await postService.getDraft(cleanId);
       if (draft) {
         setPostId(draft.postId || draft.id || cleanId);
@@ -2557,6 +2562,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     } catch (err: any) {
       const issues = err instanceof ApiError ? getListingPhotoUploadIssues(err.errors, uploadedPreviews, err.status) : [];
       if (issues.length) {
+        setShowAiChatDrawer(false);
         setPhotoUploadIssues(issues);
         const firstPhoto = photoPreviews.findIndex((previewUrl) => issues.some((issue) => issue.previewUrl === previewUrl));
         const targetId = firstPhoto >= 0 ? `listing-photo-${firstPhoto}` : 'photos-section';
@@ -3372,7 +3378,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         return;
       }
     } catch (err: any) {
-      if (/insufficient listing credits|không đủ lượt đăng/i.test(err?.message ?? '')) {
+      const photoIssues = err instanceof ApiError ? getListingPhotoUploadIssues(err.errors, [], err.status) : [];
+      if (photoIssues.length) {
+        const messages = [...new Set(photoIssues.map(({ message }) => message))].join(' ');
+        setSubmitError(err.status >= 500 ? messages : (lang === 'vi'
+          ? `${messages} Để thay bộ ảnh đã lưu, hãy tạo bản nháp mới.`
+          : `${messages} Create a new draft to replace the saved photos.`));
+      } else if (/insufficient listing credits|không đủ lượt đăng/i.test(err?.message ?? '')) {
         setShowNoCreditsModal(true);
       } else if (err?.message?.toLowerCase().includes('seller verification')) {
         setSubmitError(lang === 'vi'
@@ -3385,6 +3397,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       setIsSubmittingPost(false);
     }
   };
+
+  const hasPhotoServiceError = photoUploadIssues.some((issue) => issue.serviceError);
 
   return (
     <div className="w-full space-y-6 pb-20 px-3 sm:px-5 lg:px-6">
@@ -3521,7 +3535,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 <span>{lang === 'vi' ? 'Bước 1: Chọn Danh Mục Sản Phẩm & Tải 3-6 Ảnh' : 'Step 1: Select Category & Upload 3-6 Photos'}</span>
               </h3>
               <p className="text-xs text-slate-500 mt-1">
-                AI sẽ phân tích toàn bộ ảnh cùng danh mục sản phẩm để tạo mô tả và gợi ý định giá chuẩn xác.
+                {lang === 'vi' ? 'Hệ thống kiểm tra bộ ảnh trước khi bạn tiếp tục.'
+                  : 'The system checks the photo set before you continue.'}
               </p>
             </div>
 
@@ -3933,41 +3948,63 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           </div>
 
           {/* Photo Checklist 3-6 Photos */}
-          <div id="photos-section" className={`space-y-3 pt-2 border-t ${photoUploadIssues.length > 0 || (hasSubmittedStep1 && photoError) ? 'p-3 rounded-2xl border-2 border-rose-300 bg-rose-50/20' : 'border-gray-100'}`}>
+          <div id="photos-section" className={`space-y-3 pt-2 border-t ${hasPhotoServiceError
+            ? 'p-3 rounded-2xl border-2 border-amber-300 bg-amber-50/20'
+            : photoUploadIssues.length > 0 || (hasSubmittedStep1 && photoError)
+              ? 'p-3 rounded-2xl border-2 border-rose-300 bg-rose-50/20'
+              : 'border-gray-100'}`}>
             <div>
               <label className="text-xs font-bold text-[#24263e] flex items-center gap-2">
                 <span>Ảnh chụp sản phẩm thực tế (Tối thiểu 3 - Tối đa 6 ảnh) *</span>
                 <span
-                  className={`text-[10px] font-black px-2 py-0.5 rounded-full ${photoUploadIssues.length > 0
-                    ? 'bg-rose-100 text-rose-800'
-                    : photoPreviews.length >= 3 && photoPreviews.length <= 6
-                      ? 'bg-emerald-100 text-emerald-800'
-                      : photoPreviews.length > 0
-                        ? 'bg-amber-100 text-amber-800'
-                        : 'bg-slate-100 text-slate-600'
+                  className={`text-[10px] font-black px-2 py-0.5 rounded-full ${hasPhotoServiceError
+                    ? 'bg-amber-100 text-amber-900'
+                    : photoUploadIssues.length > 0
+                      ? 'bg-rose-100 text-rose-800'
+                      : photoPreviews.length >= 3 && photoPreviews.length <= 6
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : photoPreviews.length > 0
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-slate-100 text-slate-600'
                     }`}
                 >
-                  Đã có: {photoPreviews.length}/6 ảnh {photoUploadIssues.length > 0
-                    ? (lang === 'vi' ? '· Lỗi tải ảnh' : '· Upload failed')
-                    : photoPreviews.length < 3 ? `(Thiếu ${3 - photoPreviews.length} ảnh)` : '✓ Đủ điều kiện'}
+                  Đã có: {photoPreviews.length}/6 ảnh {hasPhotoServiceError
+                    ? (lang === 'vi' ? '· Chưa kiểm duyệt' : '· Review incomplete')
+                    : photoUploadIssues.length > 0
+                      ? (lang === 'vi' ? '· Cần sửa ảnh' : '· Needs attention')
+                      : photoPreviews.length < 3 ? `(Thiếu ${3 - photoPreviews.length} ảnh)` : '✓ Đủ điều kiện'}
                 </span>
               </label>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                Bắt buộc tải lên tối thiểu 3 ảnh thực tế (tối đa 6 ảnh) để thể hiện các góc cạnh của sản phẩm, giúp AI và người mua kiểm định trực quan.
+                {lang === 'vi'
+                  ? 'Tải 3–6 ảnh thực tế của cùng một sản phẩm. Có thể chụp nhiều góc và ảnh cận chi tiết.'
+                  : 'Upload 3–6 photos of the same product. Different angles and close-ups are welcome.'}
               </p>
             </div>
 
             {photoUploadIssues.length > 0 && (
-              <div role="alert" className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-900">
+              <div role="alert" className={`flex items-start gap-2 rounded-xl border p-3 text-xs ${hasPhotoServiceError
+                ? 'border-amber-200 bg-amber-50 text-amber-950' : 'border-rose-200 bg-rose-50 text-rose-900'}`}>
                 <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                 <div className="min-w-0 break-words">
-                  <p className="font-bold">{lang === 'vi' ? 'Không thể tải ảnh sản phẩm' : 'Could not upload product photos'}</p>
+                  <p className="font-bold">
+                    {hasPhotoServiceError
+                      ? (lang === 'vi' ? 'Dịch vụ kiểm duyệt ảnh đang gián đoạn' : 'Photo review is temporarily unavailable')
+                      : (lang === 'vi' ? 'Cần kiểm tra lại bộ ảnh' : 'Check the product photos')}
+                  </p>
                   {photoUploadIssues.some((issue) => issue.previewUrl) && (
                     <p>{lang === 'vi' ? 'Kiểm tra lỗi bên dưới các ảnh được đánh dấu.' : 'See the error below each marked photo.'}</p>
                   )}
                   {photoUploadIssues.filter((issue) => !issue.previewUrl).map(({ message }, index) => (
                     <p key={index}>{message}</p>
                   ))}
+                  {hasPhotoServiceError && (
+                    <p className="mt-1">
+                      {lang === 'vi'
+                        ? 'Các ảnh đã chọn vẫn được giữ. Bấm lại Tự Đăng Bài hoặc Chat Với AI để thử kiểm duyệt.'
+                        : 'Your photos are still selected. Choose manual listing or AI chat again to retry the review.'}
+                    </p>
+                  )}
                 </div>
               </div>
             )}
@@ -4063,7 +4100,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 {isInitializingPost && initMode === 'manual' ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin text-[#c34c36]" />
-                    <span>Đang tải...</span>
+                    <span>{lang === 'vi' ? 'Đang kiểm tra bộ ảnh…' : 'Checking photos…'}</span>
                   </>
                 ) : (
                   <>
@@ -4091,7 +4128,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 {isInitializingPost && initMode === 'ai' ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin text-amber-300" />
-                    <span>AI đang phân tích...</span>
+                    <span>{lang === 'vi' ? 'Đang kiểm tra và phân tích ảnh…' : 'Reviewing and analyzing photos…'}</span>
                   </>
                 ) : (
                   <>

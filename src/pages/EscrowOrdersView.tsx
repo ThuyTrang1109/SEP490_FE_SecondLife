@@ -1252,6 +1252,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   });
   const {
     reviewModalOrder, setReviewModalOrder, sellerReviewsModalData, setSellerReviewsModalData, reviewedOrderIds, handleReviewSubmit,
+    existingReview, isLoadingReview, handleReviewDelete,
   } = useOrderReviews();
   const [pickupConfirmedNotice, _setPickupConfirmedNotice] = useState<string | null>(null);
   const setPickupConfirmedNotice = (msg: string | null) => {
@@ -2074,6 +2075,9 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
           isOpen={!!reviewModalOrder}
           onClose={() => setReviewModalOrder(null)}
           onSubmitReview={handleReviewSubmit}
+          onDeleteReview={handleReviewDelete}
+          existingReview={existingReview}
+          isLoadingReview={isLoadingReview}
           lang={lang}
         />
       )}

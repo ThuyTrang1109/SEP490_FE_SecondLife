@@ -37,7 +37,7 @@ import {
 } from '../../services/userReportService';
 import { SellerDisputeResponseModal } from './SellerDisputeResponseModal';
 import { notificationWsClient } from '../../services/notificationWsClient';
-import { getSellerDisputeResponseState } from '../../utils/orders/orderDispute';
+import { getSellerDisputeResponseState, formatDisputeDateTime } from '../../utils/orders/orderDispute';
 import { DisputeEvidenceThumbnail } from '../common/DisputeEvidenceThumbnail';
 import { shippingService } from '../../services/shippingService';
 import { formatVND } from '../../utils/translations';
@@ -511,7 +511,7 @@ export function SellerOrderDisputes({ onOpenOrder, onOpenPost, getReasonLabel, l
                               <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                               <span>
                                 {lang === 'vi' ? 'Ra quyết định: ' : 'Resolved: '}
-                                {new Date(report.resolvedAt).toLocaleDateString('vi-VN')}
+                                {formatDisputeDateTime(report.resolvedAt)}
                               </span>
                             </div>
                           )}
@@ -816,7 +816,8 @@ export function SellerOrderDisputes({ onOpenOrder, onOpenPost, getReasonLabel, l
                               </p>
                             )}
                             <div className="text-[10px] text-slate-500 pt-1">
-                              Ngày ra quyết định: {new Date(timelineReport.resolvedAt).toLocaleString('vi-VN')}
+                              {lang === 'vi' ? 'Thời gian ra quyết định: ' : 'Decision time: '}
+                              {formatDisputeDateTime(timelineReport.resolvedAt)}
                             </div>
                           </div>
                         ) : (

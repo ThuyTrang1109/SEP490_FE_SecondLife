@@ -336,10 +336,15 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                       : isInboundShipping
                         ? 'SHIPPING_TO_CENTER'
                         : customerStatus;
-  const isConfirmedPendingDispatch = status === 'CONFIRMED_PENDING_DISPATCH' && (
+  const isConfirmedPendingDispatch = (status === 'CONFIRMED_PENDING_DISPATCH' || status === 'DISPATCHED' || status === 'SCHEDULED' || status === 'ASSIGNED') && (
     badgeStatus === 'CONFIRMED_PENDING_DISPATCH' ||
+    badgeStatus === 'DISPATCHED' ||
+    badgeStatus === 'SCHEDULED' ||
+    badgeStatus === 'ASSIGNED' ||
     badgeStatus === 'SHIPPING_TO_CENTER' ||
+    badgeStatus === 'DISPATCHED_TO_CENTER' ||
     badgeStatus === 'RECEIVED_AT_CENTER' ||
+    badgeStatus === 'WAITING_INSPECTION' ||
     badgeStatus === 'INBOUND_CANCELLED' ||
     badgeStatus === 'INBOUND_FAILED'
   );
@@ -802,8 +807,39 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
             ? (hasInsp
               ? (vi ? (isSeller ? 'Đã phân công KTV' : 'Đã Phân Công KTV • Chờ Khảo Sát') : 'Inspector Assigned')
               : (vi ? 'Đã Chốt Lịch • Chờ Giao KTV' : 'Visit Confirmed • Awaiting Dispatch'))
-            : (isSeller ? (vi ? 'Chờ bạn hẹn lịch đón KTV' : 'Awaiting your schedule') : (vi ? 'Chờ người bán hẹn lịch đón KTV' : 'Awaiting seller schedule')))
+            : (hasNoAppt
+              ? (isSeller ? (vi ? 'Chờ bạn hẹn lịch đón KTV' : 'Awaiting your schedule') : (vi ? 'Chờ người bán hẹn lịch đón KTV' : 'Awaiting seller schedule'))
+              : (hasInsp
+                ? (vi ? (isSeller ? 'Đã phân công KTV' : 'Đã Phân Công KTV • Chờ Khảo Sát') : 'Inspector Assigned')
+                : (vi ? 'Đã điều phối KTV' : 'Technician Dispatched'))))
       : (vi ? 'Đã thu đủ phí' : 'Fees collected'),
+    DISPATCHED: isAtHome
+      ? (isApptCountered
+        ? (isSeller ? (vi ? 'Hub đề xuất lịch mới' : 'Hub proposed reschedule') : (vi ? 'Chờ hẹn lại lịch' : 'Awaiting reschedule'))
+        : isApptPendingApproval
+          ? (isSeller ? (vi ? 'Đã đề xuất lịch • Chờ Hub duyệt' : 'Visit proposed • Awaiting Hub') : (vi ? 'Chờ Hub duyệt lịch' : 'Awaiting Hub approval'))
+          : hasApptConfirmed
+            ? (hasInsp
+              ? (vi ? (isSeller ? 'Đã phân công KTV' : 'Đã Phân Công KTV • Chờ Khảo Sát') : 'Inspector Assigned')
+              : (vi ? 'Đã Chốt Lịch • Chờ Giao KTV' : 'Visit Confirmed • Awaiting Dispatch'))
+            : (hasNoAppt
+              ? (isSeller ? (vi ? 'Chờ bạn hẹn lịch đón KTV' : 'Awaiting your schedule') : (vi ? 'Chờ người bán hẹn lịch đón KTV' : 'Awaiting seller schedule'))
+              : (hasInsp
+                ? (vi ? (isSeller ? 'Đã phân công KTV' : 'Đã Phân Công KTV • Chờ Khảo Sát') : 'Inspector Assigned')
+                : (vi ? 'Đã điều phối KTV' : 'Technician Dispatched'))))
+      : (vi ? 'Đã điều phối vận chuyển' : 'Dispatched'),
+    SCHEDULED: isAtHome
+      ? (hasApptConfirmed
+        ? (hasInsp
+          ? (vi ? (isSeller ? 'Đã phân công KTV' : 'Đã Phân Công KTV • Chờ Khảo Sát') : 'Inspector Assigned')
+          : (vi ? 'Đã chốt lịch kiểm định' : 'Schedule Confirmed'))
+        : (vi ? 'Đã xếp lịch kiểm định' : 'Inspection Scheduled'))
+      : (vi ? 'Đã xếp lịch kiểm định' : 'Inspection Scheduled'),
+    ASSIGNED: vi ? (isSeller ? 'Đã phân công KTV' : 'Đã Phân Công KTV • Chờ Khảo Sát') : 'Inspector Assigned',
+    DISPATCHED_TO_CENTER: vi ? 'Đang giao đến Hub' : 'Shipping to Hub',
+    WAITING_INSPECTION: vi ? 'Chờ kiểm định' : 'Awaiting Inspection',
+    INSPECTION_IN_PROGRESS: vi ? 'Đang kiểm định' : 'Inspection in Progress',
+    IN_PROGRESS: vi ? 'Đang kiểm định' : 'Inspection in progress',
     SHIPPING_TO_CENTER: vi ? 'Đang giao đến Hub' : 'Shipping to Hub',
     INBOUND_CANCELLED: vi ? 'Vận đơn đến Hub đã hủy' : 'Shipment to Hub cancelled',
     INBOUND_FAILED: vi ? 'Vận đơn đến Hub thất bại' : 'Shipment to Hub failed',
@@ -821,6 +857,8 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
       ? (vi ? 'Người mua đã mua tiếp' : 'Purchase confirmed')
       : (vi ? 'Người mua đã mua tiếp' : 'Purchase confirmed'),
     COMPLETED: vi ? 'Giao dịch hoàn tất' : 'Completed',
+    PENDING: vi ? 'Đang xử lý đề xuất' : 'Pending',
+    PROCESSING: vi ? 'Đang xử lý' : 'Processing',
   };
 
   return (
@@ -859,30 +897,30 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                   ? 'bg-amber-100 text-amber-900 border-amber-300 animate-pulse'
                   : badgeStatus === 'RECEIVED_AT_CENTER'
                     ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                    : badgeStatus === 'SHIPPING_TO_CENTER'
+                    : badgeStatus === 'SHIPPING_TO_CENTER' || badgeStatus === 'DISPATCHED_TO_CENTER'
                       ? 'bg-cyan-100 text-cyan-800 border-cyan-300'
                       : badgeStatus === 'INBOUND_CANCELLED' || badgeStatus === 'INBOUND_FAILED'
                         ? 'bg-rose-100 text-rose-800 border-rose-300 font-bold'
-                        : badgeStatus === 'CONFIRMED_PENDING_DISPATCH'
-                        ? (isAtHome
-                          ? (hasNoAppt
-                            ? 'bg-amber-100 text-amber-900 border-amber-300 font-bold'
-                            : isApptPendingApproval
-                              ? 'bg-blue-100 text-blue-800 border-blue-300 font-bold'
-                              : isApptCountered
-                                ? 'bg-orange-100 text-orange-900 border-orange-300 font-bold'
-                                : 'bg-emerald-100 text-emerald-800 border-emerald-300 font-bold')
-                          : 'bg-blue-100 text-blue-800 border-blue-300 font-bold')
-                        : badgeStatus === 'INSPECTING'
-                          ? 'bg-teal-100 text-teal-900 border-teal-300'
-                          : badgeStatus === 'PASSED' || badgeStatus === 'DELIVERING_TO_BUYER' || badgeStatus === 'COMPLETED'
-                            ? 'bg-emerald-100 text-emerald-800 border-emerald-300 font-bold'
-                            : ['FAILED', 'REJECTED', 'CANCELLED', 'BUYER_REJECTED_PURCHASE'].includes(badgeStatus)
-                              ? 'bg-rose-100 text-rose-800 border-rose-300'
-                              : 'bg-slate-100 text-slate-800 border-slate-300'
+                        : badgeStatus === 'CONFIRMED_PENDING_DISPATCH' || badgeStatus === 'DISPATCHED' || badgeStatus === 'SCHEDULED' || badgeStatus === 'ASSIGNED'
+                          ? (isAtHome
+                            ? (hasNoAppt
+                              ? 'bg-amber-100 text-amber-900 border-amber-300 font-bold'
+                              : isApptPendingApproval
+                                ? 'bg-blue-100 text-blue-800 border-blue-300 font-bold'
+                                : isApptCountered
+                                  ? 'bg-orange-100 text-orange-900 border-orange-300 font-bold'
+                                  : 'bg-emerald-100 text-emerald-800 border-emerald-300 font-bold')
+                            : 'bg-blue-100 text-blue-800 border-blue-300 font-bold')
+                          : badgeStatus === 'INSPECTING' || badgeStatus === 'INSPECTION_IN_PROGRESS' || badgeStatus === 'WAITING_INSPECTION' || badgeStatus === 'IN_PROGRESS'
+                            ? 'bg-teal-100 text-teal-900 border-teal-300'
+                            : badgeStatus === 'PASSED' || badgeStatus === 'DELIVERING_TO_BUYER' || badgeStatus === 'COMPLETED'
+                              ? 'bg-emerald-100 text-emerald-800 border-emerald-300 font-bold'
+                              : ['FAILED', 'REJECTED', 'CANCELLED', 'BUYER_REJECTED_PURCHASE', 'PAYMENT_EXPIRED'].includes(badgeStatus)
+                                ? 'bg-rose-100 text-rose-800 border-rose-300'
+                                : 'bg-slate-100 text-slate-800 border-slate-300'
               }`}
           >
-            {badgeLabels[badgeStatus] || badgeStatus}
+            {badgeLabels[badgeStatus] || (vi ? 'Đang xử lý kiểm định' : badgeStatus)}
           </span>
         </div>
 
@@ -952,7 +990,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                   <span className="font-semibold text-slate-800">{formatFee(baseInspectionFee)}</span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span>• Cước Lalamove giao Hub:</span>
+                  <span>• Cước vận chuyển giao hàng tới Hub:</span>
                   <span className="font-semibold text-slate-800">{formatFee(shippingFeeToHub)}</span>
                 </div>
                 <div className="flex justify-between items-center">
@@ -1368,7 +1406,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
         )}
 
         {/* 4. STATUS: CONFIRMED_PENDING_DISPATCH / SHIPPING_TO_CENTER / RECEIVED_AT_CENTER / INBOUND_CANCELLED / INBOUND_FAILED */}
-        {(isConfirmedPendingDispatch || badgeStatus === 'SHIPPING_TO_CENTER' || badgeStatus === 'RECEIVED_AT_CENTER' || badgeStatus === 'INBOUND_CANCELLED' || badgeStatus === 'INBOUND_FAILED') && !isInspecting && !isPassed && !isFailed && !isCancelled && !isPurchaseAccepted && !isCompleted && (
+        {(isConfirmedPendingDispatch || badgeStatus === 'SHIPPING_TO_CENTER' || badgeStatus === 'DISPATCHED_TO_CENTER' || badgeStatus === 'RECEIVED_AT_CENTER' || badgeStatus === 'INBOUND_CANCELLED' || badgeStatus === 'INBOUND_FAILED') && !isInspecting && !isPassed && !isFailed && !isCancelled && !isPurchaseAccepted && !isCompleted && (
           isInboundDelivered ? (
             <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-950 space-y-1.5">
               <div className="font-bold flex items-center justify-between">
@@ -1491,7 +1529,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                         ? 'Khách mua đã đăng ký gói kiểm định tận nơi. Vui lòng bấm nút "Hẹn Lịch Đón KTV" bên dưới để chọn ngày giờ làm việc trong khung giờ hành chính (08:00 - 12:00 hoặc 13:00 - 17:00). Trung tâm SecondLife sẽ nhận thông tin để điều phối Kỹ thuật viên phù hợp.'
                         : 'Buyer requested on-site inspection. Please click "Schedule Visit" below to choose an appointment slot.')
                       : (lang === 'vi'
-                        ? 'Hai bên đã nộp đủ phí kiểm định GĐ 1. Đang chờ người bán chọn ngày giờ làm việc để Kỹ thuật viên SecondLife đến tận nhà kiểm định thiết bị.'
+                        ? 'Hai bên đã nộp đủ phí kiểm định giai đoạn 1. Đang chờ người bán chọn ngày giờ làm việc để Kỹ thuật viên SecondLife đến tận nhà kiểm định thiết bị.'
                         : 'Inspection fees collected. Waiting for the seller to choose a visit appointment.')}
                   </p>
 
@@ -1729,7 +1767,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                       : 'Lalamove driver is delivering the sealed parcel to your address.')}
                 </p>
               </div>
-            ) : isAwaitingPickup ? (
+            ) : isAwaitingPickup ? isAtHome && (
               <div className="p-3 bg-teal-50/90 border border-teal-200 rounded-xl text-xs text-teal-950 space-y-1.5 animate-fadeIn">
                 <div className="font-bold flex items-center justify-between">
                   <div className="flex items-center gap-1.5 text-teal-800">

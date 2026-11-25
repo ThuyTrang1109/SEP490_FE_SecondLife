@@ -39,7 +39,7 @@ test('resolveReturnReserveStatusLabel maps all expected reserve statuses and fal
   assert.equal(resolveReturnReserveStatusLabel('AWAITING_RETURN_SHIPMENT'), 'Chờ tạo chuyến hoàn');
   assert.equal(resolveReturnReserveStatusLabel('RETURN_IN_PROGRESS'), 'Đang trả hàng');
   assert.equal(resolveReturnReserveStatusLabel('AWAITING_ACTUAL_FEE'), 'Chờ cước thực tế');
-  assert.equal(resolveReturnReserveStatusLabel('AWAITING_CASH_CONFIRMATION'), 'Đã giao về seller · Chờ xác nhận chi cước');
+  assert.equal(resolveReturnReserveStatusLabel('AWAITING_CASH_CONFIRMATION'), 'Đã giao về người bán · Chờ xác nhận chi cước');
   assert.equal(resolveReturnReserveStatusLabel('AWAITING_RECONCILIATION'), 'Chờ đối soát cước');
   assert.equal(resolveReturnReserveStatusLabel('EXCEEDS_RESERVE'), 'Cước thực tế vượt dự phòng');
   assert.equal(resolveReturnReserveStatusLabel('SETTLED'), 'Đã quyết toán cước hoàn');
@@ -167,7 +167,7 @@ test('Kịch bản 2: Hub đã nhận 50.000 ₫, chuyến hoàn đã giao: gi�
   const reserveBadge = resolveReturnReserveStatusLabel(scenario2.returnReserve?.status);
   const shipmentBadge = resolveShipmentStatusLabel(scenario2.shipments?.[0]?.status);
 
-  assert.equal(reserveBadge, 'Đã giao về seller · Chờ xác nhận chi cước');
+  assert.equal(reserveBadge, 'Đã giao về người bán · Chờ xác nhận chi cước');
   assert.equal(shipmentBadge, 'Đã giao hàng');
   assert.notEqual(reserveBadge, shipmentBadge);
 });
@@ -301,7 +301,7 @@ test('AdminInspectionFundsView renders Scenario 2 correctly (Hub nhận 50k, gi�
     funds: scenario2,
   }));
 
-  assert.match(html, /Đã giao về seller · Chờ xác nhận chi cước/);
+  assert.match(html, /Đã giao về người bán · Chờ xác nhận chi cước/);
   assert.match(html, /Đã giao hàng/);
 });
 
@@ -648,8 +648,8 @@ test('AdminInspectionFundsView renders full Return Reserve details (actual fee, 
   }));
 
   // Verify all 4 requirements are present in HTML output:
-  // 1. Tiền vận chuyển thực tế từ trung tâm về seller
-  assert.match(html, /Cước hoàn thực tế \(Hub → Seller\)/);
+  // 1. Tiền vận chuyển thực tế từ trung tâm về người bán
+  assert.match(html, /Cước hoàn thực tế \(Hub → Người bán\)/);
   assert.match(html, /46\.200/);
   assert.match(html, /LLM-RET-001/);
 

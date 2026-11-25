@@ -506,35 +506,55 @@ export function resolveProvinceFromText(
   return undefined;
 }
 
+const LOCATION_CATALOG_TTL_MS = 5 * 60 * 1000;
+let provincesCache: { data: GhnLocation[]; expiresAt: number } | null = null;
+let provincesInFlight: Promise<GhnLocation[]> | null = null;
+let citiesCache: { data: any; expiresAt: number } | null = null;
+let citiesInFlight: Promise<any> | null = null;
+
 export const shippingService = {
   /**
    * Lấy danh sách Tỉnh/Thành phố từ BE (Lalamove catalogue)
    * GET /api/v1/shipping/provinces
    */
   async getProvinces(): Promise<GhnLocation[]> {
-    try {
-      const res = await request<any>('/shipping/provinces', {
-        method: 'GET',
-        requiresAuth: false,
-      });
-      const raw = Array.isArray(res?.data)
-        ? res.data
-        : Array.isArray(res?.data?.data)
-          ? res.data.data
-          : [];
-      if (raw && raw.length > 0) {
-        return raw.map((item: any) => ({
-          _id: item._id ?? item.ProvinceID ?? item.id,
-          name: item.name ?? item.ProvinceName ?? item.nameExtension?.[0] ?? 'Tỉnh/Thành',
-          type: item.type ?? 'province',
-          status: item.status ?? 1,
-        }));
-      }
-      return FALLBACK_PROVINCES.filter(province => province._id === 1000001 || province._id === 1000002);
-    } catch (err) {
-      console.warn('Backend /shipping/provinces failed, using fallback:', err);
-      return FALLBACK_PROVINCES.filter(province => province._id === 1000001 || province._id === 1000002);
+    const fallback = FALLBACK_PROVINCES.filter(province => province._id === 1000001 || province._id === 1000002);
+    if (provincesCache && Date.now() < provincesCache.expiresAt) {
+      return provincesCache.data;
     }
+    if (provincesInFlight) {
+      return provincesInFlight;
+    }
+    provincesInFlight = (async () => {
+      try {
+        const res = await request<any>('/shipping/provinces', {
+          method: 'GET',
+          requiresAuth: false,
+          isBackground: true,
+        });
+        const raw = Array.isArray(res?.data)
+          ? res.data
+          : Array.isArray(res?.data?.data)
+            ? res.data.data
+            : [];
+        const result = raw && raw.length > 0
+          ? raw.map((item: any) => ({
+              _id: item._id ?? item.ProvinceID ?? item.id,
+              name: item.name ?? item.ProvinceName ?? item.nameExtension?.[0] ?? 'Tỉnh/Thành',
+              type: item.type ?? 'province',
+              status: item.status ?? 1,
+            }))
+          : fallback;
+        provincesCache = { data: result, expiresAt: Date.now() + LOCATION_CATALOG_TTL_MS };
+        return result;
+      } catch {
+        provincesCache = { data: fallback, expiresAt: Date.now() + LOCATION_CATALOG_TTL_MS };
+        return fallback;
+      } finally {
+        provincesInFlight = null;
+      }
+    })();
+    return provincesInFlight;
   },
 
   /**
@@ -601,16 +621,30 @@ export const shippingService = {
    * GET /api/v1/shipping/cities
    */
   async getCities(): Promise<any> {
-    try {
-      const res = await request<any>('/shipping/cities', {
-        method: 'GET',
-        requiresAuth: true,
-      });
-      return (res as any)?.data ?? res;
-    } catch (err) {
-      console.warn('Backend /shipping/cities failed:', err);
-      return null;
+    if (citiesCache && Date.now() < citiesCache.expiresAt) {
+      return citiesCache.data;
     }
+    if (citiesInFlight) {
+      return citiesInFlight;
+    }
+    citiesInFlight = (async () => {
+      try {
+        const res = await request<any>('/shipping/cities', {
+          method: 'GET',
+          requiresAuth: true,
+          isBackground: true,
+        });
+        const data = (res as any)?.data ?? res;
+        citiesCache = { data, expiresAt: Date.now() + LOCATION_CATALOG_TTL_MS };
+        return data;
+      } catch {
+        citiesCache = { data: null, expiresAt: Date.now() + LOCATION_CATALOG_TTL_MS };
+        return null;
+      } finally {
+        citiesInFlight = null;
+      }
+    })();
+    return citiesInFlight;
   },
 
   /**
@@ -712,15 +746,16 @@ export const shippingService = {
    * PUT /api/v1/posts/{postId}/shipping-package
    */
   async updateShippingPackage(postId: string, body: ShippingParcel): Promise<ShippingParcel> {
-    try {
-      localStorage.setItem(`post_parcel_${postId}`, JSON.stringify(body));
-    } catch { }
     const res = await request<ShippingParcel>(`/posts/${postId}/shipping-package`, {
       method: 'PUT',
       body: JSON.stringify(body),
       requiresAuth: true,
     });
-    return ((res as any)?.data ?? res) as ShippingParcel;
+    const saved = ((res as any)?.data ?? res) as ShippingParcel;
+    try {
+      localStorage.setItem(`post_parcel_${postId}`, JSON.stringify(saved));
+    } catch { }
+    return saved;
   },
 
   /**

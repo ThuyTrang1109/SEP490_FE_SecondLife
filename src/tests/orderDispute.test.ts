@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { EscrowOrder } from "../types";
-import { canOpenOrderDispute, canCreateApprovedOrderReturn, getApprovedReturnLabel, formatDisputeReason, formatDisputeStatus, getSellerDisputeResponseState } from '../utils/orders/orderDispute';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { OrderSettlement } from '../components/orders/detail/OrderSettlement';
+import type { EscrowOrder, ShipmentBackend } from '../types';
+import { canOpenOrderDispute, canCreateApprovedOrderReturn, getApprovedReturnLabel, formatDisputeReason, formatDisputeStatus, formatDisputeDateTime, getOrderEscrowHoldNotice, getSellerDisputeResponseState, isOrderEscrowOnHold } from '../utils/orders/orderDispute';
 import { resolveAppRoute } from '../app/router/paths';
 
 const delivery = Date.parse('2026-11-22T03:00:00Z');
@@ -17,6 +20,53 @@ test('order dispute eligibility follows backend delivery and exact deadline', ()
   assert.equal(canOpenOrderDispute({ ...order, escrowStatus: 'RELEASED' }, delivery), false);
   assert.equal(canOpenOrderDispute({ ...order, shippingDeliveredAt: undefined }, delivery), false);
   assert.equal(canOpenOrderDispute({ ...order, status: 'DISPUTED', backendStatus: 'DELIVERED', backendEscrowStatus: 'FROZEN' }, delivery), true);
+});
+
+test('a rejected Hub-to-buyer shipment hides only the generic escrow notice', () => {
+  const rejected: ShipmentBackend = {
+    shipmentId: 'failed-hub-leg', orderId: 'purchase', orderCode: 'carrier-order',
+    leg: 'CENTER_TO_BUYER', status: 'FAILED', providerStatus: 'REJECTED',
+    expectedDeliveryTime: null, deliveredAt: null,
+  };
+  const hubOrder = {
+    id: rejected.orderId,
+    backendStatus: 'CONFIRMED',
+    backendEscrowStatus: 'FROZEN',
+    inspectionStatus: 'DELIVERING_TO_BUYER',
+    inspectionMethod: 'AT_CENTER',
+    shipments: [
+      { ...rejected, shipmentId: 'inbound', leg: 'SELLER_TO_CENTER', status: 'DELIVERED', providerStatus: 'COMPLETED' },
+      rejected,
+    ],
+  } as EscrowOrder;
+  const genericTitle = 'Quỹ Escrow đang tạm đóng băng';
+
+  assert.equal(isOrderEscrowOnHold(hubOrder), true);
+  assert.equal(getOrderEscrowHoldNotice(hubOrder, 'vi'), null);
+  assert.equal(getOrderEscrowHoldNotice(hubOrder, 'en', [rejected]), null);
+  assert.match(getOrderEscrowHoldNotice({ ...hubOrder, hasActiveDispute: true }, 'vi')?.title ?? '', /do khiếu nại/);
+
+  const otherShipments = [
+    { ...rejected, leg: 'SELLER_TO_CENTER' },
+    { ...rejected, leg: 'CENTER_TO_SELLER' },
+    { ...rejected, providerStatus: 'EXPIRED' },
+  ];
+  for (const shipment of otherShipments) {
+    assert.equal(getOrderEscrowHoldNotice(hubOrder, 'vi', [shipment])?.title, genericTitle);
+  }
+  const replacement = { ...rejected, shipmentId: 'new-hub-leg', status: 'ASSIGNED', providerStatus: 'ON_GOING' };
+  assert.equal(getOrderEscrowHoldNotice(hubOrder, 'vi', [rejected, replacement])?.title, genericTitle);
+  assert.equal(getOrderEscrowHoldNotice({ ...hubOrder, inspectionMethod: 'AT_HOME' }, 'vi')?.title, genericTitle);
+  assert.equal(getOrderEscrowHoldNotice({ ...hubOrder, orderReturn: {
+    orderId: hubOrder.id, reportId: 'return-approved',
+  } }, 'vi')?.title, genericTitle);
+
+  const sellerDetail = renderToStaticMarkup(createElement(OrderSettlement, {
+    order: hubOrder, lang: 'vi', isSeller: true, detailBuyerInspectionStage: null,
+    isOrderReceiptConfirmed: () => false, orderSettlement: null, isEscrowReleased: false,
+    isLoadingSettlement: false, orderCommission: null,
+  }));
+  assert.doesNotMatch(sellerDetail, /Quỹ Escrow đang tạm đóng băng/);
 });
 
 test('seller response distinguishes an expired deadline from a resolved report', () => {
@@ -89,4 +139,11 @@ test('seller dispute items preserve arbitration decision, evidence, and buyer de
   assert.equal(sellerDispute.responsibleParty, 'SELLER');
   assert.equal(sellerDispute.decisionReason, 'Vì seller k cũng cấp bằng chứng');
   assert.equal(formatDisputeReason(sellerDispute.reasonCode, 'vi'), 'Hàng nhận được hư hỏng / Sai khác');
+  const formattedResolvedAt = formatDisputeDateTime(sellerDispute.resolvedAt);
+  assert.equal(typeof formattedResolvedAt, 'string');
+  assert.equal(formattedResolvedAt.length > 0, true);
+  // Contains date and time
+  assert.equal(formattedResolvedAt.includes('2026'), true);
+  assert.equal(formattedResolvedAt.includes(':'), true);
 });
+

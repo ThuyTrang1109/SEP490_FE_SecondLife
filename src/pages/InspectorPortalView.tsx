@@ -268,11 +268,11 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
       const orders = await inspectorService.getMyOrders();
       const sorted = Array.isArray(orders)
         ? [...orders].sort((a, b) => {
-            const timeA = getOrderTimestamp(a);
-            const timeB = getOrderTimestamp(b);
-            if (timeB !== timeA) return timeB - timeA;
-            return (b.id || '').localeCompare(a.id || '');
-          })
+          const timeA = getOrderTimestamp(a);
+          const timeB = getOrderTimestamp(b);
+          if (timeB !== timeA) return timeB - timeA;
+          return (b.id || '').localeCompare(a.id || '');
+        })
         : [];
       setBackendOrders(sorted);
     } catch (err) {
@@ -1100,7 +1100,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                     {inspectorTab === 'workbench' && 'Bàn Đo Kiểm Trực Tiếp'}
                     {inspectorTab === 'tasks' && 'Hàng Đợi Nhiệm Vụ & Lịch Hẹn'}
                     {inspectorTab === 'certificates' && 'Sổ Chứng Thư Số & Hồ Sơ'}
-                    {inspectorTab === 'standards' && 'Tiêu Chuẩn Kỹ Thuật ISO 17025'}
+                    {inspectorTab === 'standards' && 'Tiêu Chuẩn Kỹ Thuật Của Phòng Kiểm Định'}
                   </span>
                 </div>
                 <h1 className="text-xl sm:text-2xl font-black text-[#24263e] tracking-tight flex flex-wrap items-center gap-2.5">
@@ -1108,7 +1108,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                     {inspectorTab === 'workbench' && 'Bàn Làm Việc Kỹ Thuật Viên'}
                     {inspectorTab === 'tasks' && 'Hàng Đợi Nhiệm Vụ & Lịch Đo Kiểm'}
                     {inspectorTab === 'certificates' && 'Sổ Tay Hồ Sơ & Chứng Thư Số'}
-                    {inspectorTab === 'standards' && 'Tiêu Chuẩn Phòng Lab ISO/IEC 17025'}
+                    {inspectorTab === 'standards' && 'Tiêu Chuẩn Phòng kiểm đinh'}
                   </span>
                   {/* <span className="text-xs bg-emerald-100 text-emerald-800 border border-emerald-300 px-2.5 py-0.5 rounded-full font-bold">
                     Đang Trực Ca

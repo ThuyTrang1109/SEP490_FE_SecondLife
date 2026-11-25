@@ -325,7 +325,7 @@ export function OrderStatusBadge({
             ? isReturnDelivered
               ? (isSellerForThisOrder ? 'Người mua từ chối mua • Đã hoàn trả hàng' : 'Đã từ chối mua tiếp • Đã hoàn trả người bán')
               : isReturnInTransit
-                ? (isSellerForThisOrder ? 'Người mua từ chối mua • Đang chuyển hoàn về Seller' : 'Đã từ chối mua tiếp • Đang chuyển hoàn')
+                ? (isSellerForThisOrder ? 'Người mua từ chối mua • Đang chuyển hoàn về bạn' : 'Đã từ chối mua tiếp • Đang chuyển hoàn')
                 : (isSellerForThisOrder ? 'Người mua từ chối mua • Chờ trung tâm hoàn hàng' : 'Đã từ chối mua tiếp • Chờ trung tâm hoàn hàng')
             : isReturnDelivered
               ? 'Buyer Declined • Returned to Seller'
@@ -356,7 +356,7 @@ export function OrderStatusBadge({
     const returnShipment = isSellerForThisOrder
       ? (orderItem?.returnShipment === undefined ? (getLatestReturnShipment(allOrderShipments) || getHubReturnState(allOrderShipments).shipment) : orderItem.returnShipment)
       : orderItem?.returnShipment ||
-        getLatestReturnShipment(allOrderShipments);
+      getLatestReturnShipment(allOrderShipments);
     const isReturnDelivered = returnShipment?.status === 'DELIVERED' || returnShipment?.status === 'COMPLETED' || (returnShipment && getHubReturnProgress(returnShipment, lang).step === 3);
     const isReturnInProgress = isSellerForThisOrder
       ? getSellerHubReturnStage(returnShipment) === 'returning'

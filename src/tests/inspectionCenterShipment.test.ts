@@ -229,7 +229,6 @@ test('the shipment modal offers only the outbound action allowed by the inspecti
     inboundShipments: new Map(),
     inspectionShipments: [],
     isLoadingShipments: false,
-    isOrderReceivedAtHub: () => true,
     setReturnQuoteOrder: () => {},
     setShipmentError: () => {},
     setShipmentSuccess: () => {},
@@ -286,12 +285,38 @@ test('the shipment modal offers only the outbound action allowed by the inspecti
   assert.match(inboundHtml, /Tạo vận đơn/);
   assert.match(inboundHtml, /Đã giao thành công/);
 
+  const delivered = shipment('new-inbound', 'SELLER_TO_CENTER', 'DELIVERED', 'COMPLETED');
+  const previousAttempts = [
+    shipment('cancelled-inbound', 'SELLER_TO_CENTER', 'CANCELLED', 'CANCELED'),
+    shipment('stale-carrier-status', 'SELLER_TO_CENTER', 'CANCELED', 'COMPLETED'),
+    shipment('old-inbound', 'SELLER_TO_CENTER', 'ASSIGNED', 'ON_GOING'),
+  ];
+  const history = render({ status: 'RECEIVED_AT_CENTER' }, {
+    inspectionShipments: [...previousAttempts, delivered],
+    inboundShipments: new Map([[order.id, delivered]]),
+  });
+  const start = previousAttempts.map((item) => history.indexOf(`Mã Vận đơn: #${item.orderCode}`));
+  const deliveryStart = history.indexOf(`Mã Vận đơn: #${delivered.orderCode}`);
+  assert.ok(start[0] >= 0 && start[0] < start[1] && start[1] < start[2] && start[2] < deliveryStart);
+  const cancelledCard = history.slice(start[0], start[1]);
+  const staleCarrierCard = history.slice(start[1], start[2]);
+  const activeCard = history.slice(start[2], deliveryStart);
+  const deliveredCard = history.slice(deliveryStart);
+  for (const card of [cancelledCard, staleCarrierCard]) {
+    assert.match(card, /bg-rose-100[^>]*>Vận đơn đã hủy/);
+    assert.doesNotMatch(card, /Đã nhận tại Hub|Đã giao thành công|bg-emerald-600/);
+  }
+  assert.match(activeCard, /Tài xế đang đến lấy hàng/);
+  assert.doesNotMatch(activeCard, /Đã nhận tại Hub/);
+  assert.match(deliveredCard, /bg-emerald-100[^>]*>Đã nhận tại Hub/);
+  assert.equal((deliveredCard.match(/bg-emerald-600/g) ?? []).length, 4);
+
   const failedReturn = shipment('failed-return', 'CENTER_TO_SELLER', 'FAILED', 'REJECTED');
   const rebookReturnHtml = render(declined, {
     inspectionShipments: [failedReturn],
     hubReturns: new Map([[order.id, getHubReturnState([inbound, failedReturn])]]),
   });
-  assert.match(rebookReturnHtml, /Tạo lại vận đơn trả người bán/);
+  assert.doesNotMatch(rebookReturnHtml, /Tạo lại vận đơn trả người bán/);
   assert.match(rebookReturnHtml, /Tạo lại vận đơn hoàn trả/);
   assert.match(rebookReturnHtml, /Vận đơn thất bại/);
 

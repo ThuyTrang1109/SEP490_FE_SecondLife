@@ -1,4 +1,5 @@
 import type { EscrowOrder, Language, OrderReturnInfo, ShipmentBackend } from '../../types';
+import { getLatestInspectionShipment } from '../inspectionCenterData';
 import { getLalamoveInterruption, getLatestDirectShipment } from '../lalamoveTracking';
 import { isOrderDeliveredToBuyer, isOrderWithInspection } from './orderReceipt';
 
@@ -23,6 +24,14 @@ export function getOrderEscrowHoldNotice(order: EscrowOrder, lang: Language, shi
       title: vi ? 'Quỹ Escrow đang tạm đóng băng do khiếu nại / tranh chấp' : 'Escrow is frozen due to a dispute',
       description: vi ? 'SecondLife đang xem xét khiếu nại. Khoản thanh toán được bảo lưu trong Escrow.' : 'SecondLife is reviewing the dispute. The payment remains in Escrow.',
     };
+  }
+  if (
+    order.inspectionMethod === 'AT_CENTER' &&
+    !order.orderReturn &&
+    getLalamoveInterruption(getLatestInspectionShipment(shipments, 'CENTER_TO_BUYER')) === 'REJECTED' &&
+    !isOrderDeliveredToBuyer(order, shipments)
+  ) {
+    return null;
   }
   if (!isOrderWithInspection(order) && !isOrderDeliveredToBuyer(order) && !order.orderReturn) {
     if (getLalamoveInterruption(getLatestDirectShipment(shipments))) {
@@ -204,6 +213,23 @@ export function formatDisputeStatus(status?: string | null, lang: Language = 'vi
       return 'Dismissed';
     default:
       return status;
+  }
+}
+
+export function formatDisputeDateTime(dateStr?: string | null): string {
+  if (!dateStr) return '';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return String(dateStr);
+    return d.toLocaleString('vi-VN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+  } catch {
+    return String(dateStr);
   }
 }
 

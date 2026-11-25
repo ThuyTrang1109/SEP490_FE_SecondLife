@@ -71,7 +71,7 @@ export function resolveReturnReserveStatusLabel(status?: AdminReturnReserveStatu
     case 'AWAITING_ACTUAL_FEE':
       return 'Chờ cước thực tế';
     case 'AWAITING_CASH_CONFIRMATION':
-      return 'Đã giao về seller · Chờ xác nhận chi cước';
+      return 'Đã giao về người bán · Chờ xác nhận chi cước';
     case 'AWAITING_RECONCILIATION':
       return 'Chờ đối soát cước';
     case 'EXCEEDS_RESERVE':
@@ -137,6 +137,37 @@ export function resolveShipmentStatusLabel(status?: string | null): string {
       return 'Thất bại';
     default:
       return 'Chưa xác định';
+  }
+}
+
+/**
+ * Map providerStatus (Lalamove/Ahamove...) to Vietnamese labels
+ */
+export function resolveProviderStatusLabel(providerStatus?: string | null): string {
+  if (!providerStatus) return '';
+  switch (providerStatus.toUpperCase()) {
+    case 'COMPLETED':
+      return 'Hoàn thành';
+    case 'DELIVERED':
+      return 'Đã giao hàng';
+    case 'ASSIGNING_DRIVER':
+      return 'Đang tìm tài xế';
+    case 'ON_GOING':
+    case 'IN_TRANSIT':
+      return 'Đang vận chuyển';
+    case 'PICKED_UP':
+      return 'Đã lấy hàng';
+    case 'CANCELLED':
+    case 'CANCELED':
+      return 'Đã hủy';
+    case 'REJECTED':
+      return 'Bị từ chối';
+    case 'EXPIRED':
+      return 'Hết hạn';
+    case 'FAILED':
+      return 'Thất bại';
+    default:
+      return providerStatus;
   }
 }
 
@@ -297,6 +328,7 @@ export interface ReturnReserveDetails {
   plannedAmount: number;
   heldAmount: number;
   returnShipment: AdminFundShipmentDTO | null;
+  returnShipments: AdminFundShipmentDTO[];
   actualReturnFee: number;
   hasActualReturnFee: boolean;
   returnShipmentCode: string | null;
@@ -325,12 +357,14 @@ export function resolveReturnReserveDetails(funds?: AdminInspectionOrderFundsDTO
   const heldAmount = Number(funds?.returnReserve?.heldAmount ?? 0);
   const status = (funds?.returnReserve?.status || '').toUpperCase();
 
-  // Find return shipment: leg CENTER_TO_SELLER or HUB_TO_SELLER
-  const returnShipment =
-    funds?.shipments?.find((s) => {
+  // Find all return shipments: leg CENTER_TO_SELLER or HUB_TO_SELLER or RETURN
+  const returnShipments =
+    funds?.shipments?.filter((s) => {
       const leg = (s.leg || '').toUpperCase();
-      return leg === 'CENTER_TO_SELLER' || leg === 'HUB_TO_SELLER';
-    }) || null;
+      return leg === 'CENTER_TO_SELLER' || leg === 'HUB_TO_SELLER' || leg === 'RETURN';
+    }) || [];
+
+  const returnShipment = returnShipments[returnShipments.length - 1] || null;
 
   const hasActualReturnFee = returnShipment?.actualFee != null && returnShipment.actualFee >= 0;
   const actualReturnFee = hasActualReturnFee ? Number(returnShipment!.actualFee) : 0;
@@ -390,8 +424,8 @@ export function resolveReturnReserveDetails(funds?: AdminInspectionOrderFundsDTO
     const returnSettledAt = funds?.settlement?.returnShippingSettledAt;
     const settledTimeStr = returnSettledAt ? ` vào lúc ${formatAuditDateTime(returnSettledAt)}` : '';
     refundDescription = refundAmountsRecorded
-      ? `Đã đối soát xong cước hoàn${settledTimeStr}. Phần dư đã được tự động hoàn vào ví Người mua (${formatVND(buyerSurplusShare)}) và ví Người bán (${formatVND(sellerSurplusShare)}) theo số tiền hạch toán.`
-      : `Đã đối soát xong cước hoàn${settledTimeStr}. Phân bổ ${formatVND(buyerSurplusShare)} cho Người mua và ${formatVND(sellerSurplusShare)} cho Người bán được tính theo tỷ lệ đã chốt. Chưa có dữ liệu hạch toán khoản hoàn để xác nhận tiền vào ví.`;
+      ? `Đã đối soát xong cước hoàn${settledTimeStr}. Tiền dư của từng bên đã được tự động hoàn vào ví theo kết quả hạch toán.`
+      : `Đã đối soát xong cước hoàn${settledTimeStr}. Phân bổ tiền dư cho Người mua và Người bán được tính theo tỷ lệ đã chốt. Chưa có dữ liệu hạch toán khoản hoàn để xác nhận tiền vào ví.`;
     if (refundAmountsRecorded && isLegacySellerSettlement) {
       refundDescription += ` Đơn này đã quyết toán theo quy tắc cũ: Người mua được hoàn ${formatVND(Number(settlement.buyerRefundAmount))} trước khi đối soát cước hoàn, phần dư được xử lý cho Người bán.`;
     }
@@ -407,7 +441,7 @@ export function resolveReturnReserveDetails(funds?: AdminInspectionOrderFundsDTO
     refundDescription = `Cước hoàn thực tế (${formatVND(actualReturnFee)}) vượt mức dự phòng kế hoạch (${formatVND(plannedAmount)}). Không còn tiền dư hoàn lại cho các bên.`;
   } else if (isAwaitingConfirmation) {
     refundStatus = 'AWAITING_CONFIRMATION';
-    refundStatusLabel = 'Đã giao về Seller · Chờ xác nhận cước';
+    refundStatusLabel = 'Đã giao về người bán · Chờ xác nhận cước';
     refundStatusBadge = { bg: 'bg-orange-50', text: 'text-orange-800', border: 'border-orange-300' };
     refundDescription = `Kiện hàng đã giao thành công về cho người bán. Đang chờ xác nhận chi cước hoàn thực tế trước khi tự động giải ngân tiền dư ${formatVND(surplusAmount)} về ví của các bên.`;
   } else if (isProcessing) {
@@ -431,6 +465,7 @@ export function resolveReturnReserveDetails(funds?: AdminInspectionOrderFundsDTO
     plannedAmount,
     heldAmount,
     returnShipment,
+    returnShipments,
     actualReturnFee,
     hasActualReturnFee,
     returnShipmentCode,

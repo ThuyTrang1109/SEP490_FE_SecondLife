@@ -35,5 +35,6 @@ export * from './staffReportService';
 export * from './returnShippingFeeService';
 export * from './videoService';
 export * from './userReportService';
+export * from './orderReviewService';
 
 

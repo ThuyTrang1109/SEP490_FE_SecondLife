@@ -4,12 +4,37 @@ import {
   ACCESS_TOKEN_KEY, ApiError, clearAuthTokens, request, requestGet,
 } from '../services/apiClient';
 import { inspectorService } from '../services/inspectorService';
+import { mediaService } from '../services/mediaService';
+import { getInspectionPhotoUploadError, getInspectionBatchPhotoError } from '../utils/inspectionEvidencePhotos';
 import { postService } from '../services/postService';
 import { shippingService } from '../services/shippingService';
 import { getSellerPreListingInspections, hasPreListingInspectionResult } from '../services/orderFeedService';
 import { createInFlightRequests } from '../utils/inFlightRequests';
 import { getListingPhotoUploadIssues } from '../utils/listingPhotoUploadErrors';
 import { getLalamoveInterruption, isLalamoveShipmentTerminal, shouldSyncLalamoveShipment } from '../utils/lalamoveTracking';
+
+test('a listing without a valuation resolves to no AI price range', async (t) => {
+  const calls = interceptFetch(t);
+  const result = postService.getLatestPriceEstimate('listing-without-estimate');
+  await tick();
+  assert.equal(calls.length, 1);
+  calls[0].result.resolve(response(undefined));
+  assert.equal(await result, null);
+});
+
+test('listing valuation returns the real price range and keeps compatibility with the previous API', async (t) => {
+  const calls = interceptFetch(t);
+  const result = postService.getLatestPriceEstimate('listing-with-estimate');
+  await tick();
+  const estimate = { fairPriceMin: 310000, fairPriceMax: 425000, suggestedPrice: 380000 };
+  calls[0].result.resolve(response(estimate));
+  assert.deepEqual(await result, estimate);
+
+  const empty = postService.getLatestPriceEstimate('legacy-unvalued-listing');
+  await tick();
+  calls[1].result.resolve(response(null, 404));
+  assert.equal(await empty, null);
+});
 
 function memoryStorage(): Storage {
   const values = new Map<string, string>();
@@ -121,6 +146,31 @@ test('listing init preserves validation details and identifies the rejected subm
   await rejection;
 });
 
+test('inspection photo upload endpoints preserve the API reason for the rejected file', async (t) => {
+  const file = new File(['proof'], 'inspection.jpg', { type: 'image/jpeg' });
+  const reason = 'Ảnh có kích thước 7273 × 4854 px. Tối đa 16000 px/cạnh và 25000000 pixel.';
+  const folder = 'secondlife/inspections/proofs';
+  t.mock.method(console, 'error', () => {});
+  const fetchMock = t.mock.method(globalThis, 'fetch', async (url: string) => Response.json({
+    message: 'Ảnh tải lên chưa hợp lệ',
+    errors: [{ field: url.includes('upload-multiple') ? 'files[1]' : 'file', message: reason }],
+  }, { status: 400 }));
+
+  await assert.rejects(mediaService.uploadImage(file, folder), (error: unknown) => {
+    assert.ok(error instanceof ApiError);
+    assert.equal(error.status, 400);
+    assert.equal(getInspectionPhotoUploadError(error), reason);
+    return true;
+  });
+  await assert.rejects(mediaService.uploadMultipleImages([file, file], folder), (error: unknown) => {
+    assert.ok(error instanceof ApiError);
+    assert.equal(getInspectionBatchPhotoError(error, 1), reason);
+    assert.equal(getInspectionBatchPhotoError(error, 0), undefined);
+    return true;
+  });
+  assert.equal(fetchMock.mock.callCount(), 2);
+});
+
 test('photo upload errors without a matching or invalid photo are shown at section level', () => {
   const fields = [
     { field: 'images', message: 'Reduce file size.' },
@@ -133,7 +183,7 @@ test('photo upload errors without a matching or invalid photo are shown at secti
   ]);
   assert.deepEqual(getListingPhotoUploadIssues([
     { field: 'images[0]', message: 'Try again later.' },
-  ], ['blob:first'], 503), [{ previewUrl: undefined, message: 'Try again later.' }]);
+  ], ['blob:first'], 503), [{ previewUrl: undefined, message: 'Try again later.', serviceError: true }]);
 });
 
 test('seller Hub shipment reads can bypass cache updates and their refresh events', async (t) => {
@@ -360,6 +410,45 @@ test('a synchronous loader failure releases the in-flight key for a later attemp
   assert.equal(failure, duplicate);
   await assert.rejects(failure, /loader failed/);
   assert.equal(await reads.run('key', () => Promise.resolve('recovered')), 'recovered');
+});
+
+test('seller listing pages derive available actions from older BE responses', async (t) => {
+  const rows = [
+    { id: 'draft', status: 'DRAFT', listingCreditCharged: false },
+    { id: 'rejected', status: 'REJECTED', listingCreditCharged: false },
+    { id: 'charged', status: 'REJECTED', listingCreditCharged: true },
+    { id: 'unknown-credit', status: 'DRAFT' },
+    { id: 'active', status: 'ACTIVE', listingCreditCharged: true },
+    { id: 'reserved', status: 'RESERVED', listingCreditCharged: true },
+    { id: 'sold', status: 'SOLD', listingCreditCharged: true },
+  ];
+  const fetchMock = t.mock.method(globalThis, 'fetch', async () => Response.json({ items: rows, totalElements: 7 }));
+
+  const page = await postService.getMyPosts();
+  assert.ok(!Array.isArray(page));
+  assert.equal(page.totalElements, 7);
+  assert.deepEqual(page.items?.filter((row) => row.sellerActions?.editContent).map((row) => row.id), ['draft', 'rejected']);
+  assert.deepEqual(page.items?.filter((row) => row.sellerActions?.updateShippingPackage).map((row) => row.id), ['active']);
+  assert.ok(page.items?.every((row) => row.sellerActions?.reclassifyItem === false));
+  assert.equal(fetchMock.mock.callCount(), 1);
+});
+
+test('seller listing details use older BE fields and preserve explicit BE action decisions', async (t) => {
+  const lockedActions = { editContent: false, updateShippingPackage: false, reclassifyItem: false };
+  const listing = { id: 'listing', status: 'DRAFT', listingCreditCharged: false };
+  let body: unknown = listing;
+  t.mock.method(globalThis, 'fetch', async () => Response.json(body));
+
+  assert.deepEqual((await postService.getMyPostDetail(listing.id)).sellerActions, { ...lockedActions, editContent: true });
+  body = { ...listing, status: 'ACTIVE', listingCreditCharged: true };
+  assert.deepEqual((await postService.getMyPostDetail(listing.id)).sellerActions, { ...lockedActions, updateShippingPackage: true });
+
+  body = { data: { ...listing, sellerActions: lockedActions } };
+  assert.deepEqual((await postService.getMyPostDetail(listing.id)).sellerActions, lockedActions);
+  body = { data: { content: [{ ...listing, status: 'ACTIVE', sellerActions: { ...lockedActions, reclassifyItem: true } }] } };
+  const page = await postService.getMyPosts();
+  assert.ok(!Array.isArray(page));
+  assert.deepEqual(page.content?.[0].sellerActions, { ...lockedActions, reclassifyItem: true });
 });
 
 test('seller listings use the newest pre-listing inspection across feed pages', async (t) => {

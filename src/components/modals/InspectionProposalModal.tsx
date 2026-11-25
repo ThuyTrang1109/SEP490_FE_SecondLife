@@ -690,7 +690,7 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
                 {/* Dòng 2: Cước Seller → Trung tâm */}
                 <div className="flex justify-between items-center py-0.5">
                   <span className="text-slate-600 flex items-center gap-1">
-                    <span>• {lang === 'vi' ? 'Cước Seller → Trung tâm' : 'Seller → Center shipping'}:</span>
+                    <span>• {lang === 'vi' ? 'Cước người bán → Trung tâm' : 'Seller → Center shipping'}:</span>
                     {currentCenterQuote?.shippingQuote?.outbound?.serviceType && (
                       <span className="text-[10px] bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.2 rounded font-semibold">
                         {formatLalamoveVehicle(currentCenterQuote.shippingQuote.outbound.serviceType).name}
@@ -703,7 +703,7 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
                 {/* Dòng 3: Tạm giữ dự phòng cước trả về Seller */}
                 <div className="flex justify-between items-center py-0.5">
                   <span className="text-slate-600 flex items-center gap-1">
-                    <span>• {lang === 'vi' ? 'Tạm giữ dự phòng cước trả về Seller' : 'Return reserve fee'}:</span>
+                    <span>• {lang === 'vi' ? 'Tạm giữ dự phòng cước trả về người bán' : 'Return reserve fee'}:</span>
                     {currentCenterQuote?.shippingQuote?.returnReserve?.serviceType && (
                       <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded font-medium">
                         {formatLalamoveVehicle(currentCenterQuote.shippingQuote.returnReserve.serviceType).name}

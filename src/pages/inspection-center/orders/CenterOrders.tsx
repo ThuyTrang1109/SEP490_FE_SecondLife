@@ -12,6 +12,7 @@ import {
   getHubBuyerShipmentLabel,
   getInboundShipmentProgress,
   isPaidHubBuyerDelivery,
+  isShipmentInterrupted,
   shouldTrackInboundShipment,
   getHubReturnProgress,
   isHubReturnCase,
@@ -145,18 +146,12 @@ export function CenterOrders({
                 const paidHubDelivery = isPaidHubBuyerDelivery(ord);
                 const canBookBuyerDelivery = canBookCenterBuyerDelivery(ord, currentUser?.id, buyerShipment);
                 const hasCertificate = getInspectionTaskStage(ord.status) === 'completed';
-                const rawProgress = shipment ? getInboundShipmentProgress(shipment) : null;
-                // Xác định xem kiện hàng từ Seller về Hub đã hoàn thành giao hay chưa
-                const isInboundDelivered = Boolean(
-                  isAtCenter && (
-                    (shipment && (shipment.status === 'DELIVERED' || shipment.status === 'COMPLETED' || shipment.providerStatus === 'COMPLETED')) ||
-                    rawProgress?.step === 3 ||
-                    isOrderReceivedAtHub(ord)
-                  )
-                );
-                const progress = isInboundDelivered
-                  ? { step: 3, label: 'Đã nhận tại Hub' }
-                  : (rawProgress || null);
+                const inboundProgress = shipment ? getInboundShipmentProgress(shipment) : null;
+                const isInboundDelivered = isAtCenter && (inboundProgress
+                  ? inboundProgress.step === 3
+                  : isOrderReceivedAtHub(ord));
+                const inboundLabel = isInboundDelivered ? 'Đã nhận tại Hub' : inboundProgress?.label;
+                const inboundInterrupted = !isInboundDelivered && isShipmentInterrupted(shipment);
 
                 // Khi đơn đang ở trạng thái "Chờ Người Bán Gửi Hub" (chưa giao hàng và chưa có vận đơn),
                 // thì không hiển thị nút "Vận đơn gửi đến Hub" cũng như khung Chặng 1.
@@ -177,7 +172,7 @@ export function CenterOrders({
 
                 const isExpandedFees = expandedFeeOrderId === ord.id;
                 const feeDetailsId = `fee-details-${ord.id}`;
-                const hasInboundInfo = !isWaitingSellerToHub && isAtCenter && (shipment || progress || shouldTrackInboundShipment(ord) || canViewInbound || isInboundDelivered);
+                const hasInboundInfo = !isWaitingSellerToHub && isAtCenter && (shipment || shouldTrackInboundShipment(ord) || canViewInbound || isInboundDelivered);
 
                 return (
                   <React.Fragment key={ord.id}>
@@ -238,9 +233,19 @@ export function CenterOrders({
                         {/* 2. CHẶNG 1: VẬN CHUYỂN TỪ NGƯỜI BÁN VỀ HUB (KIỂM ĐỊNH) */}
                         {hasInboundInfo && (
                           <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-2.5 text-[11px] shadow-2xs text-blue-950">
-                            <div className="flex items-center gap-1.5 font-bold text-blue-950">
-                              <Truck className="h-3.5 w-3.5 text-blue-600 shrink-0" />
-                              <span>Chặng 1: Người bán → Hub</span>
+                            <div className="flex flex-wrap items-center justify-between gap-1.5 font-bold text-blue-950">
+                              <span className="flex items-center gap-1.5">
+                                <Truck className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                                Chặng 1: Người bán → Hub
+                              </span>
+                              {inboundLabel && (
+                                <span className={`rounded-md border px-2 py-0.5 text-[10px] ${inboundInterrupted
+                                  ? 'border-rose-300 bg-rose-100 text-rose-800'
+                                  : isInboundDelivered ? 'border-emerald-300 bg-emerald-100 text-emerald-800'
+                                    : 'border-blue-200 bg-white text-blue-900'}`}>
+                                  {inboundLabel}
+                                </span>
+                              )}
                             </div>
 
                             {shipment && <InspectionCashShipmentStatus shipment={shipment} />}

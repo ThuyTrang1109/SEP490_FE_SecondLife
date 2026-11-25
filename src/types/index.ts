@@ -52,6 +52,12 @@ export interface MultiStagePhotos {
   handoverPhotos?: string[];
 }
 
+export interface SellerListingActions {
+  editContent: boolean;
+  updateShippingPackage: boolean;
+  reclassifyItem: boolean;
+}
+
 export interface Listing {
   id: string;
   categoryId?: string;
@@ -87,6 +93,7 @@ export interface Listing {
   isInspected?: boolean;
   inspectionPassed?: boolean;
   inspectionStatus?: string;
+  inspectionMethod?: 'AT_HOME' | 'AT_CENTER' | string | null;
   inspectionSeal?: string;
   photos: PhotoChecklist;
   photoGallery: string[];
@@ -112,6 +119,7 @@ export interface Listing {
   rejectionReason?: string;
   listingCreditCharged?: boolean;
   aiDescription?: string | null;
+  sellerActions?: SellerListingActions;
 }
 
 export interface SellerPostDetailDto {
@@ -130,6 +138,11 @@ export interface SellerPostDetailDto {
   aiSuggestedPrice?: number | null;
   rejectionReason?: string | null;
   listingCreditCharged?: boolean;
+  isInspected?: boolean;
+  tamperSealId?: string | null;
+  conditionGrade?: string | null;
+  inspectionMethod?: 'AT_HOME' | 'AT_CENTER' | string | null;
+  sellerActions?: SellerListingActions;
   shippingWeight?: number | null;
   shippingLength?: number | null;
   shippingWidth?: number | null;
@@ -314,6 +327,7 @@ export interface ProductReview {
   orderId?: string;
   listingId: string;
   productName: string;
+  productImage?: string;
   sellerId: string;
   sellerName: string;
   sellerPhone?: string;

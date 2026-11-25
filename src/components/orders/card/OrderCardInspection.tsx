@@ -1,14 +1,15 @@
-import { AlertCircle, Calendar, CalendarCheck, CalendarSync, Check, CheckCircle2, Clock, Truck, UserCheck } from 'lucide-react';
+import { AlertCircle, Calendar, CalendarCheck, CalendarSync, Check, CheckCircle2, Clock, Truck, UserCheck, XCircle } from 'lucide-react';
 import { AtHomeIntakeBarcode } from '../../inspection/AtHomeIntakeBarcode';
 import type { EscrowOrder, Language, ShipmentBackend } from '../../../types';
 import { getOrderAppointmentRejection } from '../../../utils/orders/orderAppointments';
 import type { OrderAppointment } from '../../../utils/orders/orderAppointments';
 import type { OrderCheck } from '../../../types/orders/orderTypes';
 import { buyerInspectionStageLabel, getInspectionPurchaseDecision } from '../../../utils/inspectionPurchase';
-import { getInboundShipmentProgress } from '../../../utils/inspectionCenterData';
+import { getHubReturnState, getInboundShipmentProgress, getSellerHubReturnStage, getLatestReturnShipment, getLatestBuyerDeliveryShipment } from '../../../utils/inspectionCenterData';
 import { getOrderAllShipments } from '../../../utils/orders/shipmentCache';
 import { getAtHomeDeliveryStage } from '../../../utils/orders/orderReceipt';
 import { getOrderSellerAddress } from '../../../pages/inspection-center/dispatch/orderContacts';
+import { formatConditionGrade } from '../../../utils/translations';
 
 interface Props {
   orderIsSeller: boolean;
@@ -148,40 +149,42 @@ export function OrderCardInspection({
                 <div className="bg-gradient-to-r from-amber-50/90 via-orange-50/70 to-amber-50/90 p-3.5 rounded-xl border border-amber-200 text-amber-950 space-y-2">
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center gap-2">
-                      <span className={`px-2.5 py-0.5 rounded-md text-[11px] font-black uppercase tracking-wider flex items-center gap-1 shadow-2xs ${isPurchaseAccepted ? 'bg-emerald-700 text-white' : isInspPassed ? 'bg-emerald-600 text-white' : isInspFailed ? 'bg-rose-600 text-white' : isRejected ? 'bg-rose-600 text-white' : isOrderCountered ? 'bg-orange-600 text-white' : isInspectorArrivedForOrder(ord.id, ord) ? 'bg-emerald-600 text-white' : isApptConfirmed ? 'bg-emerald-700 text-white' : 'bg-amber-600 text-white'}`}>
-                        {isPurchaseAccepted || isInspPassed ? <CheckCircle2 className="w-3.5 h-3.5" /> : isInspFailed || isRejected ? <AlertCircle className="w-3.5 h-3.5" /> : isOrderCountered ? <CalendarSync className="w-3.5 h-3.5" /> : isApptConfirmed ? <CalendarCheck className="w-3.5 h-3.5" /> : <Calendar className="w-3.5 h-3.5" />}
-                        <span>{isInspPassed || isPurchaseAccepted ? (lang === 'vi' ? 'Kiểm Định Tận Nhà (Đạt Chuẩn)' : 'At-Home Inspection (Passed)') : isInspFailed ? (lang === 'vi' ? 'Kiểm Định Tận Nhà (Không Đạt)' : 'At-Home Inspection (Failed)') : (lang === 'vi' ? 'Kiểm Định Tận Nhà (KTV Đến Nhà)' : 'At-Home Inspection (Technician Visit)')}</span>
+                      <span className={`px-2.5 py-0.5 rounded-md text-[11px] font-black uppercase tracking-wider flex items-center gap-1 shadow-2xs ${isPurchaseRejected ? 'bg-rose-600 text-white' : isPurchaseAccepted ? 'bg-emerald-700 text-white' : isInspPassed ? 'bg-emerald-600 text-white' : isInspFailed ? 'bg-rose-600 text-white' : isRejected ? 'bg-rose-600 text-white' : isOrderCountered ? 'bg-orange-600 text-white' : isInspectorArrivedForOrder(ord.id, ord) ? 'bg-emerald-600 text-white' : isApptConfirmed ? 'bg-emerald-700 text-white' : 'bg-amber-600 text-white'}`}>
+                        {isPurchaseRejected ? <XCircle className="w-3.5 h-3.5" /> : isPurchaseAccepted || isInspPassed ? <CheckCircle2 className="w-3.5 h-3.5" /> : isInspFailed || isRejected ? <AlertCircle className="w-3.5 h-3.5" /> : isOrderCountered ? <CalendarSync className="w-3.5 h-3.5" /> : isApptConfirmed ? <CalendarCheck className="w-3.5 h-3.5" /> : <Calendar className="w-3.5 h-3.5" />}
+                        <span>{isPurchaseRejected ? (lang === 'vi' ? 'Kiểm Định Tận Nhà (Người mua từ chối)' : 'At-Home Inspection (Buyer Declined)') : isInspPassed || isPurchaseAccepted ? (lang === 'vi' ? 'Kiểm Định Tận Nhà (Đạt Chuẩn)' : 'At-Home Inspection (Passed)') : isInspFailed ? (lang === 'vi' ? 'Kiểm Định Tận Nhà (Không Đạt)' : 'At-Home Inspection (Failed)') : (lang === 'vi' ? 'Kiểm Định Tận Nhà (KTV Đến Nhà)' : 'At-Home Inspection (Technician Visit)')}</span>
                       </span>
-                      <span className={`text-xs font-bold ${isPurchaseAccepted || isInspPassed ? 'text-emerald-800 font-black' : isInspFailed ? 'text-rose-700 font-black' : isRejected ? 'text-rose-700' : isOrderCountered ? 'text-orange-800' : isInspectorArrivedForOrder(ord.id, ord) ? 'text-emerald-800 font-black' : isApptConfirmed ? 'text-emerald-800 font-extrabold' : 'text-amber-900'}`}>
+                      <span className={`text-xs font-bold ${isPurchaseRejected ? 'text-rose-700 font-black' : isPurchaseAccepted || isInspPassed ? 'text-emerald-800 font-black' : isInspFailed ? 'text-rose-700 font-black' : isRejected ? 'text-rose-700' : isOrderCountered ? 'text-orange-800' : isInspectorArrivedForOrder(ord.id, ord) ? 'text-emerald-800 font-black' : isApptConfirmed ? 'text-emerald-800 font-extrabold' : 'text-amber-900'}`}>
                         {isCompletedOrReleased
                           ? (lang === 'vi' ? 'Giao dịch hoàn tất • Tiền đã chuyển về ví' : 'Transaction Completed • Payout Transferred')
-                          : isPurchaseAccepted
-                            ? (deliveryStage !== 'awaiting_shipment'
-                              ? (lang === 'vi' ? 'KTV đã hoàn tất kiểm định • Đạt chuẩn SecondLife' : 'Technician completed inspection • Standard Met')
-                              : (lang === 'vi' ? 'Người mua đã xác nhận mua • Vui lòng gửi hàng cho người mua' : 'Buyer confirmed purchase • Please ship to buyer'))
-                            : isInspPassed
-                              ? (lang === 'vi' ? 'KTV đã hoàn tất kiểm định • Đạt chuẩn SecondLife' : 'Technician completed inspection • Standard Met')
-                              : isInspFailed
-                                ? (lang === 'vi' ? 'KTV đã hoàn tất kiểm định • Không đạt chuẩn' : 'Technician completed inspection • Standard Not Met')
-                                : isWaitingSellerApproval
-                                  ? (lang === 'vi' ? 'Yêu Cầu Kiểm Định Mới • Chờ Bạn Xác Nhận' : 'New Inspection Request • Waiting Seller Approval')
-                                  : isWaitingBuyerApproval
-                                    ? (lang === 'vi' ? 'Đã gửi đề xuất lại • Chờ người mua phản hồi' : 'Counter-proposal sent • Awaiting buyer response')
-                                    : isWaitingFeePayment
-                                      ? (lang === 'vi' ? 'Chờ hai bên đóng phí kiểm định' : 'Waiting for inspection fee payment')
-                                      : isRejected
-                                        ? (lang === 'vi' ? 'Lịch hẹn bị từ chối • Vui lòng hẹn lại' : 'Appointment Rejected • Please Reschedule')
-                                        : isInspectorArrivedForOrder(ord.id, ord)
-                                          ? (lang === 'vi' ? 'Kỹ thuật viên đã đến và đang kiểm tra' : 'Technician has arrived and is inspecting')
-                                          : assignedInspector?.inspectorName
-                                            ? (lang === 'vi' ? `Đã phân công KTV ${assignedInspector.inspectorName}` : `KTV ${assignedInspector.inspectorName} Assigned`)
-                                            : isOrderCountered
-                                              ? (lang === 'vi' ? 'Hub từ chối lịch cũ & đề xuất lịch mới • Cần phản hồi' : 'Center Proposed New Schedule • Action Needed')
-                                              : isApptConfirmed
-                                                ? (lang === 'vi' ? 'Đã chốt lịch • Chờ Trung tâm giao KTV' : 'Appointment Confirmed • Awaiting Dispatch')
-                                                : savedAppointment?.scheduledAt
-                                                  ? (lang === 'vi' ? 'Đã hẹn lịch • Chờ Admin điều phối KTV' : 'Appointment Scheduled • Awaiting Dispatch')
-                                                  : (lang === 'vi' ? 'Chờ bạn hẹn lịch đón KTV' : 'Awaiting Appointment Schedule')}
+                          : isPurchaseRejected
+                            ? (lang === 'vi' ? 'Người mua đã từ chối mua • Đơn hàng kết thúc' : 'Buyer Declined Purchase • Order Closed')
+                            : isPurchaseAccepted
+                              ? (deliveryStage !== 'awaiting_shipment'
+                                ? (lang === 'vi' ? 'KTV đã hoàn tất kiểm định • Đạt chuẩn SecondLife' : 'Technician completed inspection • Standard Met')
+                                : (lang === 'vi' ? 'Người mua đã xác nhận mua • Vui lòng gửi hàng cho người mua' : 'Buyer confirmed purchase • Please ship to buyer'))
+                              : isInspPassed
+                                ? (lang === 'vi' ? 'KTV đã hoàn tất kiểm định • Đạt chuẩn SecondLife' : 'Technician completed inspection • Standard Met')
+                                : isInspFailed
+                                  ? (lang === 'vi' ? 'KTV đã hoàn tất kiểm định • Không đạt chuẩn' : 'Technician completed inspection • Standard Not Met')
+                                  : isWaitingSellerApproval
+                                    ? (lang === 'vi' ? 'Yêu Cầu Kiểm Định Mới • Chờ Bạn Xác Nhận' : 'New Inspection Request • Waiting Seller Approval')
+                                    : isWaitingBuyerApproval
+                                      ? (lang === 'vi' ? 'Đã gửi đề xuất lại • Chờ người mua phản hồi' : 'Counter-proposal sent • Awaiting buyer response')
+                                      : isWaitingFeePayment
+                                        ? (lang === 'vi' ? 'Chờ hai bên đóng phí kiểm định' : 'Waiting for inspection fee payment')
+                                        : isRejected
+                                          ? (lang === 'vi' ? 'Lịch hẹn bị từ chối • Vui lòng hẹn lại' : 'Appointment Rejected • Please Reschedule')
+                                          : isInspectorArrivedForOrder(ord.id, ord)
+                                            ? (lang === 'vi' ? 'Kỹ thuật viên đã đến và đang kiểm tra' : 'Technician has arrived and is inspecting')
+                                            : assignedInspector?.inspectorName
+                                              ? (lang === 'vi' ? `Đã phân công KTV ${assignedInspector.inspectorName}` : `KTV ${assignedInspector.inspectorName} Assigned`)
+                                              : isOrderCountered
+                                                ? (lang === 'vi' ? 'Hub từ chối lịch cũ & đề xuất lịch mới • Cần phản hồi' : 'Center Proposed New Schedule • Action Needed')
+                                                : isApptConfirmed
+                                                  ? (lang === 'vi' ? 'Đã chốt lịch • Chờ Trung tâm giao KTV' : 'Appointment Confirmed • Awaiting Dispatch')
+                                                  : savedAppointment?.scheduledAt
+                                                    ? (lang === 'vi' ? 'Đã hẹn lịch • Chờ Admin điều phối KTV' : 'Appointment Scheduled • Awaiting Dispatch')
+                                                    : (lang === 'vi' ? 'Chờ bạn hẹn lịch đón KTV' : 'Awaiting Appointment Schedule')}
                       </span>
                     </div>
                   </div>
@@ -345,56 +348,74 @@ export function OrderCardInspection({
 
                       {/* Khi đã hoàn tất kiểm định (Đạt hoặc Không đạt): Hiện kết quả kiểm định hoàn tất, không hiện barcode hay KTV đang đo kiểm nữa */}
                       {isInspPassed ? (
-                        <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-950 space-y-1.5 mt-1.5 animate-fadeIn">
-                          <div className="font-extrabold flex items-center gap-1.5 text-emerald-800">
-                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                            <span>Kỹ thuật viên đã hoàn tất kiểm định tại nhà (Đạt chuẩn)</span>
-                          </div>
-                          <div className="text-[11px] text-emerald-900 leading-relaxed">
-                            {assignedInspector?.inspectorName ? `KTV ${assignedInspector.inspectorName}` : 'Kỹ thuật viên'} đã hoàn thành quy trình đo kiểm các bước thành công.
-                            {/* {ord.tamperSealId && <span> Mã tem niêm phong: <strong className="font-mono bg-emerald-100 px-1.5 py-0.5 rounded text-emerald-950 font-bold">{ord.tamperSealId}</strong></span>} */}
-                            {ord.conditionGrade && <span> • Tình trạng máy: <strong className="bg-emerald-100 px-1.5 py-0.5 rounded text-emerald-950 font-bold">{ord.conditionGrade} {ord.conditionScore ? `(${ord.conditionScore}/100)` : ''}</strong></span>}
-                          </div>
-                          {isPurchaseAccepted ? (
-                            isCompletedOrReleased ? (
-                              <p className="text-[11px] text-emerald-800 font-semibold bg-emerald-100/60 p-2 rounded-lg border border-emerald-200">
-                                🎉 {lang === 'vi'
-                                  ? 'Đơn hàng đã hoàn tất và tiền bán hàng đã được giải ngân về ví của bạn thành công.'
-                                  : 'Order completed and funds have been released to your wallet successfully.'}
-                              </p>
-                            ) : (deliveryStage === 'delivered' || ord.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' || ord.backendStatus === 'DELIVERED') ? (
-                              <p className="text-[11px] text-emerald-800 font-semibold bg-emerald-100/60 p-2 rounded-lg border border-emerald-200">
-                                🎉 {lang === 'vi'
-                                  ? 'Tài xế đã giao kiện hàng thành công tới người mua. Khách mua có 48 giờ để kiểm tra đối soát trước khi hệ thống tự động giải ngân vào ví của bạn.'
-                                  : 'Package delivered to buyer successfully. Buyer has 48 hours inspection window before escrow is released to your wallet.'}
-                              </p>
-                            ) : deliveryStage === 'in_transit' ? (
-                              <p className="text-[11px] text-emerald-800 font-semibold bg-emerald-100/60 p-2 rounded-lg border border-emerald-200">
-                                {lang === 'vi'
-                                  ? 'Tài xế Lalamove đã lấy hàng và đang giao đến người mua.'
-                                  : 'The Lalamove driver has picked up the parcel and is delivering it to the buyer.'}
-                              </p>
-                            ) : deliveryStage === 'awaiting_pickup' ? (
-                              <p className="text-[11px] text-emerald-800 font-semibold bg-emerald-100/60 p-2 rounded-lg border border-emerald-200">
-                                🎉 {lang === 'vi'
-                                  ? 'Đã tạo vận đơn thành công. Vui lòng bàn giao kiện hàng cho tài xế Lalamove khi tài xế đến nhận.'
-                                  : 'Lalamove shipment created successfully. Please keep the tamper seal intact and hand over the parcel to the Lalamove driver upon arrival.'}
-                              </p>
-                            ) : (
-                              <p className="text-[11px] text-emerald-800 font-semibold bg-emerald-100/60 p-2 rounded-lg border border-emerald-200">
-                                🎉 {lang === 'vi'
-                                  ? 'Người mua đã xác nhận mua hàng thành công. Khách mua đã thanh toán đơn hàng. Vui lòng đóng gói cẩn thận (giữ nguyên tem niêm phong) và bấm nút "Đã gói hàng • Tạo đơn vận chuyển" bên dưới để bàn giao cho tài xế.'
-                                  : 'Buyer has confirmed the purchase! Order is paid. Please pack carefully (keep the tamper seal intact) and click "Packed • Create Shipping Order" below to hand over to carrier.'}
-                              </p>
-                            )
-                          ) : (
-                            <p className="text-[11px] text-emerald-700 italic">
+                        isPurchaseRejected ? (
+                          <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-950 space-y-1.5 mt-1.5 animate-fadeIn">
+                            <div className="font-extrabold flex items-center gap-1.5 text-rose-800">
+                              <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                              <span>{lang === 'vi' ? 'Kỹ thuật viên đã kiểm định (Đạt chuẩn) • Người mua từ chối mua' : 'Inspection Passed • Buyer Declined Purchase'}</span>
+                            </div>
+                            <div className="text-[11px] text-rose-900 leading-relaxed">
+                              {assignedInspector?.inspectorName ? `KTV ${assignedInspector.inspectorName}` : 'Kỹ thuật viên'} đã hoàn thành quy trình đo kiểm các bước thành công.
+                              {ord.conditionGrade && <span> • Tình trạng máy: <strong className="bg-rose-100 px-1.5 py-0.5 rounded text-rose-950 font-bold">{formatConditionGrade(ord.conditionGrade, lang)} {ord.conditionScore ? `(${ord.conditionScore}/100)` : ''}</strong></span>}
+                            </div>
+                            <p className="text-[11px] text-rose-800 font-semibold bg-rose-100/60 p-2 rounded-lg border border-rose-200">
                               {lang === 'vi'
-                                ? 'Đang chờ người mua xác nhận mua hàng trước khi điều phối bưu tá đến lấy hàng.'
-                                : 'Waiting for buyer to confirm purchase before dispatching courier.'}
+                                ? 'Người mua đã từ chối mua sản phẩm sau khi xem kết quả kiểm định. Đơn hàng kết thúc, thiết bị vẫn được lưu giữ tại địa chỉ của bạn và không giao cho người mua.'
+                                : 'Buyer declined to proceed with the purchase after reviewing the inspection result. Order closed, the item remains at your location.'}
                             </p>
-                          )}
-                        </div>
+                          </div>
+                        ) : (
+                          <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-950 space-y-1.5 mt-1.5 animate-fadeIn">
+                            <div className="font-extrabold flex items-center gap-1.5 text-emerald-800">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                              <span>Kỹ thuật viên đã hoàn tất kiểm định tại nhà (Đạt chuẩn)</span>
+                            </div>
+                            <div className="text-[11px] text-emerald-900 leading-relaxed">
+                              {assignedInspector?.inspectorName ? `KTV ${assignedInspector.inspectorName}` : 'Kỹ thuật viên'} đã hoàn thành quy trình đo kiểm các bước thành công.
+                              {/* {ord.tamperSealId && <span> Mã tem niêm phong: <strong className="font-mono bg-emerald-100 px-1.5 py-0.5 rounded text-emerald-950 font-bold">{ord.tamperSealId}</strong></span>} */}
+                              {ord.conditionGrade && <span> • Tình trạng máy: <strong className="bg-emerald-100 px-1.5 py-0.5 rounded text-emerald-950 font-bold">{formatConditionGrade(ord.conditionGrade, lang)} {ord.conditionScore ? `(${ord.conditionScore}/100)` : ''}</strong></span>}
+                            </div>
+                            {isPurchaseAccepted ? (
+                              isCompletedOrReleased ? (
+                                <p className="text-[11px] text-emerald-800 font-semibold bg-emerald-100/60 p-2 rounded-lg border border-emerald-200">
+                                  🎉 {lang === 'vi'
+                                    ? 'Đơn hàng đã hoàn tất và tiền bán hàng đã được giải ngân về ví của bạn thành công.'
+                                    : 'Order completed and funds have been released to your wallet successfully.'}
+                                </p>
+                              ) : (deliveryStage === 'delivered' || ord.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' || ord.backendStatus === 'DELIVERED') ? (
+                                <p className="text-[11px] text-emerald-800 font-semibold bg-emerald-100/60 p-2 rounded-lg border border-emerald-200">
+                                  🎉 {lang === 'vi'
+                                    ? 'Tài xế đã giao kiện hàng thành công tới người mua. Khách mua có 48 giờ để kiểm tra đối soát trước khi hệ thống tự động giải ngân vào ví của bạn.'
+                                    : 'Package delivered to buyer successfully. Buyer has 48 hours inspection window before escrow is released to your wallet.'}
+                                </p>
+                              ) : deliveryStage === 'in_transit' ? (
+                                <p className="text-[11px] text-emerald-800 font-semibold bg-emerald-100/60 p-2 rounded-lg border border-emerald-200">
+                                  {lang === 'vi'
+                                    ? 'Tài xế Lalamove đã lấy hàng và đang giao đến người mua.'
+                                    : 'The Lalamove driver has picked up the parcel and is delivering it to the buyer.'}
+                                </p>
+                              ) : deliveryStage === 'awaiting_pickup' ? (
+                                <p className="text-[11px] text-emerald-800 font-semibold bg-emerald-100/60 p-2 rounded-lg border border-emerald-200">
+                                  🎉 {lang === 'vi'
+                                    ? 'Đã tạo vận đơn thành công. Vui lòng bàn giao kiện hàng cho tài xế Lalamove khi tài xế đến nhận.'
+                                    : 'Lalamove shipment created successfully. Please keep the tamper seal intact and hand over the parcel to the Lalamove driver upon arrival.'}
+                                </p>
+                              ) : (
+                                <p className="text-[11px] text-emerald-800 font-semibold bg-emerald-100/60 p-2 rounded-lg border border-emerald-200">
+                                  🎉 {lang === 'vi'
+                                    ? 'Người mua đã xác nhận mua hàng thành công. Khách mua đã thanh toán đơn hàng. Vui lòng đóng gói cẩn thận (giữ nguyên tem niêm phong) và bấm nút "Đã gói hàng • Tạo đơn vận chuyển" bên dưới để bàn giao cho tài xế.'
+                                    : 'Buyer has confirmed the purchase! Order is paid. Please pack carefully (keep the tamper seal intact) and click "Packed • Create Shipping Order" below to hand over to carrier.'}
+                                </p>
+                              )
+                            ) : (
+                              <p className="text-[11px] text-emerald-700 italic">
+                                {lang === 'vi'
+                                  ? 'Đang chờ người mua xác nhận mua hàng trước khi điều phối bưu tá đến lấy hàng.'
+                                  : 'Waiting for buyer to confirm purchase before dispatching courier.'}
+                              </p>
+                            )}
+                          </div>
+                        )
                       ) : isInspFailed ? (
                         <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-950 space-y-1.5 mt-1.5 animate-fadeIn">
                           <div className="font-extrabold flex items-center gap-1.5 text-rose-800">
@@ -498,9 +519,12 @@ export function OrderCardInspection({
               const isRejected = ordDecision === 'rejected';
 
               const ordAllShipments = getOrderAllShipments(ord.id);
-              const leg2Shipment = isRejected || isInspFailed
-                ? (ordAllShipments.find((s) => s.leg === 'CENTER_TO_SELLER' && s.status !== 'CANCELLED') || ordAllShipments.find((s) => s.leg === 'CENTER_TO_SELLER'))
-                : (ordAllShipments.find((s) => s.leg === 'CENTER_TO_BUYER' && s.status !== 'CANCELLED') || ordAllShipments.find((s) => s.leg === 'CENTER_TO_BUYER'));
+              const failedReturnStage = isInspFailed && getSellerHubReturnStage(ord.returnShipment === undefined
+                ? getHubReturnState(ordAllShipments).shipment
+                : ord.returnShipment);
+              const leg2Shipment = isRejected
+                ? getLatestReturnShipment(ordAllShipments)
+                : getLatestBuyerDeliveryShipment(ordAllShipments);
               const isLeg2Delivered = leg2Shipment?.status === 'DELIVERED' || ord.escrowStatus === 'COMPLETED_RELEASED';
               const isLeg2InTransit = leg2Shipment?.status === 'IN_TRANSIT' || leg2Shipment?.status === 'SHIPPED' || leg2Shipment?.status === 'PICKED_UP';
 
@@ -514,10 +538,10 @@ export function OrderCardInspection({
                       </span>
                       <span className="text-xs font-bold text-blue-900">
                         {isInspFailed
-                          ? (isLeg2Delivered
+                          ? (failedReturnStage === 'returned'
                             ? (lang === 'vi' ? 'Kiểm định không đạt chuẩn • Đã hoàn trả người bán' : 'Inspection Failed • Returned to Seller')
-                            : isLeg2InTransit
-                              ? (lang === 'vi' ? 'Kiểm định không đạt chuẩn • Đang chuyển hoàn' : 'Inspection Failed • Returning to Seller')
+                            : failedReturnStage === 'returning'
+                              ? (lang === 'vi' ? 'Kiểm định không đạt chuẩn • Đang hoàn hàng' : 'Inspection Failed • Return in Progress')
                               : (lang === 'vi' ? 'Kiểm định không đạt chuẩn • Chờ hoàn trả' : 'Inspection Failed • Pending Return'))
                           : isRejected
                             ? (isLeg2Delivered
@@ -545,8 +569,12 @@ export function OrderCardInspection({
                                       ? (lang === 'vi' ? 'Chờ người bán xác nhận gửi hàng Chặng 1' : 'Awaiting Seller Confirmation for Leg 1')
                                       : isWaitingBuyerApproval
                                         ? (lang === 'vi' ? 'Chờ người mua xác nhận phương án chia phí' : 'Awaiting Buyer Confirmation')
-                                        : ordShipment && getInboundShipmentProgress(ordShipment, lang).step >= 1
-                                          ? (lang === 'vi' ? 'Đang thực hiện Chặng 1 đến Hub' : 'Leg 1 In Progress to Hub')
+                                        : ordShipment && (String(ordShipment.status).toUpperCase() === 'CANCELLED' || String(ordShipment.status).toUpperCase() === 'CANCELED' || String(ordShipment.providerStatus).toUpperCase() === 'CANCELLED' || String(ordShipment.providerStatus).toUpperCase() === 'CANCELED')
+                                          ? (lang === 'vi' ? 'Vận đơn Chặng 1 đến Hub đã hủy' : 'Leg 1 shipment to Hub cancelled')
+                                          : ordShipment && (String(ordShipment.status).toUpperCase() === 'FAILED' || String(ordShipment.providerStatus).toUpperCase() === 'FAILED' || String(ordShipment.providerStatus).toUpperCase() === 'REJECTED' || String(ordShipment.providerStatus).toUpperCase() === 'EXPIRED')
+                                            ? (lang === 'vi' ? 'Vận đơn Chặng 1 đến Hub thất bại' : 'Leg 1 shipment to Hub failed')
+                                            : ordShipment && getInboundShipmentProgress(ordShipment, lang).step !== null && getInboundShipmentProgress(ordShipment, lang).step >= 1
+                                              ? (lang === 'vi' ? 'Đang thực hiện Chặng 1 đến Hub' : 'Leg 1 In Progress to Hub')
                                           : isOrderSellerConfirmed(ord)
                                             ? (lang === 'vi' ? 'Đã xác nhận • Chờ gửi hàng Chặng 1 đến Hub' : 'Confirmed • Awaiting Leg 1 Dispatch')
                                             : (lang === 'vi' ? 'Chờ người bán xác nhận gửi hàng Chặng 1' : 'Awaiting Seller Confirmation for Leg 1')}
@@ -560,16 +588,30 @@ export function OrderCardInspection({
                     <div className="p-2.5 rounded-lg bg-white/90 border border-blue-200 text-blue-950 space-y-1">
                       <div className="flex items-center justify-between font-bold">
                         <span className="text-blue-700">📦 {lang === 'vi' ? 'Chặng 1: Gửi Hàng Đến Hub' : 'Leg 1: Send to Hub'}</span>
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold ${isWaitingFeePayment
-                            ? 'bg-amber-100 text-amber-800'
-                            : isWaitingSellerApproval || isWaitingBuyerApproval
-                              ? 'bg-slate-100 text-slate-700'
-                              : 'bg-blue-100 text-blue-800'
-                          }`}>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold ${(() => {
+                          if (isWaitingFeePayment) return 'bg-amber-100 text-amber-800';
+                          if (isWaitingSellerApproval || isWaitingBuyerApproval) return 'bg-slate-100 text-slate-700';
+                          if (ordShipment) {
+                            const inSt = String(ordShipment.status || '').toUpperCase();
+                            const inPr = String(ordShipment.providerStatus || '').toUpperCase();
+                            if (inSt === 'CANCELLED' || inSt === 'CANCELED' || inPr === 'CANCELLED' || inPr === 'CANCELED' || inSt === 'FAILED' || inPr === 'FAILED' || inPr === 'REJECTED' || inPr === 'EXPIRED') {
+                              return 'bg-rose-100 text-rose-800';
+                            }
+                          }
+                          return 'bg-blue-100 text-blue-800';
+                        })()}`}>
                           {(() => {
                             if (isWaitingFeePayment) return lang === 'vi' ? 'Chờ nộp phí' : 'Fee Pending';
                             if (isWaitingSellerApproval || isWaitingBuyerApproval) return lang === 'vi' ? 'Cần xác nhận' : 'Pending';
                             if (ordShipment) {
+                              const inSt = String(ordShipment.status || '').toUpperCase();
+                              const inPr = String(ordShipment.providerStatus || '').toUpperCase();
+                              if (inSt === 'CANCELLED' || inSt === 'CANCELED' || inPr === 'CANCELLED' || inPr === 'CANCELED') {
+                                return lang === 'vi' ? 'Đã hủy' : 'Cancelled';
+                              }
+                              if (inSt === 'FAILED' || inPr === 'FAILED' || inPr === 'REJECTED' || inPr === 'EXPIRED') {
+                                return lang === 'vi' ? 'Thất bại' : 'Failed';
+                              }
                               const p = getInboundShipmentProgress(ordShipment, lang);
                               if (p.step === 3) return lang === 'vi' ? 'Đã đến Hub' : 'Delivered to Hub';
                               if (p.step === 2) return lang === 'vi' ? 'Đang giao Hub' : 'In Transit';
@@ -583,7 +625,7 @@ export function OrderCardInspection({
                       </div>
                       <div className="text-slate-600">
                         {lang === 'vi'
-                          ? 'Người bán dán tem QR kiểm định lên kiện hàng và bàn giao cho Lalamove vận chuyển đến Trung tâm kiểm định Hub SecondLife.'
+                          ? 'Người bán dán tem QR kiểm định lên kiện hàng và bàn giao cho Lalamove vận chuyển đến đối tác Trung tâm kiểm định Secondlife'
                           : 'Seller packs item with QR tag and hands over to Lalamove courier to deliver to SecondLife Hub.'}
                       </div>
                     </div>
@@ -620,7 +662,11 @@ export function OrderCardInspection({
                               : 'bg-slate-200 text-slate-600'
                           }`}>
                           {isInspFailed
-                            ? (lang === 'vi' ? 'Không đạt • Hoàn trả' : 'Failed • Return')
+                            ? (failedReturnStage === 'returned'
+                              ? (lang === 'vi' ? 'Đã hoàn trả' : 'Returned')
+                              : failedReturnStage === 'returning'
+                                ? (lang === 'vi' ? 'Đang hoàn hàng' : 'Return in Progress')
+                                : (lang === 'vi' ? 'Chờ hoàn trả' : 'Pending Return'))
                             : isRejected
                               ? (isLeg2Delivered
                                 ? (lang === 'vi' ? 'Đã hoàn trả' : 'Returned')
@@ -659,7 +705,7 @@ export function OrderCardInspection({
                               : 'Buyer declined purchase. Center handles return to seller.')
                             : isPendingDecision
                               ? (lang === 'vi'
-                                ? 'KTV Hub kiểm định ĐẠT chuẩn và dán tem niêm phong. Đang chờ người mua xem kết quả và quyết định tiếp tục mua hàng.'
+                                ? 'KTV Hub kiểm định ĐẠT chuẩn. Đang chờ người mua xem kết quả và quyết định tiếp tục mua hàng.'
                                 : 'Inspection passed. Awaiting buyer review and decision.')
                               : isLeg2Delivered
                                 ? (lang === 'vi'

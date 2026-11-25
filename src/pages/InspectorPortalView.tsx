@@ -18,7 +18,6 @@ import {
   CheckCircle2,
   XCircle,
   ShieldCheck,
-  Printer,
   RefreshCw,
   Loader2,
   Users,
@@ -58,7 +57,6 @@ import {
   CheckSquare,
   FileCheck,
   Menu,
-  User,
   Home,
   Truck,
   LogOut
@@ -73,13 +71,79 @@ import {
 } from '../services';
 import { canInspectorCheckIn, getOrderScheduledAppointmentTime } from '../utils/inspectionAppointmentTime';
 
+export const getOrderTimestamp = (ord: any): number => {
+  if (!ord) return 0;
+  const val =
+    ord.createdAt ||
+    ord.appointmentScheduledAt ||
+    ord.updatedAt ||
+    ord.inspectedAt ||
+    ord.inspectionReport?.inspectedAt ||
+    ord.inspectionReport?.completedAt ||
+    ord.listing?.createdAt ||
+    ord.sellerPaidAt ||
+    ord.buyerPaidAt ||
+    ord.orderDate ||
+    ord.createdDate;
+
+  if (!val) return 0;
+  if (typeof val === 'number') return val;
+  if (val instanceof Date) {
+    const t = val.getTime();
+    return isNaN(t) ? 0 : t;
+  }
+  if (Array.isArray(val)) {
+    return new Date(
+      Date.UTC(
+        val[0] || 1970,
+        (val[1] || 1) - 1,
+        val[2] || 1,
+        val[3] || 0,
+        val[4] || 0,
+        val[5] || 0
+      )
+    ).getTime();
+  }
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    const t = Date.parse(trimmed);
+    if (!isNaN(t)) return t;
+    const isoLike = trimmed.match(
+      /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T\s](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/
+    );
+    if (isoLike) {
+      return new Date(
+        parseInt(isoLike[1], 10),
+        parseInt(isoLike[2], 10) - 1,
+        parseInt(isoLike[3], 10),
+        isoLike[4] ? parseInt(isoLike[4], 10) : 0,
+        isoLike[5] ? parseInt(isoLike[5], 10) : 0,
+        isoLike[6] ? parseInt(isoLike[6], 10) : 0
+      ).getTime();
+    }
+    const dmy = trimmed.match(
+      /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/
+    );
+    if (dmy) {
+      return new Date(
+        parseInt(dmy[3], 10),
+        parseInt(dmy[2], 10) - 1,
+        parseInt(dmy[1], 10),
+        dmy[4] ? parseInt(dmy[4], 10) : 0,
+        dmy[5] ? parseInt(dmy[5], 10) : 0,
+        dmy[6] ? parseInt(dmy[6], 10) : 0
+      ).getTime();
+    }
+  }
+  return 0;
+};
+
 interface InspectorPortalViewProps {
   orders: EscrowOrder[];
   currentUser?: UserProfile | null;
   onCompleteInspection: (orderId: string, verdict: 'PASS' | 'FAIL', tamperSeal: string, summary: string, meta?: any) => void;
   lang: Language;
   onNavigate?: (tab: string) => void;
-  onOpenProfile?: () => void;
   onLogout?: () => void;
   onViewWebsite?: () => void;
 }
@@ -93,7 +157,6 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
   onCompleteInspection,
   lang,
   onNavigate,
-  onOpenProfile,
   onLogout,
   onViewWebsite,
 }) => {
@@ -203,7 +266,15 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
     setIsLoadingBackendOrders(true);
     try {
       const orders = await inspectorService.getMyOrders();
-      setBackendOrders(orders);
+      const sorted = Array.isArray(orders)
+        ? [...orders].sort((a, b) => {
+          const timeA = getOrderTimestamp(a);
+          const timeB = getOrderTimestamp(b);
+          if (timeB !== timeA) return timeB - timeA;
+          return (b.id || '').localeCompare(a.id || '');
+        })
+        : [];
+      setBackendOrders(sorted);
     } catch (err) {
       console.warn('Lỗi tải danh sách đơn từ backend:', err);
     } finally {
@@ -373,6 +444,8 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
         return {
           ...existing,
           ...inspectionFields,
+          createdAt: bo.createdAt || existing.createdAt || new Date().toISOString(),
+          updatedAt: bo.updatedAt || existing.updatedAt || bo.createdAt || existing.createdAt,
           buyerName: bo.buyerName || existing.buyerName,
           sellerName: bo.sellerName || existing.sellerName,
           listing: existing.listing ? {
@@ -404,7 +477,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
           sellerCompletedOrders: 0,
           sellerVerified: true,
           status: 'ACTIVE' as any,
-          createdAt: bo.appointmentScheduledAt || new Date().toISOString(),
+          createdAt: bo.createdAt || bo.appointmentScheduledAt || new Date().toISOString(),
           isInspectionGuaranteed: true,
           requiresInspection: true,
           photos: {
@@ -437,7 +510,8 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
         multiStagePhotos: {
           listingPhotos: bo.postImageUrls || (bo.postImageUrl ? [bo.postImageUrl] : [fallbackFront]),
         },
-        createdAt: bo.appointmentScheduledAt || new Date().toISOString(),
+        createdAt: bo.createdAt || bo.appointmentScheduledAt || new Date().toISOString(),
+        updatedAt: bo.updatedAt || bo.createdAt || bo.appointmentScheduledAt || new Date().toISOString(),
         deliveryAddress: 'TP. Hồ Chí Minh',
         deliveryOption: 'INSPECTION',
       } as unknown as EscrowOrder;
@@ -566,7 +640,12 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
       }
     }
 
-    result.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+    result.sort((a, b) => {
+      const timeA = getOrderTimestamp(a);
+      const timeB = getOrderTimestamp(b);
+      if (timeB !== timeA) return timeB - timeA;
+      return (b.id || '').localeCompare(a.id || '');
+    });
     return result;
   }, [backendOrders, currentUser, orders, savedResults, selectedOrderId]);
 
@@ -594,7 +673,16 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
 
   const assignedCount = effectiveOrders.length;
   const atHomeCount = effectiveOrders.filter((o) => o.inspectionMethod === 'AT_HOME').length;
-  const completedOrders = effectiveOrders.filter((order) => order.inspectionReport);
+  const completedOrders = useMemo(() => {
+    const list = effectiveOrders.filter((order) => order.inspectionReport);
+    list.sort((a, b) => {
+      const timeA = getOrderTimestamp(a);
+      const timeB = getOrderTimestamp(b);
+      if (timeB !== timeA) return timeB - timeA;
+      return (b.id || '').localeCompare(a.id || '');
+    });
+    return list;
+  }, [effectiveOrders]);
   const completedCount = effectiveOrders.filter((order) => getInspectionTaskStage(order.inspectionStatus) === 'completed').length;
   const inProgressCount = effectiveOrders.filter((order) => {
     const stage = getInspectionTaskStage(order.inspectionStatus);
@@ -605,7 +693,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
 
   // --- FILTERED TASKS FOR TAB 2 ---
   const filteredTasks = useMemo(() => {
-    return effectiveOrders.filter((o) => {
+    const list = effectiveOrders.filter((o) => {
       const isAtHome = o.inspectionMethod === 'AT_HOME';
       const stage = getInspectionTaskStage(o.inspectionStatus);
 
@@ -624,6 +712,15 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
       }
       return true;
     });
+
+    list.sort((a, b) => {
+      const timeA = getOrderTimestamp(a);
+      const timeB = getOrderTimestamp(b);
+      if (timeB !== timeA) return timeB - timeA;
+      return (b.id || '').localeCompare(a.id || '');
+    });
+
+    return list;
   }, [effectiveOrders, taskFilter, taskSearchTerm]);
 
   // Handle Barcode Scan
@@ -814,12 +911,12 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
             <span>ISO/IEC 17025 • {stationCode}</span>
           </div>
 
-          {/* User Profile Button */}
+          {/* Account Menu */}
           <div className="relative" ref={userDropdownRef}>
             <button
               onClick={() => setShowUserDropdown(!showUserDropdown)}
               className="flex items-center gap-2 px-2 py-1.5 rounded-xl hover:bg-white/10 transition cursor-pointer"
-              title="Hồ sơ kỹ thuật viên"
+              title={lang === 'vi' ? 'Menu tài khoản' : 'Account menu'}
             >
               <div className="w-7 h-7 rounded-full bg-white p-0.5 flex items-center justify-center shadow-xs border border-white/20">
                 {currentUser?.avatar ? (
@@ -855,17 +952,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                     </span>
                   </div>
                 </div>
-                <div className="p-1 space-y-0.5">
-                  <button
-                    onClick={() => {
-                      setShowUserDropdown(false);
-                      onOpenProfile?.();
-                    }}
-                    className="w-full text-left px-3 py-2 hover:bg-slate-100 rounded-xl flex items-center gap-2 text-[#24263e] font-bold cursor-pointer transition"
-                  >
-                    <User className="w-3.5 h-3.5 text-[#c34c36]" />
-                    <span>Hồ Sơ Cá Nhân</span>
-                  </button>
+                <div className="p-1">
                   <button
                     onClick={() => {
                       setShowUserDropdown(false);
@@ -894,9 +981,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
         >
           {/* User Block with Live Online indicator */}
           <div
-            onClick={() => onOpenProfile?.()}
-            className={`p-3.5 sm:p-4 border-b border-[#24263e]/15 flex items-center gap-3 cursor-pointer hover:bg-black/5 transition ${isSidebarCollapsed ? '' : 'md:pr-11'}`}
-            title="Xem hồ sơ cá nhân"
+            className={`p-3.5 sm:p-4 border-b border-[#24263e]/15 flex items-center gap-3 ${isSidebarCollapsed ? '' : 'md:pr-11'}`}
           >
             <div className="relative shrink-0">
               <div className="w-10 h-10 rounded-full bg-white p-0.5 border border-[#24263e]/20 overflow-hidden flex items-center justify-center">
@@ -915,10 +1000,10 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                 <h4 className="font-black text-xs sm:text-sm text-[#24263e] truncate">
                   {inspectorName}
                 </h4>
-                <div className="flex items-center gap-1.5 text-[11px] text-emerald-800 font-bold">
+                {/* <div className="flex items-center gap-1.5 text-[11px] text-emerald-800 font-bold">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
                   <span>Đang Trực Ca (Online)</span>
-                </div>
+                </div> */}
               </div>
             )}
           </div>
@@ -1015,7 +1100,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                     {inspectorTab === 'workbench' && 'Bàn Đo Kiểm Trực Tiếp'}
                     {inspectorTab === 'tasks' && 'Hàng Đợi Nhiệm Vụ & Lịch Hẹn'}
                     {inspectorTab === 'certificates' && 'Sổ Chứng Thư Số & Hồ Sơ'}
-                    {inspectorTab === 'standards' && 'Tiêu Chuẩn Kỹ Thuật ISO 17025'}
+                    {inspectorTab === 'standards' && 'Tiêu Chuẩn Kỹ Thuật Của Phòng Kiểm Định'}
                   </span>
                 </div>
                 <h1 className="text-xl sm:text-2xl font-black text-[#24263e] tracking-tight flex flex-wrap items-center gap-2.5">
@@ -1023,11 +1108,11 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                     {inspectorTab === 'workbench' && 'Bàn Làm Việc Kỹ Thuật Viên'}
                     {inspectorTab === 'tasks' && 'Hàng Đợi Nhiệm Vụ & Lịch Đo Kiểm'}
                     {inspectorTab === 'certificates' && 'Sổ Tay Hồ Sơ & Chứng Thư Số'}
-                    {inspectorTab === 'standards' && 'Tiêu Chuẩn Phòng Lab ISO/IEC 17025'}
+                    {inspectorTab === 'standards' && 'Tiêu Chuẩn Phòng kiểm đinh'}
                   </span>
-                  <span className="text-xs bg-emerald-100 text-emerald-800 border border-emerald-300 px-2.5 py-0.5 rounded-full font-bold">
+                  {/* <span className="text-xs bg-emerald-100 text-emerald-800 border border-emerald-300 px-2.5 py-0.5 rounded-full font-bold">
                     Đang Trực Ca
-                  </span>
+                  </span> */}
                 </h1>
                 <p className="text-xs text-slate-500 mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-medium">
                   <span>Kĩ thuật viên: <strong className="text-slate-800">{inspectorName}</strong></span>
@@ -1539,7 +1624,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                               <div className="space-y-0.5">
                                 <p className="text-slate-500 line-clamp-1 flex items-center gap-1">
                                   <Clock className="w-3 h-3 text-slate-400 shrink-0" />
-                                  Tiếp nhận bàn test #{stationCode}
+                                  Tiếp nhận khu vực kiểm định:  #{stationCode}
                                 </p>
                                 {stage === 'inbound' && (
                                   <p className="text-cyan-700 font-medium flex items-center gap-1">
@@ -1638,7 +1723,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                                             {(() => {
                                               const appt = ord.appointmentScheduledAt || (ord as any).scheduledAt || getOrderScheduledAppointmentTime(ord);
                                               const checkIn = canInspectorCheckIn(appt);
-                                              return !checkIn.allowed ? 'Chi Tiết Lịch Hẹn (Mở nhận đơn trước 30p)' : 'Quét Mã Nhận Máy (Tại Nhà)';
+                                              return !checkIn.allowed ? 'Chi Tiết Lịch Hẹn ' : 'Quét Mã Nhận Máy (Tại Nhà)';
                                             })()}
                                           </span>
                                         </>
@@ -1745,15 +1830,6 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                           >
                             <Eye className="w-3.5 h-3.5" />
                             <span>Xem Chứng Thư Số</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => window.print()}
-                            className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 transition cursor-pointer"
-                            title="In báo cáo"
-                          >
-                            <Printer className="w-4 h-4" />
                           </button>
                         </div>
                       </div>

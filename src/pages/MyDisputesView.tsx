@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Scale,
   ShieldCheck,
@@ -12,6 +13,7 @@ import {
   RefreshCw,
   Plus,
   ExternalLink,
+  ChevronLeft,
   ChevronRight,
   Package,
   Layers,
@@ -21,9 +23,19 @@ import {
   X,
   User,
   ShieldAlert,
-  Loader2
+  Loader2,
+  Play,
+  Video,
+  Maximize2,
+  Send
 } from 'lucide-react';
-import { Language, UserProfile, EscrowOrder, UserRole } from '../types';
+import { Language, UserProfile, EscrowOrder, UserRole, type ShipmentBackend } from '../types';
+import { SellerDisputeResponseModal } from '../components/seller/SellerDisputeResponseModal';
+import { SellerDisputeFees } from '../components/seller/SellerDisputeFees';
+import { SellerOrderDisputes } from '../components/seller/SellerOrderDisputes';
+import { shippingService } from '../services/shippingService';
+import { formatVND } from '../utils/translations';
+import { formatDisputeDateTime } from '../utils/orders/orderDispute';
 import {
   userReportService,
   UserReportResponseDto,
@@ -41,66 +53,30 @@ interface MyDisputesViewProps {
   orders?: EscrowOrder[];
   onBack?: () => void;
   currentRole?: UserRole;
+  initialReportId?: string;
+  onCloseReport?: () => void;
+  onNavigateToNotifications?: () => void;
 }
 
-const PrivateEvidenceThumb: React.FC<{
-  url: string;
-  idx: number;
-  onPreview: (src: string) => void;
-}> = ({ url, idx, onPreview }) => {
-  const [blobSrc, setBlobSrc] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+type EvidenceView = Awaited<ReturnType<typeof userReportService.loadPrivateEvidenceView>>;
 
-  useEffect(() => {
-    let active = true;
-    if (url.startsWith('http://') || url.startsWith('https://')) {
-      setBlobSrc(url);
-      return;
-    }
-    setLoading(true);
-    userReportService
-      .getEvidenceBlobUrl(url)
-      .then((bUrl) => {
-        if (active) setBlobSrc(bUrl);
-      })
-      .catch(() => {
-        if (active) setBlobSrc(null);
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [url]);
+import { DisputeEvidenceThumbnail as DisputeEvidenceMediaItem } from '../components/common/DisputeEvidenceThumbnail';
 
-  return (
-    <button
-      type="button"
-      onClick={() => onPreview(blobSrc || url)}
-      className="w-14 h-14 rounded-xl overflow-hidden border border-gray-200 hover:ring-2 hover:ring-[#c34c36] transition cursor-pointer relative group bg-slate-50 flex items-center justify-center"
-      title={`Bằng chứng ${idx + 1}`}
-    >
-      {loading ? (
-        <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
-      ) : blobSrc ? (
-        <img
-          src={blobSrc}
-          alt={`Evidence ${idx + 1}`}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-          onError={(e) => {
-            (e.target as any).src =
-              'https://images.unsplash.com/photo-1584438784894-089d6a62b8fa?auto=format&fit=crop&q=80&w=200';
-          }}
-        />
-      ) : (
-        <div className="w-full h-full flex flex-col items-center justify-center bg-slate-100 text-slate-400 text-[10px]">
-          <ImageIcon className="w-4 h-4 mb-0.5" />
-          <span>Tệp #{idx + 1}</span>
-        </div>
-      )}
-    </button>
-  );
+const returnStatusLabels: Record<string, string> = {
+  PENDING: 'Chờ tạo vận đơn',
+  CREATING: 'Đang tạo vận đơn',
+  CREATED: 'Đã tạo vận đơn',
+  CREATION_UNCERTAIN: 'Đang đối soát vận đơn',
+  READY_TO_PICK: 'Đang tìm tài xế',
+  PICKING: 'Tài xế đang tới lấy hàng',
+  PICKED: 'Đã lấy hàng hoàn',
+  DELIVERING: 'Đang chuyển về người bán',
+  PICKED_UP: 'Đã lấy hàng hoàn',
+  IN_TRANSIT: 'Đang chuyển về người bán',
+  DELIVERED: 'Đã giao lại cho người bán',
+  CANCELLED: 'Đã hủy vận đơn',
+  FAILED: 'Giao hàng hoàn gặp sự cố',
+  RETURNED: 'Hãng vận chuyển đã trả lại kiện hàng',
 };
 
 export const MyDisputesView: React.FC<MyDisputesViewProps> = ({
@@ -111,9 +87,13 @@ export const MyDisputesView: React.FC<MyDisputesViewProps> = ({
   orders = [],
   onBack,
   currentRole,
+  initialReportId,
+  onCloseReport,
+  onNavigateToNotifications,
 }) => {
-  const isSeller = currentRole === 'seller' || currentUser?.role === 'seller';
+  const isSeller = (currentRole ?? currentUser?.role) === 'seller';
   const [reports, setReports] = useState<UserReportResponseDto[]>([]);
+  const [sellerStats, setSellerStats] = useState({ total: 0, open: 0, inReview: 0, resolved: 0 });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -126,7 +106,71 @@ export const MyDisputesView: React.FC<MyDisputesViewProps> = ({
   // Modals state
   const [selectedReport, setSelectedReport] = useState<UserReportResponseDto | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [detailRefresh, setDetailRefresh] = useState(0);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [returnShipment, setReturnShipment] = useState<ShipmentBackend | null>(null);
+  const [showResponse, setShowResponse] = useState(false);
+  const [preview, setPreview] = useState<EvidenceView | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isSeller && initialReportId) setDetailId(initialReportId);
+  }, [isSeller, initialReportId]);
+
+  useEffect(() => {
+    if (!detailId) return;
+    let active = true;
+    setDetailError(null);
+    userReportService.getReportById(detailId).then(async (report) => {
+      if (!active) return;
+      setSelectedReport(report);
+      if (report.orderId && report.returnShipmentId && !report.refundedAt) {
+        const shipments = await shippingService.getOrderShipments(report.orderId);
+        if (active) setReturnShipment(shipments.find((item) =>
+          item.leg === 'BUYER_TO_SELLER' && item.shipmentId === report.returnShipmentId) ?? null);
+      }
+    }).catch((error: unknown) => {
+      if (active) setDetailError(error instanceof Error ? error.message : 'Không tải được thông tin khiếu nại.');
+    });
+    return () => { active = false; };
+  }, [detailId, detailRefresh]);
+
+  useEffect(() => {
+    if (!preview) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPreview(null);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      preview?.dispose?.();
+    };
+  }, [preview]);
+
+  const openEvidence = async (url: string) => {
+    setPreviewError(null);
+    setPreviewLoading(true);
+    try {
+      const view: EvidenceView = url.startsWith('https://') || url.startsWith('http://')
+        ? { kind: 'IMAGE', src: url, dispose: () => { } }
+        : await userReportService.loadPrivateEvidenceView(url);
+      setPreview(view);
+    } catch (error) {
+      setPreviewError(error instanceof Error ? error.message : 'Không xem được bằng chứng.');
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const closeDetail = () => {
+    setDetailId(null);
+    setSelectedReport(null);
+    setReturnShipment(null);
+    setShowResponse(false);
+    if (initialReportId) onCloseReport?.();
+  };
 
   // Load user reports from BE: GET /api/v1/reports/me
   const fetchReports = useCallback(async (isRefresh = false) => {
@@ -135,9 +179,25 @@ export const MyDisputesView: React.FC<MyDisputesViewProps> = ({
     setError(null);
 
     try {
-      const res = await userReportService.getMyReports(0, 50);
-      const items = res?.items || [];
-      setReports(items);
+      if (isSeller) {
+        const [myRes, sellerRes] = await Promise.allSettled([
+          userReportService.getMyReports(0, 50),
+          userReportService.getSellerDisputes(0, 50),
+        ]);
+        const items = myRes.status === 'fulfilled' ? myRes.value?.items || [] : [];
+        const sellerItems = sellerRes.status === 'fulfilled' ? sellerRes.value?.items || [] : [];
+        setReports(items);
+        setSellerStats({
+          total: sellerItems.length,
+          open: sellerItems.filter((r) => r.status === 'OPEN').length,
+          inReview: sellerItems.filter((r) => r.status === 'IN_REVIEW').length,
+          resolved: sellerItems.filter((r) => r.status === 'CONFIRMED' || r.status === 'DISMISSED').length,
+        });
+      } else {
+        const res = await userReportService.getMyReports(0, 50);
+        const items = res?.items || [];
+        setReports(items);
+      }
     } catch (err: any) {
       console.error('[MyDisputesView] Failed to fetch reports:', err);
       setError(
@@ -149,7 +209,7 @@ export const MyDisputesView: React.FC<MyDisputesViewProps> = ({
       setLoading(false);
       setRefreshing(false);
     }
-  }, [lang]);
+  }, [lang, isSeller]);
 
   useEffect(() => {
     fetchReports();
@@ -222,7 +282,7 @@ export const MyDisputesView: React.FC<MyDisputesViewProps> = ({
   const getResponsiblePartyLabel = (party?: ResponsibleParty | null) => {
     switch (party) {
       case 'SELLER':
-        return lang === 'vi' ? 'Người bán chịu trách nhiệm (Hoàn tiền cho người mua)' : 'Seller Fault (Refund Buyer)';
+        return lang === 'vi' ? 'Người bán chịu trách nhiệm' : 'Seller responsible';
       case 'BUYER':
         return lang === 'vi' ? 'Người mua chịu trách nhiệm' : 'Buyer Fault';
       case 'CARRIER':
@@ -259,17 +319,42 @@ export const MyDisputesView: React.FC<MyDisputesViewProps> = ({
     return true;
   });
 
+  // Pagination for buyer disputes (5 disputes per page)
+  const BUYER_ITEMS_PER_PAGE = 5;
+  const [buyerPage, setBuyerPage] = useState(1);
+
+  useEffect(() => {
+    setBuyerPage(1);
+  }, [targetFilter, statusFilter, searchQuery]);
+
+  const totalBuyerPages = Math.max(1, Math.ceil(filteredReports.length / BUYER_ITEMS_PER_PAGE));
+  const safeBuyerPage = Math.min(buyerPage, totalBuyerPages);
+  const paginatedBuyerReports = useMemo(() => {
+    const startIndex = (safeBuyerPage - 1) * BUYER_ITEMS_PER_PAGE;
+    return filteredReports.slice(startIndex, startIndex + BUYER_ITEMS_PER_PAGE);
+  }, [filteredReports, safeBuyerPage]);
+
   // Statistics
-  const totalCount = reports.length;
-  const openCount = reports.filter((r) => r.status === 'OPEN').length;
-  const inReviewCount = reports.filter((r) => r.status === 'IN_REVIEW').length;
-  const resolvedCount = reports.filter((r) => r.status === 'CONFIRMED' || r.status === 'DISMISSED').length;
+  const totalCount = isSeller ? sellerStats.total + reports.length : reports.length;
+  const openCount = isSeller
+    ? sellerStats.open + reports.filter((r) => r.status === 'OPEN').length
+    : reports.filter((r) => r.status === 'OPEN').length;
+  const inReviewCount = isSeller
+    ? sellerStats.inReview + reports.filter((r) => r.status === 'IN_REVIEW').length
+    : reports.filter((r) => r.status === 'IN_REVIEW').length;
+  const resolvedCount = isSeller
+    ? sellerStats.resolved + reports.filter((r) => r.status === 'CONFIRMED' || r.status === 'DISMISSED').length
+    : reports.filter((r) => r.status === 'CONFIRMED' || r.status === 'DISMISSED').length;
 
   return (
     <div className="min-h-screen bg-[#faf8f5] text-[#24263e] pb-16">
       {/* Top Banner / Header */}
-      <div className="bg-[#24263e] text-white pt-8 pb-12 px-4 sm:px-6 lg:px-8 border-b border-black/10 shadow-lg">
-        <div className="w-full">
+      <div className="bg-[#24263e] text-white pt-8 pb-14 px-4 sm:px-6 lg:px-8 border-b border-black/10 shadow-lg relative overflow-hidden">
+        {/* Glow ambient background effects */}
+        <div className="absolute top-0 right-0 -mr-20 -mt-20 w-80 h-80 rounded-full bg-[#c34c36]/15 blur-3xl pointer-events-none" />
+        <div className="absolute bottom-0 left-1/4 -mb-20 w-64 h-64 rounded-full bg-blue-600/10 blur-3xl pointer-events-none" />
+
+        <div className="w-full relative z-10">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               {onBack && (
@@ -287,7 +372,7 @@ export const MyDisputesView: React.FC<MyDisputesViewProps> = ({
                 </div>
                 <div>
                   <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white">
-                    {lang === 'vi' ? 'Khiếu Nại & Trọng Tài Escrow' : 'My Disputes & Arbitrations'}
+                    {lang === 'vi' ? 'Khiếu nại & trọng tài Escrow' : 'My disputes & arbitrations'}
                   </h1>
                   <p className="text-xs text-white/70 mt-0.5 font-medium">
                     {lang === 'vi'
@@ -315,7 +400,7 @@ export const MyDisputesView: React.FC<MyDisputesViewProps> = ({
                   className="px-4 py-2 rounded-xl text-xs font-black bg-gradient-to-r from-[#c34c36] to-[#e36a54] hover:opacity-95 text-white transition cursor-pointer flex items-center gap-1.5 shadow-md"
                 >
                   <Plus className="w-4 h-4" />
-                  <span>{lang === 'vi' ? 'Gửi Khiếu Nại Mới' : 'Open Dispute'}</span>
+                  <span>{lang === 'vi' ? 'Gửi khiếu nại mới' : 'Open dispute'}</span>
                 </button>
               )}
             </div>
@@ -325,7 +410,7 @@ export const MyDisputesView: React.FC<MyDisputesViewProps> = ({
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5 mt-8">
             <div className="bg-white/10 backdrop-blur-md border border-white/15 rounded-2xl p-3.5">
               <div className="flex items-center justify-between text-white/70 text-xs font-bold">
-                <span>{lang === 'vi' ? 'Tổng Khiếu Nại' : 'Total Cases'}</span>
+                <span>{lang === 'vi' ? 'Tổng khiếu nại' : 'Total cases'}</span>
                 <FileText className="w-4 h-4 text-white/80" />
               </div>
               <div className="text-2xl font-black text-white mt-1.5 font-mono">{totalCount}</div>
@@ -333,7 +418,7 @@ export const MyDisputesView: React.FC<MyDisputesViewProps> = ({
 
             <div className="bg-white/10 backdrop-blur-md border border-white/15 rounded-2xl p-3.5">
               <div className="flex items-center justify-between text-amber-300 text-xs font-bold">
-                <span>{lang === 'vi' ? 'Chờ Tiếp Nhận' : 'Pending Review'}</span>
+                <span>{lang === 'vi' ? 'Chờ tiếp nhận' : 'Pending review'}</span>
                 <Clock className="w-4 h-4 text-amber-400" />
               </div>
               <div className="text-2xl font-black text-amber-300 mt-1.5 font-mono">{openCount}</div>
@@ -341,7 +426,7 @@ export const MyDisputesView: React.FC<MyDisputesViewProps> = ({
 
             <div className="bg-white/10 backdrop-blur-md border border-white/15 rounded-2xl p-3.5">
               <div className="flex items-center justify-between text-blue-300 text-xs font-bold">
-                <span>{lang === 'vi' ? 'Đang Thẩm Định' : 'In Arbitration'}</span>
+                <span>{lang === 'vi' ? 'Đang thẩm định' : 'In arbitration'}</span>
                 <Scale className="w-4 h-4 text-blue-300" />
               </div>
               <div className="text-2xl font-black text-blue-300 mt-1.5 font-mono">{inReviewCount}</div>
@@ -349,7 +434,7 @@ export const MyDisputesView: React.FC<MyDisputesViewProps> = ({
 
             <div className="bg-white/10 backdrop-blur-md border border-white/15 rounded-2xl p-3.5">
               <div className="flex items-center justify-between text-emerald-300 text-xs font-bold">
-                <span>{lang === 'vi' ? 'Đã Giải Quyết' : 'Resolved / Closed'}</span>
+                <span>{lang === 'vi' ? 'Đã giải quyết' : 'Resolved / closed'}</span>
                 <CheckCircle2 className="w-4 h-4 text-emerald-400" />
               </div>
               <div className="text-2xl font-black text-emerald-300 mt-1.5 font-mono">{resolvedCount}</div>
@@ -359,310 +444,393 @@ export const MyDisputesView: React.FC<MyDisputesViewProps> = ({
       </div>
 
       {/* Main Content Area */}
-      <div className="w-full px-3 sm:px-5 lg:px-6 -mt-6">
-        {/* Filter & Search Bar */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-3 sm:p-4 mb-6">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-            {/* Target Type Filter Tabs */}
-            <div className="flex items-center gap-1.5 bg-[#faf8f5] p-1 rounded-xl border border-gray-200 overflow-x-auto">
-              <button
-                onClick={() => setTargetFilter('ALL')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap cursor-pointer ${
-                  targetFilter === 'ALL'
-                    ? 'bg-[#24263e] text-white shadow-xs'
-                    : 'text-slate-600 hover:text-[#24263e]'
-                }`}
-              >
-                {lang === 'vi' ? 'Tất cả đối tượng' : 'All Targets'}
-              </button>
-              <button
-                onClick={() => setTargetFilter('ORDER')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
-                  targetFilter === 'ORDER'
-                    ? 'bg-[#24263e] text-white shadow-xs'
-                    : 'text-slate-600 hover:text-[#24263e]'
-                }`}
-              >
-                <Package className="w-3.5 h-3.5" />
-                <span>{lang === 'vi' ? 'Đơn Hàng Escrow' : 'Orders'}</span>
-              </button>
-              <button
-                onClick={() => setTargetFilter('LISTING')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
-                  targetFilter === 'LISTING'
-                    ? 'bg-[#24263e] text-white shadow-xs'
-                    : 'text-slate-600 hover:text-[#24263e]'
-                }`}
-              >
-                <Layers className="w-3.5 h-3.5" />
-                <span>{lang === 'vi' ? 'Bài Đăng Bán' : 'Listings'}</span>
-              </button>
-            </div>
-
-            {/* Status Filter & Search Input */}
-            <div className="flex items-center gap-2.5 flex-1 max-w-xl">
-              <div className="relative flex-1">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder={
-                    lang === 'vi'
-                      ? 'Tìm theo mã khiếu nại, mã đơn, nội dung...'
-                      : 'Search by case ID, order ID, description...'
-                  }
-                  className="w-full pl-9 pr-3 py-2 bg-[#faf8f5] border border-gray-200 rounded-xl text-xs text-[#24263e] focus:outline-none focus:border-[#c34c36] transition"
-                />
-              </div>
-
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as any)}
-                className="px-3 py-2 bg-[#faf8f5] border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36] cursor-pointer"
-              >
-                <option value="ALL">{lang === 'vi' ? 'Mọi trạng thái' : 'All Statuses'}</option>
-                <option value="OPEN">{lang === 'vi' ? 'Chờ Tiếp Nhận' : 'Pending'}</option>
-                <option value="IN_REVIEW">{lang === 'vi' ? 'Đang Thẩm Định' : 'In Review'}</option>
-                <option value="CONFIRMED">{lang === 'vi' ? 'Đã Xác Nhận Vi Phạm' : 'Confirmed'}</option>
-                <option value="DISMISSED">{lang === 'vi' ? 'Đã Bác Bỏ' : 'Dismissed'}</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        {/* Reports Content List */}
-        {loading ? (
-          <div className="space-y-4">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="bg-white rounded-2xl p-5 border border-gray-200 animate-pulse space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="w-1/3 h-4 bg-slate-200 rounded" />
-                  <div className="w-24 h-6 bg-slate-200 rounded-full" />
-                </div>
-                <div className="w-2/3 h-4 bg-slate-200 rounded" />
-                <div className="w-full h-12 bg-slate-100 rounded-xl" />
-              </div>
-            ))}
-          </div>
-        ) : error ? (
-          <div className="bg-rose-50 border border-rose-200 rounded-2xl p-6 text-center text-rose-800 space-y-2">
-            <AlertCircle className="w-8 h-8 text-rose-600 mx-auto" />
-            <p className="text-sm font-bold">{error}</p>
-            <button
-              onClick={() => fetchReports(true)}
-              className="px-4 py-1.5 bg-rose-600 text-white rounded-xl text-xs font-bold hover:bg-rose-700 transition cursor-pointer"
-            >
-              {lang === 'vi' ? 'Thử lại' : 'Retry'}
-            </button>
-          </div>
-        ) : filteredReports.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-gray-200 p-12 text-center space-y-4 shadow-sm">
-            <div className="w-16 h-16 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
-              <Scale className="w-8 h-8" />
-            </div>
-            <div className="max-w-md mx-auto space-y-1">
-              <h3 className="text-base font-black text-[#24263e]">
-                {lang === 'vi' ? 'Chưa Có Khiếu Nại Nào' : 'No Disputes Found'}
-              </h3>
-              <p className="text-xs text-slate-500 leading-relaxed">
-                {lang === 'vi'
-                  ? 'Khi có sai khác về đơn hàng đã nhận hoặc phát hiện sản phẩm có dấu hiệu vi phạm, bạn có thể gửi yêu cầu để Ban Quản Trị SecondLife hỗ trợ bảo vệ quyền lợi.'
-                  : 'When there are discrepancies with delivered orders or listings, you can file a dispute for SecondLife Arbitration.'}
-              </p>
-            </div>
-            {!isSeller && (
-              <button
-                onClick={() => setIsCreateModalOpen(true)}
-                className="px-4 py-2 bg-[#24263e] hover:bg-black text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
-              >
-                {lang === 'vi' ? 'Tạo khiếu nại đầu tiên' : 'File a dispute now'}
-              </button>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {filteredReports.map((report) => {
-              const isOrder = Boolean(report.orderId);
-              const hasResolvedDecision = report.status === 'CONFIRMED' || report.status === 'DISMISSED';
-
-              return (
-                <div
-                  key={report.id}
-                  className="bg-white rounded-2xl border border-gray-200 p-4 sm:p-5 shadow-sm hover:shadow-md transition-all space-y-4"
-                >
-                  {/* Card Header */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-gray-100">
-                    <div className="flex items-center gap-2.5 flex-wrap">
-                      <div
-                        className={`w-8 h-8 rounded-xl flex items-center justify-center text-white shadow-xs ${
-                          isOrder ? 'bg-[#24263e]' : 'bg-[#c34c36]'
-                        }`}
-                      >
-                        {isOrder ? <Package className="w-4 h-4" /> : <Layers className="w-4 h-4" />}
-                      </div>
-
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-black text-[#24263e] font-mono">
-                            Mã vụ việc: #{report.id.substring(0, 8)}...
-                          </span>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 uppercase">
-                            {isOrder ? 'Đơn hàng' : 'Bài đăng'}
-                          </span>
-                        </div>
-                        <div className="text-[11px] text-slate-500 flex items-center gap-2 mt-0.5">
-                          <span>
-                            {new Date(report.createdAt).toLocaleString('vi-VN', {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                              day: '2-digit',
-                              month: '2-digit',
-                              year: 'numeric',
-                            })}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      {getStatusBadge(report.status)}
-                    </div>
-                  </div>
-
-                  {/* Card Body */}
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-                    <div className="md:col-span-8 space-y-2.5">
-                      <div className="flex items-center gap-2">
-                        <span className="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-800 border border-rose-200 text-xs font-black flex items-center gap-1">
-                          <ShieldAlert className="w-3.5 h-3.5 text-rose-600" />
-                          <span>{getReasonLabel(report.reasonCode)}</span>
-                        </span>
-
-                        {report.orderId && (
-                          <button
-                            onClick={() => onNavigateToOrder?.(report.orderId!)}
-                            className="text-xs font-bold text-[#c34c36] hover:underline flex items-center gap-1 cursor-pointer"
-                          >
-                            <span>Đơn hàng #{report.orderId.substring(0, 8)}</span>
-                            <ExternalLink className="w-3 h-3" />
-                          </button>
-                        )}
-
-                        {report.postId && (
-                          <button
-                            onClick={() => onNavigateToPost?.(report.postId!)}
-                            className="text-xs font-bold text-[#c34c36] hover:underline flex items-center gap-1 cursor-pointer"
-                          >
-                            <span>Bài đăng #{report.postId.substring(0, 8)}</span>
-                            <ExternalLink className="w-3 h-3" />
-                          </button>
-                        )}
-                      </div>
-
-                      <p className="text-xs text-slate-700 leading-relaxed font-normal bg-[#faf8f5] p-3 rounded-xl border border-gray-100">
-                        "{report.description}"
-                      </p>
-
-                      {/* Evidence Photo Thumbnails */}
-                      {report.evidenceUrls && report.evidenceUrls.length > 0 && (
-                        <div className="space-y-1.5 pt-1">
-                          <div className="text-[11px] font-bold text-slate-500 flex items-center gap-1">
-                            <ImageIcon className="w-3 h-3" />
-                            <span>{lang === 'vi' ? 'Bằng chứng đã cung cấp:' : 'Uploaded Evidence:'}</span>
-                          </div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            {report.evidenceUrls.map((url, idx) => (
-                              <PrivateEvidenceThumb
-                                key={idx}
-                                url={url}
-                                idx={idx}
-                                onPreview={(src) => setPreviewImage(src)}
-                              />
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Arbitration Resolution Column */}
-                    <div className="md:col-span-4 bg-[#faf8f5] rounded-xl p-3.5 border border-gray-200 flex flex-col justify-between space-y-2">
-                      <div className="space-y-2">
-                        <div className="text-xs font-extrabold text-[#24263e] flex items-center gap-1.5">
-                          <Scale className="w-3.5 h-3.5 text-[#c34c36]" />
-                          <span>{lang === 'vi' ? 'Phán Quyết Trọng Tài' : 'Arbitration Outcome'}</span>
-                        </div>
-
-                        {hasResolvedDecision ? (
-                          <div className="space-y-1.5 text-xs">
-                            <div className="text-[11px] text-slate-500">
-                              {lang === 'vi' ? 'Bên có lỗi:' : 'Fault:'}
-                              <strong className="block text-[#24263e] font-bold mt-0.5">
-                                {getResponsiblePartyLabel(report.responsibleParty)}
-                              </strong>
-                            </div>
-
-                            {report.decisionReason && (
-                              <div className="p-2 rounded-lg bg-white border border-gray-200 text-[11px] text-slate-700 italic">
-                                "{report.decisionReason}"
-                              </div>
-                            )}
-
-                            {report.resolvedAt && (
-                              <div className="text-[10px] text-emerald-700 font-bold flex items-center gap-1">
-                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                <span>
-                                  {lang === 'vi' ? 'Hoàn tất vào: ' : 'Resolved: '}
-                                  {new Date(report.resolvedAt).toLocaleDateString('vi-VN')}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        ) : report.status === 'IN_REVIEW' ? (
-                          <div className="p-2.5 rounded-lg bg-blue-50 border border-blue-200 text-xs text-blue-900 space-y-1">
-                            <div className="font-bold flex items-center gap-1">
-                              <Scale className="w-3 h-3 text-blue-600" />
-                              <span>Đang trong phiên phân xử</span>
-                            </div>
-                            <p className="text-[11px] text-blue-800 leading-tight">
-                              Trọng tài viên SecondLife đang đối soát lời khai và video/ảnh bằng chứng của cả hai bên.
-                            </p>
-                          </div>
-                        ) : (
-                          <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-900 space-y-1">
-                            <div className="font-bold flex items-center gap-1">
-                              <Clock className="w-3 h-3 text-amber-600" />
-                              <span>Đang chờ phân bổ</span>
-                            </div>
-                            <p className="text-[11px] text-amber-800 leading-tight">
-                              Yêu cầu khiếu nại đã được ghi nhận vào hàng đợi xử lý của Trọng tài SecondLife.
-                            </p>
-                          </div>
-                        )}
-                      </div>
-
-                      <button
-                        onClick={() => setSelectedReport(report)}
-                        className="w-full py-1.5 px-3 bg-white hover:bg-slate-50 text-[#24263e] border border-slate-300 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer"
-                      >
-                        <span>{lang === 'vi' ? 'Xem Toàn Bộ Tiến Trình' : 'View Full Timeline'}</span>
-                        <ChevronRight className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+      <div className="w-full px-4 sm:px-6 lg:px-8 -mt-6 relative z-10 space-y-6">
+        {isSeller && (
+          <>
+            <SellerOrderDisputes
+              key={currentUser?.id}
+              onOpenOrder={onNavigateToOrder}
+              onOpenPost={onNavigateToPost}
+              lang={lang}
+              getReasonLabel={getReasonLabel}
+            />
+            <SellerDisputeFees onOpenOrder={onNavigateToOrder} />
+          </>
         )}
+
+        {/* Section: Báo cáo do tài khoản gửi */}
+        <div>
+          {isSeller && (
+            <div className="flex items-center gap-2.5 pb-2 mb-3">
+              <div className="w-9 h-9 rounded-xl bg-orange-50 border border-orange-100 flex items-center justify-center text-[#c34c36] shadow-2xs">
+                <Send className="w-4 h-4" />
+              </div>
+              <div>
+                <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
+                  {lang === 'vi' ? 'Báo cáo tôi đã gửi' : 'Reports submitted by me'}
+                </h2>
+                <p className="text-xs text-slate-500">
+                  {lang === 'vi'
+                    ? 'Danh sách các yêu cầu khiếu nại hoặc báo cáo vi phạm do chính bạn gửi lên hệ thống'
+                    : 'List of disputes or reports submitted by your account'}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Filter & Search Bar */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-3 sm:p-4 mb-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+              {/* Target Type Filter Tabs */}
+              <div className="flex items-center gap-1.5 bg-[#faf8f5] p-1 rounded-xl border border-gray-200 overflow-x-auto">
+                <button
+                  onClick={() => setTargetFilter('ALL')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap cursor-pointer ${targetFilter === 'ALL'
+                    ? 'bg-[#24263e] text-white shadow-xs'
+                    : 'text-slate-600 hover:text-[#24263e]'
+                    }`}
+                >
+                  {lang === 'vi' ? 'Tất cả đối tượng' : 'All Targets'}
+                </button>
+                <button
+                  onClick={() => setTargetFilter('ORDER')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${targetFilter === 'ORDER'
+                    ? 'bg-[#24263e] text-white shadow-xs'
+                    : 'text-slate-600 hover:text-[#24263e]'
+                    }`}
+                >
+                  <Package className="w-3.5 h-3.5" />
+                  <span>{lang === 'vi' ? 'Đơn Hàng Escrow' : 'Orders'}</span>
+                </button>
+                <button
+                  onClick={() => setTargetFilter('LISTING')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${targetFilter === 'LISTING'
+                    ? 'bg-[#24263e] text-white shadow-xs'
+                    : 'text-slate-600 hover:text-[#24263e]'
+                    }`}
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  <span>{lang === 'vi' ? 'Bài Đăng Bán' : 'Listings'}</span>
+                </button>
+              </div>
+
+              {/* Status Filter & Search Input */}
+              <div className="flex items-center gap-2.5 flex-1 max-w-xl">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder={
+                      lang === 'vi'
+                        ? 'Tìm theo mã khiếu nại, mã đơn, nội dung...'
+                        : 'Search by case ID, order ID, description...'
+                    }
+                    className="w-full pl-9 pr-3 py-2 bg-[#faf8f5] border border-gray-200 rounded-xl text-xs text-[#24263e] focus:outline-none focus:border-[#c34c36] transition"
+                  />
+                </div>
+
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value as any)}
+                  className="px-3 py-2 bg-[#faf8f5] border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36] cursor-pointer"
+                >
+                  <option value="ALL">{lang === 'vi' ? 'Mọi trạng thái' : 'All Statuses'}</option>
+                  <option value="OPEN">{lang === 'vi' ? 'Chờ Tiếp Nhận' : 'Pending'}</option>
+                  <option value="IN_REVIEW">{lang === 'vi' ? 'Đang Thẩm Định' : 'In Review'}</option>
+                  <option value="CONFIRMED">{lang === 'vi' ? 'Đã Xác Nhận Vi Phạm' : 'Confirmed'}</option>
+                  <option value="DISMISSED">{lang === 'vi' ? 'Đã Bác Bỏ' : 'Dismissed'}</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Reports Content List */}
+          {loading ? (
+            <div className="space-y-4">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="bg-white rounded-2xl p-5 border border-gray-200 animate-pulse space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="w-1/3 h-4 bg-slate-200 rounded" />
+                    <div className="w-24 h-6 bg-slate-200 rounded-full" />
+                  </div>
+                  <div className="w-2/3 h-4 bg-slate-200 rounded" />
+                  <div className="w-full h-12 bg-slate-100 rounded-xl" />
+                </div>
+              ))}
+            </div>
+          ) : error ? (
+            <div className="bg-rose-50 border border-rose-200 rounded-2xl p-6 text-center text-rose-800 space-y-2">
+              <AlertCircle className="w-8 h-8 text-rose-600 mx-auto" />
+              <p className="text-sm font-bold">{error}</p>
+              <button
+                onClick={() => fetchReports(true)}
+                className="px-4 py-1.5 bg-rose-600 text-white rounded-xl text-xs font-bold hover:bg-rose-700 transition cursor-pointer"
+              >
+                {lang === 'vi' ? 'Thử lại' : 'Retry'}
+              </button>
+            </div>
+          ) : filteredReports.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-gray-200 p-12 text-center space-y-4 shadow-sm">
+              <div className="w-16 h-16 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
+                <Scale className="w-8 h-8" />
+              </div>
+              <div className="max-w-md mx-auto space-y-1">
+                <h3 className="text-base font-black text-[#24263e]">
+                  {lang === 'vi' ? 'Chưa Có Khiếu Nại Nào' : 'No Disputes Found'}
+                </h3>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  {lang === 'vi'
+                    ? 'Khi có sai khác về đơn hàng đã nhận hoặc phát hiện sản phẩm có dấu hiệu vi phạm, bạn có thể gửi yêu cầu để Ban Quản Trị SecondLife hỗ trợ bảo vệ quyền lợi.'
+                    : 'When there are discrepancies with delivered orders or listings, you can file a dispute for SecondLife Arbitration.'}
+                </p>
+              </div>
+              {!isSeller && (
+                <button
+                  onClick={() => setIsCreateModalOpen(true)}
+                  className="px-4 py-2 bg-[#24263e] hover:bg-black text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
+                >
+                  {lang === 'vi' ? 'Tạo khiếu nại đầu tiên' : 'File a dispute now'}
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {paginatedBuyerReports.map((report) => {
+                const isOrder = Boolean(report.orderId);
+                const hasResolvedDecision = report.status === 'CONFIRMED' || report.status === 'DISMISSED';
+
+                return (
+                  <div
+                    key={report.id}
+                    className="bg-white rounded-2xl border border-gray-200 p-4 sm:p-5 shadow-sm hover:shadow-md transition-all space-y-4"
+                  >
+                    {/* Card Header */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-gray-100">
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        <div
+                          className={`w-8 h-8 rounded-xl flex items-center justify-center text-white shadow-xs ${isOrder ? 'bg-[#24263e]' : 'bg-[#c34c36]'
+                            }`}
+                        >
+                          {isOrder ? <Package className="w-4 h-4" /> : <Layers className="w-4 h-4" />}
+                        </div>
+
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-black text-[#24263e] font-mono">
+                              Mã vụ việc: #{report.id.substring(0, 8)}...
+                            </span>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 uppercase">
+                              {isOrder ? 'Đơn hàng' : 'Bài đăng'}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-slate-500 flex items-center gap-2 mt-0.5">
+                            <span>
+                              {new Date(report.createdAt).toLocaleString('vi-VN', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: 'numeric',
+                              })}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {getStatusBadge(report.status)}
+                      </div>
+                    </div>
+
+                    {/* Card Body */}
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                      <div className="md:col-span-8 space-y-2.5">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-800 border border-rose-200 text-xs font-black flex items-center gap-1">
+                            <ShieldAlert className="w-3.5 h-3.5 text-rose-600" />
+                            <span>{getReasonLabel(report.reasonCode)}</span>
+                          </span>
+
+                          {report.orderId && (
+                            <button
+                              onClick={() => onNavigateToOrder?.(report.orderId!)}
+                              className="text-xs font-bold text-[#c34c36] hover:underline flex items-center gap-1 cursor-pointer"
+                            >
+                              <span>Đơn hàng #{report.orderId.substring(0, 8)}</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </button>
+                          )}
+
+                          {report.postId && (
+                            <button
+                              onClick={() => onNavigateToPost?.(report.postId!)}
+                              className="text-xs font-bold text-[#c34c36] hover:underline flex items-center gap-1 cursor-pointer"
+                            >
+                              <span>Bài đăng #{report.postId.substring(0, 8)}</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+
+                        <p className="text-xs text-slate-700 leading-relaxed font-normal bg-[#faf8f5] p-3 rounded-xl border border-gray-100">
+                          "{report.description}"
+                        </p>
+
+                        {/* Evidence Photo / Video Thumbnails */}
+                        {report.evidenceUrls && report.evidenceUrls.length > 0 && (
+                          <div className="space-y-2 pt-1.5">
+                            <div className="text-[11px] font-bold text-slate-500 flex items-center gap-1.5">
+                              <ImageIcon className="w-3.5 h-3.5 text-slate-500" />
+                              <span>{lang === 'vi' ? 'Bằng chứng đã cung cấp' : 'Uploaded evidence'}</span>
+                              <span className="text-[10px] text-slate-400 font-normal">
+                                ({report.evidenceUrls.length} {lang === 'vi' ? 'tệp ảnh/video' : 'media files'})
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2.5 flex-wrap pt-0.5">
+                              {report.evidenceUrls.map((url, idx) => (
+                                <DisputeEvidenceMediaItem
+                                  key={`${url}-${idx}`}
+                                  url={url}
+                                  idx={idx}
+                                  onOpen={(view) => setPreview({ kind: view.kind, src: view.src, dispose: view.dispose || (() => { }) })}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Arbitration Resolution Column */}
+                      <div className="md:col-span-4 bg-[#faf8f5] rounded-xl p-3.5 border border-gray-200 flex flex-col justify-between space-y-2">
+                        <div className="space-y-2">
+                          <div className="text-xs font-extrabold text-[#24263e] flex items-center gap-1.5">
+                            <Scale className="w-3.5 h-3.5 text-[#c34c36]" />
+                            <span>{lang === 'vi' ? 'Quyết định' : 'Arbitration Outcome'}</span>
+                          </div>
+
+                          {hasResolvedDecision ? (
+                            <div className="space-y-1.5 text-xs">
+                              <div className="text-[11px] text-slate-500">
+                                {lang === 'vi' ? 'Bên có lỗi:' : 'Fault:'}
+                                <strong className="block text-[#24263e] font-bold mt-0.5">
+                                  {getResponsiblePartyLabel(report.responsibleParty)}
+                                </strong>
+                              </div>
+
+                              {report.decisionReason && (
+                                <div className="p-2 rounded-lg bg-white border border-gray-200 text-[11px] text-slate-700 italic">
+                                  "{report.decisionReason}"
+                                </div>
+                              )}
+
+                              {report.resolvedAt && (
+                                <div className="text-[10px] text-emerald-700 font-bold flex items-center gap-1">
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                  <span>
+                                    {lang === 'vi' ? 'Ra quyết định: ' : 'Resolved: '}
+                                    {formatDisputeDateTime(report.resolvedAt)}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          ) : report.status === 'IN_REVIEW' ? (
+                            <div className="p-2.5 rounded-lg bg-blue-50 border border-blue-200 text-xs text-blue-900 space-y-1">
+                              <div className="font-bold flex items-center gap-1">
+                                <Scale className="w-3 h-3 text-blue-600" />
+                                <span>Đang trong phiên phân xử</span>
+                              </div>
+                              <p className="text-[11px] text-blue-800 leading-tight">
+                                Trọng tài viên SecondLife đang đối soát lời khai và video/ảnh bằng chứng của cả hai bên.
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-900 space-y-1">
+                              <div className="font-bold flex items-center gap-1">
+                                <Clock className="w-3 h-3 text-amber-600" />
+                                <span>Đang chờ phân bổ</span>
+                              </div>
+                              <p className="text-[11px] text-amber-800 leading-tight">
+                                Yêu cầu khiếu nại đã được ghi nhận vào hàng đợi xử lý của nhân viên SecondLife.
+                              </p>
+                            </div>
+                          )}
+                        </div>
+
+                        <button
+                          onClick={() => { setReturnShipment(null); setSelectedReport(report); setDetailId(report.id); }}
+                          className="w-full py-1.5 px-3 bg-white hover:bg-slate-50 text-[#24263e] border border-slate-300 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer"
+                        >
+                          <span>{lang === 'vi' ? 'Xem Toàn Bộ Tiến Trình' : 'View Full Timeline'}</span>
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Pagination for Buyer Disputes */}
+          {totalBuyerPages > 1 && (
+            <div className="mt-5 pt-3 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
+              <div>
+                Trang <strong className="text-slate-800">{safeBuyerPage}</strong> trên{' '}
+                <strong className="text-slate-800">{totalBuyerPages}</strong>
+                <span className="ml-1 text-slate-400">({filteredReports.length} khiếu nại)</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={loading || safeBuyerPage <= 1}
+                  onClick={() => setBuyerPage((p) => Math.max(1, p - 1))}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs cursor-pointer font-bold transition"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                  <span>Trang trước</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={loading || safeBuyerPage >= totalBuyerPages}
+                  onClick={() => setBuyerPage((p) => Math.min(totalBuyerPages, p + 1))}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs cursor-pointer font-bold transition"
+                >
+                  <span>Trang sau</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
+      {previewError && <p role="alert" className="fixed bottom-5 right-5 z-[60] rounded-lg bg-rose-50 p-3 text-sm text-rose-800">
+        {previewError} <button className="ml-2 underline" onClick={() => setPreviewError(null)}>Đóng</button>
+      </p>}
+
+      {detailId && !selectedReport && (
+        <div className="fixed inset-0 z-[9999] grid place-items-center bg-black/60 p-4">
+          <div role="dialog" aria-label="Chi tiết khiếu nại" className="w-full max-w-sm rounded-xl bg-white p-5">
+            <p role="status">{detailError ?? 'Đang tải chi tiết khiếu nại…'}</p>
+            <button className="mt-3 rounded border px-3 py-1" onClick={closeDetail}>Đóng</button>
+          </div>
+        </div>
+      )}
+
       {/* Detail Timeline Modal */}
-      {selectedReport && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-md overflow-y-auto animate-fadeIn">
-          <div className="bg-white rounded-2xl max-w-xl w-full max-h-[90vh] overflow-hidden shadow-2xl border border-gray-200 flex flex-col text-[#24263e]">
-            {/* Modal Header */}
-            <div className="bg-[#24263e] text-white px-5 py-3.5 flex items-center justify-between border-b border-white/10">
+      {typeof document !== 'undefined' && selectedReport && createPortal(
+        <div
+          className="fixed inset-0 z-[9999] bg-black/75 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-hidden animate-fadeIn"
+          onClick={closeDetail}
+        >
+          <div
+            className="relative bg-white rounded-2xl max-w-xl w-full h-[88vh] max-h-[88vh] shadow-2xl border border-gray-200 flex flex-col overflow-hidden text-[#24263e]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header - Khóa cứng ở đỉnh */}
+            <div className="h-14 px-5 bg-[#24263e] text-white border-b border-white/10 flex items-center justify-between shrink-0 select-none z-20">
               <div className="flex items-center gap-2">
                 <Scale className="w-4 h-4 text-[#cea981]" />
                 <h3 className="text-sm font-black text-white">
@@ -670,8 +838,9 @@ export const MyDisputesView: React.FC<MyDisputesViewProps> = ({
                 </h3>
               </div>
               <button
-                onClick={() => setSelectedReport(null)}
-                className="p-1 rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                type="button"
+                onClick={closeDetail}
+                className="w-8 h-8 rounded-full hover:bg-white/10 text-white/70 hover:text-white flex items-center justify-center font-bold transition cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -713,16 +882,38 @@ export const MyDisputesView: React.FC<MyDisputesViewProps> = ({
                       <br />
                       Nội dung: "{selectedReport.description}"
                     </p>
+
+                    {/* Bằng chứng đính kèm trong chi tiết */}
+                    {selectedReport.evidenceUrls && selectedReport.evidenceUrls.length > 0 && (
+                      <div className="mt-2.5 pt-2 border-t border-slate-200/70">
+                        <div className="text-[11px] font-bold text-slate-600 mb-1.5 flex items-center gap-1.5">
+                          <ImageIcon className="w-3.5 h-3.5 text-slate-500" />
+                          <span>{lang === 'vi' ? 'Bằng chứng đã cung cấp' : 'Uploaded evidence'}</span>
+                          <span className="text-[10px] text-slate-400 font-normal">
+                            ({selectedReport.evidenceUrls.length} {lang === 'vi' ? 'tệp' : 'files'})
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {selectedReport.evidenceUrls.map((url, idx) => (
+                            <DisputeEvidenceMediaItem
+                              key={`detail-${url}-${idx}`}
+                              url={url}
+                              idx={idx}
+                              onOpen={(view) => setPreview({ kind: view.kind, src: view.src, dispose: view.dispose || (() => { }) })}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Step 2: In Review */}
                   <div className="relative pl-5">
                     <div
-                      className={`absolute -left-[15px] top-0.5 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shadow-xs ${
-                        selectedReport.status === 'IN_REVIEW' || selectedReport.status === 'CONFIRMED' || selectedReport.status === 'DISMISSED'
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-slate-200 text-slate-500'
-                      }`}
+                      className={`absolute -left-[15px] top-0.5 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shadow-xs ${selectedReport.status === 'IN_REVIEW' || selectedReport.status === 'CONFIRMED' || selectedReport.status === 'DISMISSED'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-slate-200 text-slate-500'
+                        }`}
                     >
                       2
                     </div>
@@ -739,13 +930,12 @@ export const MyDisputesView: React.FC<MyDisputesViewProps> = ({
                   {/* Step 3: Resolved */}
                   <div className="relative pl-5">
                     <div
-                      className={`absolute -left-[15px] top-0.5 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shadow-xs ${
-                        selectedReport.status === 'CONFIRMED'
-                          ? 'bg-emerald-600 text-white'
-                          : selectedReport.status === 'DISMISSED'
+                      className={`absolute -left-[15px] top-0.5 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shadow-xs ${selectedReport.status === 'CONFIRMED'
+                        ? 'bg-emerald-600 text-white'
+                        : selectedReport.status === 'DISMISSED'
                           ? 'bg-slate-600 text-white'
                           : 'bg-slate-200 text-slate-500'
-                      }`}
+                        }`}
                     >
                       3
                     </div>
@@ -764,7 +954,8 @@ export const MyDisputesView: React.FC<MyDisputesViewProps> = ({
                           </p>
                         )}
                         <div className="text-[10px] text-slate-500 pt-1">
-                          Hoàn tất ngày: {new Date(selectedReport.resolvedAt).toLocaleString('vi-VN')}
+                          {lang === 'vi' ? 'Thời gian ra quyết định: ' : 'Decision time: '}
+                          {formatDisputeDateTime(selectedReport.resolvedAt)}
                         </div>
                       </div>
                     ) : (
@@ -774,48 +965,111 @@ export const MyDisputesView: React.FC<MyDisputesViewProps> = ({
                 </div>
               </div>
 
-              {/* Escrow Protection Promise */}
-              <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 flex items-start gap-2 text-xs text-amber-900">
-                <ShieldCheck className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
-                <p className="text-[11px] leading-relaxed">
-                  <strong>Cam kết bảo lãnh Escrow:</strong> Tiền ký quỹ của giao dịch đang được đóng băng tuyệt đối an toàn trong Quỹ Tín Thác SecondLife. Không bên nào có thể rút tiền cho đến khi vụ việc được trọng tài giải quyết dứt điểm.
-                </p>
-              </div>
+              {detailError && <p role="alert" className="text-xs text-rose-700">{detailError}</p>}
+              {selectedReport.orderId && selectedReport.resolutionAction === 'RETURN_AND_REFUND' && (
+                <section className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs">
+                  <h4 className="font-extrabold">Trả hàng và hoàn tiền</h4>
+                  {selectedReport.refundedAt ? (
+                    <div className="mt-2 space-y-1 text-emerald-800">
+                      <p><strong>Đã hoàn vào ví SecondLife</strong>{selectedReport.refundAmount == null ? '' : ' · ' + formatVND(selectedReport.refundAmount)}</p>
+                      <p>{new Date(selectedReport.refundedAt).toLocaleString('vi-VN')}</p>
+                    </div>
+                  ) : (
+                    <div className="mt-2 space-y-1">
+                      <p>{returnShipment?.status === 'DELIVERED' ? 'Hàng đã về người bán. Hệ thống đang xử lý hoàn tiền.'
+                        : selectedReport.returnShipmentId ? 'Đang xử lý trả hàng' : 'Đã duyệt, đang chờ tạo vận đơn hoàn.'}</p>
+                      {returnShipment && <>
+                        <p>Mã vận đơn <strong>{returnShipment.orderCode ?? returnShipment.shipmentId}</strong></p>
+                        <p>{returnStatusLabels[returnShipment.status] ?? 'Đang cập nhật trạng thái vận đơn'}</p>
+                      </>}
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {selectedReport.orderId && selectedReport.status === 'OPEN' && (
+                <button type="button" className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold"
+                  onClick={() => setShowResponse(true)}>
+                  Bổ sung bằng chứng
+                </button>
+              )}
             </div>
 
-            {/* Modal Footer */}
-            <div className="p-4 bg-slate-50 border-t border-gray-100 flex justify-end">
+            {/* Modal Footer - Khóa cứng ở đáy */}
+            <div className="p-4 bg-slate-50 border-t border-gray-100 flex justify-end gap-2 shrink-0 select-none z-20">
+              <button onClick={() => setDetailRefresh((value) => value + 1)} className="rounded-xl border px-3 py-2 text-xs font-bold">Làm mới</button>
               <button
-                onClick={() => setSelectedReport(null)}
+                onClick={closeDetail}
                 className="px-4 py-2 bg-[#24263e] hover:bg-black text-white rounded-xl text-xs font-bold transition cursor-pointer"
               >
                 {lang === 'vi' ? 'Đóng' : 'Close'}
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* Image Preview Lightbox */}
-      {previewImage && (
+      {showResponse && selectedReport?.orderId && (
+        <SellerDisputeResponseModal isOpen reportId={selectedReport.id} orderId={selectedReport.orderId}
+          participant="buyer" onClose={() => setShowResponse(false)}
+          responseState={selectedReport.status === 'OPEN' ? 'available' : 'closed'}
+          onSuccess={() => setDetailRefresh((value) => value + 1)} />
+      )}
+
+      {typeof document !== 'undefined' && preview && createPortal(
         <div
-          onClick={() => setPreviewImage(null)}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md cursor-pointer animate-fadeIn"
+          onClick={() => setPreview(null)}
+          className="fixed inset-0 z-[10000] flex items-center justify-center p-3 sm:p-6 bg-black/85 backdrop-blur-md cursor-pointer animate-fadeIn overflow-hidden"
         >
-          <div className="relative max-w-3xl max-h-[85vh] w-full" onClick={(e) => e.stopPropagation()}>
-            <img
-              src={previewImage}
-              alt="Evidence Preview"
-              className="w-full h-full object-contain rounded-xl max-h-[80vh] mx-auto shadow-2xl"
-            />
-            <button
-              onClick={() => setPreviewImage(null)}
-              className="absolute -top-10 right-0 p-1.5 text-white/80 hover:text-white bg-white/20 rounded-full transition cursor-pointer"
-            >
-              <X className="w-5 h-5" />
-            </button>
+          <div
+            className="relative max-w-4xl max-h-[90vh] w-full bg-slate-950/80 rounded-2xl p-2 sm:p-3 border border-white/10 shadow-2xl flex flex-col items-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header thanh xem trước */}
+            <div className="w-full flex items-center justify-between pb-2 px-1 text-white border-b border-white/10 mb-2">
+              <div className="flex items-center gap-2">
+                {preview.kind === 'VIDEO' ? (
+                  <Video className="w-4 h-4 text-rose-500" />
+                ) : (
+                  <ImageIcon className="w-4 h-4 text-emerald-400" />
+                )}
+                <span className="text-xs font-bold">
+                  {preview.kind === 'VIDEO' ? 'Xem video bằng chứng' : 'Xem ảnh bằng chứng'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreview(null)}
+                className="p-1 rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition cursor-pointer flex items-center gap-1 text-xs"
+                title="Đóng (phím Esc)"
+              >
+                <X className="w-4 h-4" />
+                <span className="hidden sm:inline text-[11px]">Đóng</span>
+              </button>
+            </div>
+
+            {/* Media Content */}
+            <div className="w-full flex items-center justify-center overflow-hidden rounded-xl bg-black/40 min-h-[200px] max-h-[78vh]">
+              {preview.kind === 'VIDEO' ? (
+                <video
+                  src={preview.src}
+                  controls
+                  autoPlay
+                  playsInline
+                  className="w-full max-h-[75vh] rounded-xl object-contain"
+                />
+              ) : (
+                <img
+                  src={preview.src}
+                  alt="Ảnh bằng chứng"
+                  className="w-full max-h-[75vh] rounded-xl object-contain"
+                />
+              )}
+            </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Create New Report / Dispute Modal (Chỉ dành cho người mua) */}

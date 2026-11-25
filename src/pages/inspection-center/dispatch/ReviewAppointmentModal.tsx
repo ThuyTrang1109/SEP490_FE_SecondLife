@@ -16,6 +16,7 @@ import {
 import { formatVND } from '../../../utils/translations';
 import { INSPECTION_SHIFT_HOURS, isInspectionTimeInShift, type InspectionShift } from '../../../utils/inspectionAppointmentTime';
 import type { useCenterAppointments } from './useCenterAppointments';
+import { hasCenterCounterProposal } from '../../../utils/inspectionCenterData';
 
 interface Props {
   reviewApptOrder: NonNullable<ReturnType<typeof useCenterAppointments>['reviewApptOrder']>;
@@ -79,6 +80,99 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
     }
     setCounterError(null);
   };
+
+  // Resolve current appointment & counter status
+  let apptTime = reviewApptOrder.appointmentScheduledAt;
+  let apptNote = reviewApptOrder.appointmentNote;
+  let apptShift: InspectionShift = (reviewApptOrder.appointmentShift as InspectionShift) || 'MORNING';
+  let existingCounterTime = reviewApptOrder.counterScheduledAt;
+  let counterReason = reviewApptOrder.counterNote;
+  let apptStatus = reviewApptOrder.appointmentStatus;
+  const hasCurrentCounter = hasCenterCounterProposal(reviewApptOrder);
+
+  const possibleIds = [
+    reviewApptOrder.id,
+    reviewApptOrder.linkedOrderId,
+    (reviewApptOrder as any).orderId,
+    (reviewApptOrder as any).inspectionOrderId,
+  ].filter(Boolean) as string[];
+  const idSet = new Set(possibleIds);
+
+  for (const pid of hasCurrentCounter ? [] : possibleIds) {
+    try {
+      const raw = localStorage.getItem(`order_appointment_${pid}`);
+      if (raw) {
+        const p = JSON.parse(raw);
+        if (p.scheduledAt) apptTime = p.scheduledAt;
+        if (p.note) apptNote = p.note;
+        if (p.shift) apptShift = p.shift;
+        if (p.status === 'PENDING_CENTER_CONFIRMATION' && !p.counterScheduledAt) {
+          existingCounterTime = undefined;
+          counterReason = undefined;
+          apptStatus = 'PENDING_CENTER_CONFIRMATION';
+          break;
+        } else if (p.counterScheduledAt) {
+          existingCounterTime = p.counterScheduledAt;
+          if (p.counterNote) counterReason = p.counterNote;
+          if (p.status) apptStatus = p.status;
+          break;
+        }
+      }
+    } catch { }
+  }
+
+  if (!hasCurrentCounter && apptStatus !== 'PENDING_CENTER_CONFIRMATION') {
+    try {
+      const rawCenter = localStorage.getItem('center_inspection_orders');
+      if (rawCenter) {
+        const list = JSON.parse(rawCenter);
+        if (Array.isArray(list)) {
+          const m = list.find((o: any) => idSet.has(o.id) || idSet.has(o.linkedOrderId) || idSet.has(o.orderId) || idSet.has(o.inspectionOrderId));
+          if (m && m.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !m.counterScheduledAt) {
+            apptTime = m.appointmentScheduledAt || apptTime;
+            apptNote = m.appointmentNote || apptNote;
+            apptStatus = 'PENDING_CENTER_CONFIRMATION';
+            existingCounterTime = undefined;
+            counterReason = undefined;
+          }
+        }
+      }
+    } catch { }
+  }
+
+  if (!hasCurrentCounter && apptStatus !== 'PENDING_CENTER_CONFIRMATION') {
+    try {
+      const rawSeller = localStorage.getItem('my_seller_inspection_orders');
+      if (rawSeller) {
+        const list = JSON.parse(rawSeller);
+        if (Array.isArray(list)) {
+          const m = list.find((o: any) => idSet.has(o.id) || idSet.has(o.linkedOrderId) || idSet.has(o.orderId) || idSet.has(o.inspectionOrderId));
+          if (m && m.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !m.counterScheduledAt) {
+            apptTime = m.appointmentScheduledAt || apptTime;
+            apptNote = m.appointmentNote || apptNote;
+            apptStatus = 'PENDING_CENTER_CONFIRMATION';
+            existingCounterTime = undefined;
+            counterReason = undefined;
+          }
+        }
+      }
+    } catch { }
+  }
+
+  const isWaitingSellerCounter = Boolean(
+    (existingCounterTime || apptStatus === 'COUNTERED_BY_CENTER') &&
+    reviewApptOrder.status !== 'CONFIRMED'
+  );
+
+  const isMorning = apptShift === 'MORNING' || (apptTime && new Date(apptTime).getHours() < 12);
+  const formattedDate = apptTime ? new Date(apptTime).toLocaleString('vi-VN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    weekday: 'long',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  }) : 'Chưa xác định';
 
   return (
     <div className="fixed inset-0 z-[75] overflow-y-auto bg-black/70 backdrop-blur-sm p-3 sm:p-4 flex min-h-full items-center justify-center animate-fadeIn">
@@ -144,97 +238,7 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
         </div>
 
         {/* Thông tin lịch hẹn người bán đề xuất */}
-        {(() => {
-          let apptTime = reviewApptOrder.appointmentScheduledAt;
-          let apptNote = reviewApptOrder.appointmentNote;
-          let apptShift = 'MORNING';
-          let existingCounterTime = reviewApptOrder.counterScheduledAt;
-          let counterReason = reviewApptOrder.counterNote;
-          let apptStatus = reviewApptOrder.appointmentStatus;
-
-          const possibleIds = [reviewApptOrder.id, reviewApptOrder.linkedOrderId, (reviewApptOrder as any).orderId, (reviewApptOrder as any).inspectionOrderId].filter(Boolean) as string[];
-          const idSet = new Set(possibleIds);
-
-          for (const pid of possibleIds) {
-            try {
-              const raw = localStorage.getItem(`order_appointment_${pid}`);
-              if (raw) {
-                const p = JSON.parse(raw);
-                if (p.scheduledAt) apptTime = p.scheduledAt;
-                if (p.note) apptNote = p.note;
-                if (p.shift) apptShift = p.shift;
-                if (p.status === 'PENDING_CENTER_CONFIRMATION' && !p.counterScheduledAt) {
-                  existingCounterTime = undefined;
-                  counterReason = undefined;
-                  apptStatus = 'PENDING_CENTER_CONFIRMATION';
-                  break;
-                } else if (p.counterScheduledAt) {
-                  existingCounterTime = p.counterScheduledAt;
-                  if (p.counterNote) counterReason = p.counterNote;
-                  if (p.status) apptStatus = p.status;
-                  break;
-                }
-              }
-            } catch { }
-          }
-
-          if (apptStatus !== 'PENDING_CENTER_CONFIRMATION') {
-            try {
-              const rawCenter = localStorage.getItem('center_inspection_orders');
-              if (rawCenter) {
-                const list = JSON.parse(rawCenter);
-                if (Array.isArray(list)) {
-                  const m = list.find((o: any) => idSet.has(o.id) || idSet.has(o.linkedOrderId) || idSet.has(o.orderId) || idSet.has(o.inspectionOrderId));
-                  if (m && m.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !m.counterScheduledAt) {
-                    apptTime = m.appointmentScheduledAt || apptTime;
-                    apptNote = m.appointmentNote || apptNote;
-                    apptStatus = 'PENDING_CENTER_CONFIRMATION';
-                    existingCounterTime = undefined;
-                    counterReason = undefined;
-                  }
-                }
-              }
-            } catch { }
-          }
-
-          if (apptStatus !== 'PENDING_CENTER_CONFIRMATION') {
-            try {
-              const rawSeller = localStorage.getItem('my_seller_inspection_orders');
-              if (rawSeller) {
-                const list = JSON.parse(rawSeller);
-                if (Array.isArray(list)) {
-                  const m = list.find((o: any) => idSet.has(o.id) || idSet.has(o.linkedOrderId) || idSet.has(o.orderId) || idSet.has(o.inspectionOrderId));
-                  if (m && m.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !m.counterScheduledAt) {
-                    apptTime = m.appointmentScheduledAt || apptTime;
-                    apptNote = m.appointmentNote || apptNote;
-                    apptStatus = 'PENDING_CENTER_CONFIRMATION';
-                    existingCounterTime = undefined;
-                    counterReason = undefined;
-                  }
-                }
-              }
-            } catch { }
-          }
-
-          const isWaitingSellerCounter = Boolean(
-            existingCounterTime &&
-            apptStatus === 'COUNTERED_BY_CENTER' &&
-            reviewApptOrder.status !== 'CONFIRMED'
-          );
-
-          const isMorning = apptShift === 'MORNING' || (apptTime && new Date(apptTime).getHours() < 12);
-          const formattedDate = apptTime ? new Date(apptTime).toLocaleString('vi-VN', {
-            hour: '2-digit',
-            minute: '2-digit',
-            weekday: 'long',
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric'
-          }) : 'Chưa xác định';
-
-          return (
-            <>
-              <div className="p-3.5 bg-amber-50/90 rounded-2xl border border-amber-200 text-xs space-y-2">
+        <div className="p-3.5 bg-amber-50/90 rounded-2xl border border-amber-200 text-xs space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-amber-950 uppercase tracking-wide flex items-center gap-1.5 text-[11px]">
                     <Calendar className="w-4 h-4 text-amber-600" />
@@ -309,9 +313,6 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
                     onClick={() => {
                       setReviewMode('COUNTER');
                       setCounterError(null);
-                      if (!counterNote.trim()) {
-                        setCounterNote('KTV khu vực đã kín lịch ca sáng, Trung tâm xin phép đề xuất dời sang ca chiều cùng ngày.');
-                      }
                     }}
                     className={`flex-1 py-2 px-3 rounded-lg text-xs font-extrabold transition flex items-center justify-center gap-1.5 cursor-pointer ${reviewMode === 'COUNTER'
                       ? 'bg-white text-amber-800 shadow-xs'
@@ -540,7 +541,7 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
                             setCounterNote(e.target.value);
                             setCounterError(null);
                           }}
-                          placeholder="Nhập lý do dời lịch (ví dụ: Ca sáng KTV đã kín lịch tại khu vực của bạn...)"
+                          placeholder="Nhập lý do đề xuất khung giờ mới"
                           className="w-full p-2.5 bg-white rounded-xl border border-amber-300 text-xs font-medium focus:ring-2 focus:ring-amber-500 outline-none"
                         />
 
@@ -549,9 +550,8 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
                           <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Gợi ý lý do nhanh:</span>
                           <div className="flex flex-wrap gap-1">
                             {[
-                              'KTV đã kín lịch ca sáng, đề xuất chuyển sang ca chiều cùng ngày.',
-                              'KTV khu vực này chỉ có mặt vào buổi chiều, mong người bán thông cảm.',
-                              'Trùng lịch kiểm tra lưu động, đề xuất chuyển sang ngày tiếp theo.',
+                              'KTV đã có lịch kiểm định trùng khung giờ người bán đề xuất.',
+                              'Trung tâm cần điều phối lại KTV phụ trách khu vực này.',
                               'Cần thời gian chuẩn bị thiết bị kiểm định chuyên dụng cho model này.',
                             ].map((hint, idx) => (
                               <button
@@ -591,27 +591,41 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
                   )
                 )}
               </div>
-            </>
-          );
-        })()}
 
         {/* Footer: Nút Từ Chối & Nút Đóng */}
-        <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-          <button
-            type="button"
-            onClick={() => {
-              const ord = reviewApptOrder;
-              setReviewApptOrder(null);
-              setRejectApptModalOrder(ord);
-              setRejectApptReason('KTV đã kín lịch trong khung giờ này, vui lòng chọn ca khác.');
-              setRejectApptError(null);
-            }}
-            className="px-3.5 py-2 rounded-xl text-xs font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition cursor-pointer flex items-center gap-1.5"
-            title="Từ chối lịch hẹn nếu Trung tâm hoàn toàn không thể nhận đơn này"
-          >
-            <XCircle className="w-4 h-4 text-rose-500" />
-            <span>Từ Chối Lịch Hẹn</span>
-          </button>
+        <div className="flex items-center justify-between pt-3 border-t border-gray-100 gap-2">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={isWaitingSellerCounter}
+              onClick={() => {
+                if (isWaitingSellerCounter) return;
+                const ord = reviewApptOrder;
+                setReviewApptOrder(null);
+                setRejectApptModalOrder(ord);
+                setRejectApptReason('KTV đã kín lịch trong khung giờ này, vui lòng chọn ca khác.');
+                setRejectApptError(null);
+              }}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                isWaitingSellerCounter
+                  ? 'text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed opacity-60'
+                  : 'text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition cursor-pointer'
+              }`}
+              title={
+                isWaitingSellerCounter
+                  ? 'Trung tâm đã từ chối lịch cũ và gửi đề xuất lịch mới. Vui lòng chờ người bán phản hồi, nút từ chối không còn hiệu lực.'
+                  : 'Từ chối lịch hẹn nếu Trung tâm hoàn toàn không thể nhận đơn này'
+              }
+            >
+              <XCircle className={`w-4 h-4 ${isWaitingSellerCounter ? 'text-slate-400' : 'text-rose-500'}`} />
+              <span>Từ Chối Lịch Hẹn</span>
+            </button>
+            {isWaitingSellerCounter && (
+              <span className="text-[11px] text-amber-700 font-medium hidden sm:inline">
+                (Đã gửi đề xuất dời lịch, đang chờ người bán phản hồi)
+              </span>
+            )}
+          </div>
 
           <button
             type="button"

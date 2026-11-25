@@ -386,9 +386,9 @@ export const WalletHistoryPanel: React.FC<WalletHistoryPanelProps> = ({
         purpose = 'Cộng hoàn ứng cước mô phỏng vào ví SecondLife.';
       } else if (tx.type === 'RETURN_SHIPPING_FEE') {
         title = 'Phí Vận Chuyển Hoàn Hàng';
-        rightsBadge = tx.referenceId ? `Đơn #${tx.referenceId.slice(0, 8).toUpperCase()}` : 'Phí ship hoàn';
+        rightsBadge = tx.referenceId ? `Vận đơn #${tx.referenceId.slice(0, 8).toUpperCase()}` : 'Phí hoàn hàng';
         purpose = tx.referenceId
-          ? `Khấu trừ chi phí vận chuyển chiều hoàn của đơn hàng #${tx.referenceId.slice(0, 8).toUpperCase()} theo quy định hoàn hàng.`
+          ? `Trừ số dư ví để thanh toán cước hoàn của vận đơn #${tx.referenceId.slice(0, 8).toUpperCase()}.`
           : 'Khấu trừ chi phí vận chuyển chiều hoàn hàng.';
       } else if (tx.type === 'PAYMENT') {
         title = 'Thanh Toán Đơn Hàng';

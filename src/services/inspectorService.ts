@@ -147,6 +147,23 @@ export interface ReturnShippingPolicyResponse {
   markupPercentage: number;
 }
 
+export interface InspectionReturnShippingPolicyHistoryItem {
+  id: number;
+  previousMarkupPercentage: number | null;
+  newMarkupPercentage: number;
+  changedAt: string;
+  changedBy?: string;
+}
+
+export interface ReturnShippingPolicyHistoryPageResponse {
+  items: InspectionReturnShippingPolicyHistoryItem[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+  isLast?: boolean;
+}
+
 export interface CreateInspectionRequest {
   postId: string;
   orderType: 'AT_HOME' | 'AT_CENTER';
@@ -331,9 +348,39 @@ export interface ProposeTravelTiersRequest {
   tiers: InspectionTravelTierDto[];
 }
 
+export interface HighValueInspectionPolicyResponse {
+  thresholdPrice: number;
+  currency: string;
+  version: number;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+export interface HighValueInspectionPolicyRequest {
+  thresholdPrice: number;
+}
+
+export interface PreListingInspectionQuoteRequest {
+  orderType: 'AT_HOME' | 'AT_CENTER';
+}
+
+export interface PreListingInspectionQuoteResponse {
+  quoteId: string;
+  expiresAt: string;
+  orderType: 'AT_HOME' | 'AT_CENTER';
+  quote: InspectionQuoteResponse;
+}
+
+export interface PreListingInspectionConfirmRequest {
+  quoteId: string;
+  sellerConsentZin: boolean;
+}
+
 export interface InspectionOrderDto {
   id: string;
   postId: string;
+  preListingQuoteId?: string | null;
+  inspectionScope?: 'TRANSACTION' | 'PRE_LISTING' | string;
   inspectionCenterId?: string | null;
   inspectionCenterName?: string | null;
   postTitle?: string;
@@ -346,6 +393,13 @@ export interface InspectionOrderDto {
   buyerName?: string;
   buyerPhone?: string;
   buyerAddress?: string;
+  buyerDeliveryAddress?: {
+    name?: string | null;
+    phone?: string | null;
+    address?: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
+  } | null;
   inspectionCenterAddress?: string;
 
   sellerId?: string;
@@ -392,6 +446,7 @@ export interface InspectionOrderDto {
   counterShift?: 'MORNING' | 'AFTERNOON';
   counterNote?: string;
   appointmentRejectionReason?: string;
+  homeCheckedInAt?: string | null;
   checklistResultJson?: string;
   videoProofUrl?: string;
   unboxingVideoUrl?: string;
@@ -729,10 +784,13 @@ export const inspectorService = {
 
   /**
    * Buyer hoặc Seller nộp phí kiểm định từ Ví vào Escrow.
-   * Hạn đóng phí thực tế do Backend trả về qua paymentDeadline (BE cấp 12h cho đơn mới chuyển sang WAITING_FEE_PAYMENT, đơn cũ trong DB có thể mang hạn 6h).
+   * Hỗ trợ nộp phí cho đơn thông thường hoặc đơn kiểm định trước khi đăng (Pre-Listing) kèm preListingQuoteId.
    */
-  async payInspectionFee(orderId: string): Promise<InspectionOrderDto> {
-    const res = await request<InspectionOrderDto>(`/inspection/orders/${orderId}/pay-fee`, {
+  async payInspectionFee(orderId: string, preListingQuoteId?: string): Promise<InspectionOrderDto> {
+    const url = preListingQuoteId
+      ? `/inspection/orders/${orderId}/pay-fee?preListingQuoteId=${encodeURIComponent(preListingQuoteId)}`
+      : `/inspection/orders/${orderId}/pay-fee`;
+    const res = await request<InspectionOrderDto>(url, {
       method: 'POST',
       requiresAuth: true,
     });
@@ -891,7 +949,7 @@ export const inspectorService = {
    * KTV xem danh sách đơn được phân công cho mình
    */
   async getMyOrders(): Promise<InspectionOrderDto[]> {
-    const res = await requestGet<InspectionOrderDto[]>('/inspector/orders', {
+    const res = await requestGet<InspectionOrderDto[]>('/inspector/orders?sort=createdAt,desc', {
       requiresAuth: true,
     });
     const data = (res as any)?.data || res;
@@ -1162,11 +1220,18 @@ export const inspectorService = {
   // 3. INSPECTION CENTER PORTAL (/api/v1/inspector-center)
   // --------------------------------------------------------------------------
 
-  async getCenterOrderHistory(options?: Pick<RequestOptions, 'isBackground'>): Promise<PageResponse<InspectionOrderDto>> {
-    const result = await requestGet<PageResponse<InspectionOrderDto>>('/inspector-center/orders?page=0&size=100&sort=createdAt,desc', {
-      ...options,
-      requiresAuth: true,
-    });
+  async getCenterOrderHistory(
+    options?: Pick<RequestOptions, 'isBackground'>,
+    page: number = 0,
+    size: number = 50,
+  ): Promise<PageResponse<InspectionOrderDto>> {
+    const result = await requestGet<PageResponse<InspectionOrderDto>>(
+      `/inspector-center/orders?page=${page}&size=${size}&sort=createdAt,desc`,
+      {
+        ...options,
+        requiresAuth: true,
+      }
+    );
     return result.data;
   },
 
@@ -1678,6 +1743,109 @@ export const inspectorService = {
     });
     const data = (res as any)?.data ?? res;
     return data as ReturnShippingPolicyResponse;
+  },
+
+  /**
+   * Lấy lịch sử thay đổi tỷ lệ dự phòng cước trả hàng kiểm định
+   * GET /api/v1/admin/inspection/return-shipping-policy/history?page=0&size=10
+   */
+  async getReturnShippingPolicyHistory(page = 0, size = 10): Promise<ReturnShippingPolicyHistoryPageResponse> {
+    const res = await request<any>(`/admin/inspection/return-shipping-policy/history?page=${page}&size=${size}`, {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    const data = (res as any)?.data ?? res;
+    const items = data?.items || data?.content || [];
+    return {
+      items: Array.isArray(items) ? items : [],
+      page: typeof data?.page === 'number' ? data.page : (data?.number ?? page),
+      size: typeof data?.size === 'number' ? data.size : size,
+      totalElements: typeof data?.totalElements === 'number' ? data.totalElements : items.length,
+      totalPages: typeof data?.totalPages === 'number' ? data.totalPages : 1,
+      isLast: typeof data?.isLast === 'boolean' ? data.isLast : (data?.last ?? true),
+    };
+  },
+
+  /**
+   * Lấy cấu hình ngưỡng giá bắt buộc kiểm định trước khi đăng (Public/Seller)
+   * GET /api/v1/inspection/high-value-policy
+   */
+  async getHighValueInspectionPolicy(): Promise<HighValueInspectionPolicyResponse> {
+    const res = await request<HighValueInspectionPolicyResponse>('/inspection/high-value-policy', {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    const data = (res as any)?.data ?? res;
+    return data as HighValueInspectionPolicyResponse;
+  },
+
+  /**
+   * Lấy cấu hình ngưỡng giá bắt buộc kiểm định trước khi đăng (Admin)
+   * GET /api/v1/admin/inspection/high-value-policy
+   */
+  async getAdminHighValueInspectionPolicy(): Promise<HighValueInspectionPolicyResponse> {
+    const res = await request<HighValueInspectionPolicyResponse>('/admin/inspection/high-value-policy', {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    const data = (res as any)?.data ?? res;
+    return data as HighValueInspectionPolicyResponse;
+  },
+
+  /**
+   * Cập nhật ngưỡng giá bắt buộc kiểm định trước khi đăng (Admin)
+   * PUT /api/v1/admin/inspection/high-value-policy
+   */
+  async updateAdminHighValueInspectionPolicy(thresholdPrice: number): Promise<HighValueInspectionPolicyResponse> {
+    const res = await request<HighValueInspectionPolicyResponse>('/admin/inspection/high-value-policy', {
+      method: 'PUT',
+      body: JSON.stringify({ thresholdPrice }),
+      requiresAuth: true,
+    });
+    const data = (res as any)?.data ?? res;
+    return data as HighValueInspectionPolicyResponse;
+  },
+
+  /**
+   * Lấy báo giá kiểm định bắt buộc trước khi đăng (Pre-Listing Inspection Quote)
+   * POST /api/v1/inspection/posts/{postId}/pre-listing/quote
+   */
+  async getPreListingQuote(
+    postId: string,
+    payload: PreListingInspectionQuoteRequest,
+    signal?: AbortSignal
+  ): Promise<PreListingInspectionQuoteResponse> {
+    const res = await request<PreListingInspectionQuoteResponse>(
+      `/inspection/posts/${encodeURIComponent(postId)}/pre-listing/quote`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+        requiresAuth: true,
+        signal,
+      }
+    );
+    const data = (res as any)?.data ?? res;
+    return data as PreListingInspectionQuoteResponse;
+  },
+
+  /**
+   * Chốt báo giá kiểm định bắt buộc trước khi đăng (Pre-Listing Inspection Confirm)
+   * POST /api/v1/inspection/posts/{postId}/pre-listing/confirm
+   */
+  async confirmPreListingQuote(
+    postId: string,
+    payload: PreListingInspectionConfirmRequest
+  ): Promise<InspectionOrderDto> {
+    const res = await request<InspectionOrderDto>(
+      `/inspection/posts/${encodeURIComponent(postId)}/pre-listing/confirm`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+        requiresAuth: true,
+      }
+    );
+    const data = (res as any)?.data ?? res;
+    return data as InspectionOrderDto;
   },
 
   /**

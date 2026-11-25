@@ -140,6 +140,18 @@ export function createAppointmentActions({
     }));
     window.dispatchEvent(new CustomEvent('secondlife_order_assigned_signal', { detail: { orderId } }));
 
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        const bc = new BroadcastChannel('secondlife_inspection_channel');
+        bc.postMessage({
+          type: 'APPOINTMENT_UPDATED',
+          orderId,
+          appointment: updatedAppointment,
+        });
+        bc.close();
+      }
+    } catch {}
+
     setInspectionActionNotice(`Bạn đã đồng ý lịch hẹn mới (${formattedTime}) thành công! Trung tâm sẽ điều phối KTV đến kiểm tra đúng giờ.`);
     setTimeout(() => setInspectionActionNotice(null), 5000);
     onRefreshOrders?.();

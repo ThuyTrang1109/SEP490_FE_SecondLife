@@ -1,5 +1,5 @@
-import { request, requestGet, getAccessToken } from './apiClient';
-import { SellerPostDetailDto } from '../types';
+import { request, requestGet, getAccessToken, type PageResponse } from './apiClient';
+import type { SellerPostDetailDto } from '../types';
 
 export interface PostInitRequest {
   categoryId: string;
@@ -84,6 +84,9 @@ export interface MarketplacePost extends PostResponse {
   publishedAt?: string;
   sellerAddress?: string | null;
   isInspected?: boolean;
+  tamperSealId?: string | null;
+  conditionGrade?: string | null;
+  inspectionMethod?: 'AT_HOME' | 'AT_CENTER' | string | null;
 }
 
 export interface MarketplaceSearchPage {
@@ -146,11 +149,33 @@ export interface PostSubmitResponse {
   message?: string;
   reviewReason?: string;
   duplicateMatches?: string[];
+  inspectionOrderId?: string | null;
+  inspectionThreshold?: number | null;
+  inspectionPolicyVersion?: number | null;
+  nextAction?: 'SELECT_INSPECTION_METHOD' | 'WAIT_FOR_LISTING_REVIEW' | 'PAY_INSPECTION_FEE' | 'TRACK_INSPECTION' | 'TRACK_INSPECTION_RETURN' | string | null;
 }
 
 const postDetailCache = new Map<string, { data: any; timestamp: number }>();
 const postDetailInFlight = new Map<string, Promise<any>>();
 const POST_CACHE_TTL_MS = 20_000;
+
+type SellerPostListItem = SellerPostDetailDto & { postId?: string };
+type SellerPostPage = Partial<PageResponse<SellerPostListItem>> & { content?: SellerPostListItem[] };
+type SellerPostList = SellerPostPage | SellerPostListItem[];
+
+function withSellerListingActions<T extends SellerPostDetailDto>(post: T): T {
+  if (post.sellerActions) return post;
+
+  // Older BE builds return status and credit usage without the action flags.
+  return {
+    ...post,
+    sellerActions: {
+      editContent: post.listingCreditCharged === false && (post.status === 'DRAFT' || post.status === 'REJECTED'),
+      updateShippingPackage: post.status === 'ACTIVE',
+      reclassifyItem: false,
+    },
+  };
+}
 
 export const postService = {
   /**
@@ -258,13 +283,20 @@ export const postService = {
   /**
    * Lấy danh sách bài đăng của chính người dùng/người bán (GET /api/v1/posts/my-posts)
    */
-  async getMyPosts(page = 0, size = 20): Promise<any> {
+  async getMyPosts(page = 0, size = 20): Promise<SellerPostList> {
     try {
-      const response = await request<any>(`/v1/posts/my-posts?page=${page}&size=${size}&sort=createdAt,desc`, {
+      const response = await request<SellerPostList>(`/v1/posts/my-posts?page=${page}&size=${size}&sort=createdAt,desc`, {
         method: 'GET',
         requiresAuth: true,
       });
-      return (response as any)?.data || response;
+      const posts = response.data ?? (response as unknown as SellerPostList);
+      if (Array.isArray(posts)) return posts.map(withSellerListingActions);
+
+      return {
+        ...posts,
+        items: posts.items?.map(withSellerListingActions),
+        content: posts.content?.map(withSellerListingActions),
+      };
     } catch (err) {
       console.warn('Lỗi lấy danh sách bài đăng cá nhân từ backend:', err);
       return { content: [] };
@@ -278,16 +310,17 @@ export const postService = {
    * Không giới hạn ACTIVE: chủ bài vẫn xem được RESERVED, PAYMENT_PENDING, SOLD, DRAFT, PENDING, REJECTED...
    * Response 200 trả trực tiếp PostDto không có lớp data/success bọc ngoài.
    */
-  async getMyPostDetail(postId: string): Promise<SellerPostDetailDto> {
+  async getMyPostDetail(postId: string, signal?: AbortSignal): Promise<SellerPostDetailDto> {
     try {
       const cleanId = String(postId || '').trim();
       const response = await request<SellerPostDetailDto>(`/v1/posts/my-posts/${encodeURIComponent(cleanId)}`, {
         method: 'GET',
         requiresAuth: true,
+        signal,
       });
-      return (response as any)?.data || response;
+      return withSellerListingActions(response.data ?? (response as unknown as SellerPostDetailDto));
     } catch (err: any) {
-      console.warn(`[postService] Lỗi lấy chi tiết bài đăng cá nhân ${postId}:`, err);
+      if (!signal?.aborted) console.warn(`[postService] Lỗi lấy chi tiết bài đăng cá nhân ${postId}:`, err);
       throw err;
     }
   },
@@ -494,17 +527,16 @@ export const postService = {
   /**
    * Lấy kết quả định giá AI mới nhất (GET /api/v1/posts/{postId}/ai-price-estimation)
    */
-  async getLatestPriceEstimate(postId: string): Promise<AiPriceEstimationResponse | null> {
+  async getLatestPriceEstimate(postId: string, signal?: AbortSignal): Promise<AiPriceEstimationResponse | null> {
     try {
-      const response = await request<AiPriceEstimationResponse>(`/v1/posts/${postId}/ai-price-estimation`, {
+      const response = await request<AiPriceEstimationResponse>(`/v1/posts/${encodeURIComponent(postId)}/ai-price-estimation`, {
         method: 'GET',
         requiresAuth: true,
+        signal,
       });
-      return (response as any)?.data || response;
+      return response.data ?? null;
     } catch (err: any) {
-      if (err?.status === 404 || String(err?.message).includes('404')) {
-        return null;
-      }
+      if (err?.status === 404) return null;
       throw err;
     }
   },
@@ -571,6 +603,14 @@ export const postService = {
     const response = await request<PostSubmitResponse>(`/v1/posts/submit/${postId}`, {
       method: 'POST',
       body: JSON.stringify(payload),
+      requiresAuth: true,
+    });
+    return (response as any)?.data || response;
+  },
+
+  async publishInspectedPost(postId: string): Promise<SellerPostDetailDto> {
+    const response = await request<SellerPostDetailDto>(`/v1/posts/${encodeURIComponent(postId)}/publish-inspected`, {
+      method: 'POST',
       requiresAuth: true,
     });
     return (response as any)?.data || response;

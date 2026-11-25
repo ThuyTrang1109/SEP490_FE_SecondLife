@@ -532,7 +532,7 @@ export const ShippingLabelModal: React.FC<ShippingLabelModalProps> = ({
             </div>
             <p className="leading-relaxed text-[11px] sm:text-xs text-amber-900 font-medium">
               {isSellerToCenter
-                ? 'Tài xế giao kiện hàng đến Trạm Kiểm Định SecondLife Hub. Kỹ thuật viên Hub sẽ kiểm tra nguyên trạng niêm phong, cấp phiếu tiếp nhận và tiến hành thẩm định kỹ thuật.'
+                ? 'Tài xế giao kiện hàng đến Trạm Kiểm Định SecondLife Hub. Kỹ thuật viên Hub sẽ kiểm tra, cấp phiếu tiếp nhận và tiến hành thẩm định kỹ thuật.'
                 : isCenterToBuyer
                   ? 'Giao hàng cho khách mua theo địa chỉ đã xác minh. Sản phẩm đã đạt chuẩn kiểm định và được Hub dán tem bảo đảm SecondLife. Không thu tiền mặt COD.'
                   : 'Cho khách xem hàng, không cho dùng thử. Sản phẩm SecondLife đã được niêm phong kỹ lưỡng. Chuyển hoàn về người gửi sau 3 lần giao không thành công.'}

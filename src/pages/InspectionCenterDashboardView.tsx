@@ -50,7 +50,6 @@ interface InspectionCenterDashboardViewProps {
   currentUser?: UserProfile | null;
   lang?: Language;
   onNavigate?: (tab: string) => void;
-  onOpenProfile?: () => void;
   onLogout?: () => void;
   onViewWebsite?: () => void;
 }
@@ -59,7 +58,6 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
   initialOrders = [],
   currentUser,
   lang = 'vi',
-  onOpenProfile,
   onLogout,
 }) => {
   // --- Active Sub-Tab (Khôi phục từ URL param ?subtab= hoặc sessionStorage khi F5) ---
@@ -77,7 +75,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
     }, 4500);
   };
 
-  const { handleReceivePackageAtHub, isLoadingOrders, loadOrders, orders, setOrders, trackedOrders, visibleOrderHistory } = useCenterOrders({
+  const { applyCounterResponse, handleReceivePackageAtHub, isLoadingOrders, loadOrders, orders, setOrders, trackedOrders, visibleOrderHistory } = useCenterOrders({
     currentUser,
     initialOrders,
     lang,
@@ -103,6 +101,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
     loadOrders,
     showNotice,
     showOrderShipments,
+    isDispatchTab: activeTab === 'dispatch',
     trackedOrders,
   });
   const { bookingReturnId, buyerShipments, deniedShipmentOrders, handleBookReturn, hubReturns, inboundShipments, isOrderReceivedAtHub, returnQuoteOrder, setDeniedShipmentOrders, setReturnQuoteOrder } = shipments;
@@ -132,6 +131,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
   });
   const { assignModalOrder, handleOpenAssign, setAssignModalOrder } = assignment;
   const appointments = useCenterAppointments({
+    applyCounterResponse,
     handleOpenAssign,
     setAssignModalOrder,
     setOrders,
@@ -178,7 +178,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
 
   // Refresh all data
   const handleRefreshAll = () => {
-    if (showOrderShipments) setDeniedShipmentOrders(new Set());
+    if (showOrderShipments || activeTab === 'dispatch') setDeniedShipmentOrders(new Set());
     if (activeTab === 'profile' || activeTab === 'overview') loadCenterProfile();
     if (needsOrders) loadOrders();
     if (needsStaff) loadStaff();
@@ -202,7 +202,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       deniedShipmentOrders={deniedShipmentOrders}
       inboundShipments={inboundShipments}
       isOrderReceivedAtHub={isOrderReceivedAtHub}
-      showOrderShipments={showOrderShipments}
+      showOrderShipments={showOrderShipments || activeTab === 'dispatch'}
     />
   );
 
@@ -217,7 +217,6 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
         isLoadingOrders={isLoadingOrders}
         lang={lang}
         onLogout={onLogout}
-        onOpenProfile={onOpenProfile}
         setActionNotice={setActionNotice}
         setActiveTab={setActiveTab}
         stats={stats}

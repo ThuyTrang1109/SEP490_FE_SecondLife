@@ -1,5 +1,35 @@
 import type { InspectionOrderDto } from '../services/inspectorService';
 
+export function getPreListingHomeIntakeStage(order?: Pick<InspectionOrderDto,
+  'orderType' | 'status' | 'appointmentStatus' | 'appointmentScheduledAt' | 'inspectorId' | 'homeCheckedInAt'
+>) {
+  if (order?.orderType !== 'AT_HOME' || order.appointmentStatus !== 'CONFIRMED' ||
+    !order.appointmentScheduledAt || order.homeCheckedInAt || !['SCHEDULED', 'DISPATCHED'].includes(order.status)) {
+    return null;
+  }
+  return order.inspectorId ? 'ready' : 'awaiting_inspector';
+}
+
+export function getPreListingHomeAppointmentStage(order?: Pick<InspectionOrderDto,
+  'orderType' | 'status' | 'appointmentStatus' | 'appointmentScheduledAt'
+>) {
+  if (order?.orderType !== 'AT_HOME' || !['CONFIRMED_PENDING_DISPATCH', 'SCHEDULED', 'DISPATCHED'].includes(order.status)) {
+    return null;
+  }
+
+  switch (order.appointmentStatus) {
+    case 'REJECTED':
+      return 'awaiting_schedule';
+    case 'COUNTERED_BY_CENTER':
+      return 'countered';
+    case 'PENDING_CENTER_CONFIRMATION':
+    case 'PENDING_CONFIRMATION':
+      return 'awaiting_center';
+    default:
+      return order.appointmentScheduledAt ? 'scheduled' : 'awaiting_schedule';
+  }
+}
+
 export function getInspectionTaskResult(order: Pick<InspectionOrderDto, 'status' | 'finalPaymentDeadline'> & {
   conditionScore?: number | null;
 }) {

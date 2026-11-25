@@ -29,9 +29,8 @@ import {
 } from '../../services';
 import { inspectorService, InspectionOrderDto } from '../../services/inspectorService';
 import { AdminInspectionFundsModal } from './AdminInspectionFundsModal';
-import { markListingInspectionPassed, isOrderInspectionVerdictPassed } from '../../utils/listingInspection';
 import { isValidUUID } from '../../utils/negotiationHelper';
-import { toSystemWalletHistoryItem } from '../../utils/systemWalletHistory';
+import { toSystemWalletHistoryItem, getSystemWalletBreakdownLines } from '../../utils/systemWalletHistory';
 import {
   SystemWalletData,
   SystemWalletFundCategory,
@@ -50,6 +49,7 @@ export type SystemWalletFilterType =
   | 'COMMISSION'
   | 'SHIPPING'
   | 'PAYMENT_HOLD'
+  | 'INSPECTION_HOLD'
   | 'SETTLEMENT'
   | 'REFUND'
   | 'RETURN_SHIPPING_FEE';
@@ -178,19 +178,10 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
       const list: InspectionOrderDto[] = Array.isArray(extracted) ? [...extracted] : [];
       setInspectionOrders(list);
 
-      // Đồng bộ vào cache và ghi nhận trạng thái đạt kiểm định của bài đăng
+      // Đồng bộ danh sách đơn kiểm định vào cache
       try {
         localStorage.setItem('all_inspection_orders_cache', JSON.stringify(list));
       } catch { }
-      list.forEach((ord) => {
-        if (isOrderInspectionVerdictPassed(ord)) {
-          const pid = ord.postId || (ord as any).listingId || (ord as any).listing?.id;
-          const ptitle = ord.postTitle || (ord as any).listing?.title || (ord as any).title;
-          if (pid) {
-            markListingInspectionPassed(String(pid), ptitle);
-          }
-        }
-      });
     } catch (err: any) {
       console.warn('Could not fetch inspection orders in SystemWalletTab:', err);
       setInspectionOrders([]);
@@ -200,7 +191,7 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
   }, []);
 
   const fetchTransactions = useCallback(
-    async (page = 0, filterType = activeFilter, orderQuery = debouncedSearch) => {
+    async (page = 0, _filterType = activeFilter, orderQuery = debouncedSearch) => {
       const request = ++historyRequest.current;
       setIsLoadingHistory(true);
       try {
@@ -208,13 +199,6 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
           page,
           size: pageSize,
         };
-
-        if (filterType === 'PRODUCT_ESCROW' || filterType === 'HUB_PAYOUT' || filterType === 'COMMISSION') {
-          filter.fundCategory = filterType;
-        } else if (activeViewMode === 'ESCROW_ORDERS' &&
-          ['PAYMENT_HOLD', 'SETTLEMENT', 'REFUND', 'RETURN_SHIPPING_FEE'].includes(filterType)) {
-          filter.type = filterType;
-        }
 
         if (isValidUUID(orderQuery)) {
           filter.orderId = orderQuery;
@@ -232,7 +216,7 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
         if (request === historyRequest.current) setIsLoadingHistory(false);
       }
     },
-    [activeFilter, activeViewMode, debouncedSearch, pageSize]
+    [debouncedSearch, pageSize]
   );
 
   useEffect(() => {
@@ -242,7 +226,7 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
 
   useEffect(() => {
     fetchTransactions(0, activeFilter, debouncedSearch);
-  }, [activeFilter, debouncedSearch, fetchTransactions]);
+  }, [debouncedSearch, fetchTransactions]);
 
   const handleRefreshAll = () => {
     fetchWallet();
@@ -251,6 +235,9 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
   };
 
   const handleFilterChange = (type: SystemWalletFilterType) => {
+    if (activeViewMode === 'INSPECTION_ORDERS') {
+      setActiveViewMode('ALL_UNIFIED');
+    }
     setActiveFilter(type);
     setCurrentPage(0);
   };
@@ -372,28 +359,75 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
   const displayedUnifiedItems = useMemo(() => {
     let list = unifiedTransactions;
 
-    if (activeFilter === 'PRODUCT_ESCROW' || activeFilter === 'HUB_PAYOUT') {
-      list = list.filter((item) => item.fundCategory === activeFilter);
-    } else if (activeFilter === 'USER_SHIPPING' || activeFilter === 'SHIPPING') {
-      list = list.filter((item) => item.isShipping);
+    if (activeFilter === 'PRODUCT_ESCROW') {
+      list = list.filter((item) =>
+        item.fundCategory === 'PRODUCT_ESCROW' ||
+        (item.source === 'ESCROW' && !item.isShipping && item.fundCategory !== 'COMMISSION' && item.transaction.heldDelta !== 0)
+      );
+    } else if (activeFilter === 'HUB_PAYOUT') {
+      list = list.filter((item) =>
+        item.fundCategory === 'HUB_PAYOUT' ||
+        item.typeLabel === 'Thanh toán ví Hub'
+      );
     } else if (activeFilter === 'COMMISSION') {
-      list = list.filter((item) => item.fundCategory === 'COMMISSION' || item.transaction.revenueDelta !== 0);
+      list = list.filter((item) =>
+        item.fundCategory === 'COMMISSION' ||
+        item.typeLabel === 'Hoa hồng sàn' ||
+        (item.transaction.revenueDelta !== 0 && item.fundCategory !== 'HUB_PAYOUT')
+      );
+    } else if (activeFilter === 'USER_SHIPPING' || activeFilter === 'SHIPPING') {
+      list = list.filter((item) =>
+        item.isShipping ||
+        item.transaction.shippingDelta !== 0 ||
+        item.fundCategory === 'USER_SHIPPING'
+      );
     } else if (activeFilter === 'PAYMENT_HOLD') {
-      list = list.filter((item) => item.type === 'PAYMENT_HOLD' || item.type === 'INSPECTION_HOLD');
+      list = list.filter((item) =>
+        item.typeLabel === 'Nhận ký quỹ' ||
+        (item.type === 'PAYMENT_HOLD' && item.typeLabel !== 'Thu phí kiểm định')
+      );
+    } else if (activeFilter === 'INSPECTION_HOLD') {
+      list = list.filter((item) =>
+        item.typeLabel === 'Thu phí kiểm định' ||
+        item.type === 'INSPECTION_HOLD'
+      );
     } else if (activeFilter === 'SETTLEMENT') {
-      list = list.filter((item) => item.type === 'SETTLEMENT' || item.type === 'INSPECTION_SETTLEMENT');
+      list = list.filter((item) =>
+        item.typeLabel === 'Giải ngân' ||
+        (
+          (item.type === 'SETTLEMENT' || item.type === 'INSPECTION_SETTLEMENT') &&
+          item.fundCategory !== 'COMMISSION' &&
+          item.fundCategory !== 'HUB_PAYOUT' &&
+          item.typeLabel !== 'Hoa hồng sàn' &&
+          item.typeLabel !== 'Thanh toán ví Hub'
+        )
+      );
     } else if (activeFilter === 'REFUND') {
-      list = list.filter((item) => item.type === 'REFUND' || item.type === 'INSPECTION_REFUND');
+      list = list.filter((item) =>
+        item.type === 'REFUND' ||
+        item.type === 'INSPECTION_REFUND' ||
+        item.typeLabel === 'Hoàn tiền' ||
+        item.typeLabel === 'Hoàn phí kiểm định'
+      );
     } else if (activeFilter === 'RETURN_SHIPPING_FEE') {
-      list = list.filter((item) => item.type === 'RETURN_SHIPPING_FEE' || item.type === 'INSPECTION_RETURN_SHIPPING');
+      list = list.filter((item) =>
+        item.type === 'RETURN_SHIPPING_FEE' ||
+        item.type === 'INSPECTION_RETURN_SHIPPING' ||
+        item.typeLabel === 'Thu cước trả hàng' ||
+        item.typeLabel === 'Cước trả hàng kiểm định'
+      );
     }
 
     if (debouncedSearch) {
-      const query = debouncedSearch.toLowerCase();
+      const query = debouncedSearch.toLowerCase().trim();
+      const cleanQuery = query.replace(/^#/, '');
       list = list.filter((item) =>
         item.orderId.toLowerCase().includes(query) ||
         item.displayId.toLowerCase().includes(query) ||
-        item.itemTitle?.toLowerCase().includes(query)
+        item.itemTitle?.toLowerCase().includes(query) ||
+        item.entryId.toLowerCase().includes(cleanQuery) ||
+        String(item.transaction.id).includes(cleanQuery) ||
+        item.typeLabel.toLowerCase().includes(query)
       );
     }
 
@@ -494,6 +528,10 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
 
   const selectedRevenue = settlementData?.platformCommission ?? selectedItem?.transaction.revenueDelta ?? 0;
   const selectedSellerPayout = settlementData?.sellerPayout ?? selectedItem?.sellerPayout ?? null;
+  const selectedBreakdownLines = useMemo(
+    () => getSystemWalletBreakdownLines(selectedItem),
+    [selectedItem]
+  );
 
   const formatDelta = (val: number) => {
     if (val === 0) return <span className="text-slate-400 font-mono">0 đ</span>;
@@ -556,15 +594,10 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-200 shrink-0">
         <div className="flex items-center gap-2">
           <h2 className="text-sm sm:text-base font-black text-slate-900 uppercase tracking-tight">
-            Ví Hệ Thống &amp; Kế Toán Đối Soát (System Wallet)
+            Ví Hệ Thống &amp; Kế Toán Đối Soát
           </h2>
-          <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-[#24263e] text-white">
-            ADMIN ONLY
-          </span>
-          <span className="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
-            <ShieldCheck className="w-3 h-3 text-emerald-600" />
-            <span>Tổng bảo chứng: <strong className="font-mono">{formatVND(grandTotalHeld)}</strong></span>
-          </span>
+
+
         </div>
 
         <div className="flex items-center gap-2">
@@ -821,7 +854,7 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
             type="button"
             onClick={() => handleFilterChange('PAYMENT_HOLD')}
             className={`px-2 py-0.5 rounded-full font-bold transition cursor-pointer border ${activeFilter === 'PAYMENT_HOLD'
-              ? 'bg-blue-600 text-white border-blue-600'
+              ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
               : 'bg-white text-blue-900 border-blue-200 hover:bg-blue-50'
               }`}
           >
@@ -830,13 +863,46 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
 
           <button
             type="button"
+            onClick={() => handleFilterChange('INSPECTION_HOLD')}
+            className={`px-2 py-0.5 rounded-full font-bold transition cursor-pointer border ${activeFilter === 'INSPECTION_HOLD'
+              ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+              : 'bg-white text-indigo-900 border-indigo-200 hover:bg-indigo-50'
+              }`}
+          >
+            Thu phí kiểm định
+          </button>
+
+          <button
+            type="button"
             onClick={() => handleFilterChange('SETTLEMENT')}
             className={`px-2 py-0.5 rounded-full font-bold transition cursor-pointer border ${activeFilter === 'SETTLEMENT'
-              ? 'bg-emerald-600 text-white border-emerald-600'
+              ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
               : 'bg-white text-emerald-900 border-emerald-200 hover:bg-emerald-50'
               }`}
           >
             Giải ngân
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleFilterChange('HUB_PAYOUT')}
+            className={`px-2 py-0.5 rounded-full font-bold transition cursor-pointer border ${activeFilter === 'HUB_PAYOUT'
+              ? 'bg-purple-600 text-white border-purple-600 shadow-2xs'
+              : 'bg-white text-purple-900 border-purple-200 hover:bg-purple-50'
+              }`}
+          >
+            Chi trả Hub
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleFilterChange('COMMISSION')}
+            className={`px-2 py-0.5 rounded-full font-bold transition cursor-pointer border ${activeFilter === 'COMMISSION'
+              ? 'bg-teal-600 text-white border-teal-600 shadow-2xs'
+              : 'bg-white text-teal-900 border-teal-200 hover:bg-teal-50'
+              }`}
+          >
+            Hoa hồng sàn
           </button>
 
           <button
@@ -911,9 +977,7 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
                     <th className="py-3 px-3.5">Phân Loại</th>
                     <th className="py-3 px-3.5 text-right min-w-[210px]">
                       <div>Số Tiền Biến Động</div>
-                      <span className="text-[9px] text-slate-400 font-normal normal-case block">
-                        (Hợp nhất Biến Động Ký Quỹ, Biến Động Phí Ship, Biến Động Hoa Hồng)
-                      </span>
+
                     </th>
                     <th className="py-3 px-3.5 text-center">Thời Gian</th>
                     <th className="py-3 px-3.5 text-center">Hành Động</th>
@@ -999,33 +1063,9 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
                           </span>
                         </td>
 
-                        {/* GOM THÀNH 1 CỘT: Số Tiền Biến Động (Cộng / Trừ kèm chi tiết) */}
-                        <td className="py-3 px-3.5 text-right whitespace-nowrap">
+                        {/* GOM THÀNH 1 CỘT: Số Tiền Biến Động (Cộng / Trừ) */}
+                        <td className="py-3 px-3.5 text-right whitespace-nowrap font-medium">
                           {formatDelta(item.signedDelta)}
-
-                          {/* Chi tiết cộng tiền gì / trừ tiền gì */}
-                          <div className="mt-1 space-y-0.5 text-[10px]">
-                            {item.breakdownItems.map(({ label, delta }) => (
-                              <div key={label} className="text-slate-500 font-sans">
-                                <span>{label}: </span>
-                                <strong
-                                  className={
-                                    delta > 0
-                                      ? 'text-emerald-700 font-mono font-bold'
-                                      : 'text-slate-800 font-mono font-bold'
-                                  }
-                                >
-                                  {delta > 0 ? '+' : '-'}
-                                  {formatVND(Math.abs(delta))}
-                                </strong>
-                              </div>
-                            ))}
-                            {item.breakdownItems.length === 0 && (
-                              <div className="ml-auto max-w-[230px] whitespace-normal text-slate-500">
-                                {item.breakdownSummary}
-                              </div>
-                            )}
-                          </div>
                         </td>
 
                         <td className="py-3 px-3.5 text-center text-[11px] text-slate-500 font-mono whitespace-nowrap">
@@ -1384,24 +1424,24 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
 
       {/* Order Settlement & Commission Inspection Modal (for Escrow order) */}
       {selectedOrderId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-md animate-fadeIn overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-gray-200 text-xs text-[#24263e] space-y-4 my-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/75 backdrop-blur-md animate-fadeIn overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-2xl sm:max-w-3xl w-full p-6 sm:p-8 shadow-2xl border border-gray-200 text-sm text-[#24263e] space-y-5 my-auto">
             {/* Modal Header */}
-            <div className="flex items-center justify-between pb-3 border-b border-gray-200">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold shadow-xs">
-                  <ShieldCheck className="w-5 h-5" />
+            <div className="flex items-center justify-between pb-4 border-b border-gray-200">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-bold shadow-xs shrink-0">
+                  <ShieldCheck className="w-6 h-6" />
                 </div>
                 <div>
-                  <div className="flex items-center gap-2">
-                    <h4 className="font-extrabold text-sm sm:text-base text-slate-900">
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <h4 className="font-extrabold text-base sm:text-lg text-slate-900">
                       Chi tiết đơn hàng sàn
                     </h4>
-                    <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-blue-100 text-blue-800 border border-blue-200">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-blue-100 text-blue-800 border border-blue-200">
                       {selectedItem?.typeLabel || 'Quyết toán'}
                     </span>
                   </div>
-                  <p className="font-mono text-[11px] text-slate-500">
+                  <p className="font-mono text-xs text-slate-500 mt-1">
                     Mã đơn hàng: <strong className="text-slate-800">#{selectedOrderId}</strong>
                     {selectedItem && (
                       <span className="ml-2 text-slate-500">| Mã GD: #{selectedItem.entryId}</span>
@@ -1412,7 +1452,7 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
 
               <button
                 onClick={closeOrderDetail}
-                className="p-1.5 rounded-xl hover:bg-gray-100 text-slate-500 hover:text-slate-800 transition cursor-pointer"
+                className="p-2 rounded-xl hover:bg-gray-100 text-slate-500 hover:text-slate-800 transition cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1420,54 +1460,70 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
 
             {/* Modal Body */}
             {isLoadingOrderInfo ? (
-              <div className="py-12 text-center text-slate-400 space-y-2">
-                <RefreshCw className="w-7 h-7 animate-spin mx-auto text-blue-600" />
-                <p className="font-semibold text-xs">Đang tải chi tiết đơn hàng…</p>
+              <div className="py-14 text-center text-slate-400 space-y-2.5">
+                <RefreshCw className="w-8 h-8 animate-spin mx-auto text-blue-600" />
+                <p className="font-semibold text-sm">Đang tải chi tiết đơn hàng…</p>
               </div>
             ) : orderInfoError && !selectedItem ? (
-              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 font-semibold">
+              <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl text-rose-700 font-semibold text-sm">
                 {orderInfoError}
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-5">
                 {orderInfoError && <p role="status" className="text-xs text-amber-800">{orderInfoError}</p>}
                 {/* 3 KPI Stats Cards */}
-                <div className="grid grid-cols-3 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
                   {/* Card 1: Tổng tiền biến động */}
-                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
-                    <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
-                      Biến động giao dịch
+                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col justify-between">
+                    <div>
+                      <div className="text-[11px] text-slate-600 font-bold uppercase tracking-wider">
+                        Biến động giao dịch
+                      </div>
+                      <div className="text-xl sm:text-2xl font-black text-slate-900 font-mono mt-1">
+                        {formatDelta(selectedItem?.signedDelta ?? 0)}
+                      </div>
                     </div>
-                    <div className="text-base sm:text-lg font-black text-slate-900 font-mono mt-0.5">
-                      {formatDelta(selectedItem?.signedDelta ?? 0)}
-                    </div>
-                    <div className="text-[10px] text-slate-400 mt-0.5 truncate">
-                      {selectedItem?.breakdownSummary || 'Ghi nhận qua ví hệ thống'}
-                    </div>
+
+                    {selectedBreakdownLines.length > 0 ? (
+                      <div className="mt-2.5 pt-2 border-t border-slate-200/80 space-y-1">
+                        {selectedBreakdownLines.map((line, idx) => (
+                          <div key={idx} className="flex items-center justify-between text-xs gap-2">
+                            <span className="text-slate-600 font-medium truncate">• {line.label}:</span>
+                            <span className="font-mono font-bold text-slate-800 shrink-0">
+                              {line.formattedText}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-slate-500 mt-1.5 break-words font-medium leading-relaxed">
+                        {selectedItem?.breakdownSummary || 'Ghi nhận qua ví hệ thống'}
+                      </div>
+                    )}
                   </div>
 
                   {/* Card 2: Thực trả người bán */}
-                  <div className="p-3 bg-blue-50/60 border border-blue-200 rounded-xl">
-                    <div className="text-[10px] text-blue-800 font-bold uppercase tracking-wider">
+                  <div className="p-4 bg-blue-50/70 border border-blue-200 rounded-2xl flex flex-col justify-between">
+                    <div className="text-[11px] text-blue-800 font-bold uppercase tracking-wider">
                       Thực trả người bán
                     </div>
-                    <div className="text-base sm:text-lg font-black text-blue-900 font-mono mt-0.5">
+                    <div className="text-xl sm:text-2xl font-black text-blue-900 font-mono mt-1">
                       {selectedSellerPayout === null ? '—' : formatVND(selectedSellerPayout)}
                     </div>
-                    <div className="text-[10px] text-blue-600 mt-0.5 truncate">
+                    <div className="text-xs text-blue-700 mt-1.5 break-words font-medium leading-relaxed">
                       {selectedSellerPayout === null ? 'Chưa có trong chi tiết này' : 'Đã giải ngân người bán'}
                     </div>
                   </div>
 
                   {/* Card 3: Hoa hồng sàn thực thu */}
-                  <div className="p-3 bg-emerald-50/60 border border-emerald-200 rounded-xl">
-                    <div className="text-[10px] text-emerald-800 font-bold uppercase tracking-wider">
+                  <div className="p-4 bg-emerald-50/70 border border-emerald-200 rounded-2xl flex flex-col justify-between">
+                    <div className="text-[11px] text-emerald-800 font-bold uppercase tracking-wider">
                       Hoa hồng sàn thực thu
                     </div>
-                    <div className="text-base sm:text-lg font-black text-emerald-700 font-mono mt-0.5">
+                    <div className="text-xl sm:text-2xl font-black text-emerald-700 font-mono mt-1">
                       {formatDelta(selectedRevenue)}
                     </div>
-                    <div className="text-[10px] text-emerald-600 mt-0.5 truncate">
+                    <div className="text-xs text-emerald-700 mt-1.5 break-words font-medium leading-relaxed">
                       {commissionData?.ratePercent
                         ? `Trích ${commissionData.ratePercent}% doanh thu sàn`
                         : 'Doanh thu hoa hồng'}
@@ -1476,72 +1532,42 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
                 </div>
 
                 {/* Chi tiết phân bổ tài chính */}
-                <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2.5">
-                  <h5 className="font-extrabold text-xs text-slate-800 flex items-center justify-between border-b border-slate-200 pb-1.5">
+                <div className="p-4 sm:p-5 bg-slate-50/80 border border-slate-200 rounded-2xl space-y-3">
+                  <h5 className="font-extrabold text-sm text-slate-900 flex items-center justify-between border-b border-slate-200 pb-2">
                     <span>Phân bổ dòng tiền</span>
-                    <span className="text-[10px] text-slate-400 font-normal">
+                    <span className="text-xs text-slate-500 font-normal">
                       Căn cứ dữ liệu ví hệ thống & quyết toán đơn
                     </span>
                   </h5>
 
-                  <div className="space-y-1.5 text-xs">
-                    <div className="flex justify-between py-1 border-b border-slate-200/60">
-                      <span className="text-slate-600">Giá trị sản phẩm (Cơ sở hoa hồng):</span>
-                      <strong className="font-mono text-slate-900">
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between items-center py-1.5 border-b border-slate-200/60">
+                      <span className="text-slate-600 font-medium">Giá trị sản phẩm (Cơ sở hoa hồng):</span>
+                      <strong className="font-mono text-slate-900 text-sm font-bold">
                         {commissionData?.commissionBase != null || settlementData?.commissionBase != null
                           ? formatVND(settlementData?.commissionBase ?? commissionData?.commissionBase ?? 0)
                           : '—'}
                       </strong>
                     </div>
 
-                    <div className="flex justify-between py-1 border-b border-slate-200/60">
-                      <span className="text-slate-600">Hoa hồng sàn trích thu:</span>
-                      <strong className="font-mono text-emerald-700">
+                    <div className="flex justify-between items-center py-1.5 border-b border-slate-200/60">
+                      <span className="text-slate-600 font-medium">Hoa hồng sàn trích thu:</span>
+                      <strong className="font-mono text-emerald-700 text-sm font-extrabold">
                         {formatDelta(selectedRevenue)}
                       </strong>
                     </div>
 
-                    <div className="flex justify-between py-1 border-b border-slate-200/60">
-                      <span className="text-slate-600">Cước vận chuyển (Lalamove):</span>
-                      <strong className="font-mono text-slate-900">
+                    <div className="flex justify-between items-center py-1.5 border-b border-slate-200/60">
+                      <span className="text-slate-600 font-medium">Cước vận chuyển (Lalamove):</span>
+                      <strong className="font-mono text-slate-900 text-sm font-bold">
                         {formatVND(settlementData?.shippingFee ?? selectedItem?.userShippingFee ?? 0)}
                       </strong>
                     </div>
 
-                    <div className="flex justify-between py-1 font-bold pt-1.5 text-slate-900">
-                      <span className="text-blue-900">Người bán thực nhận (Seller Payout):</span>
-                      <strong className="font-mono text-blue-900 text-sm">
+                    <div className="flex justify-between items-center py-2.5 font-bold pt-2 text-slate-900 bg-blue-50/80 px-3.5 rounded-xl border border-blue-100 mt-2">
+                      <span className="text-blue-950 font-bold">Người bán thực nhận:</span>
+                      <strong className="font-mono text-blue-900 text-base sm:text-lg font-black">
                         {selectedSellerPayout === null ? '—' : formatVND(selectedSellerPayout)}
-                      </strong>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Thông tin truy vết sổ cái */}
-                <div className="p-3 bg-amber-50/50 border border-amber-200/70 rounded-xl space-y-1 text-[11px] text-amber-950">
-                  <div className="font-bold flex items-center justify-between">
-                    <span>Truy vết sổ cái ví hệ thống:</span>
-                    <span className="font-mono text-[10px] text-amber-800">
-                      {selectedItem?.createdAt
-                        ? new Date(selectedItem.createdAt).toLocaleString('vi-VN')
-                        : '---'}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-1 text-[10px] text-amber-900 pt-0.5">
-                    <div>
-                      <span>Số dư ký quỹ sau GD: </span>
-                      <strong className="font-mono">
-                        {selectedItem?.transaction.heldBalanceAfter !== undefined
-                          ? formatVND(selectedItem.transaction.heldBalanceAfter)
-                          : '---'}
-                      </strong>
-                    </div>
-                    <div>
-                      <span>Số dư hoa hồng sau GD: </span>
-                      <strong className="font-mono">
-                        {selectedItem?.transaction.revenueBalanceAfter !== undefined
-                          ? formatVND(selectedItem.transaction.revenueBalanceAfter)
-                          : '---'}
                       </strong>
                     </div>
                   </div>
@@ -1551,7 +1577,7 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
                 <div className="pt-2 flex justify-end">
                   <button
                     onClick={closeOrderDetail}
-                    className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs cursor-pointer shadow-xs"
+                    className="px-6 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm cursor-pointer shadow-xs transition"
                   >
                     Đóng
                   </button>

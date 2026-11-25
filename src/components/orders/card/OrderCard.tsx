@@ -1,6 +1,6 @@
 import type { OrderAppointment } from '../../../utils/orders/orderAppointments';
 import type { BuyerInspectionStage, OrderCheck } from '../../../types/orders/orderTypes';
-import { Clock } from 'lucide-react';
+import { AlertTriangle, Clock } from 'lucide-react';
 import type { EscrowOrder, Language, ShipmentBackend } from '../../../types';
 import type { ReactNode } from 'react';
 import { formatVND } from '../../../utils/translations';
@@ -9,10 +9,16 @@ import { OrderCardActions, type OrderCardActionsProps } from './OrderCardActions
 import { OrderCardCancellation } from './OrderCardCancellation';
 import { OrderCardInspection } from './OrderCardInspection';
 import { OrderCardSummary } from './OrderCardSummary';
+import { OrderReturnPanel } from '../OrderReturnPanel';
+import { getOrderEscrowHoldNotice } from '../../../utils/orders/orderDispute';
 
 interface Props {
   order: EscrowOrder;
   payoutData?: SellerPayoutData;
+  onBookOrderReturn?: () => void;
+  onTrackReturnShipment?: () => void;
+  bookingReturn?: boolean;
+  returnBookingError?: string;
   cardActions: Omit<OrderCardActionsProps, 'order' | 'orderIsSeller' | 'lang' | 'hasInspection' | 'savedAppointment' | 'buyerInspectionStage'>;
   orderIsSeller: boolean;
   hasInspection: boolean;
@@ -37,11 +43,12 @@ interface Props {
 }
 
 export function OrderCard({
-  payoutData, cardActions,
+  payoutData, cardActions, onBookOrderReturn, onTrackReturnShipment, bookingReturn, returnBookingError,
   order: ord, orderIsSeller, hasInspection, lang, savedAppointment, ordShipment, buyerInspectionStage,
   state: { getStatusBadge, isOrderReceiptConfirmed, isOrderCancelledOrRefunded, isInspectorArrivedForOrder, isOrderSellerConfirmed },
   actions: { setSellerReviewsModalData, setSchedulingOrder, setSchedulingReadOnly, handleSellerAcceptCounterAppointment, setDetailModalOrder }
 }: Props) {
+  const escrowNotice = getOrderEscrowHoldNotice(ord, lang);
   return (
     <div
       onClick={() => setDetailModalOrder(ord)}
@@ -90,14 +97,16 @@ export function OrderCard({
       />
       {/* Order Card Footer */}
       <div className="border-t border-gray-100 bg-slate-50/60 divide-y divide-gray-100">
-        {(orderIsSeller || !hasInspection) && (
+        {(orderIsSeller ? !ord.orderReturn : !hasInspection) && (
           <div className="px-4 sm:px-6 py-2.5 flex items-center justify-between">
             <span className="text-xs font-medium text-slate-500">
               {orderIsSeller
                 ? (lang === 'vi'
                   ? (payoutData?.source === 'settlement' ? 'Thực nhận về ví:' : `Dự kiến thực nhận (phí sàn${payoutData?.ratePercent != null ? ` ${payoutData.ratePercent}%` : ''}):`)
                   : (payoutData?.source === 'settlement' ? 'Net payout:' : `Estimated payout (platform fee${payoutData?.ratePercent != null ? ` ${payoutData.ratePercent}%` : ''}):`))
-                : (lang === 'vi' ? 'Thành tiền (đã bao gồm phí kiểm định & bảo lãnh):' : 'Total (incl. inspection & escrow guarantee):')}
+                : (hasInspection
+                  ? (lang === 'vi' ? 'Thành tiền (đã bao gồm phí kiểm định & bảo lãnh):' : 'Total (incl. inspection & escrow guarantee):')
+                  : (lang === 'vi' ? 'Thành tiền (đã bao gồm cước vận chuyển & bảo lãnh Escrow):' : 'Total (incl. shipping & escrow guarantee):'))}
             </span>
             <span className={`text-base sm:text-lg font-black ${orderIsSeller ? 'text-emerald-600' : 'text-[#24263e]'}`}>
               {orderIsSeller
@@ -116,20 +125,54 @@ export function OrderCard({
           buyerInspectionStage={buyerInspectionStage}
         />
       </div>
-      {/* 48h Auto-release notice banner on the order card */}
-      {!buyerInspectionStage && ord.shippingDeliveredAt && !isOrderReceiptConfirmed(ord) && ord.escrowStatus !== 'COMPLETED_RELEASED' && (ord.escrowStatus as any) !== 'RELEASED' && (ord as any).backendStatus !== 'COMPLETED' && ord.escrowStatus !== 'DISPUTED' && (
-        <div className="mt-3 mx-4 sm:mx-6 mb-3 p-3 rounded-xl bg-amber-50/90 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5">
-          <Clock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-          <div>
-            <span className="font-bold">
-              Đã giao thành công lúc {new Date(ord.shippingDeliveredAt).toLocaleString('vi-VN')}
-            </span>
-            <p className="text-[11px] text-amber-800 mt-0.5">
-              Hệ thống sẽ <strong>tự động giải ngân</strong> cho người bán sau 48 giờ kể từ khi giao thành công. Người mua có thể nhấn <strong>"Đã Nhận Hàng"</strong> để giải ngân ngay lập tức, hoặc gửi khiếu nại nếu sản phẩm có sai sót.
-            </p>
-          </div>
+      {ord.orderReturn && Boolean(ord.orderReturn.reportId || ord.escrowStatus === 'DISPUTED' || ord.backendEscrowStatus === 'FROZEN') ? (
+        <div className="mx-4 my-3 sm:mx-6">
+          <OrderReturnPanel
+            orderReturn={ord.orderReturn}
+            lang={lang}
+            orderIsSeller={orderIsSeller}
+            booking={bookingReturn}
+            bookingError={returnBookingError}
+            onBook={onBookOrderReturn}
+            onTrack={onTrackReturnShipment}
+          />
         </div>
-      )}
+      ) : (() => {
+        if (escrowNotice) {
+          return (
+            <div className="mt-3 mx-4 sm:mx-6 mb-3 p-3 rounded-xl bg-amber-50/90 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5 animate-fadeIn">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold">
+                  {escrowNotice.title}
+                </span>
+                <p className="text-[11px] text-amber-800 mt-0.5">
+                  {escrowNotice.description}
+                </p>
+              </div>
+            </div>
+          );
+        }
+
+        {/* 48h Auto-release notice banner on the order card */ }
+        if (!buyerInspectionStage && ord.shippingDeliveredAt && !isOrderReceiptConfirmed(ord) && ord.escrowStatus !== 'COMPLETED_RELEASED' && (ord.escrowStatus as any) !== 'RELEASED' && (ord as any).backendStatus !== 'COMPLETED') {
+          return (
+            <div className="mt-3 mx-4 sm:mx-6 mb-3 p-3 rounded-xl bg-amber-50/90 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5">
+              <Clock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold">
+                  Đã giao thành công lúc {new Date(ord.shippingDeliveredAt).toLocaleString('vi-VN')}
+                </span>
+                <p className="text-[11px] text-amber-800 mt-0.5">
+                  Người mua có <strong>48 giờ để gửi khiếu nại</strong> kể từ lúc giao thành công, khi tiền còn trong Escrow. Nhấn <strong>"Đã nhận hàng"</strong> để xác nhận và giải ngân.
+                </p>
+              </div>
+            </div>
+          );
+        }
+
+        return null;
+      })()}
     </div>
   );
 }

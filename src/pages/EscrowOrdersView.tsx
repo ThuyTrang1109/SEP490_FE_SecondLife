@@ -1,8 +1,12 @@
 ﻿import React, { useState, useEffect, useMemo } from 'react';
 import { EscrowOrder, Language, UserRole, UserProfile } from '../types';
 import { EscrowOrderFilters, EscrowOrderPagination } from '../components/orders/EscrowOrderFilters';
-import { ORDER_FILTER_TABS, readOrderFeedQuery, type OrderFeedQuery, type OrderFilterTab } from '../utils/escrowOrderFilters';
-import type { OrderFeed } from '../services/orderFeedService';
+import { ORDER_FILTER_TABS, orderFeedSearch, readOrderFeedQuery, type OrderFeedQuery, type OrderFilterTab } from '../utils/escrowOrderFilters';
+import { getPreListingInspection, type OrderFeed } from '../services/orderFeedService';
+import { navigatePath } from '../app/router/browser';
+import { paths, pathForTab } from '../app/router/paths';
+import { PreListingInspectionWorkflow } from '../components/listing/PreListingInspectionWorkflow';
+import { PreListingInspectionOrderCard } from '../components/orders/PreListingInspectionOrderCard';
 import { formatVND } from '../utils/translations';
 import {
   ShieldCheck,
@@ -18,6 +22,7 @@ import { ProductReviewModal } from '../components/modals/ProductReviewModal';
 import { SellerReviewsModal } from '../components/modals/SellerReviewsModal';
 import { OrderTrackingModal } from '../components/modals/OrderTrackingModal';
 import { CreateShipmentModal } from '../components/modals/CreateShipmentModal';
+import { CreateReturnShipmentModal } from '../components/modals/CreateReturnShipmentModal';
 import { InspectionCashShipmentStatus } from '../components/inspection/InspectionCashShipmentStatus';
 import { ShippingLabelModal } from '../components/modals/ShippingLabelModal';
 import { DigitalInspectionCertificateModal } from '../components/modals/DigitalInspectionCertificateModal';
@@ -36,12 +41,13 @@ import { getHubReturnProgress, getHubReturnState, getInboundShipmentProgress } f
 import { resolveOrderListing } from '../utils/catalogCache';
 import { translateSystemNotification } from '../utils/systemNotificationTranslator';
 import { OrderCard } from '../components/orders/card/OrderCard';
+import { canCreateApprovedOrderReturn } from '../utils/orders/orderDispute';
 import { OrderDetailModal } from '../components/orders/detail/OrderDetailModal';
 import { useOrderDetailData } from '../hooks/orders/useOrderDetailData';
 import { useOrderInboundShipments } from '../hooks/orders/useOrderInboundShipments';
+import { useActiveOrderDisputes } from '../hooks/orders/useActiveOrderDisputes';
 import { OrderDetailHeader } from '../components/orders/detail/OrderDetailHeader';
 import { OrderDetailProduct } from '../components/orders/detail/OrderDetailProduct';
-import { OrderDetailDirectShipping } from '../components/orders/detail/OrderDetailDirectShipping';
 import { OrderDeliveryJourney } from '../components/orders/detail/OrderDeliveryJourney';
 import { OrderDetailCertificate } from '../components/orders/detail/OrderDetailCertificate';
 import { OrderDetailPhotos } from '../components/orders/detail/OrderDetailPhotos';
@@ -63,6 +69,7 @@ import { getAtHomeDeliveryStage } from '../utils/orders/orderReceipt';
 import { readOrderAppointment } from '../utils/orders/orderAppointments';
 import { getCommissionPayout, getInspectionPayoutPreview, getOrderFinanceLookup, getSettlementPayout, type SellerPayoutData } from '../utils/orders/orderFinance';
 import { isOrderWithInspection } from '../utils/orders/orderReceipt';
+import { upsertShipment } from '../utils/lalamoveTracking';
 
 export { getOrderAllShipments } from '../utils/orders/shipmentCache';
 interface EscrowOrdersViewProps {
@@ -145,7 +152,8 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     if (activeUserName && ordBuyerName && ordBuyerName === activeUserName) return false;
     if (activeEmail && ordBuyerEmail && ordBuyerEmail === activeEmail) return false;
 
-    if (userRole === 'seller' && (!ord.buyerId || String(ord.buyerId) !== String(currentUser?.id))) {
+    const hasExplicitSeller = Boolean(ord.sellerId || ord.listing?.sellerId || (ord.listing as any)?.userId);
+    if (!hasExplicitSeller && userRole === 'seller' && (!ord.buyerId || String(ord.buyerId) !== String(currentUser?.id))) {
       return true;
     }
 
@@ -241,8 +249,8 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
           location: 'Hà Nội',
           sellerId: finalOrd.sellerId || '',
           sellerName: finalOrd.sellerName || 'Người bán SecondLife',
-          sellerRating: 5.0,
-          sellerCompletedOrders: 3,
+          sellerRating: Number((finalOrd as any).sellerRating ?? 0),
+          sellerCompletedOrders: Number((finalOrd as any).sellerCompletedOrders ?? 0),
           sellerVerified: true,
           status: 'reserved',
           createdAt: finalOrd.createdAt,
@@ -289,7 +297,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         ((ord.listing as any)?.user?.id && String((ord.listing as any).user.id) === String(currentUser.id)) ||
         (activeUserName && ordSellerName === activeUserName) ||
         (activeEmail && ordSellerEmail && ordSellerEmail === activeEmail) ||
-        (userRole === 'seller' && !isBuyer);
+        (userRole === 'seller' && !isBuyer && !ord.sellerId && !ord.listing?.sellerId);
       return isBuyer || isSeller;
     });
   }, [resolvedOrders, currentUser, userRole]);
@@ -310,6 +318,22 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   } = useEscrowOrdersNavigation({
     filterQuery, currentRole: currentUser?.role, userRole, orders, routeOrder, isLoading,
   });
+  const isPreListingTab = activeTab === 'pre_listing';
+  const preListingRows = isPreListingTab
+    ? (filterResult?.items ?? []).flatMap((row) => {
+      const inspection = getPreListingInspection(row);
+      return inspection ? [{ inspection, imageUrl: row.postImageUrl }] : [];
+    })
+    : [];
+  const preListingDetail = userRole === 'seller' ? getPreListingInspection(filterResult?.detail) : null;
+  const preListingDetailId = preListingDetail?.id;
+
+  useEffect(() => {
+    if (activeTab === 'pre_listing' || filterQuery.filter === 'pre_listing' || preListingDetailId) {
+      navigatePath(pathForTab('seller-dashboard', 'seller') + '?tab=high_value_inspections', { replace: true });
+    }
+  }, [activeTab, filterQuery.filter, preListingDetailId]);
+
   const findOrderForAction = (id: string) =>
     orders.find((order) => order.id === id) ??
     (detailModalOrder?.id === id ? detailModalOrder : userOrders.find((order) => order.id === id));
@@ -415,11 +439,26 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         setApptTick((t) => t + 1);
         onRefreshOrders?.();
       }
-      if (e?.key?.startsWith('order_appointment_') || e?.key?.startsWith('recent_placed_orders')) {
+      if (
+        e?.key?.startsWith('order_appointment_') ||
+        e?.key?.startsWith('recent_placed_orders')
+      ) {
+        setApptTick((t) => t + 1);
+        onRefreshOrders?.();
+        onRefreshFilter?.();
+      } else if (
+        e?.key?.startsWith('sl_order_shipments_') ||
+        e?.key?.startsWith('order_shipments_') ||
+        !e?.key
+      ) {
         setApptTick((t) => t + 1);
       }
     };
+    const handleShipmentSignal = () => {
+      setApptTick((t) => t + 1);
+    };
     window.addEventListener('secondlife_inspector_arrived', handler);
+    window.addEventListener('secondlife_shipment_updated', handleShipmentSignal);
     window.addEventListener('storage', handler);
 
     const handleApptSignal = (e?: any) => {
@@ -483,6 +522,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
 
     return () => {
       window.removeEventListener('secondlife_inspector_arrived', handler);
+      window.removeEventListener('secondlife_shipment_updated', handleShipmentSignal);
       window.removeEventListener('storage', handler);
       window.removeEventListener('secondlife_appointment_rejected', handleApptSignal);
       window.removeEventListener('secondlife_order_assigned_signal', handleApptSignal);
@@ -614,25 +654,36 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   }, [financeOrderId, financeResource, financeRowId]);
 
   // Each order has its own commission snapshot; one order's rate cannot be applied to another.
-  const sellerFinanceRequests = JSON.stringify(orders.flatMap((order) => {
-    if (!isOrderSeller(order)) return [];
-    const lookup = getOrderFinanceLookup(order);
-    return lookup ? [{ rowId: order.id, ...lookup }] : [];
-  }));
+  const sellerFinanceRequests = React.useMemo(() => {
+    return userOrders.flatMap((order) => {
+      if (!isOrderSeller(order)) return [];
+      const lookup = getOrderFinanceLookup(order);
+      return lookup ? [{ rowId: order.id, ...lookup }] : [];
+    });
+  }, [userOrders, currentUser?.id]);
+
+  const sellerFinanceRequestsKey = JSON.stringify(sellerFinanceRequests);
+
   React.useEffect(() => {
     let active = true;
-    const requests: Array<{ rowId: string; orderId: string; resource: 'settlement' | 'commission' }> = JSON.parse(sellerFinanceRequests);
-    setPayoutDataMap({});
+    const requests: Array<{ rowId: string; orderId: string; resource: 'settlement' | 'commission' }> = JSON.parse(sellerFinanceRequestsKey);
     for (const target of requests) {
       const load = target.resource === 'settlement'
         ? orderService.getOrderSettlement(target.orderId).then(getSettlementPayout)
         : orderService.getOrderCommission(target.orderId).then(getCommissionPayout);
       void load.then((payout) => {
-        if (active && payout) setPayoutDataMap((previous) => ({ ...previous, [target.rowId]: payout }));
-      }).catch(() => {});
+        if (active && payout) {
+          setPayoutDataMap((previous) => {
+            if (previous[target.rowId]?.sellerPayout === payout.sellerPayout && previous[target.rowId]?.source === payout.source) {
+              return previous;
+            }
+            return { ...previous, [target.rowId]: payout };
+          });
+        }
+      }).catch(() => { });
     }
     return () => { active = false; };
-  }, [sellerFinanceRequests, currentUser?.id]);
+  }, [sellerFinanceRequestsKey, currentUser?.id]);
 
   // Real Backend Shipments for Detail Modal
   const detailOrderId = detailModalOrder?.id;
@@ -643,33 +694,51 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     detailModalOrder?.inspectionCenterId ||
     (detailModalOrder && detailModalOrder.inspectionFeeVnd > 0)
   );
+  const sellerPostId = detailModalOrder && currentUser?.id && detailModalOrder.sellerId === currentUser.id &&
+    !isOrderWithInspection(detailModalOrder) ? detailModalOrder.listingId : undefined;
   const {
     detailShipments, setDetailShipments, isLoadingDetailShipments,
     detailInspectionDto, setDetailInspectionDto,
     expandedDetailLeg1, setExpandedDetailLeg1, expandedDetailLeg2, setExpandedDetailLeg2,
-  } = useOrderDetailData(detailOrderId, detailIsInspection, setApptTick, detailLinkedOrderId);
+    sellerPostPhotos,
+  } = useOrderDetailData(detailOrderId, detailIsInspection, setApptTick, detailLinkedOrderId, sellerPostId);
   const [trackingShipmentId, setTrackingShipmentId] = useState<string | undefined>(undefined);
 
   // Lalamove Shipping Modals state
   const [trackingSelection, setTrackingOrder] = useState<EscrowOrder | null>(null);
-  const trackingOrder = orders.find((order) => order.id === trackingSelection?.id) ?? trackingSelection;
+  const activeDisputeIds = useActiveOrderDisputes(currentUser?.id, orders, routeOrder);
+  const hasActiveDispute = (order: EscrowOrder) =>
+    order.hasActiveDispute || (order.backendEscrowStatus === 'FROZEN' && activeDisputeIds.has(order.id));
+  const liveTrackingOrder = orders.find((order) => order.id === trackingSelection?.id) ??
+    (routeOrder?.id === trackingSelection?.id ? routeOrder : trackingSelection);
+  const trackingOrder = liveTrackingOrder && hasActiveDispute(liveTrackingOrder)
+    ? { ...liveTrackingOrder, hasActiveDispute: true } : liveTrackingOrder;
   const detailBuyerInspectionStage = detailModalOrder && !isOrderSeller(detailModalOrder)
     ? getBuyerInspectionStage(detailModalOrder)
     : null;
   const [createShipmentOrder, setCreateShipmentOrder] = useState<EscrowOrder | null>(null);
-  const { getOrderInboundShipment, saveSellerInboundShipment, inboundLoadingOrders, sellerInboundShipments } = useOrderInboundShipments({
+  const { getOrderInboundShipment, saveSellerInboundShipment, inboundLoadingOrders, sellerInboundShipments, sellerReturnShipments, directShipments, saveDirectShipment, deliveryCacheVersion: _deliveryCacheVersion } = useOrderInboundShipments({
     userId: currentUser?.id,
-    userOrders,
+    userOrders: orders,
     trackingOrderId: trackingOrder?.id,
     createShipmentOrderId: createShipmentOrder?.id,
     detailOrderId,
     detailShipments,
   });
+  const applyDirectShipment = (orderId: string, shipment: ShipmentBackend) => {
+    saveDirectShipment(orderId, shipment);
+    if (detailModalOrder?.id === orderId) setDetailShipments((previous) => upsertShipment(previous, shipment));
+  };
   const detailInboundShipment = detailModalOrder?.inspectionMethod === 'AT_CENTER'
     ? getOrderInboundShipment(detailModalOrder)
     : null;
   const detailInboundProgress = detailInboundShipment ? getInboundShipmentProgress(detailInboundShipment, lang) : null;
   const detailHasInboundTracking = Boolean(detailModalOrder && detailInboundProgress && isHubInboundInProgress(detailModalOrder));
+  const detailHasHubBuyerShipment = Boolean(detailModalOrder && (
+    detailShipments.length > 0
+      ? detailShipments
+      : getOrderAllShipments(detailModalOrder.id, detailModalOrder.linkedOrderId)
+  ).some((shipment) => shipment.leg === 'CENTER_TO_BUYER' && shipment.status !== 'CANCELLED' && shipment.orderCode?.trim()));
   const getSellerInboundLabel = (order: EscrowOrder) => {
     if (order.inspectionMethod !== 'AT_CENTER') return null;
     const shipment = getOrderInboundShipment(order);
@@ -828,7 +897,8 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         return false;
       }
     }
-    if (ord.sellerConfirmedAt || ord.confirmationStatus === 'CONFIRMED') return true;
+    if (ord.sellerConfirmedAt || ord.confirmationStatus === 'CONFIRMED' ||
+        (!hasInsp && (ord.backendStatus === 'CONFIRMED' || ord.status === 'CONFIRMED'))) return true;
     if (hasInsp) {
       const rawStatus = String(
         (ord as any).backendStatus ||
@@ -929,6 +999,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
 
   const isShipmentCreatedForOrder = (ord: EscrowOrder | null | undefined): boolean => {
     if (!ord?.id) return false;
+    if (!isOrderSellerConfirmed(ord)) return false;
 
     // Đơn hàng kiểm định đang ở giai đoạn chờ phê duyệt hoặc chờ hai bên nộp phí thì chưa thể có vận đơn đóng gói
     const rawInspStatus = String(
@@ -960,9 +1031,16 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     ) return true;
     if (ord.shippingLegs?.some((leg) => leg.status === 'IN_TRANSIT' || leg.status === 'COMPLETED' || Boolean((leg as any).trackingCode))) return true;
     const linkedId = (ord as any).linkedOrderId || (ord as any).inspectionOrderId;
+    const isCancelledShipment = (s: any) => {
+      const st = String(s?.status || '').toUpperCase();
+      const pst = String(s?.providerStatus || '').toUpperCase();
+      return ['CANCELLED', 'CANCELED', 'FAILED', 'REJECTED', 'EXPIRED'].includes(st) ||
+        ['CANCELLED', 'CANCELED', 'FAILED', 'REJECTED', 'EXPIRED'].includes(pst);
+    };
+
     if (
       (detailModalOrder?.id === ord.id || (linkedId && detailModalOrder?.id === linkedId) || (detailModalOrder?.linkedOrderId && detailModalOrder.linkedOrderId === ord.id)) &&
-      detailShipments.some((s) => s.status !== 'CANCELLED')
+      detailShipments.some((s) => !isCancelledShipment(s))
     ) {
       return true;
     }
@@ -970,11 +1048,19 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       if (typeof window !== 'undefined') {
         const ids = [ord.id, linkedId].filter(Boolean) as string[];
         for (const id of ids) {
-          if (localStorage.getItem(`order_shipment_created_${id}`) === 'true') return true;
           if (localStorage.getItem(`order_packed_${id}`) === 'true') return true;
-          if (localStorage.getItem(`order_shipments_${id}`)) return true;
-          if (localStorage.getItem(`sl_order_shipments_${id}`)) return true;
-          if (localStorage.getItem(`sl_insp_shipments_${id}`)) return true;
+          for (const prefix of ['sl_order_shipments_', 'order_shipments_', 'sl_insp_shipments_']) {
+            const raw = localStorage.getItem(`${prefix}${id}`);
+            if (raw) {
+              try {
+                const list = JSON.parse(raw);
+                if (Array.isArray(list) && list.some((s: any) => s && !isCancelledShipment(s))) {
+                  return true;
+                }
+              } catch { }
+            }
+          }
+          if (localStorage.getItem(`order_shipment_created_${id}`) === 'true') return true;
         }
       }
     } catch { }
@@ -1060,6 +1146,13 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   const { bankPaymentOrder, setBankPaymentOrder, bankPaymentInfo, setBankPaymentInfo, loadingBankPaymentId, handleOpenBankPaymentModal } = useOrderBankPayment();
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
   const [orderActionLoading, setOrderActionLoading] = useState<string | null>(null);
+  const [returnShipmentOrder, setReturnShipmentOrder] = useState<EscrowOrder | null>(null);
+
+  const promptOrderReturn = (order: EscrowOrder) => {
+    const approval = order.orderReturn;
+    if (!approval || !canCreateApprovedOrderReturn(order, currentUser?.id)) return;
+    setReturnShipmentOrder(order);
+  };
 
   const { handleAcceptFailedInspection, handleRespondInspection, handlePayInspectionFee, handleConfirmInspectionPurchase } = createInspectionOrderActions({
     lang, detailModalOrder, setDetailModalOrder, onRefreshOrders, setInspectionActionNotice, setOrderActionLoading,
@@ -1159,6 +1252,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   });
   const {
     reviewModalOrder, setReviewModalOrder, sellerReviewsModalData, setSellerReviewsModalData, reviewedOrderIds, handleReviewSubmit,
+    existingReview, isLoadingReview, handleReviewDelete,
   } = useOrderReviews();
   const [pickupConfirmedNotice, _setPickupConfirmedNotice] = useState<string | null>(null);
   const setPickupConfirmedNotice = (msg: string | null) => {
@@ -1171,12 +1265,63 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     setTimeout(() => setPickupConfirmedNotice(null), 5000);
   };
 
-  // Seller metrics
+  // Seller metrics: Tiền Chờ Giải Ngân (Escrow)
+  const isOrderPendingEscrow = React.useCallback((ord: EscrowOrder): boolean => {
+    if (!isOrderSeller(ord)) return false;
+
+    // Đơn hủy hoặc đã hoàn trả tiền về buyer -> Không còn tiền chờ giải ngân
+    if (isOrderCancelledOrRefunded(ord)) return false;
+    const status = String(ord.status || (ord as any).backendStatus || '').toUpperCase();
+    if (status === 'CANCELLED' || status === 'REFUNDED') return false;
+
+    const escrow = String(ord.escrowStatus || ord.backendEscrowStatus || '').toUpperCase();
+    if (escrow === 'REFUNDED_TO_BUYER' || escrow === 'REFUNDED') return false;
+
+    // Đơn đã giải ngân hoàn tất về ví người bán
+    if (escrow === 'COMPLETED_RELEASED' || escrow === 'RELEASED' || status === 'COMPLETED') {
+      return false;
+    }
+
+    // Đơn chưa thanh toán (chưa có tiền nộp vào Escrow)
+    if (escrow === 'AWAITING_PAYMENT' || escrow === 'PENDING') {
+      if (!ord.buyerPaidAt && !ord.finalPaymentPaidAt) {
+        return false;
+      }
+    }
+
+    return true;
+  }, [currentUser?.id]);
+
+  const getPendingOrderPayout = React.useCallback((ord: EscrowOrder): number => {
+    // 1. Dữ liệu đối soát thật từ API getOrderCommission / getOrderSettlement
+    const apiPayout = payoutDataMap[ord.id] || (ord.linkedOrderId ? payoutDataMap[ord.linkedOrderId] : undefined);
+    if (apiPayout?.sellerPayout != null && Number.isFinite(apiPayout.sellerPayout)) {
+      return apiPayout.sellerPayout;
+    }
+
+    // 2. Dữ liệu preview đối soát trả về từ API /orders/feed
+    if (ord.sellerCommissionPreview?.sellerPayout != null && Number.isFinite(ord.sellerCommissionPreview.sellerPayout)) {
+      return ord.sellerCommissionPreview.sellerPayout;
+    }
+
+    const preview = getInspectionPayoutPreview(ord);
+    if (preview?.sellerPayout != null && Number.isFinite(preview.sellerPayout)) {
+      return preview.sellerPayout;
+    }
+
+    // 3. Fallback từ giá trị sản phẩm trừ phí sàn
+    const price = Number(ord.itemPriceVnd || (ord as any).finalPrice || ord.listing?.priceVnd || (ord.listing as any)?.price || 0);
+    if (price > 0) {
+      const fee = Number(ord.platformFeeVnd ?? (price * 0.05));
+      return Math.max(0, price - fee);
+    }
+    return 0;
+  }, [payoutDataMap]);
+
   const pendingEscrowTotal = useMemo(() => {
-    const pending = userOrders.filter((o) => isOrderSeller(o) && o.escrowStatus !== 'COMPLETED_RELEASED' && o.escrowStatus !== 'REFUNDED_TO_BUYER');
-    if (pending.some((o) => payoutDataMap[o.id] === undefined)) return null;
-    return pending.reduce((sum, o) => sum + payoutDataMap[o.id].sellerPayout, 0);
-  }, [userOrders, payoutDataMap, orderPerspective, currentUser?.id]);
+    const pendingOrders = userOrders.filter(isOrderPendingEscrow);
+    return pendingOrders.reduce((sum, o) => sum + getPendingOrderPayout(o), 0);
+  }, [userOrders, isOrderPendingEscrow, getPendingOrderPayout]);
 
   const awaitingPickupCount = userOrders.filter((o) => o.escrowStatus === 'AWAITING_PAYMENT').length;
   const inHubInspectionCount = userOrders.filter(
@@ -1289,7 +1434,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                   {lang === 'vi' ? 'Tiền Chờ Giải Ngân (Escrow)' : 'Pending Escrow Payout'}
                 </div>
                 <div className="text-lg sm:text-xl font-black text-[#24263e] mt-0.5">
-                  {pendingEscrowTotal === null ? (lang === 'vi' ? 'Chưa có dữ liệu' : 'Unavailable') : formatVND(pendingEscrowTotal)}
+                  {formatVND(pendingEscrowTotal || 0)}
                 </div>
                 <div className="text-[10px] text-slate-400 mt-0.5">
                   {lang === 'vi' ? 'Tự động giải ngân sau giao' : 'Auto-released after delivery'}
@@ -1316,7 +1461,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                   {inHubInspectionCount} {lang === 'vi' ? 'Thiết Bị' : 'Items'}
                 </div>
                 <div className="text-[10px] text-slate-400 mt-0.5">
-                  {lang === 'vi' ? 'Test 48 bước & dán NFC' : '48-step test & NFC seal'}
+                  {lang === 'vi' ? 'Kiểm tra sản phẩm' : 'Test products'}
                 </div>
               </div>
 
@@ -1373,6 +1518,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         search={searchQuery}
         searching={searching}
         seller={isSeller}
+        showPreListing={false}
         loading={isLoading}
         onFilter={setActiveTab}
         onSearch={setSearchQuery}
@@ -1380,7 +1526,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       />
 
       {/* Seller Awaiting Fee Payment Banner */}
-      {isSeller && userOrders.some((o) => !isOrderCancelledOrRefunded(o) && isOrderSeller(o) && isPartyInspectionFeePending(o, true)) && (
+      {!isPreListingTab && isSeller && userOrders.some((o) => !isOrderCancelledOrRefunded(o) && isOrderSeller(o) && isPartyInspectionFeePending(o, true)) && (
         <div className="p-4 rounded-2xl bg-gradient-to-r from-orange-50 via-amber-50 to-orange-100/70 border-2 border-orange-300 text-orange-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md animate-fadeIn">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-amber-600 text-white flex items-center justify-center font-bold shrink-0 shadow-xs">
@@ -1411,7 +1557,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       )}
 
       {/* Seller Inspection Alert Banner */}
-      {isSeller && inHubInspectionCount > 0 && activeTab !== 'inspecting' && (
+      {!isPreListingTab && isSeller && inHubInspectionCount > 0 && activeTab !== 'inspecting' && (
         <div className="p-4 rounded-2xl bg-gradient-to-r from-purple-50 via-indigo-50 to-blue-50 border border-purple-200 text-purple-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs animate-fadeIn">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center font-bold shrink-0 shadow-xs">
@@ -1502,16 +1648,30 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
             </div>
           ))}
         </div>
-      ) : filterFailed && !filterResult ? null : orders.length === 0 ? (
+      ) : filterFailed && !filterResult ? null : isPreListingTab && preListingRows.length > 0 ? (
+        <div className="space-y-4" aria-busy={isLoading}>
+          {preListingRows.map(({ inspection, imageUrl }) => (
+            <PreListingInspectionOrderCard
+              key={inspection.id}
+              inspection={inspection}
+              imageUrl={imageUrl}
+              lang={lang}
+              onOpen={() => navigatePath(paths.orders('seller', inspection.id) + window.location.search)}
+            />
+          ))}
+        </div>
+      ) : orders.length === 0 ? (
         <div className="rounded-2xl border border-slate-200 bg-white px-6 py-12 text-center shadow-xs">
           <Package aria-hidden="true" className="mx-auto mb-3 size-10 text-slate-400" />
           <h3 className="text-base font-bold text-slate-900">
-            {lang === 'vi' ? 'Không tìm thấy đơn hàng' : 'No orders found'}
+            {isPreListingTab
+              ? (lang === 'vi' ? 'Không tìm thấy yêu cầu kiểm định trước đăng' : 'No pre-listing inspection requests found')
+              : (lang === 'vi' ? 'Không tìm thấy đơn hàng' : 'No orders found')}
           </h3>
-          {(filterQuery.q || activeTab !== 'all' || orderPerspective !== 'all') && (
+          {(filterQuery.q || (!isPreListingTab && activeTab !== 'all') || orderPerspective !== 'all') && (
             <button type="button" onClick={() => {
               setSearchQuery('');
-              updateQuery({ filter: 'all', perspective: 'all', q: '', page: 0 });
+              updateQuery({ filter: isPreListingTab ? 'pre_listing' : 'all', perspective: 'all', q: '', page: 0 });
             }} className="mt-3 cursor-pointer text-sm font-semibold text-[#ad432f] hover:underline">
               {lang === 'vi' ? 'Xóa bộ lọc' : 'Clear filters'}
             </button>
@@ -1521,6 +1681,26 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         <div className="space-y-4" aria-busy={isLoading}>
           {orders.map((ord) => {
             const orderIsSeller = isOrderSeller(ord);
+            const returnShipment = orderIsSeller ? sellerReturnShipments.get(ord.id) : undefined;
+            const effectiveReturnShipment = returnShipment || (ord as any).returnShipment;
+            const currentReturn = ord.orderReturn && Boolean(ord.orderReturn.reportId || ord.escrowStatus === 'DISPUTED' || ord.backendEscrowStatus === 'FROZEN')
+              ? ord.orderReturn
+              : undefined;
+            const orderShipments = directShipments.get(ord.id) ?? ((ord as any).shipments?.length
+              ? (ord as any).shipments
+              : (ord?.id ? getOrderAllShipments(ord.id, (ord as any).linkedOrderId) : []));
+            const cardOrder = {
+              ...ord,
+              hasActiveDispute: hasActiveDispute(ord),
+              shipments: orderShipments,
+              returnShipment: effectiveReturnShipment,
+              orderReturn: currentReturn ? {
+                ...currentReturn,
+                shipmentId: effectiveReturnShipment?.shipmentId || currentReturn.shipmentId,
+                shipmentStatus: effectiveReturnShipment?.status || currentReturn.shipmentStatus,
+                orderCode: effectiveReturnShipment?.orderCode ?? currentReturn.orderCode,
+              } : undefined,
+            };
             const payoutData = getOrderFinanceLookup(ord)
               ? payoutDataMap[ord.id]
               : getInspectionPayoutPreview(ord);
@@ -1545,13 +1725,18 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
               <OrderCard
                 key={ord.id}
                 payoutData={payoutData}
-                order={ord}
+                order={cardOrder}
                 orderIsSeller={orderIsSeller}
                 hasInspection={hasInspection}
                 lang={lang}
                 savedAppointment={savedAppointment}
                 ordShipment={ordShipment}
                 buyerInspectionStage={buyerInspectionStage}
+                onBookOrderReturn={canCreateApprovedOrderReturn(ord, currentUser?.id) ? () => promptOrderReturn(ord) : undefined}
+                onTrackReturnShipment={() => {
+                  setTrackingOrder(cardOrder);
+                  setTrackingShipmentId(cardOrder.orderReturn?.shipmentId || effectiveReturnShipment?.shipmentId || undefined);
+                }}
                 state={{
                   getStatusBadge,
                   isOrderReceiptConfirmed,
@@ -1619,154 +1804,170 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       {!searching && filterResult && filterResult.totalPages > 1 && (
         <EscrowOrderPagination lang={lang} page={filterResult.page} size={filterResult.size}
           totalPages={filterResult.totalPages} total={filterResult.totalElements}
+          preListing={isPreListingTab}
           onPage={(page) => updateQuery({ page })}
         />
       )}
 
-      {detailModalOrder && (
-        <OrderDetailModal
-          onClose={() => setDetailModalOrder(null)}
-          header={
-            <OrderDetailHeader
+      {isPreListingTab && preListingDetail && (
+        <div role="dialog" aria-modal="true"
+          aria-label={lang === 'vi' ? 'Kiểm định trước đăng' : 'Pre-listing inspection'}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-3 sm:p-4 backdrop-blur-xs animate-fadeIn">
+          <div className="w-full max-w-2xl max-h-[90vh] flex flex-col">
+            <PreListingInspectionWorkflow
+              key={preListingDetail.id}
+              postId={preListingDetail.postId}
+              postTitle={preListingDetail.postTitle}
+              postPrice={preListingDetail.postPrice}
+              initialInspectionOrderId={preListingDetail.id}
+              onClose={() => navigatePath(paths.orders('seller') + window.location.search)}
               lang={lang}
-              order={detailModalOrder}
-              getStatusBadge={getStatusBadge}
-              isOrderReceiptConfirmed={isOrderReceiptConfirmed}
-              detailHasInspection={detailHasInspection}
-              isOrderSeller={isOrderSeller}
-              setDetailModalOrder={setDetailModalOrder}
             />
-          }
-          actions={
-            <OrderDetailActions
-              order={detailModalOrder}
+          </div>
+        </div>
+      )}
+
+      {detailModalOrder && (() => {
+        const effectiveShipments = detailShipments.length > 0
+          ? detailShipments
+          : (directShipments.get(detailModalOrder.id) ?? detailModalOrder.shipments ?? getOrderAllShipments(detailModalOrder.id, detailModalOrder.linkedOrderId));
+        const effectiveDetailOrder = {
+          ...detailModalOrder,
+          hasActiveDispute: hasActiveDispute(detailModalOrder),
+          shipments: effectiveShipments,
+        };
+        return (
+          <OrderDetailModal
+            onClose={() => setDetailModalOrder(null)}
+            header={
+              <OrderDetailHeader
+                lang={lang}
+                order={effectiveDetailOrder}
+                getStatusBadge={getStatusBadge}
+                isOrderReceiptConfirmed={isOrderReceiptConfirmed}
+                detailHasInspection={detailHasInspection}
+                isOrderSeller={isOrderSeller}
+                setDetailModalOrder={setDetailModalOrder}
+              />
+            }
+            actions={
+              <OrderDetailActions
+                order={effectiveDetailOrder}
+                isOrderCancelledOrRefunded={isOrderCancelledOrRefunded}
+                isOrderSeller={isOrderSeller}
+                detailHasInspection={detailHasInspection}
+                isOrderReceiptConfirmed={isOrderReceiptConfirmed}
+                renderInspectionDecision={renderInspectionDecision}
+                setDetailModalOrder={setDetailModalOrder}
+                lang={lang}
+                setTrackingOrder={setTrackingOrder}
+                isOrderSellerConfirmed={isOrderSellerConfirmed}
+                getOrderAppointment={getOrderAppointment}
+                handleSellerAcceptCounterAppointment={handleSellerAcceptCounterAppointment}
+                orderActionLoading={orderActionLoading}
+                setSchedulingOrder={setSchedulingOrder}
+                setSchedulingReadOnly={setSchedulingReadOnly}
+                handleSellerConfirmOrder={handleSellerConfirmOrder}
+                handlePromptRejectInspection={handlePromptRejectInspection}
+                onCancelOrder={onCancelOrder}
+                handlePromptCancelOrder={handlePromptCancelOrder}
+                isPartyInspectionFeePending={isPartyInspectionFeePending}
+                getPartyInspectionFee={getPartyInspectionFee}
+                isPartyInspectionFeePaid={isPartyInspectionFeePaid}
+                onRefreshOrders={onRefreshOrders}
+                handlePayInspectionFee={handlePayInspectionFee}
+                detailInboundLabel={detailInboundLabel}
+                isOrderPacked={isOrderPacked}
+                setCreateShipmentOrder={setCreateShipmentOrder}
+                isInspectorArrivedForOrder={isInspectorArrivedForOrder}
+                handlePromptCancelInspectionRequest={handlePromptCancelInspectionRequest}
+                isShipmentCreatedForOrder={isShipmentCreatedForOrder}
+                detailHasInboundTracking={detailHasInboundTracking}
+                detailHasHubBuyerShipment={detailHasHubBuyerShipment}
+                detailInboundProgress={detailInboundProgress}
+                detailBuyerInspectionStage={detailBuyerInspectionStage}
+                confirmingReceiptIds={confirmingReceiptIds}
+                setConfirmDialog={setConfirmDialog}
+                setConfirmingReceiptIds={setConfirmingReceiptIds}
+                onConfirmReceipt={onConfirmReceipt}
+                onOpenDispute={onOpenDispute}
+                setReportingOrder={setReportingOrder}
+              />
+            }
+          >
+            <OrderDetailProduct
+              isOrderCancelledOrRefunded={isOrderCancelledOrRefunded}
+              order={effectiveDetailOrder}
+              lang={lang}
+              detailHasInspection={detailHasInspection}
+            />
+
+            <OrderDeliveryJourney
+              order={effectiveDetailOrder}
+              detailShipments={effectiveShipments}
+              isOrderSellerConfirmed={isOrderSellerConfirmed}
+              lang={lang}
               isOrderCancelledOrRefunded={isOrderCancelledOrRefunded}
               isOrderSeller={isOrderSeller}
-              detailHasInspection={detailHasInspection}
-              isOrderReceiptConfirmed={isOrderReceiptConfirmed}
-              renderInspectionDecision={renderInspectionDecision}
-              setDetailModalOrder={setDetailModalOrder}
-              lang={lang}
-              setTrackingOrder={setTrackingOrder}
-              isOrderSellerConfirmed={isOrderSellerConfirmed}
+              setInspectionActionNotice={setInspectionActionNotice}
+              setCreateShipmentOrder={setCreateShipmentOrder}
+              detailInboundShipment={detailInboundShipment}
+              getOrderInboundShipment={getOrderInboundShipment}
+              detailInspectionDto={detailInspectionDto}
               getOrderAppointment={getOrderAppointment}
+              isInspectorArrivedForOrder={isInspectorArrivedForOrder}
               handleSellerAcceptCounterAppointment={handleSellerAcceptCounterAppointment}
-              orderActionLoading={orderActionLoading}
               setSchedulingOrder={setSchedulingOrder}
               setSchedulingReadOnly={setSchedulingReadOnly}
-              handleSellerConfirmOrder={handleSellerConfirmOrder}
-              handlePromptRejectInspection={handlePromptRejectInspection}
-              onCancelOrder={onCancelOrder}
-              handlePromptCancelOrder={handlePromptCancelOrder}
-              isPartyInspectionFeePending={isPartyInspectionFeePending}
-              getPartyInspectionFee={getPartyInspectionFee}
-              isPartyInspectionFeePaid={isPartyInspectionFeePaid}
-              onRefreshOrders={onRefreshOrders}
-              handlePayInspectionFee={handlePayInspectionFee}
               detailInboundLabel={detailInboundLabel}
-              isOrderPacked={isOrderPacked}
-              setCreateShipmentOrder={setCreateShipmentOrder}
-              isInspectorArrivedForOrder={isInspectorArrivedForOrder}
-              handlePromptCancelInspectionRequest={handlePromptCancelInspectionRequest}
-              isShipmentCreatedForOrder={isShipmentCreatedForOrder}
-              detailHasInboundTracking={detailHasInboundTracking}
-              detailInboundProgress={detailInboundProgress}
-              detailBuyerInspectionStage={detailBuyerInspectionStage}
-              confirmingReceiptIds={confirmingReceiptIds}
-              setConfirmDialog={setConfirmDialog}
-              setConfirmingReceiptIds={setConfirmingReceiptIds}
-              onConfirmReceipt={onConfirmReceipt}
-              onOpenDispute={onOpenDispute}
-              setReportingOrder={setReportingOrder}
+              setTrackingShipmentId={setTrackingShipmentId}
+              setTrackingOrder={setTrackingOrder}
+              setExpandedDetailLeg1={setExpandedDetailLeg1}
+              expandedDetailLeg1={expandedDetailLeg1}
+              setExpandedDetailLeg2={setExpandedDetailLeg2}
+              expandedDetailLeg2={expandedDetailLeg2}
             />
-          }
-        >
-          <OrderDetailProduct
-            isOrderCancelledOrRefunded={isOrderCancelledOrRefunded}
-            order={detailModalOrder}
-            lang={lang}
-            detailHasInspection={detailHasInspection}
-          />
 
-          <OrderDetailDirectShipping
-            detailHasInspection={detailHasInspection}
-            order={detailModalOrder}
-            detailInboundShipment={detailInboundShipment}
-            lang={lang}
-            isOrderCancelledOrRefunded={isOrderCancelledOrRefunded}
-            isShipmentCreatedForOrder={isShipmentCreatedForOrder}
-            detailInboundProgress={detailInboundProgress}
-            setTrackingOrder={setTrackingOrder}
-            detailBuyerInspectionStage={detailBuyerInspectionStage}
-            isOrderSeller={isOrderSeller}
-            setInspectionActionNotice={setInspectionActionNotice}
-            setCreateShipmentOrder={setCreateShipmentOrder}
-            isOrderSellerConfirmed={isOrderSellerConfirmed}
-          />
-
-          <OrderDeliveryJourney
-            order={detailModalOrder}
-            detailShipments={detailShipments}
-            isOrderSellerConfirmed={isOrderSellerConfirmed}
-            lang={lang}
-            isOrderCancelledOrRefunded={isOrderCancelledOrRefunded}
-            isOrderSeller={isOrderSeller}
-            setInspectionActionNotice={setInspectionActionNotice}
-            setCreateShipmentOrder={setCreateShipmentOrder}
-            detailInboundShipment={detailInboundShipment}
-            getOrderInboundShipment={getOrderInboundShipment}
-            detailInspectionDto={detailInspectionDto}
-            getOrderAppointment={getOrderAppointment}
-            isInspectorArrivedForOrder={isInspectorArrivedForOrder}
-            handleSellerAcceptCounterAppointment={handleSellerAcceptCounterAppointment}
-            setSchedulingOrder={setSchedulingOrder}
-            setSchedulingReadOnly={setSchedulingReadOnly}
-            detailInboundLabel={detailInboundLabel}
-            setTrackingShipmentId={setTrackingShipmentId}
-            setTrackingOrder={setTrackingOrder}
-            setExpandedDetailLeg1={setExpandedDetailLeg1}
-            expandedDetailLeg1={expandedDetailLeg1}
-            setExpandedDetailLeg2={setExpandedDetailLeg2}
-            expandedDetailLeg2={expandedDetailLeg2}
-          />
-
-          <OrderDetailCertificate
-            order={detailModalOrder}
-            setVerifySealId={setVerifySealId}
-            setIsVerifySealModalOpen={setIsVerifySealModalOpen}
-            setPrintSealOrder={setPrintSealOrder}
-          />
-
-          <OrderDetailPhotos
-            order={detailModalOrder}
-            detailInspectionDto={detailInspectionDto}
-            activePhotoStage={activePhotoStage}
-            setActivePhotoStage={setActivePhotoStage}
-            lang={lang}
-          />
-
-          <OrderFeeBreakdown
-            order={detailModalOrder}
-            detailInspectionDto={detailInspectionDto}
-            getInspectionFeeSplit={getInspectionFeeSplit}
-            detailShipments={detailShipments}
-            lang={lang}
-          />
-
-          {financeResource && isOrderSeller(detailModalOrder) && (
-            <OrderSettlement
-              order={detailModalOrder}
-              detailBuyerInspectionStage={detailBuyerInspectionStage}
-              isOrderReceiptConfirmed={isOrderReceiptConfirmed}
-              orderSettlement={displayedFinancialData?.settlement ?? null}
-              isEscrowReleased={financeResource === 'settlement'}
-              isLoadingSettlement={!displayedFinancialData}
-              orderCommission={displayedFinancialData?.commission ?? null}
-              isSeller={isOrderSeller(detailModalOrder)}
+            <OrderDetailCertificate
+              order={effectiveDetailOrder}
+              setVerifySealId={setVerifySealId}
+              setIsVerifySealModalOpen={setIsVerifySealModalOpen}
+              setPrintSealOrder={setPrintSealOrder}
             />
-          )}
-        </OrderDetailModal>
-      )}
+
+            <OrderDetailPhotos
+              order={effectiveDetailOrder}
+              detailInspectionDto={detailInspectionDto}
+              sellerPostPhotos={sellerPostPhotos}
+              activePhotoStage={activePhotoStage}
+              setActivePhotoStage={setActivePhotoStage}
+              lang={lang}
+            />
+
+            <OrderFeeBreakdown
+              order={effectiveDetailOrder}
+              detailInspectionDto={detailInspectionDto}
+              getInspectionFeeSplit={getInspectionFeeSplit}
+              detailShipments={effectiveShipments}
+              lang={lang}
+            />
+
+            {financeResource && isOrderSeller(effectiveDetailOrder) && (
+              <OrderSettlement
+                order={effectiveDetailOrder}
+                lang={lang}
+                detailBuyerInspectionStage={detailBuyerInspectionStage}
+                isOrderReceiptConfirmed={isOrderReceiptConfirmed}
+                orderSettlement={displayedFinancialData?.settlement ?? null}
+                isEscrowReleased={financeResource === 'settlement'}
+                isLoadingSettlement={!displayedFinancialData}
+                orderCommission={displayedFinancialData?.commission ?? null}
+                isSeller={isOrderSeller(effectiveDetailOrder)}
+              />
+            )}
+          </OrderDetailModal>
+        );
+      })()}
 
       {/* Lalamove Order Tracking Modal */}
       {trackingOrder && (
@@ -1776,11 +1977,17 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
           onClose={() => {
             setTrackingOrder(null);
             setTrackingShipmentId(undefined);
+            onRefreshOrders?.();
+            onRefreshFilter?.();
           }}
           lang={lang}
           onConfirmReceipt={onConfirmReceipt}
           onOpenLabelModal={(shipment) => setActiveLabelShipment({ order: trackingOrder, shipment })}
-          onOrderUpdated={onRefreshOrders}
+          onOrderUpdated={() => {
+            onRefreshOrders?.();
+            onRefreshFilter?.();
+          }}
+          onDirectShipmentChanged={(shipment) => applyDirectShipment(trackingOrder.id, shipment)}
           onInboundShipmentLoaded={isOrderSeller(trackingOrder) ? saveSellerInboundShipment : undefined}
           initialShipmentId={trackingShipmentId}
         />
@@ -1796,7 +2003,11 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
             setCreateShipmentOrder(null);
             onRefreshOrders?.();
             setActiveLabelShipment({ order: createShipmentOrder, shipment });
-            setDetailShipments((prev) => [shipment, ...prev.filter((s) => s.shipmentId !== shipment.shipmentId)]);
+            if (isOrderWithInspection(createShipmentOrder)) {
+              setDetailShipments((prev) => [shipment, ...prev.filter((s) => s.shipmentId !== shipment.shipmentId)]);
+            } else {
+              applyDirectShipment(createShipmentOrder.id, shipment);
+            }
             try {
               if (createShipmentOrder?.id) {
                 const nowIso = new Date().toISOString();
@@ -1810,6 +2021,39 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                 orderService.markReadyForPickup(createShipmentOrder.id).catch(() => { });
               }
             } catch { }
+          }}
+        />
+      )}
+
+      {/* Lalamove Create Return Shipment Modal (Chặng hoàn hàng Người Mua -> Người Bán) */}
+      {returnShipmentOrder && (
+        <CreateReturnShipmentModal
+          order={returnShipmentOrder}
+          onClose={() => setReturnShipmentOrder(null)}
+          lang={lang}
+          onShipmentCreated={(shipment) => {
+            const approval = returnShipmentOrder.orderReturn;
+            if (approval) {
+              const progress = {
+                ...approval,
+                shipmentId: shipment.shipmentId,
+                shipmentStatus: shipment.status,
+                orderCode: shipment.orderCode,
+              };
+              setDetailModalOrder((previous) => (previous?.id === returnShipmentOrder.id ? { ...previous, orderReturn: progress } : previous));
+            }
+            try {
+              const cacheKey = `sl_order_shipments_${returnShipmentOrder.id}`;
+              const existingRaw = localStorage.getItem(cacheKey) || localStorage.getItem(`order_shipments_${returnShipmentOrder.id}`);
+              const existing = existingRaw ? JSON.parse(existingRaw) : [];
+              const updated = [shipment, ...(Array.isArray(existing) ? existing.filter((s: any) => s.shipmentId !== shipment.shipmentId) : [])];
+              localStorage.setItem(cacheKey, JSON.stringify(updated));
+              localStorage.setItem(`order_shipments_${returnShipmentOrder.id}`, JSON.stringify(updated));
+            } catch { }
+            setReturnShipmentOrder(null);
+            onRefreshOrders?.();
+            setDetailShipments((prev) => [shipment, ...prev.filter((s) => s.shipmentId !== shipment.shipmentId)]);
+            setActiveLabelShipment({ order: returnShipmentOrder, shipment });
           }}
         />
       )}
@@ -1831,6 +2075,9 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
           isOpen={!!reviewModalOrder}
           onClose={() => setReviewModalOrder(null)}
           onSubmitReview={handleReviewSubmit}
+          onDeleteReview={handleReviewDelete}
+          existingReview={existingReview}
+          isLoadingReview={isLoadingReview}
           lang={lang}
         />
       )}
@@ -1879,6 +2126,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
           readOnly={schedulingReadOnly}
           initialScheduledAt={getOrderAppointment(schedulingOrder)?.scheduledAt}
           initialNote={getOrderAppointment(schedulingOrder)?.note}
+          order={schedulingOrder}
         />
       )}
       {confirmDialog?.isOpen && (
@@ -1935,6 +2183,11 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                 : `Dispute filed successfully for order #${reportingOrder.id.slice(0, 8)}! Funds are frozen in Escrow.`
             );
             setTimeout(() => setInspectionActionNotice(null), 8000);
+            if (detailModalOrder && detailModalOrder.id === reportingOrder.id) {
+              setDetailModalOrder((previous) => previous?.id === reportingOrder.id
+                ? { ...previous, hasActiveDispute: true }
+                : previous);
+            }
             onRefreshOrders?.();
           }}
         />

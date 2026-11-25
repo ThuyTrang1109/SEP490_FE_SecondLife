@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowUpDown,
   ChevronDown,
@@ -26,9 +26,10 @@ import type {
 } from '../services/postService';
 import { ShowroomLobby3D } from '../components/3d/ShowroomLobby3D';
 import { ProductCard3D } from '../components/3d/ProductCard3D';
+import { getBoughtListingIds, isPostUnderInspectionOrReturning } from '../utils/orderUtils';
 
 interface MarketplaceViewProps {
-  mapListing: (post: MarketplacePost) => Listing;
+  mapListing: (post: MarketplacePost, alreadyAvailable?: boolean) => Listing;
   onSelectListing: (listing: Listing) => void;
   lang: Language;
   refreshVersion: number;
@@ -73,6 +74,19 @@ export function MarketplaceView({ mapListing, onSelectListing, lang, refreshVers
   const [result, setResult] = useState<MarketplaceSearchPage | null>(null);
   const [failed, setFailed] = useState(false);
   const [revision, setRevision] = useState(0);
+
+  const productCards = useMemo(() => {
+    if (!result) return [];
+    const boughtIds = getBoughtListingIds();
+    return result.content
+      .filter((post) => String(post.status || '').toUpperCase() === 'ACTIVE'
+        && !boughtIds.has(String(post.postId || post.id))
+        && !isPostUnderInspectionOrReturning(post))
+      .map((post) => ({
+        post,
+        listing: mapListing(post, true),
+      }));
+  }, [result, mapListing]);
 
   useEffect(() => {
     let active = true;
@@ -427,7 +441,7 @@ export function MarketplaceView({ mapListing, onSelectListing, lang, refreshVers
               className="sr-only"
             />
             <ShieldCheck className={`size-4 ${filters.inspected ? 'text-emerald-600' : 'text-slate-400'}`} />
-            <span>{vi ? 'Đã kiểm định tại Hub' : 'Hub Inspected Only'}</span>
+            <span>{vi ? 'Đã đạt kiểm định' : 'Passed Inspection'}</span>
             {filters.inspected && <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />}
           </label>
 
@@ -449,9 +463,11 @@ export function MarketplaceView({ mapListing, onSelectListing, lang, refreshVers
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-bold">{vi ? 'Danh sách sản phẩm' : 'Products'}</h2>
-            {result && <p aria-live="polite" className="text-xs text-slate-600">
-              {result.totalElements.toLocaleString(vi ? 'vi-VN' : 'en-US')} {vi ? 'sản phẩm' : 'products'}
-            </p>}
+            {result && (
+              <p aria-live="polite" className="text-xs text-slate-600">
+                {Math.max(0, result.totalElements - result.content.length + productCards.length).toLocaleString(vi ? 'vi-VN' : 'en-US')} {vi ? 'sản phẩm' : 'products'}
+              </p>
+            )}
           </div>
           <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold">
             <ArrowUpDown aria-hidden="true" className="size-3.5 text-slate-500" />
@@ -476,21 +492,29 @@ export function MarketplaceView({ mapListing, onSelectListing, lang, refreshVers
             {vi ? 'Thử lại' : 'Retry'}
           </button>
         </div>}
-        {result && result.content.length === 0 && <div className="space-y-2 rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm">
-          <p>{vi ? 'Không tìm thấy sản phẩm phù hợp.' : 'No matching products found.'}</p>
-          <button type="button" onClick={resetFilters} className="cursor-pointer font-semibold underline">
-            {vi ? 'Đặt lại bộ lọc' : 'Reset filters'}
-          </button>
-        </div>}
-        {result && result.content.length > 0 && (
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 sm:gap-4 2xl:grid-cols-5">
-            {result.content.map((post) => (
-              <ProductCard3D key={post.postId} item={{ ...mapListing(post), status: 'active', backendStatus: post.status }}
-                conditionLabel={conditionLabel(post.itemCondition)} sellerAddress={post.sellerAddress}
-                lang={lang} onSelectListing={onSelectListing} />
-            ))}
-          </div>
-        )}
+        {(() => {
+          if (!result) return null;
+          if (productCards.length === 0) {
+            return (
+              <div className="space-y-2 rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm">
+                <p>{vi ? 'Không tìm thấy sản phẩm phù hợp.' : 'No matching products found.'}</p>
+                <button type="button" onClick={resetFilters} className="cursor-pointer font-semibold underline">
+                  {vi ? 'Đặt lại bộ lọc' : 'Reset filters'}
+                </button>
+              </div>
+            );
+          }
+
+          return (
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 sm:gap-4 2xl:grid-cols-5">
+              {productCards.map(({ post, listing }) => (
+                <ProductCard3D key={post.postId} item={listing}
+                  conditionLabel={conditionLabel(post.itemCondition)} sellerAddress={post.sellerAddress}
+                  lang={lang} onSelectListing={onSelectListing} />
+              ))}
+            </div>
+          );
+        })()}
         {result && result.totalPages > 1 && (
           <nav aria-label={vi ? 'Phân trang sản phẩm' : 'Product pagination'} className="flex items-center justify-center gap-3 text-sm">
             <button type="button" aria-label={vi ? 'Trang trước' : 'Previous page'} disabled={result.number === 0}

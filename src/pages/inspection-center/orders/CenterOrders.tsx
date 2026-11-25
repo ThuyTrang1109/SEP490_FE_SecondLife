@@ -1,6 +1,5 @@
 import { ClipboardList, ChevronDown, Loader2, Eye, Truck, RotateCcw } from 'lucide-react';
 import React, { type ReactNode } from 'react';
-import { LalamoveProgress } from '../../../components/common/LalamoveProgress';
 import { CenterInspectionFees, CenterInspectionFeeStatus } from '../../../components/inspection/CenterInspectionFees';
 import { InspectionCashShipmentStatus } from '../../../components/inspection/InspectionCashShipmentStatus';
 import { InspectionOrderDto } from '../../../services';
@@ -8,15 +7,22 @@ import { UserProfile } from '../../../types';
 import {
   canBookCenterBuyerDelivery,
   canBookCenterReturn,
+  canBookHubBuyerDelivery,
   canReadCenterInspectionShipments,
   getHubBuyerShipmentLabel,
   getInboundShipmentProgress,
   isPaidHubBuyerDelivery,
+  isShipmentInterrupted,
   shouldTrackInboundShipment,
   getHubReturnProgress,
   isHubReturnCase,
 } from '../../../utils/inspectionCenterData';
 import { centerFeeFilters, type CenterFeeFilter } from '../../../utils/inspectionCenterFees';
+import {
+  isExpiredInspectionPurchase,
+  extractInspectionRejectionDetails,
+  getInspectionPurchaseDecision
+} from '../../../utils/inspectionPurchase';
 import { getInspectionTaskStage } from '../../../utils/inspectionTaskStatus';
 import { formatVND } from '../../../utils/translations';
 import type { useCenterInspectionCertificate } from './useCenterInspectionCertificate';
@@ -36,15 +42,11 @@ interface Props {
     | 'bookingReturnId'
     | 'buyerShipments'
     | 'deniedShipmentOrders'
-    | 'expandedBuyerOrderId'
-    | 'expandedInboundOrderId'
     | 'handleBookBuyerDelivery'
     | 'handleOpenShipmentModal'
     | 'hubReturns'
     | 'inboundShipments'
     | 'isOrderReceivedAtHub'
-    | 'setExpandedBuyerOrderId'
-    | 'setExpandedInboundOrderId'
     | 'setReturnQuoteOrder'
   >;
   orderHistory: Pick<ReturnType<typeof useCenterOrderHistory>,
@@ -71,15 +73,11 @@ export function CenterOrders({
     bookingReturnId,
     buyerShipments,
     deniedShipmentOrders,
-    expandedBuyerOrderId,
-    expandedInboundOrderId,
     handleBookBuyerDelivery,
     handleOpenShipmentModal,
     hubReturns,
     inboundShipments,
     isOrderReceivedAtHub,
-    setExpandedBuyerOrderId,
-    setExpandedInboundOrderId,
     setReturnQuoteOrder,
   } = shipments;
   const { expandedFeeOrderId, feeFilter, orderHistoryRows, setExpandedFeeOrderId, setFeeFilter } = orderHistory;
@@ -148,18 +146,12 @@ export function CenterOrders({
                 const paidHubDelivery = isPaidHubBuyerDelivery(ord);
                 const canBookBuyerDelivery = canBookCenterBuyerDelivery(ord, currentUser?.id, buyerShipment);
                 const hasCertificate = getInspectionTaskStage(ord.status) === 'completed';
-                const rawProgress = shipment ? getInboundShipmentProgress(shipment) : null;
-                // Xác định xem kiện hàng từ Seller về Hub đã hoàn thành giao hay chưa
-                const isInboundDelivered = Boolean(
-                  isAtCenter && (
-                    (shipment && (shipment.status === 'DELIVERED' || shipment.status === 'COMPLETED' || shipment.providerStatus === 'COMPLETED')) ||
-                    rawProgress?.step === 3 ||
-                    isOrderReceivedAtHub(ord)
-                  )
-                );
-                const progress = isInboundDelivered
-                  ? { step: 3, label: 'Đã nhận tại Hub' }
-                  : (rawProgress || null);
+                const inboundProgress = shipment ? getInboundShipmentProgress(shipment) : null;
+                const isInboundDelivered = isAtCenter && (inboundProgress
+                  ? inboundProgress.step === 3
+                  : isOrderReceivedAtHub(ord));
+                const inboundLabel = isInboundDelivered ? 'Đã nhận tại Hub' : inboundProgress?.label;
+                const inboundInterrupted = !isInboundDelivered && isShipmentInterrupted(shipment);
 
                 // Khi đơn đang ở trạng thái "Chờ Người Bán Gửi Hub" (chưa giao hàng và chưa có vận đơn),
                 // thì không hiển thị nút "Vận đơn gửi đến Hub" cũng như khung Chặng 1.
@@ -170,20 +162,23 @@ export function CenterOrders({
                   canReadCenterInspectionShipments(ord, currentUser?.id) && !deniedShipmentOrders.has(ord.id);
                 const returnState = hubReturns.get(ord.id);
                 const returnShipment = returnState?.shipment;
+                const isExpired = isExpiredInspectionPurchase(ord.status, ord.note || (ord as any).rejectionReason);
+                const isRejected = getInspectionPurchaseDecision(null, ord) === 'rejected' ||
+                  extractInspectionRejectionDetails(ord.note || (ord as any).rejectionReason).isBuyerPurchaseRejected;
+                const isCancelledReturn = isAtCenter && ['CANCELLED', 'CANCELED'].includes(ord.status) &&
+                  (isExpired || isRejected || (ord as any).conditionScore != null || Boolean((ord as any).inspectorScore) || Boolean(ord.inspectorId) || Boolean(ord.note));
                 const canBookReturn = canBookCenterReturn(ord, currentUser?.id, currentUser?.role, returnState);
+                const shouldShowReturnSection = canBookReturn || Boolean(returnShipment) || isCancelledReturn;
 
-                const isExpandedBuyer = expandedBuyerOrderId === ord.id;
                 const isExpandedFees = expandedFeeOrderId === ord.id;
-                const hasAnyExpanded = isExpandedFees || isExpandedBuyer;
-                const buyerProgressId = `buyer-progress-${ord.id}`;
                 const feeDetailsId = `fee-details-${ord.id}`;
-                const hasInboundInfo = !isWaitingSellerToHub && isAtCenter && (shipment || progress || shouldTrackInboundShipment(ord) || canViewInbound || isInboundDelivered);
+                const hasInboundInfo = !isWaitingSellerToHub && isAtCenter && (shipment || shouldTrackInboundShipment(ord) || canViewInbound || isInboundDelivered);
 
                 return (
                   <React.Fragment key={ord.id}>
                     <tr
                       role="row"
-                      className={`grid grid-cols-2 transition md:grid-cols-3 xl:table-row ${hasAnyExpanded
+                      className={`grid grid-cols-2 transition md:grid-cols-3 xl:table-row ${isExpandedFees
                         ? 'bg-amber-50/30 border-l-4 border-l-[#c34c36] shadow-xs'
                         : 'hover:bg-slate-50/60'
                         }`}
@@ -238,9 +233,19 @@ export function CenterOrders({
                         {/* 2. CHẶNG 1: VẬN CHUYỂN TỪ NGƯỜI BÁN VỀ HUB (KIỂM ĐỊNH) */}
                         {hasInboundInfo && (
                           <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-2.5 text-[11px] shadow-2xs text-blue-950">
-                            <div className="flex items-center gap-1.5 font-bold text-blue-950">
-                              <Truck className="h-3.5 w-3.5 text-blue-600 shrink-0" />
-                              <span>Chặng 1: Người bán → Hub</span>
+                            <div className="flex flex-wrap items-center justify-between gap-1.5 font-bold text-blue-950">
+                              <span className="flex items-center gap-1.5">
+                                <Truck className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                                Chặng 1: Người bán → Hub
+                              </span>
+                              {inboundLabel && (
+                                <span className={`rounded-md border px-2 py-0.5 text-[10px] ${inboundInterrupted
+                                  ? 'border-rose-300 bg-rose-100 text-rose-800'
+                                  : isInboundDelivered ? 'border-emerald-300 bg-emerald-100 text-emerald-800'
+                                    : 'border-blue-200 bg-white text-blue-900'}`}>
+                                  {inboundLabel}
+                                </span>
+                              )}
                             </div>
 
                             {shipment && <InspectionCashShipmentStatus shipment={shipment} />}
@@ -272,8 +277,8 @@ export function CenterOrders({
                           </div>
                         )}
 
-                        {/* 3. CHẶNG HOÀN TRẢ: HUB ➔ NGƯỜI BÁN (KHI ĐƠN KHÔNG ĐẠT / TỪ CHỐI) */}
-                        {(canBookReturn || returnShipment) && (
+                        {/* 3. CHẶNG HOÀN TRẢ: HUB ➔ NGƯỜI BÁN (KHI ĐƠN KHÔNG ĐẠT / TỪ CHỐI / QUÁ HẠN 6H) */}
+                        {shouldShowReturnSection && (
                           <div className="rounded-xl border border-amber-300 bg-amber-50/70 p-2.5 text-[11px] shadow-2xs">
                             <div className="flex flex-wrap items-center justify-between gap-1.5 font-bold text-amber-950">
                               <span className="flex items-center gap-1.5">
@@ -281,7 +286,7 @@ export function CenterOrders({
                                 Chặng Hoàn Trả: Hub → Người bán
                               </span>
                               {returnShipment ? (
-                                <span className="rounded-md bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900 border border-amber-300">
+                                <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold border ${canBookHubBuyerDelivery(returnShipment) ? 'bg-rose-100 text-rose-800 border-rose-300' : 'bg-amber-100 text-amber-900 border-amber-300'}`}>
                                   {getHubReturnProgress(returnShipment).label}
                                 </span>
                               ) : (
@@ -291,7 +296,7 @@ export function CenterOrders({
                               )}
                             </div>
 
-                            {canBookReturn && (
+                            {(canBookReturn || !returnShipment || returnShipment.status === 'CANCELLED' || returnShipment.status === 'FAILED') && (
                               <div className="mt-2">
                                 <button
                                   type="button"
@@ -300,7 +305,7 @@ export function CenterOrders({
                                   className="inline-flex items-center gap-1.5 rounded-lg bg-amber-700 px-3 py-1.5 text-[11px] font-bold text-white shadow-xs hover:bg-amber-800 disabled:opacity-60 transition cursor-pointer"
                                 >
                                   <Truck className="h-3.5 w-3.5" />
-                                  {bookingReturnId === ord.id ? 'Đang xử lý…' : 'Tạo vận đơn trả Seller'}
+                                  {bookingReturnId === ord.id ? 'Đang xử lý…' : (returnShipment ? 'Tạo lại vận đơn trả hàng' : 'Tạo vận đơn trả hàng người bán')}
                                 </button>
                               </div>
                             )}
@@ -352,7 +357,7 @@ export function CenterOrders({
                                   className="inline-flex items-center gap-1.5 rounded-lg bg-teal-700 px-3 py-1.5 text-[11px] font-bold text-white shadow-xs hover:bg-teal-800 disabled:opacity-60 transition cursor-pointer"
                                 >
                                   <Truck className="h-3.5 w-3.5" />
-                                  {bookingBuyerOrderId === ord.id ? 'Đang xử lý…' : 'Tạo vận đơn giao người mua'}
+                                  {bookingBuyerOrderId === ord.id ? 'Đang xử lý…' : (buyerShipment ? 'Tạo lại vận đơn giao người mua' : 'Tạo vận đơn giao người mua')}
                                 </button>
                               </div>
                             ) : buyerShipment && (
@@ -363,20 +368,10 @@ export function CenterOrders({
                                 <div className="flex flex-wrap items-center gap-2">
                                   <button
                                     type="button"
-                                    onClick={() => void handleOpenShipmentModal(ord)}
+                                    onClick={() => void handleOpenShipmentModal(ord, 'CENTER_TO_BUYER')}
                                     className="font-bold text-teal-800 hover:underline cursor-pointer"
                                   >
                                     Chi tiết vận đơn
-                                  </button>
-                                  <button
-                                    type="button"
-                                    aria-expanded={isExpandedBuyer}
-                                    aria-controls={isExpandedBuyer ? buyerProgressId : undefined}
-                                    onClick={() => setExpandedBuyerOrderId(isExpandedBuyer ? null : ord.id)}
-                                    className="inline-flex items-center gap-1 font-bold text-teal-800 hover:underline cursor-pointer"
-                                  >
-                                    {isExpandedBuyer ? 'Ẩn tiến trình' : 'Xem tiến trình giao hàng'}
-                                    <ChevronDown aria-hidden="true" className={`h-3 w-3 transition-transform ${isExpandedBuyer ? 'rotate-180' : ''}`} />
                                   </button>
                                 </div>
                               </div>
@@ -433,35 +428,7 @@ export function CenterOrders({
                     )}
 
 
-                    {/* Dòng mở rộng: Tiến trình Chặng Giao Hàng (Hub → Người mua) */}
-                    {buyerShipment && isExpandedBuyer && (
-                      <tr role="row" id={buyerProgressId} className="block xl:table-row animate-fadeIn">
-                        <td role="cell" colSpan={7} className="block bg-teal-50/30 px-4 py-3 xl:table-cell border-l-4 border-l-teal-600 border-b-2 border-b-teal-200">
-                          <div className="rounded-2xl border-2 border-teal-400/60 bg-white p-4 shadow-sm ring-4 ring-teal-500/10 space-y-3">
-                            <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-teal-100 text-xs font-bold text-teal-900">
-                              <span className="flex items-center gap-2">
-                                <span className="w-2.5 h-2.5 rounded-full bg-teal-600 animate-pulse" />
-                                <Truck className="h-4 w-4 text-teal-600" />
-                                <span>Lộ trình giao hàng của đơn #{ord.id.slice(0, 8)}: Hub ➔ Khách Mua ({ord.buyerName || 'Khách mua'})</span>
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => setExpandedBuyerOrderId(null)}
-                                className="px-2.5 py-1 rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-700 text-[11px] font-bold transition cursor-pointer"
-                              >
-                                ✕ Đóng tiến trình
-                              </button>
-                            </div>
-                            <LalamoveProgress
-                              title="Tiến trình vận chuyển giao hàng Lalamove (Hub → Khách mua)"
-                              routeBadge="Chặng Giao Hàng: Hub ➔ Buyer"
-                              currentStep={getInboundShipmentProgress(buyerShipment).step}
-                              completeCurrentStep={buyerShipment.status === 'DELIVERED'}
-                            />
-                          </div>
-                        </td>
-                      </tr>
-                    )}
+
                   </React.Fragment>
                 );
               })

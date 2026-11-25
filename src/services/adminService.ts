@@ -80,7 +80,15 @@ export const adminService = {
       method: 'GET',
       requiresAuth: true,
     });
-    return res.data;
+    const d = (res as any)?.data ?? res;
+    return {
+      items: Array.isArray(d?.items) ? d.items : Array.isArray(d?.content) ? d.content : Array.isArray(d) ? d : [],
+      page: d?.page ?? d?.number ?? params.page ?? 0,
+      size: d?.size ?? params.size ?? 20,
+      totalElements: d?.totalElements ?? (Array.isArray(d?.items) ? d.items.length : Array.isArray(d?.content) ? d.content.length : Array.isArray(d) ? d.length : 0),
+      totalPages: d?.totalPages ?? 1,
+      isLast: d?.isLast ?? d?.last ?? true,
+    };
   },
 
   async getAdminUserById(userId: string): Promise<UserAdminResponseDto> {
@@ -121,7 +129,15 @@ export const adminService = {
       method: 'GET',
       requiresAuth: true,
     });
-    return res.data;
+    const d = (res as any)?.data ?? res;
+    return {
+      items: Array.isArray(d?.items) ? d.items : Array.isArray(d?.content) ? d.content : Array.isArray(d) ? d : [],
+      page: d?.page ?? d?.number ?? params.page ?? 0,
+      size: d?.size ?? params.size ?? 20,
+      totalElements: d?.totalElements ?? (Array.isArray(d?.items) ? d.items.length : Array.isArray(d?.content) ? d.content.length : Array.isArray(d) ? d.length : 0),
+      totalPages: d?.totalPages ?? 1,
+      isLast: d?.isLast ?? d?.last ?? true,
+    };
   },
 
   async getSellerVerificationById(id: string): Promise<any> {

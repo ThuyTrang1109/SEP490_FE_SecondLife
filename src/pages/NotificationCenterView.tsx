@@ -28,6 +28,7 @@ import {
   compareNotificationsNewestFirst,
   getScopedLocalNotifications,
   isNotificationForUser,
+  isLegacySellerDisputeLink,
   markScopedLocalNotificationRead,
   deleteScopedLocalNotification,
 } from '../utils/notificationStorage';
@@ -151,8 +152,8 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
     e?.stopPropagation();
     if (item.isRead) return;
     try {
-      await notificationService.markAsRead(item.id).catch(() => {});
-    } catch {}
+      await notificationService.markAsRead(item.id).catch(() => { });
+    } catch { }
 
     markScopedLocalNotificationRead(currentUser, item.id);
 
@@ -167,7 +168,7 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
   const handleMarkAllRead = async () => {
     setIsProcessing(true);
     try {
-      await notificationService.markAllAsRead().catch(() => {});
+      await notificationService.markAllAsRead().catch(() => { });
       markScopedLocalNotificationRead(currentUser);
 
       setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true, readAt: new Date().toISOString() })));
@@ -189,8 +190,8 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
     );
     if (!confirmed) return;
     try {
-      await notificationService.deleteNotification(id).catch(() => {});
-    } catch {}
+      await notificationService.deleteNotification(id).catch(() => { });
+    } catch { }
 
     deleteScopedLocalNotification(currentUser, id);
 
@@ -208,7 +209,7 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
     if (!confirmed) return;
     setIsProcessing(true);
     try {
-      await notificationService.clearReadNotifications().catch(() => {});
+      await notificationService.clearReadNotifications().catch(() => { });
       deleteScopedLocalNotification(currentUser, undefined, false);
 
       showNotice(lang === 'vi' ? 'Đã dọn dẹp các thông báo đã đọc!' : 'Cleared read notifications!');
@@ -229,7 +230,7 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
     if (!confirmed) return;
     setIsProcessing(true);
     try {
-      await notificationService.clearAllNotifications().catch(() => {});
+      await notificationService.clearAllNotifications().catch(() => { });
       deleteScopedLocalNotification(currentUser, undefined, true);
 
       showNotice(lang === 'vi' ? 'Đã dọn sạch toàn bộ hộp thư thông báo!' : 'Cleared all notifications!');
@@ -390,11 +391,10 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
         {/* Notice Banner */}
         {noticeMsg && (
           <div
-            className={`p-3.5 rounded-2xl text-xs font-bold flex items-center gap-2 animate-fadeIn ${
-              noticeMsg.isError
+            className={`p-3.5 rounded-2xl text-xs font-bold flex items-center gap-2 animate-fadeIn ${noticeMsg.isError
                 ? 'bg-rose-50 text-rose-800 border border-rose-200'
                 : 'bg-emerald-50 text-emerald-800 border border-emerald-300'
-            }`}
+              }`}
           >
             {noticeMsg.isError ? (
               <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
@@ -412,11 +412,10 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setUnreadOnly(false)}
-                className={`px-4 py-2 rounded-xl text-xs font-black transition cursor-pointer ${
-                  !unreadOnly
+                className={`px-4 py-2 rounded-xl text-xs font-black transition cursor-pointer ${!unreadOnly
                     ? 'bg-[#24263e] text-white shadow-xs'
                     : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                }`}
+                  }`}
               >
                 <span>{lang === 'vi' ? 'Tất cả' : 'All'}</span>
                 <span className="ml-1.5 px-1.5 py-0.2 rounded-full text-[10px] bg-white/20">
@@ -426,11 +425,10 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
 
               <button
                 onClick={() => setUnreadOnly(true)}
-                className={`px-4 py-2 rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
-                  unreadOnly
+                className={`px-4 py-2 rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${unreadOnly
                     ? 'bg-[#c34c36] text-white shadow-xs'
                     : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                }`}
+                  }`}
               >
                 <span>{lang === 'vi' ? 'Chưa đọc' : 'Unread'}</span>
                 {unreadCount > 0 && (
@@ -460,11 +458,10 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
               <button
                 key={tf.key}
                 onClick={() => setSelectedType(tf.key)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition shrink-0 cursor-pointer ${
-                  selectedType === tf.key
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition shrink-0 cursor-pointer ${selectedType === tf.key
                     ? 'bg-[#24263e] text-white shadow-2xs'
                     : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200'
-                }`}
+                  }`}
               >
                 {tf.label}
               </button>
@@ -500,11 +497,10 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
               <div
                 key={item.id}
                 onClick={() => handleMarkOneRead(item)}
-                className={`p-4 sm:p-5 rounded-3xl border transition-all cursor-pointer group flex flex-col sm:flex-row sm:items-start justify-between gap-4 ${
-                  !item.isRead
+                className={`p-4 sm:p-5 rounded-3xl border transition-all cursor-pointer group flex flex-col sm:flex-row sm:items-start justify-between gap-4 ${!item.isRead
                     ? 'bg-white border-[#c34c36]/40 shadow-xs hover:border-[#c34c36] ring-1 ring-[#c34c36]/10'
                     : 'bg-white/80 hover:bg-white border-gray-200 hover:border-gray-300'
-                }`}
+                  }`}
               >
                 <div className="flex items-start gap-3.5 flex-1 min-w-0">
                   {/* Indicator Dot */}
@@ -520,9 +516,8 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
                     <div className="flex flex-wrap items-center gap-2">
                       {getTypeBadge(item.type)}
                       <h3
-                        className={`text-sm leading-snug truncate ${
-                          !item.isRead ? 'font-black text-slate-900' : 'font-bold text-slate-700'
-                        }`}
+                        className={`text-sm leading-snug truncate ${!item.isRead ? 'font-black text-slate-900' : 'font-bold text-slate-700'
+                          }`}
                       >
                         {translateSystemNotification(item.title)}
                       </h3>
@@ -546,7 +541,7 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
 
                 {/* Card Actions */}
                 <div className="flex items-center justify-end gap-2 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-gray-100">
-                  {item.actionUrl && (
+                  {item.actionUrl && !isLegacySellerDisputeLink(item) && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();

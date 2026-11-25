@@ -1,43 +1,9 @@
-import { safeJsonParse } from './orderUtils';
-
-interface InspectedPostRegistry {
-  ids: Set<string>;
-  titles: Set<string>;
-  timestamp: number;
-}
-
-let cachedRegistry: InspectedPostRegistry | null = null;
-const REGISTRY_CACHE_TTL_MS = 2500;
-const memoryStore = new Map<string, string>();
-
 function getStorageItem(key: string): string | null {
-  if (typeof window !== 'undefined' && window.localStorage) {
-    try {
-      return localStorage.getItem(key);
-    } catch {}
+  try {
+    return typeof window === 'undefined' ? null : window.localStorage.getItem(key);
+  } catch {
+    return null;
   }
-  return memoryStore.get(key) ?? null;
-}
-
-function setStorageItem(key: string, value: string): void {
-  if (typeof window !== 'undefined' && window.localStorage) {
-    try {
-      localStorage.setItem(key, value);
-    } catch {}
-  }
-  memoryStore.set(key, value);
-}
-
-export function normalizeListingTitle(rawTitle?: string | null): string {
-  if (!rawTitle) return '';
-  return String(rawTitle)
-    .trim()
-    .replace(/^Tiêu đề:\s*/i, '')
-    .trim()
-    .toLowerCase()
-    .replace(/[.…]+$/, '')
-    .replace(/\s+/g, ' ')
-    .trim();
 }
 
 /**
@@ -183,228 +149,155 @@ export function isOrderInspectionVerdictPassed(order: any): boolean {
   return false;
 }
 
-/**
- * Builds and caches the registry of post IDs and product titles that have passed inspection.
- */
-export function getCachedInspectedPostRegistry(): InspectedPostRegistry {
-  const now = Date.now();
-  if (cachedRegistry && now - cachedRegistry.timestamp < REGISTRY_CACHE_TTL_MS) {
-    return cachedRegistry;
+/** Public listing badges use the inspection result included in the listing response. */
+export function isListingInspectionPassed(item?: { isInspected?: boolean | null } | null): boolean {
+  return item?.isInspected === true;
+}
+
+export function getListingInspectionBadgeText(
+  method?: string | null,
+  lang: 'vi' | 'en' = 'vi',
+  short = false,
+): string {
+  const normalized = String(method || '').trim().toUpperCase();
+  if (normalized === 'AT_HOME') {
+    return lang === 'vi'
+      ? 'Đã đạt kiểm định tại nhà'
+      : (short ? 'Home Inspected' : 'On-site Inspected & Passed');
+  }
+  if (normalized === 'AT_CENTER') {
+    return lang === 'vi'
+      ? 'Đã đạt kiểm định tại Hub'
+      : (short ? 'Hub Inspected' : 'Hub Inspected & Passed');
+  }
+  return lang === 'vi'
+    ? 'Đã đạt kiểm định'
+    : (short ? 'Inspected' : 'Inspected & Passed');
+}
+
+function getOrderInspectionOutcome(record: any): 'passed' | 'failed' | null {
+  if (!record || typeof record !== 'object') return null;
+
+  const statusStr = String(record.status || '').toUpperCase();
+  const inspStatusStr = String(record.inspectionStatus || '').toUpperCase();
+  const escrowStatusStr = String(record.escrowStatus || '').toUpperCase();
+  const backendStatusStr = String(record.backendStatus || '').toUpperCase();
+  const verdictStr = String(
+    record.inspectionReport?.verdict ||
+    record.verdict ||
+    record.inspectionVerdict ||
+    record.latestInspectionVerdict ||
+    '',
+  ).toUpperCase();
+  const noteStr = String(record.note || record.inspectionNote || record.summaryNotes || record.cancellationReason || '').toLowerCase();
+
+  if (
+    verdictStr === 'FAIL' ||
+    verdictStr === 'FAILED' ||
+    statusStr === 'FAILED' ||
+    statusStr === 'INSPECTION_FAILED' ||
+    inspStatusStr === 'FAILED' ||
+    inspStatusStr === 'INSPECTION_FAILED' ||
+    escrowStatusStr === 'INSPECTION_FAILED' ||
+    backendStatusStr === 'FAILED' ||
+    record.cancellationReasonCode === 'INSPECTION_FAILED' ||
+    noteStr.includes('không đạt kiểm định') ||
+    noteStr.includes('không đạt yêu cầu kiểm định')
+  ) {
+    return 'failed';
   }
 
-  const ids = new Set<string>();
-  const titles = new Set<string>();
+  if (isOrderInspectionVerdictPassed(record)) {
+    return 'passed';
+  }
 
-  const registerOrderIfPassed = (order: any) => {
-    if (!order || typeof order !== 'object') return;
-    if (!isOrderInspectionVerdictPassed(order)) return;
+  return null;
+}
 
-    if (order.postId) ids.add(String(order.postId));
-    if (order.listingId) ids.add(String(order.listingId));
-    if (order.listing?.id) ids.add(String(order.listing.id));
-    if (order.listing?.postId) ids.add(String(order.listing.postId));
-    if (order.post?.id) ids.add(String(order.post.id));
-    if (order.post?.postId) ids.add(String(order.post.postId));
-    if (order.relatedPostId) ids.add(String(order.relatedPostId));
-    if (order.id) ids.add(String(order.id));
+function getInspectionRecordMethod(record: any): string | undefined {
+  const raw = record?.orderType || record?.inspectionMethod || record?.inspectionOrder?.orderType || record?.inspectionOrder?.inspectionMethod;
+  const normalized = String(raw || '').trim().toUpperCase();
+  if (normalized === 'AT_HOME' || normalized === 'AT_CENTER') return normalized;
+  return undefined;
+}
 
-    const postTitle = order.postTitle || order.listing?.title || order.post?.title || order.title || order.itemName;
-    if (postTitle) {
-      const normalized = normalizeListingTitle(postTitle);
-      if (normalized) titles.add(normalized);
-    }
+function getInspectionRecordTimestamp(record: any): number {
+  const candidates = [
+    record?.updatedAt,
+    record?.inspectionReport?.completedAt,
+    record?.inspectionReport?.inspectedAt,
+    record?.inspectedAt,
+    record?.createdAt,
+  ];
+  for (const val of candidates) {
+    if (!val) continue;
+    const ms = Date.parse(String(val));
+    if (!Number.isNaN(ms)) return ms;
+  }
+  return 0;
+}
+
+/**
+ * Resolves inspection badge state for a seller's own listing in Seller Dashboard.
+ * Strictly requires either `item.isInspected === true` OR a verified passed inspection
+ * record matching exact `postId` whose latest finalized outcome is passed (never failed).
+ */
+export function resolveSellerListingInspectionState(
+  item?: { id?: string | null; isInspected?: boolean | null; inspectionMethod?: string | null } | null,
+  preListingInspection?: any,
+  orders?: any[] | null,
+): { passed: boolean; method?: string } {
+  if (!item) return { passed: false };
+
+  const postId = String(item.id || '').trim();
+  const finalizedRecords: { outcome: 'passed' | 'failed'; method?: string; timestamp: number }[] = [];
+
+  const pushRecord = (record: any) => {
+    const outcome = getOrderInspectionOutcome(record);
+    if (!outcome) return;
+    finalizedRecords.push({
+      outcome,
+      method: getInspectionRecordMethod(record),
+      timestamp: getInspectionRecordTimestamp(record),
+    });
   };
 
-  // Scan all stored orders caches
-  const cacheKeys = [
-    'recent_placed_orders',
-    'all_orders_cache',
-    'center_inspection_orders',
-    'my_seller_inspection_orders',
-    'my_buyer_inspection_orders',
-    'all_inspection_orders_cache',
-    'app_inspection_orders_cache',
-    'sl_api_inspection_orders',
-  ];
-
-  for (const key of cacheKeys) {
-    try {
-      const raw = getStorageItem(key);
-      const list = safeJsonParse<any[]>(raw, []);
-      if (Array.isArray(list)) {
-        for (const ord of list) {
-          registerOrderIfPassed(ord);
-        }
-      }
-    } catch {}
+  if (preListingInspection && (!preListingInspection.postId || String(preListingInspection.postId) === postId)) {
+    pushRecord(preListingInspection);
   }
 
-  // Additional registered titles in storage
-  try {
-    const rawTitles = getStorageItem('passed_inspection_titles');
-    const titleList = safeJsonParse<string[]>(rawTitles, []);
-    if (Array.isArray(titleList)) {
-      for (const t of titleList) {
-        const norm = normalizeListingTitle(t);
-        if (norm) titles.add(norm);
-      }
-    }
-  } catch {}
-
-  // Additional registered post IDs in storage
-  try {
-    const rawIds = getStorageItem('passed_inspection_post_ids');
-    const idList = safeJsonParse<string[]>(rawIds, []);
-    if (Array.isArray(idList)) {
-      for (const id of idList) {
-        if (id) ids.add(String(id));
-      }
-    }
-  } catch {}
-
-  cachedRegistry = { ids, titles, timestamp: now };
-  return cachedRegistry;
-}
-
-/**
- * Invalidate the memory cache (e.g. when an inspection completes or order list updates).
- */
-export function invalidateInspectedRegistry(): void {
-  cachedRegistry = null;
-}
-
-/**
- * Checks whether a given product/listing has passed inspection.
- *
- * Rules:
- * 1. Checks item's direct boolean / status flags.
- * 2. Checks localStorage keys for the listing's ID/postId.
- * 3. Checks against provided orders list.
- * 4. Checks against cached orders from localStorage.
- */
-export function isListingInspectionPassed(item: any, orders?: any[]): boolean {
-  if (!item || typeof item !== 'object') return false;
-
-  // 1. Direct explicit flags on item
-  if (item.isInspected === true || item.inspectionPassed === true) return true;
-  const inspStatus = String(item.inspectionStatus || '').toUpperCase();
-  if (inspStatus === 'PASSED' || inspStatus === 'INSPECTION_PASSED') return true;
-  const backendStatus = String(item.backendStatus || item.status || '').toUpperCase();
-  if (backendStatus === 'INSPECTION_PASSED') return true;
-  if (item.tamperSealId && typeof item.tamperSealId === 'string' && item.tamperSealId.trim() !== '' && item.tamperSealId !== 'null') {
-    return true;
-  }
-  if (String(item.latestInspectionVerdict || item.verdict || '').toUpperCase() === 'PASSED') return true;
-  if (String(item.settlementOutcome || item.outcome || '').toUpperCase() === 'PASSED_BUYER_DEFAULTED') return true;
-
-  const idStr = String(item.id || '').trim();
-  const postIdStr = String(item.postId || '').trim();
-  const itemIdStr = String(item.itemId || '').trim();
-  const titleClean = normalizeListingTitle(item.title || item.itemName);
-
-  // 2. Direct storage flags
-  const candidateKeys = [idStr, postIdStr, itemIdStr].filter(Boolean);
-  for (const key of candidateKeys) {
-    if (getStorageItem(`inspection_passed_${key}`) === 'true') return true;
-    if (getStorageItem(`inspection_status_${key}`) === 'PASSED') return true;
-    if (getStorageItem(`inspection_status_post_${key}`) === 'PASSED') return true;
-    if (getStorageItem(`listing_inspected_${key}`) === 'true') return true;
-  }
-
-  // 3. Check directly against in-memory orders if provided
-  if (Array.isArray(orders) && orders.length > 0) {
+  if (postId && Array.isArray(orders)) {
     for (const ord of orders) {
-      if (!isOrderInspectionVerdictPassed(ord)) continue;
-
-      const ordPostId = String(ord.postId || ord.listingId || ord.listing?.id || ord.listing?.postId || ord.post?.id || '');
-      if (ordPostId && (ordPostId === idStr || ordPostId === postIdStr || ordPostId === itemIdStr)) {
-        return true;
-      }
-
-      const ordTitle = normalizeListingTitle(ord.postTitle || ord.listing?.title || ord.post?.title || ord.title || ord.itemName);
-      if (titleClean && ordTitle) {
-        if (titleClean === ordTitle) return true;
-        if (titleClean.length >= 8 && ordTitle.length >= 8) {
-          if (titleClean.startsWith(ordTitle) || ordTitle.startsWith(titleClean)) {
-            return true;
-          }
-          if (titleClean.includes(ordTitle) || ordTitle.includes(titleClean)) {
-            return true;
-          }
-        }
+      if (!ord || typeof ord !== 'object') continue;
+      const ordPostId = String(
+        ord.postId ||
+        ord.listingId ||
+        ord.listing?.id ||
+        ord.inspectionOrder?.postId ||
+        '',
+      ).trim();
+      if (ordPostId === postId) {
+        pushRecord(ord);
       }
     }
   }
 
-  // 4. Check cached registry
-  const registry = getCachedInspectedPostRegistry();
-  if (idStr && registry.ids.has(idStr)) return true;
-  if (postIdStr && registry.ids.has(postIdStr)) return true;
-  if (itemIdStr && registry.ids.has(itemIdStr)) return true;
+  finalizedRecords.sort((a, b) => b.timestamp - a.timestamp);
+  const latest = finalizedRecords[0];
 
-  if (titleClean) {
-    if (registry.titles.has(titleClean)) return true;
-    // Prefix / substring match for titles with ellipsis truncation
-    for (const knownTitle of registry.titles) {
-      if (titleClean === knownTitle) return true;
-      if (titleClean.length >= 8 && knownTitle.length >= 8) {
-        if (titleClean.startsWith(knownTitle) || knownTitle.startsWith(titleClean)) {
-          return true;
-        }
-        if (titleClean.includes(knownTitle) || knownTitle.includes(titleClean)) {
-          return true;
-        }
-      }
-    }
+  if (item.isInspected === true) {
+    return {
+      passed: true,
+      method: item.inspectionMethod || latest?.method,
+    };
   }
 
-  return false;
-}
-
-/**
- * Helper to record that an inspection has passed for a specific product ID and/or title.
- */
-export function markListingInspectionPassed(idOrPostId?: string, title?: string): void {
-  if (idOrPostId) {
-    const key = String(idOrPostId).trim();
-    setStorageItem(`inspection_passed_${key}`, 'true');
-    setStorageItem(`inspection_status_${key}`, 'PASSED');
-    setStorageItem(`inspection_status_post_${key}`, 'PASSED');
-    setStorageItem(`listing_inspected_${key}`, 'true');
-
-    try {
-      const rawIds = getStorageItem('passed_inspection_post_ids');
-      const list = safeJsonParse<string[]>(rawIds, []);
-      if (Array.isArray(list) && !list.includes(key)) {
-        list.push(key);
-        setStorageItem('passed_inspection_post_ids', JSON.stringify(list));
-      }
-    } catch {}
+  if (latest && latest.outcome === 'passed') {
+    return {
+      passed: true,
+      method: latest.method || item.inspectionMethod || undefined,
+    };
   }
 
-  if (title) {
-    const norm = normalizeListingTitle(title);
-    if (norm) {
-      try {
-        const rawTitles = getStorageItem('passed_inspection_titles');
-        const list = safeJsonParse<string[]>(rawTitles, []);
-        if (Array.isArray(list) && !list.includes(norm)) {
-          list.push(norm);
-          setStorageItem('passed_inspection_titles', JSON.stringify(list));
-        }
-      } catch {}
-    }
-  }
-
-  invalidateInspectedRegistry();
-
-  if (typeof window !== 'undefined') {
-    try {
-      window.dispatchEvent(
-        new CustomEvent('secondlife_inspection_completed', {
-          detail: { id: idOrPostId, title, status: 'PASSED' },
-        })
-      );
-    } catch {}
-  }
+  return { passed: false };
 }

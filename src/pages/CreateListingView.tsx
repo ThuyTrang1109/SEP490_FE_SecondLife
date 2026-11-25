@@ -31,7 +31,6 @@ import {
   Eye,
   Trash2,
   RotateCcw,
-  PlayCircle,
   Lock,
   Wrench,
   Calendar,
@@ -52,6 +51,7 @@ import { numberToVietnameseWords, formatVndInput, cleanVndInput, handleVndInputC
 import {
   mediaService,
   postService,
+  inspectorService,
   categoryService,
   itemService,
   aiChatService,
@@ -60,6 +60,7 @@ import {
   ListingDraftResponse,
   AiPriceEstimationResponse,
   PostSubmitResponse,
+  ApiError,
   shippingService,
   VehicleCatalog,
   VehicleLimit,
@@ -72,10 +73,12 @@ import {
   suggestVehicle
 } from '../services';
 import { parseQuestionItem, splitCompoundQuestion, getStandardProductQuestions } from '../utils/questionParser';
-import { extractWardAndCity, getSavedSellerAddress, cleanFullAddress } from '../utils/addressUtils';
+import { extractWardAndCity, cleanFullAddress } from '../utils/addressUtils';
 import { savePostMetadata, extractSellerOriginalPrice } from '../utils/catalogCache';
 import { translateSystemNotification } from '../utils/systemNotificationTranslator';
+import { getListingPhotoUploadIssues, type ListingPhotoUploadIssue } from '../utils/listingPhotoUploadErrors';
 import { MarkdownDescriptionEditor, MarkdownContent } from '../components/common/MarkdownDescription';
+import { PreListingInspectionWorkflow } from '../components/listing/PreListingInspectionWorkflow';
 
 
 
@@ -212,7 +215,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   // Step 2: Mô tả AI & Chỉnh sửa / Chat
   // Step 3: Lưu Draft & Xác nhận mô tả
   // Step 4: Định giá AI (1 credit VALUATION) & Chọn giá bán
-  // Step 5: Xem lại & Gửi đăng (1 credit LISTING khi ACTIVE)
+  // Step 5: Xem lại & Gửi đăng
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4 | 5>(1);
 
   // Toast State
@@ -244,66 +247,15 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   // Basic Form State
   const [title, setTitle] = useState('');
   const [isSuggestingTitle, setIsSuggestingTitle] = useState(false);
-  const [sellerLocation, setSellerLocation] = useState<string>('');
-
-  // Lấy thông tin địa chỉ người bán đang hoạt động (Ưu tiên Profile người bán hiện tại)
-  const currentSellerFullAddress = useMemo(() => {
-    return (
-      currentUser?.pickupAddress ||
-      currentUser?.address ||
-      getSavedSellerAddress().address ||
-      ''
-    );
-  }, [currentUser]);
-
-  const currentSellerWard = useMemo(() => {
-    return (
-      currentUser?.wardName ||
-      currentUser?.ward ||
-      getSavedSellerAddress().wardName ||
-      ''
-    );
-  }, [currentUser]);
-
-  const currentSellerProv = useMemo(() => {
-    return (
-      currentUser?.provinceName ||
-      currentUser?.province ||
-      getSavedSellerAddress().provinceName ||
-      ''
-    );
-  }, [currentUser]);
-
-  // Khu vực hiển thị trên tin đăng: Luôn đồng bộ chuẩn xác với địa chỉ hiện tại của người bán
-  const effectiveDisplayLocation = useMemo(() => {
-    if (currentSellerFullAddress || currentSellerWard || currentSellerProv) {
-      const loc = extractWardAndCity(currentSellerFullAddress, currentSellerWard, currentSellerProv);
-      if (loc) return loc;
-    }
-    return sellerLocation || 'Hà Nội';
-  }, [currentSellerFullAddress, currentSellerWard, currentSellerProv, sellerLocation]);
-
   const [pickupCoords, setPickupCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [pickupAddressDisplay, setPickupAddressDisplay] = useState<string>('');
   const [isLoadingPickup, setIsLoadingPickup] = useState<boolean>(false);
 
-  // Lấy địa chỉ của người bán từ hồ sơ hoặc địa chỉ kho đã lưu
   useEffect(() => {
     let isMounted = true;
     const resolveSellerLocation = async () => {
-      // 1. ƯU TIÊN HÀNG ĐẦU: Lấy từ currentUser profile hiện tại hoặc localStorage đã cập nhật của người bán
-      if (currentSellerFullAddress || currentSellerWard || currentSellerProv) {
-        const userLoc = extractWardAndCity(
-          currentSellerFullAddress,
-          currentSellerWard,
-          currentSellerProv
-        );
-        if (userLoc) {
-          setSellerLocation(userLoc);
-        }
-      }
-
-      // 2. Lấy thông tin kho bưu tá và tọa độ GPS từ BE qua GET /api/v1/shipping/pickup-address
+      setPickupAddressDisplay('');
+      setPickupCoords(null);
       try {
         setIsLoadingPickup(true);
         const [pickupRes, obRes] = await Promise.allSettled([
@@ -319,17 +271,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           pa = obRes.value.pickupAddress;
         }
 
-        if (pa) {
-          const loc = extractWardAndCity(pa.address, pa.wardName, pa.provinceName);
-          if (loc && !sellerLocation) {
-            setSellerLocation(loc);
-          }
-          if (pa.address) {
-            setPickupAddressDisplay(pa.address);
-          }
+        if (pa?.address) {
+          setPickupAddressDisplay(pa.address);
           const lat = typeof pa.latitude === 'number' ? pa.latitude : Number(pa.latitude);
           const lng = typeof pa.longitude === 'number' ? pa.longitude : Number(pa.longitude);
           if (
+            pa.latitude != null &&
+            pa.longitude != null &&
             Number.isFinite(lat) &&
             Number.isFinite(lng) &&
             lat >= -90 &&
@@ -355,7 +303,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [currentUser, currentSellerFullAddress, currentSellerWard, currentSellerProv]);
+  }, [currentUser?.id, currentUser?.pickupAddress]);
 
   type CatalogState =
     | { status: 'idle' }
@@ -550,8 +498,9 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   const [isManualPricingInStep3, setIsManualPricingInStep3] = useState<boolean>(false);
 
   // Images state: Raw files for FormData & previews
-  const [photoFiles, setPhotoFiles] = useState<File[]>([]);
+  const [photoFiles, setPhotoFiles] = useState(() => new Map<string, File>());
   const [photoPreviews, setPhotoPreviews] = useState<string[]>([]);
+  const [photoUploadIssues, setPhotoUploadIssues] = useState<ListingPhotoUploadIssue[]>([]);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
   // Trạng thái theo dõi khi người dùng bấm Tiếp tục ở các bước để kích hoạt hiển thị lỗi inline
@@ -988,6 +937,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     }
     setIsLoadingDraft(true);
     try {
+      const post = await postService.getMyPostDetail(cleanId);
+      if (!post.sellerActions?.editContent) {
+        showToast(lang === 'vi' ? 'Bài đăng này đã khóa chỉnh sửa.' : 'Editing is locked for this listing.');
+        return;
+      }
       const draft = await postService.getDraft(cleanId);
       if (draft) {
         setPostId(draft.postId || draft.id || cleanId);
@@ -1160,10 +1114,6 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       } else if (initialDraft.photos) {
         const p = initialDraft.photos;
         setPhotoPreviews([p.front, p.back, p.screenOrDetails, p.accessoriesOrBox, p.serialOrReceipt, p.extraDetail].filter(Boolean) as string[]);
-      }
-      // Chỉ lấy location từ initialDraft nếu người bán chưa cập nhật địa chỉ cá nhân
-      if (!currentSellerFullAddress && initialDraft.location) {
-        setSellerLocation(initialDraft.location);
       }
       if (initialDraft.categoryId) {
         setSelectedCategoryId(initialDraft.categoryId);
@@ -1945,6 +1895,33 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   const [showMismatchModal, setShowMismatchModal] = useState<boolean>(false);
   const [showAiScanConfirmModal, setShowAiScanConfirmModal] = useState<boolean>(false);
 
+  // Pre-Listing High Value Inspection Policy & Workflow Modal
+  const [highValueThreshold, setHighValueThreshold] = useState<number | null>(null);
+  const requiresPreListingInspection = highValueThreshold !== null && finalPriceVnd > highValueThreshold;
+  const needsListingCreditToSubmit =
+    highValueThreshold !== null && !requiresPreListingInspection && credits !== null && credits.postCredits < 1;
+  const [isPreListingWorkflowOpen, setIsPreListingWorkflowOpen] = useState<boolean>(false);
+  const [preListingOrderId, setPreListingOrderId] = useState<string | null>(null);
+  const [preListingNextAction, setPreListingNextAction] = useState<string | null>(null);
+
+  // Load high value inspection policy on mount
+  useEffect(() => {
+    let isMounted = true;
+    inspectorService
+      .getHighValueInspectionPolicy()
+      .then((policy) => {
+        if (isMounted && policy && typeof policy.thresholdPrice === 'number' && policy.thresholdPrice > 0) {
+          setHighValueThreshold(policy.thresholdPrice);
+        }
+      })
+      .catch((err) => {
+        console.warn('Failed to load high value inspection policy:', err);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   // Xử lý yêu cầu thoát/hủy đăng bài: Chặn khi đang đăng bài và mở cảnh báo xác nhận
   const handleRequestCancel = () => {
     if (isSubmittingPost) {
@@ -2226,19 +2203,31 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   // Handle Photo File selection (multi-file or single-file)
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files: File[] = e.target.files ? (Array.from(e.target.files) as File[]) : [];
+    e.target.value = '';
     if (files.length === 0) return;
 
     const remainingSlots = 6 - photoPreviews.length;
     const toAdd: File[] = files.slice(0, remainingSlots > 0 ? remainingSlots : 0);
 
     const newPreviews = toAdd.map((f: File) => URL.createObjectURL(f));
-    setPhotoFiles((prev) => [...prev, ...toAdd]);
+    setPhotoFiles((prev) => {
+      const next = new Map(prev);
+      toAdd.forEach((file, index) => next.set(newPreviews[index], file));
+      return next;
+    });
     setPhotoPreviews((prev) => [...prev, ...newPreviews]);
+    setPhotoUploadIssues((prev) => prev.filter((issue) => issue.previewUrl));
   };
 
   const handleRemovePhoto = (idx: number) => {
+    const removedPreview = photoPreviews[idx];
     setPhotoPreviews((prev) => prev.filter((_, i) => i !== idx));
-    setPhotoFiles((prev) => prev.filter((_, i) => i !== idx));
+    setPhotoFiles((prev) => {
+      const next = new Map(prev);
+      next.delete(removedPreview);
+      return next;
+    });
+    setPhotoUploadIssues((prev) => prev.filter((issue) => issue.previewUrl && issue.previewUrl !== removedPreview));
   };
 
   const handleVideoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2287,26 +2276,23 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     setUploadedVideoUrl(null);
   };
 
-  // Convert URLs or files into Blob array for postService.initPost
-  const prepareImageBlobs = async (): Promise<(File | Blob)[]> => {
-    if (photoFiles.length >= 1) {
-      return photoFiles.slice(0, 6);
-    }
-    // If user kept preview URLs (e.g. demo placeholders), fetch them as Blobs
-    const blobs: (File | Blob)[] = [...photoFiles];
-    for (const url of photoPreviews) {
-      if (blobs.length >= 6) break;
-      if (typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'))) {
+  // Keep the preview associated with each submitted file for indexed API errors.
+  const prepareImageUploads = async () => {
+    const uploads: { previewUrl: string; file: Blob }[] = [];
+    for (const previewUrl of photoPreviews.slice(0, 6)) {
+      const file = photoFiles.get(previewUrl);
+      if (file) {
+        uploads.push({ previewUrl, file });
+      } else if (/^https?:\/\//i.test(previewUrl)) {
         try {
-          const res = await fetch(url);
-          const b = await res.blob();
-          blobs.push(b);
+          const res = await fetch(previewUrl);
+          if (res.ok) uploads.push({ previewUrl, file: await res.blob() });
         } catch {
           // ignore fetch fail
         }
       }
     }
-    return blobs;
+    return uploads;
   };
 
   // =========================================================================
@@ -2413,7 +2399,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   };
 
   const handleInitPost = async (mode: 'ai' | 'manual' = 'ai') => {
-    if (!validateStep1()) return;
+    if (isInitializingPost || !validateStep1()) return;
 
     // Nếu bản nháp đã tồn tại (đã có postId hoặc initialDraft.id):
     // KHÔNG gọi postService.initPost nữa để tránh tạo bản nháp trùng lặp trong DB và xóa trắng mô tả của người dùng!
@@ -2451,15 +2437,18 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     setPostMode(mode);
     setShowAiChatDrawer(mode === 'ai');
     setIsInitializingPost(true);
+    setPhotoUploadIssues([]);
+    let uploadedPreviews: string[] = [];
     try {
-      const imageBlobs = await prepareImageBlobs();
+      const uploads = await prepareImageUploads();
+      uploadedPreviews = uploads.map(({ previewUrl }) => previewUrl);
 
       const initRes = await postService.initPost({
         categoryId: selectedCategoryId,
         itemId: selectedItemId || undefined,
         brand: brand?.trim() || undefined,
         model: model?.trim() || undefined,
-        images: imageBlobs,
+        images: uploads.map(({ file }) => file),
         mode: mode
       });
 
@@ -2571,6 +2560,17 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         throw new Error('Hệ thống không trả về postId từ init');
       }
     } catch (err: any) {
+      const issues = err instanceof ApiError ? getListingPhotoUploadIssues(err.errors, uploadedPreviews, err.status) : [];
+      if (issues.length) {
+        setShowAiChatDrawer(false);
+        setPhotoUploadIssues(issues);
+        const firstPhoto = photoPreviews.findIndex((previewUrl) => issues.some((issue) => issue.previewUrl === previewUrl));
+        const targetId = firstPhoto >= 0 ? `listing-photo-${firstPhoto}` : 'photos-section';
+        requestAnimationFrame(() => {
+          document.getElementById(targetId)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        });
+        return;
+      }
       const errMsg = String(err?.message || '');
       if (errMsg.includes('HÌNH ẢNH KHÔNG KHỚP THƯƠNG HIỆU') || errMsg.includes('KHÔNG KHỚP THƯƠNG HIỆU')) {
         let detected = '';
@@ -3089,9 +3089,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       canDisassemble
     });
 
-    // Địa chỉ của sản phẩm được cập nhật theo địa chỉ người bán (chỉ lấy phường và thành phố)
-    const finalLocation = effectiveDisplayLocation;
-    const finalSellerAddress = cleanFullAddress(currentSellerFullAddress) || finalLocation;
+    const finalSellerAddress = cleanFullAddress(pickupAddressDisplay);
+    const finalLocation = extractWardAndCity(finalSellerAddress);
 
     const newListing: Listing = {
       id: postId,
@@ -3113,8 +3112,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       sellerAddress: finalSellerAddress,
       sellerId: currentUser?.id || 'current-user',
       sellerName: currentUser?.name || 'Người bán SecondLife',
-      sellerRating: currentUser?.sellerRating || 5.0,
-      sellerCompletedOrders: currentUser?.completedOrdersCount || 1,
+      sellerRating: currentUser?.sellerRating ?? 0,
+      sellerCompletedOrders: currentUser?.completedOrdersCount ?? 0,
       sellerVerified: true,
       status: (effectiveSubmitRes?.status === 'ACTIVE'
         ? 'active'
@@ -3296,6 +3295,18 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       }
 
       setSubmitResult(submitRes);
+      const opensPreListingInspection =
+        submitRes.status === 'PENDING_INSPECTION' ||
+        submitRes.status === 'READY_TO_PUBLISH' ||
+        submitRes.nextAction === 'SELECT_INSPECTION_METHOD' ||
+        submitRes.nextAction === 'PAY_INSPECTION_FEE' ||
+        submitRes.nextAction === 'TRACK_INSPECTION' ||
+        submitRes.nextAction === 'TRACK_INSPECTION_RETURN';
+      if (opensPreListingInspection) {
+        setPreListingOrderId(submitRes.inspectionOrderId || null);
+        setPreListingNextAction(submitRes.nextAction || 'SELECT_INSPECTION_METHOD');
+        setIsPreListingWorkflowOpen(true);
+      }
       try {
         localStorage.setItem(`post_parcel_${postId}`, JSON.stringify(parcel));
       } catch { }
@@ -3358,17 +3369,22 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         }
       }
 
-      // Reload credits (if ACTIVE, minus 1 LISTING)
+      // Refresh the balance after the backend processes the submission.
       await loadCredits();
 
-      // Nếu ĐĂNG BÀI THÀNH CÔNG: Tự động quay về Sàn đồ cũ (Marketplace)
       const isFailed = submitRes.status === 'REJECTED' || submitRes.status === 'INSUFFICIENT_CREDIT';
-      if (!isFailed) {
+      if (!isFailed && !opensPreListingInspection) {
         handleFinishAndExit(submitRes);
         return;
       }
     } catch (err: any) {
-      if (err?.message?.includes('400') || err?.message?.toLowerCase().includes('insufficient') || err?.message?.toLowerCase().includes('không đủ lượt')) {
+      const photoIssues = err instanceof ApiError ? getListingPhotoUploadIssues(err.errors, [], err.status) : [];
+      if (photoIssues.length) {
+        const messages = [...new Set(photoIssues.map(({ message }) => message))].join(' ');
+        setSubmitError(err.status >= 500 ? messages : (lang === 'vi'
+          ? `${messages} Để thay bộ ảnh đã lưu, hãy tạo bản nháp mới.`
+          : `${messages} Create a new draft to replace the saved photos.`));
+      } else if (/insufficient listing credits|không đủ lượt đăng/i.test(err?.message ?? '')) {
         setShowNoCreditsModal(true);
       } else if (err?.message?.toLowerCase().includes('seller verification')) {
         setSubmitError(lang === 'vi'
@@ -3381,6 +3397,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       setIsSubmittingPost(false);
     }
   };
+
+  const hasPhotoServiceError = photoUploadIssues.some((issue) => issue.serviceError);
 
   return (
     <div className="w-full space-y-6 pb-20 px-3 sm:px-5 lg:px-6">
@@ -3517,7 +3535,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 <span>{lang === 'vi' ? 'Bước 1: Chọn Danh Mục Sản Phẩm & Tải 3-6 Ảnh' : 'Step 1: Select Category & Upload 3-6 Photos'}</span>
               </h3>
               <p className="text-xs text-slate-500 mt-1">
-                AI sẽ phân tích toàn bộ ảnh cùng danh mục sản phẩm để tạo mô tả và gợi ý định giá chuẩn xác.
+                {lang === 'vi' ? 'Hệ thống kiểm tra bộ ảnh trước khi bạn tiếp tục.'
+                  : 'The system checks the photo set before you continue.'}
               </p>
             </div>
 
@@ -3835,7 +3854,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                     <span>Đã chọn: <strong className="text-slate-800 font-bold">{formatDateDisplayVN(purchaseDate)}</strong> (Năm {purchaseYear})</span>
                   </span>
                   <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-1.5 py-0.2 rounded font-semibold">
-                    Hợp lệ (Quá khứ)
+                    Hợp lệ
                   </span>
                 </div>
               ) : null}
@@ -3929,44 +3948,99 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           </div>
 
           {/* Photo Checklist 3-6 Photos */}
-          <div id="photos-section" className={`space-y-3 pt-2 border-t ${hasSubmittedStep1 && photoError ? 'p-3 rounded-2xl border-2 border-rose-300 bg-rose-50/20' : 'border-gray-100'}`}>
+          <div id="photos-section" className={`space-y-3 pt-2 border-t ${hasPhotoServiceError
+            ? 'p-3 rounded-2xl border-2 border-amber-300 bg-amber-50/20'
+            : photoUploadIssues.length > 0 || (hasSubmittedStep1 && photoError)
+              ? 'p-3 rounded-2xl border-2 border-rose-300 bg-rose-50/20'
+              : 'border-gray-100'}`}>
             <div>
               <label className="text-xs font-bold text-[#24263e] flex items-center gap-2">
                 <span>Ảnh chụp sản phẩm thực tế (Tối thiểu 3 - Tối đa 6 ảnh) *</span>
                 <span
-                  className={`text-[10px] font-black px-2 py-0.5 rounded-full ${photoPreviews.length >= 3 && photoPreviews.length <= 6
-                    ? 'bg-emerald-100 text-emerald-800'
-                    : photoPreviews.length > 0
-                      ? 'bg-amber-100 text-amber-800'
-                      : 'bg-slate-100 text-slate-600'
+                  className={`text-[10px] font-black px-2 py-0.5 rounded-full ${hasPhotoServiceError
+                    ? 'bg-amber-100 text-amber-900'
+                    : photoUploadIssues.length > 0
+                      ? 'bg-rose-100 text-rose-800'
+                      : photoPreviews.length >= 3 && photoPreviews.length <= 6
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : photoPreviews.length > 0
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-slate-100 text-slate-600'
                     }`}
                 >
-                  Đã có: {photoPreviews.length}/6 ảnh {photoPreviews.length < 3 ? `(Thiếu ${3 - photoPreviews.length} ảnh)` : '✓ Đủ điều kiện'}
+                  Đã có: {photoPreviews.length}/6 ảnh {hasPhotoServiceError
+                    ? (lang === 'vi' ? '· Chưa kiểm duyệt' : '· Review incomplete')
+                    : photoUploadIssues.length > 0
+                      ? (lang === 'vi' ? '· Cần sửa ảnh' : '· Needs attention')
+                      : photoPreviews.length < 3 ? `(Thiếu ${3 - photoPreviews.length} ảnh)` : '✓ Đủ điều kiện'}
                 </span>
               </label>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                Bắt buộc tải lên tối thiểu 3 ảnh thực tế (tối đa 6 ảnh) để thể hiện các góc cạnh của sản phẩm, giúp AI và người mua kiểm định trực quan.
+                {lang === 'vi'
+                  ? 'Tải 3–6 ảnh thực tế của cùng một sản phẩm. Có thể chụp nhiều góc và ảnh cận chi tiết.'
+                  : 'Upload 3–6 photos of the same product. Different angles and close-ups are welcome.'}
               </p>
             </div>
 
+            {photoUploadIssues.length > 0 && (
+              <div role="alert" className={`flex items-start gap-2 rounded-xl border p-3 text-xs ${hasPhotoServiceError
+                ? 'border-amber-200 bg-amber-50 text-amber-950' : 'border-rose-200 bg-rose-50 text-rose-900'}`}>
+                <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                <div className="min-w-0 break-words">
+                  <p className="font-bold">
+                    {hasPhotoServiceError
+                      ? (lang === 'vi' ? 'Dịch vụ kiểm duyệt ảnh đang gián đoạn' : 'Photo review is temporarily unavailable')
+                      : (lang === 'vi' ? 'Cần kiểm tra lại bộ ảnh' : 'Check the product photos')}
+                  </p>
+                  {photoUploadIssues.some((issue) => issue.previewUrl) && (
+                    <p>{lang === 'vi' ? 'Kiểm tra lỗi bên dưới các ảnh được đánh dấu.' : 'See the error below each marked photo.'}</p>
+                  )}
+                  {photoUploadIssues.filter((issue) => !issue.previewUrl).map(({ message }, index) => (
+                    <p key={index}>{message}</p>
+                  ))}
+                  {hasPhotoServiceError && (
+                    <p className="mt-1">
+                      {lang === 'vi'
+                        ? 'Các ảnh đã chọn vẫn được giữ. Bấm lại Tự Đăng Bài hoặc Chat Với AI để thử kiểm duyệt.'
+                        : 'Your photos are still selected. Choose manual listing or AI chat again to retry the review.'}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Photos Preview Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
-              {photoPreviews.map((previewUrl, idx) => (
-                <div key={idx} className="relative group rounded-2xl overflow-hidden border border-gray-200 aspect-square bg-slate-50 flex items-center justify-center p-1 shadow-xs">
-                  <img src={previewUrl} alt={`Ảnh ${idx + 1}`} className="w-full h-full object-contain" />
-                  <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded-md bg-black/60 text-white text-[10px] font-bold">
-                    #{idx + 1}
+              {photoPreviews.map((previewUrl, idx) => {
+                const issues = photoUploadIssues.filter((issue) => issue.previewUrl === previewUrl);
+                const photoLabel = `${lang === 'vi' ? 'Ảnh' : 'Photo'} #${idx + 1}`;
+                const hasIssues = issues.length > 0;
+                return (
+                  <div key={idx} id={`listing-photo-${idx}`} className="min-w-0 space-y-1.5">
+                    <div className={`relative group rounded-2xl overflow-hidden border aspect-square bg-slate-50 flex items-center justify-center p-1 shadow-xs ${hasIssues ? 'border-rose-500 ring-1 ring-rose-500' : 'border-gray-200'}`}>
+                      <img src={previewUrl} alt={photoLabel} aria-describedby={hasIssues ? `listing-photo-error-${idx}` : undefined} className="w-full h-full object-contain" />
+                      <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded-md bg-black/60 text-white text-[10px] font-bold">
+                        #{idx + 1}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemovePhoto(idx)}
+                        disabled={isInitializingPost}
+                        className="absolute top-1 right-1 w-6 h-6 rounded-full bg-rose-600 text-white flex items-center justify-center opacity-80 hover:opacity-100 transition shadow-sm cursor-pointer disabled:opacity-50"
+                        title={lang === 'vi' ? `Xóa ảnh #${idx + 1}` : `Remove photo #${idx + 1}`}
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    {hasIssues && (
+                      <div id={`listing-photo-error-${idx}`} className="rounded-lg bg-rose-50 p-2 text-xs leading-snug text-rose-900 break-words">
+                        <p className="font-bold">{photoLabel}</p>
+                        {issues.map(({ message }, index) => <p key={index}>{message}</p>)}
+                      </div>
+                    )}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => handleRemovePhoto(idx)}
-                    className="absolute top-1 right-1 w-6 h-6 rounded-full bg-rose-600 text-white flex items-center justify-center opacity-80 hover:opacity-100 transition shadow-sm cursor-pointer"
-                    title="Xóa ảnh"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ))}
+                );
+              })}
 
               {photoPreviews.length < 6 && (
                 <label className="border-2 border-dashed border-gray-300 hover:border-[#c34c36] rounded-2xl flex flex-col items-center justify-center gap-1.5 aspect-square bg-slate-50 hover:bg-slate-100 transition cursor-pointer text-slate-500 text-center p-2 group shadow-xs">
@@ -3977,6 +4051,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   <input
                     type="file"
                     multiple
+                    disabled={isInitializingPost}
                     accept="image/jpeg,image/png,image/webp"
                     className="hidden"
                     onChange={handleFileChange}
@@ -3996,64 +4071,6 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 <span>Vui lòng tải thêm ít nhất {3 - photoPreviews.length} ảnh nữa (bắt buộc tối thiểu 3 ảnh sản phẩm).</span>
               </p>
             )}
-
-            {/* Video Upload Section (POST /api/v1/media/upload-video) */}
-            <div className="pt-3 border-t border-gray-100 space-y-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <h4 className="font-bold text-xs text-slate-800 flex items-center gap-1.5">
-                    <PlayCircle className="w-4 h-4 text-orange-600" />
-                    <span>Video quay thực tế sản phẩm (Khuyến nghị)</span>
-                  </h4>
-                  <p className="text-[11px] text-slate-500">
-                    Tải video quay cận cảnh tình trạng, chi tiết hoặc hoạt động thực tế của sản phẩm, tối đa {maxVideoSizeMb}MB (MP4, MOV, WEBM)
-                  </p>
-                </div>
-                {isUploadingVideo && (
-                  <span className="text-[11px] font-bold text-orange-600 flex items-center gap-1">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Đang tải video lên máy chủ...</span>
-                  </span>
-                )}
-              </div>
-
-              {videoPreviewUrl ? (
-                <div className="relative rounded-2xl overflow-hidden border border-gray-200 bg-black max-w-sm">
-                  <video src={videoPreviewUrl} controls className="w-full max-h-48 object-contain" />
-                  <button
-                    type="button"
-                    onClick={handleRemoveVideo}
-                    className="absolute top-2 right-2 w-7 h-7 rounded-full bg-rose-600/90 text-white flex items-center justify-center hover:bg-rose-700 transition cursor-pointer shadow-md"
-                    title="Xóa video"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                  {uploadedVideoUrl && (
-                    <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded-md bg-emerald-600/90 text-white text-[10px] font-bold flex items-center gap-1">
-                      <CheckCircle2 className="w-3 h-3" />
-                      <span>Đã tải lên hệ thống</span>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <label className="border border-dashed border-gray-300 hover:border-orange-500 rounded-2xl p-3.5 flex items-center gap-3 bg-slate-50/70 hover:bg-orange-50/40 transition cursor-pointer max-w-md">
-                  <div className="w-10 h-10 rounded-xl bg-white border border-gray-200 flex items-center justify-center text-orange-600 shadow-2xs shrink-0">
-                    <PlayCircle className="w-5 h-5" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <span className="text-xs font-bold text-slate-800 block">+ Tải Video Thực Tế Sản Phẩm</span>
-                    <span className="text-[10px] text-slate-400">Định dạng MP4, WEBM, MOV (Tối đa {maxVideoSizeMb}MB)</span>
-                  </div>
-                  <input
-                    type="file"
-                    accept="video/mp4,video/quicktime,video/webm"
-                    className="hidden"
-                    onChange={handleVideoChange}
-                    disabled={isUploadingVideo}
-                  />
-                </label>
-              )}
-            </div>
           </div>
 
           {/* Action Buttons: Tự Đăng Bài & Chat Với AI */}
@@ -4083,7 +4100,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 {isInitializingPost && initMode === 'manual' ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin text-[#c34c36]" />
-                    <span>Đang tải...</span>
+                    <span>{lang === 'vi' ? 'Đang kiểm tra bộ ảnh…' : 'Checking photos…'}</span>
                   </>
                 ) : (
                   <>
@@ -4111,7 +4128,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 {isInitializingPost && initMode === 'ai' ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin text-amber-300" />
-                    <span>AI đang phân tích...</span>
+                    <span>{lang === 'vi' ? 'Đang kiểm tra và phân tích ảnh…' : 'Reviewing and analyzing photos…'}</span>
                   </>
                 ) : (
                   <>
@@ -4526,12 +4543,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 <div className="flex items-center gap-2">
                   <Truck className="w-4 h-4 text-blue-600 shrink-0" />
                   <span className="text-xs font-bold text-[#24263e]">
-                    Thông tin kiện hàng giao hàng (Bắt buộc để tính phí Lalamove)
+                    Thông tin kiện hàng giao hàng
                   </span>
                 </div>
-                <span className="text-[11px] text-slate-400 italic">
-                  * Tự động quy đổi chuẩn BE/Lalamove: Trọng lượng (gram) • Kích thước (cm)
-                </span>
+
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
@@ -4763,7 +4778,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                       <span>Hàng có tháo được không? *</span>
                     </div>
                     <p className="text-[11px] text-slate-500">
-                      Chọn <strong>"Có"</strong> nếu sản phẩm có thể tháo rời linh kiện (chân đế, khớp nối, tay cầm...) để đóng gói gọn hơn khi vận chuyển Lalamove.
+                      Chọn <strong>"Có"</strong> nếu sản phẩm có thể tháo rời linh kiện (chân đế, khớp nối, tay cầm...) để đóng gói gọn hơn khi vận chuyển.
                     </p>
                   </div>
 
@@ -4888,13 +4903,6 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                     >
                       Thử lại
                     </button>
-                  </div>
-                ) : isLengthLessThanWidth ? (
-                  <div className="p-3 bg-rose-50/90 border border-rose-300 rounded-xl text-xs text-rose-950 flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                    <span className="font-bold text-rose-700">
-                      Kích thước không hợp lệ: Chiều dài phải lớn hơn hoặc bằng chiều rộng (Dài ≥ Rộng).
-                    </span>
                   </div>
                 ) : !parcelIsValid ? (
                   <div className="p-3 bg-slate-100/90 border border-slate-200 rounded-xl text-xs text-slate-700 flex items-center gap-2">
@@ -5171,7 +5179,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   }}
                   className="w-4 h-4 text-amber-600 focus:ring-amber-500"
                 />
-                <span className="text-sm font-black text-amber-950">Tự Định Giá (Bỏ qua chờ AI, nhanh nhất ⚡)</span>
+                <span className="text-sm font-black text-amber-950">Tự định giá</span>
               </label>
             </div>
 
@@ -5289,11 +5297,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               <div className="text-base font-black flex items-center gap-2 mt-0.5">
                 <span>Bạn đang có:</span>
                 <span className="px-2.5 py-0.5 rounded-lg bg-amber-400 text-slate-950 font-mono font-black text-sm">
-                  {credits?.valuationCredits ?? 0} VALUATION
+                  {credits?.valuationCredits ?? 0} lượt
                 </span>
               </div>
               <span className="text-[11px] text-slate-300 block mt-1">
-                * Mỗi lần định giá thành công trừ 1 VALUATION. Retry do lỗi mạng không bị trừ lại.
+                * Mỗi lần định giá thành công trừ 1 định giá.
               </span>
             </div>
 
@@ -5381,7 +5389,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               <div className="flex items-center justify-between">
                 <span className="text-xs font-black text-emerald-900 flex items-center gap-1.5 uppercase">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  Kết quả định giá thành công từ mô hình {valuationResult.modelVersion || 'AI'}
+                  Kết quả định giá thành công từ mô hình AI
                 </span>
                 <span className="text-[11px] text-emerald-700 font-bold font-mono">
                   Mã Y/c: {valuationRequestId ? valuationRequestId.slice(0, 8) : 'Live'}
@@ -5416,36 +5424,9 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 <div className="flex items-start gap-2 bg-white/50 p-3 rounded-xl border border-emerald-100">
                   <span className="text-lg leading-none mt-0.5">💡</span>
                   <p className="text-[11px] text-emerald-800 italic leading-relaxed">
-                    <strong>Lưu ý:</strong> Mức giá trên được AI tính toán độc lập dựa trên tình trạng hao mòn và giá trị thị trường thực tế hiện tại của sản phẩm, không phụ thuộc hoàn toàn vào giá mua gốc mà bạn đã nhập.
+                    <strong>Lưu ý:</strong> Mức giá trên được AI tính toán độc lập dựa trên tình trạng hao mòn, không phụ thuộc hoàn toàn vào giá mua gốc mà bạn đã nhập.
                   </p>
                 </div>
-                {typeof originalPriceVnd === 'number' && originalPriceVnd > 0 && (
-                  originalPriceVnd < valuationResult.fairPriceMin * 0.7 ||
-                  originalPriceVnd > valuationResult.fairPriceMax * 2.8
-                ) && (
-                    <div className="p-3.5 rounded-2xl bg-rose-50 border-2 border-rose-300 text-rose-900 animate-fadeIn shadow-xs space-y-1.5">
-                      <div className="flex items-center gap-2 font-black text-rose-700 text-xs">
-                        <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                        <span>{lang === 'vi' ? 'Giá bạn nhập có vẻ bất hợp lý so với thị trường' : 'Declared price appears unreasonable'}</span>
-                      </div>
-                      <p className="text-xs text-rose-800 leading-relaxed">
-                        {lang === 'vi' ? (
-                          <>
-                            Mức giá mua gốc bạn khai báo ({formatVND(originalPriceVnd)}) có sự chênh lệch lớn so với giá trị thị trường của sản phẩm này (khoảng <strong>{formatVND(valuationResult.fairPriceMin)} - {formatVND(valuationResult.fairPriceMax)}</strong>).
-                          </>
-                        ) : (
-                          <>
-                            Your declared price ({formatVND(originalPriceVnd)}) differs significantly from current market range (around <strong>{formatVND(valuationResult.fairPriceMin)} - {formatVND(valuationResult.fairPriceMax)}</strong>).
-                          </>
-                        )}
-                      </p>
-                      <p className="text-[11px] text-rose-700 font-medium italic">
-                        {lang === 'vi'
-                          ? `👉 AI đã tự động đối chiếu giá thị trường thực tế và phân tích độ hao mòn qua ảnh để định giá chuẩn xác (${formatVND(valuationResult.suggestedPrice)}) giúp bài đăng dễ bán nhất.`
-                          : `👉 AI automatically referenced realistic market benchmarks and visual wear to suggest a fair selling price (${formatVND(valuationResult.suggestedPrice)}).`}
-                      </p>
-                    </div>
-                  )}
               </div>
             </div>
           )}
@@ -5532,23 +5513,24 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               </p>
             )}
             {valuationResult && finalPriceVnd > valuationResult.fairPriceMax * 1.3 && (
-              <p className="text-[11px] text-amber-700 font-semibold flex items-center gap-1.5 mt-1.5 animate-fadeIn">
-                <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                <span>
-                  {lang === 'vi'
-                    ? `Giá bạn đặt (${formatVND(finalPriceVnd)}) cao hơn mức giá thị trường đề xuất (${formatVND(valuationResult.fairPriceMax)}). Sản phẩm có thể khó bán hoặc mất nhiều thời gian hơn.`
-                    : `Your price (${formatVND(finalPriceVnd)}) is higher than recommended market maximum (${formatVND(valuationResult.fairPriceMax)}).`}
-                </span>
-              </p>
+              <span></span>
             )}
 
-            {/* High-value threshold notice (> 10,000,000 VND) */}
-            {finalPriceVnd >= 10000000 && (
+            {/* High-value threshold notice (> thresholdPrice VND) */}
+            {requiresPreListingInspection && (
               <div className="p-3.5 rounded-xl bg-cyan-50 border border-cyan-200 text-cyan-900 text-xs flex items-start gap-2.5">
                 <ShieldCheck className="w-4 h-4 text-cyan-700 shrink-0 mt-0.5" />
-                <div>
-                  <span className="font-bold block">Sản phẩm giá trị cao (từ 10.000.000 VND trở lên):</span>
-                  <span>Bài đăng sẽ tự động chuyển sang quy trình Kiểm định chất lượng của Kỹ thuật viên (PENDING_INSPECTION) trước khi hiển thị công khai trên Sàn. Chưa trừ credit LISTING cho tới khi kiểm định đạt chuẩn.</span>
+                <div className="space-y-1">
+                  <span className="font-bold block text-cyan-950">
+                    Sản phẩm giá trị cao (trên {formatVND(highValueThreshold)}):
+                  </span>
+                  <span className="text-cyan-900 block">
+                    Sản phẩm có giá cao hơn ngưỡng này phải kiểm định trước khi đăng.
+                    1 credit đăng bài chỉ được trừ sau khi sản phẩm kiểm định đạt và bài qua duyệt cuối.
+                  </span>
+                  <p className="text-[11px] text-cyan-800 bg-white/70 p-2 rounded-lg border border-cyan-200/80 mt-1">
+                    💡 <strong>Về bước Chọn hình thức kiểm định.</strong> Màn hình chọn hình thức và nhận báo giá chi tiết sẽ <strong>tự động mở ra ngay sau khi bạn hoàn tất Bước 5 và bấm nút &quot;Gửi bài đăng&quot;</strong>.
+                  </p>
                 </div>
               </div>
             )}
@@ -5766,6 +5748,44 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
           </div>
 
+          {/* Hướng dẫn quy trình Kiểm định trước khi đăng cho sản phẩm giá trị cao */}
+          {requiresPreListingInspection && !submitResult && (
+            <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-cyan-50/90 to-blue-50/70 border border-cyan-200 text-cyan-950 text-xs space-y-3 shadow-2xs">
+              <div className="flex items-center gap-2 font-black text-cyan-900">
+                <ShieldCheck className="w-5 h-5 text-cyan-700 shrink-0" />
+                <span className="text-sm">Quy trình kiểm định bắt buộc trước khi đăng bán.</span>
+              </div>
+              <p className="text-slate-700 leading-relaxed">
+                Sản phẩm của bạn có giá <strong className="text-[#c34c36] font-bold">{formatVND(finalPriceVnd)}</strong> (vượt ngưỡng kiểm định bắt buộc {formatVND(highValueThreshold)}).
+
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="p-3 rounded-xl bg-white border border-cyan-200/80 shadow-2xs">
+                  <div className="font-bold text-cyan-950 flex items-center gap-1.5 mb-1">
+                    <span className="w-5 h-5 rounded-full bg-cyan-100 text-cyan-800 flex items-center justify-center text-[10px] font-black">1</span>
+                    <span>Kiểm định tại nhà</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 leading-normal">
+                    Kỹ thuật viên sàn đến tận địa chỉ người bán kiểm tra sản phẩm trực tiếp.
+                  </p>
+                </div>
+                <div className="p-3 rounded-xl bg-white border border-cyan-200/80 shadow-2xs">
+                  <div className="font-bold text-cyan-950 flex items-center gap-1.5 mb-1">
+                    <span className="w-5 h-5 rounded-full bg-cyan-100 text-cyan-800 flex items-center justify-center text-[10px] font-black">2</span>
+                    <span>Kiểm định tại Trung tâm</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 leading-normal">
+                    Gửi thiết bị đến Hub kiểm định của SecondLife.
+                  </p>
+                </div>
+              </div>
+              <div className="p-2.5 bg-cyan-100/70 rounded-xl text-[11px] text-cyan-950 font-medium flex items-center gap-2">
+                <span className="text-sm">👉</span>
+                <span>Bấm <strong>&quot;Gửi bài đăng&quot;</strong> bên dưới để hệ thống khởi tạo đơn kiểm định và mở màn hình chọn hình thức & nhận báo giá chi tiết.</span>
+              </div>
+            </div>
+          )}
+
           {/* Submission Result Banner */}
           {submitResult && (
             <div
@@ -5796,24 +5816,31 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   <h4 className="font-black text-sm uppercase">
                     {submitResult.status === 'ACTIVE'
                       ? 'Đăng bài thành công! (ACTIVE)'
-                      : submitResult.status === 'INSUFFICIENT_CREDIT'
-                        ? 'Cần nạp thêm Credit để thanh toán phí kiểm định'
-                        : submitResult.status === 'PENDING_INSPECTION'
-                          ? 'Chờ kiểm định chất lượng trung tâm (PENDING_INSPECTION)'
-                          : submitResult.status === 'PENDING'
-                            ? 'Nghi ngờ trùng lặp - Chờ STAFF kiểm duyệt (PENDING)'
-                            : 'Bài đăng bị từ chối (REJECTED)'}
+                      : submitResult.status === 'READY_TO_PUBLISH'
+                        ? 'Đã đạt kiểm định · Sẵn sàng đăng bán'
+                        : submitResult.status === 'INSUFFICIENT_CREDIT'
+                          ? 'Cần nạp thêm Credit để thanh toán phí kiểm định'
+                          : submitResult.status === 'PENDING_INSPECTION' ||
+                            submitResult.nextAction === 'SELECT_INSPECTION_METHOD' ||
+                            submitResult.nextAction === 'PAY_INSPECTION_FEE' ||
+                            submitResult.nextAction === 'TRACK_INSPECTION' ||
+                            submitResult.nextAction === 'TRACK_INSPECTION_RETURN'
+                            ? 'Kiểm định bắt buộc trước khi đăng'
+                            : submitResult.status === 'PENDING' || submitResult.nextAction === 'WAIT_FOR_LISTING_REVIEW'
+                              ? 'Chờ staff kiểm duyệt bài đăng'
+                              : 'Bài đăng bị từ chối'}
                   </h4>
                   <p className="text-xs leading-relaxed">
                     {submitResult.message || (
                       submitResult.status === 'ACTIVE'
-                        ? 'Bài đăng của bạn đã được xuất bản công khai. Đã trừ 1 lượt LISTING.'
+                        ? 'Bài đăng của bạn đã được xuất bản công khai lên Sàn đồ cũ.'
                         : submitResult.status === 'INSUFFICIENT_CREDIT'
-                          ? 'Sản phẩm có giá trị > 10.000.000 đ bắt buộc phải qua kiểm định. Bạn chưa có đủ credit để thanh toán phí.'
-                          : submitResult.status === 'PENDING_INSPECTION'
-                            ? 'Sản phẩm có giá trị > 10 triệu đồng đang chờ Kỹ thuật viên trung tâm kiểm định tiếp nhận.'
-                            : submitResult.status === 'PENDING'
-                              ? 'Phát hiện hình ảnh hoặc nội dung trùng với bài đăng khác trên sàn. Nhân viên Staff sẽ đối soát thủ công.'
+                          ? `Sản phẩm có giá trị cao hơn ngưỡng bắt buộc phải qua kiểm định. Bạn chưa có đủ số dư để nộp phí.`
+                          : submitResult.status === 'PENDING_INSPECTION' ||
+                            submitResult.nextAction === 'SELECT_INSPECTION_METHOD'
+                            ? 'Sản phẩm có giá trị cao cần kiểm định trước khi hiển thị công khai. Vui lòng chọn hình thức kiểm định.'
+                            : submitResult.status === 'PENDING' || submitResult.nextAction === 'WAIT_FOR_LISTING_REVIEW'
+                              ? `Bài đăng đang chờ nhân viên kiểm duyệt nội dung trước khi xuất bản.${submitResult.inspectionRequired ? ' Lưu ý: Sản phẩm có yêu cầu kiểm định bắt buộc, sau khi nhân viên duyệt nội dung bạn sẽ tiến hành chọn hình thức kiểm định.' : ''}`
                               : (submitResult.reviewReason || 'Bài đăng không đạt tiêu chuẩn nội dung của sàn. Không trừ credit.')
                     )}
                   </p>
@@ -5826,15 +5853,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   <div>
                     <span className="text-slate-500 block text-[11px]">Phí kiểm định kỹ thuật:</span>
                     <span className="font-black text-slate-800">
-                      {formatVND(Number(submitResult.inspectionFee || 200000))}
+                      {formatVND(Number(submitResult.inspectionFee))}
                     </span>
                   </div>
-                  <div>
-                    <span className="text-slate-500 block text-[11px]">Phí vận chuyển trung tâm:</span>
-                    <span className="font-black text-slate-800">
-                      {formatVND(Number(submitResult.shippingFee || 50000))}
-                    </span>
-                  </div>
+
                   {submitResult.creditShortfall != null && Number(submitResult.creditShortfall) > 0 && (
                     <div className="col-span-2 sm:col-span-1">
                       <span className="text-rose-600 block text-[11px] font-bold">Số tiền/credit còn thiếu:</span>
@@ -5984,6 +6006,30 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                     >
                       Hoàn tất & Về Sàn đồ cũ
                     </button>
+                    {(submitResult.status === 'PENDING_INSPECTION' ||
+                      submitResult.nextAction === 'SELECT_INSPECTION_METHOD' ||
+                      submitResult.nextAction === 'PAY_INSPECTION_FEE' ||
+                      submitResult.nextAction === 'TRACK_INSPECTION' ||
+                      submitResult.nextAction === 'TRACK_INSPECTION_RETURN') && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPreListingOrderId(submitResult.inspectionOrderId || null);
+                            setPreListingNextAction(submitResult.nextAction || 'SELECT_INSPECTION_METHOD');
+                            setIsPreListingWorkflowOpen(true);
+                          }}
+                          className="px-5 py-1.5 rounded-xl bg-cyan-700 hover:bg-cyan-800 text-white text-xs font-black transition flex items-center gap-1.5 shadow-md cursor-pointer animate-pulse"
+                        >
+                          <ShieldCheck className="w-4 h-4 text-cyan-200" />
+                          <span>
+                            {submitResult.nextAction === 'PAY_INSPECTION_FEE'
+                              ? 'Thanh toán phí kiểm định'
+                              : submitResult.nextAction === 'TRACK_INSPECTION' || submitResult.nextAction === 'TRACK_INSPECTION_RETURN'
+                                ? 'Theo dõi tiến độ kiểm định'
+                                : 'Chọn hình thức kiểm định ngay'}
+                          </span>
+                        </button>
+                      )}
                   </>
                 )}
               </div>
@@ -6022,7 +6068,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 type="button"
                 onClick={() => {
                   if (isSubmittingPost) return;
-                  if ((credits?.postCredits ?? 0) < 1) {
+                  if (needsListingCreditToSubmit) {
                     setShowNoCreditsModal(true);
                     return;
                   }
@@ -6036,7 +6082,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                     <Loader2 className="w-5 h-5 animate-spin" />
                     <span>Đang gửi bài...</span>
                   </>
-                ) : (credits?.postCredits ?? 0) < 1 ? (
+                ) : needsListingCreditToSubmit ? (
                   <>
                     <AlertTriangle className="w-5 h-5 text-amber-400" />
                     <span>Hết lượt đăng (Bấm mua thêm)</span>
@@ -6044,7 +6090,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 ) : (
                   <>
                     <ShieldCheck className="w-5 h-5 text-amber-300" />
-                    <span>Gửi bài đăng</span>
+                    <span>{lang === 'vi' ? 'Gửi bài đăng' : 'Submit listing'}</span>
                   </>
                 )}
               </button>
@@ -6535,10 +6581,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               </div>
               <div>
                 <h3 className="text-base font-black text-slate-900">
-                  {lang === 'vi' ? 'Xác nhận nộp bài đăng lên sàn' : 'Confirm Post Submission'}
+                  {lang === 'vi' ? 'Xác nhận gửi bài đăng' : 'Confirm listing submission'}
                 </h3>
                 <p className="text-xs text-slate-500">
-                  {lang === 'vi' ? 'Vui lòng kiểm tra lại thông tin trước khi hoàn tất gửi đăng' : 'Please review your details before final publish'}
+                  {lang === 'vi' ? 'Kiểm tra lại thông tin trước khi gửi.' : 'Review your details before submitting.'}
                 </p>
               </div>
             </div>
@@ -6560,10 +6606,19 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 </span>
               </div>
               <div className="flex justify-between items-center gap-2 pt-2 border-t border-slate-200">
-                <span className="text-slate-500">Phí đăng bài:</span>
-                <span className="font-bold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-md">
-                  1 credit đăng bài
-                </span>
+                <span className="text-slate-500">{lang === 'vi' ? 'Phí đăng bài' : 'Listing fee'}</span>
+                <div className="space-y-1 text-right">
+                  <span className="inline-block rounded-md bg-emerald-100/80 px-2 py-0.5 font-bold text-emerald-800">
+                    {requiresPreListingInspection
+                      ? (lang === 'vi' ? '0 credit khi gửi bài' : '0 credits on submission')
+                      : (lang === 'vi' ? '1 credit đăng bài' : '1 listing credit')}
+                  </span>
+                  <p className="text-[11px] text-slate-600">
+                    {requiresPreListingInspection
+                      ? (lang === 'vi' ? 'Trừ 1 credit sau khi kiểm định đạt và qua duyệt cuối.' : '1 credit is charged after inspection and final review pass.')
+                      : (lang === 'vi' ? 'Thu khi bài đủ điều kiện xuất bản.' : 'Charged once the listing is approved for publication.')}
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -6595,7 +6650,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 className="py-2.5 px-4 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#24263e] hover:opacity-95 text-white font-bold text-xs shadow-md transition cursor-pointer flex items-center justify-center gap-1.5"
               >
                 <Check className="w-4 h-4" />
-                <span>{lang === 'vi' ? 'Xác nhận & Gửi đăng' : 'Confirm & Publish'}</span>
+                <span>{lang === 'vi' ? 'Xác nhận & Gửi bài' : 'Confirm & Submit'}</span>
               </button>
             </div>
           </div>
@@ -6649,6 +6704,28 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Quy trình Kiểm định bắt buộc trước khi đăng (Pre-Listing Inspection Workflow) */}
+      {isPreListingWorkflowOpen && postId && (
+        <div className="fixed inset-0 z-[150] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-fadeIn">
+          <div className="w-full max-w-2xl max-h-[90vh] flex flex-col">
+            <PreListingInspectionWorkflow
+              postId={postId}
+              postTitle={title || 'Bài đăng sản phẩm'}
+              postPrice={finalPriceVnd}
+              initialInspectionOrderId={preListingOrderId}
+              initialNextAction={preListingNextAction}
+              onClose={() => setIsPreListingWorkflowOpen(false)}
+              onPostActivated={async () => {
+                setIsPreListingWorkflowOpen(false);
+                await loadCredits();
+                handleFinishAndExit({ ...submitResult, status: 'ACTIVE', nextAction: null });
+              }}
+              lang={lang}
+            />
           </div>
         </div>
       )}

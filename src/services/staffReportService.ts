@@ -31,6 +31,8 @@ export interface ReportItemDto {
   resolutionAction?: 'NONE' | 'RETURN_AND_REFUND' | null;
   responsibleParty?: ResponsibleParty | null;
   decisionReason?: string | null;
+  sellerResponseDeadlineAt?: string | null;
+  sellerRespondedAt?: string | null;
   returnShipmentId?: string | null;
   returnApprovedAt?: string | null;
   refundedAt?: string | null;
@@ -49,6 +51,14 @@ export interface ResolveReportRequestDto {
 }
 
 export const staffReportService = {
+  async requestSellerResponse(reportId: string): Promise<ReportItemDto> {
+    const result = await request<ReportItemDto>(
+      '/staff/reports/' + encodeURIComponent(reportId) + '/request-seller-response',
+      { method: 'POST', requiresAuth: true },
+    );
+    return result.data;
+  },
+
   /**
    * Lấy danh sách hàng đợi các báo cáo vi phạm cần duyệt
    * GET /api/v1/staff/reports

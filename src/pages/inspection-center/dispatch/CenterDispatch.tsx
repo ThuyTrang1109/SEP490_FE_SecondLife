@@ -71,7 +71,13 @@ export function CenterDispatch({
       if (typeof BroadcastChannel !== 'undefined') {
         channel = new BroadcastChannel('secondlife_inspection_channel');
         channel.onmessage = (event) => {
-          if (event.data?.type === 'INSPECTOR_CONFIRMED' || event.data?.type === 'ORDER_ASSIGNED') {
+          if (
+            event.data?.type === 'INSPECTOR_CONFIRMED' ||
+            event.data?.type === 'ORDER_ASSIGNED' ||
+            event.data?.type === 'APPOINTMENT_UPDATED' ||
+            event.data?.type === 'APPOINTMENT_CONFIRMED' ||
+            event.data?.type === 'APPOINTMENT_SCHEDULED'
+          ) {
             handleConfirmed();
           }
         };
@@ -82,18 +88,26 @@ export function CenterDispatch({
       if (
         e.key?.startsWith('order_confirmed_by_inspector_') ||
         e.key === 'center_inspection_orders' ||
-        e.key === 'recent_placed_orders'
+        e.key === 'recent_placed_orders' ||
+        e.key?.startsWith('order_appointment_') ||
+        e.key?.startsWith('order_assigned_inspector_')
       ) {
         handleConfirmed();
       }
     };
 
     window.addEventListener('secondlife_inspector_confirmed_signal', handleConfirmed);
+    window.addEventListener('secondlife_appointment_confirmed', handleConfirmed);
+    window.addEventListener('secondlife_appointment_updated', handleConfirmed);
+    window.addEventListener('secondlife_appointment_scheduled', handleConfirmed);
     window.addEventListener('storage', handleStorage);
 
     return () => {
       channel?.close();
       window.removeEventListener('secondlife_inspector_confirmed_signal', handleConfirmed);
+      window.removeEventListener('secondlife_appointment_confirmed', handleConfirmed);
+      window.removeEventListener('secondlife_appointment_updated', handleConfirmed);
+      window.removeEventListener('secondlife_appointment_scheduled', handleConfirmed);
       window.removeEventListener('storage', handleStorage);
     };
   }, []);
@@ -147,7 +161,8 @@ export function CenterDispatch({
           <option value="WAITING_CENTER_APPROVAL">Chờ Hub duyệt lịch hẹn (Tại nhà)</option>
           <option value="WAITING_SELLER_APPROVAL">Chờ Seller phản hồi lịch (Tại nhà)</option>
           <option value="WAITING_SELLER_APPOINTMENT">Chờ người bán hẹn lịch (Tại nhà)</option>
-          <option value="READY_TO_ASSIGN">Sẵn sàng giao KTV (Đã chốt lịch)</option>
+          <option value="WAITING_HUB_RECEIPT">Chờ hàng đến Hub</option>
+          <option value="READY_TO_ASSIGN">Sẵn sàng giao KTV</option>
           <option value="ASSIGNED">Đã phân công KTV</option>
         </select>
       </div>
@@ -156,11 +171,11 @@ export function CenterDispatch({
         <thead role="rowgroup" className="hidden border-b border-slate-200 bg-slate-50 text-[11px] uppercase tracking-wide text-slate-600 @[56rem]:table-header-group">
           <tr role="row">
             <th scope="col" className="w-[5%] px-2 py-3 text-center">#</th>
-            <th scope="col" className="w-[31%] px-4 py-3">Sản phẩm &amp; mã đơn</th>
+            <th scope="col" className="w-[30%] px-4 py-3">Sản phẩm &amp; mã đơn</th>
             <th scope="col" className="w-[14%] px-4 py-3">Hình thức &amp; phí</th>
-            <th scope="col" className="w-[17%] px-4 py-3">Kỹ thuật viên</th>
+            <th scope="col" className="w-[16%] px-4 py-3">Kỹ thuật viên</th>
             <th scope="col" className="w-[19%] px-4 py-3">Trạng thái</th>
-            <th scope="col" className="w-[14%] px-4 py-3 text-center">Thao tác</th>
+            <th scope="col" className="w-[16%] px-4 py-3 text-center">Thao tác</th>
           </tr>
         </thead>
         <tbody role="rowgroup" className="block divide-y divide-slate-100 @[56rem]:table-row-group">
@@ -182,6 +197,7 @@ export function CenterDispatch({
               const inspectorName = order.inspectorName && order.inspectorName !== 'Chưa phân công'
                 ? order.inspectorName : 'Kỹ thuật viên';
               const isInspectorLocked = assigned && (
+                Boolean(order.inspectorConfirmed) ||
                 isInspectorAssignmentLocked(order) ||
                 ['INSPECTING', 'INSPECTION_IN_PROGRESS', 'PASSED', 'FAILED', 'COMPLETED', 'DELIVERING_TO_BUYER'].includes(order.status || '') ||
                 (typeof window !== 'undefined' && (
@@ -194,20 +210,24 @@ export function CenterDispatch({
                 (typeof window !== 'undefined' && localStorage.getItem(`inspection_status_${order.id}`) === 'INSPECTING')
               );
               const waitingSellerAppt = stage === 'WAITING_SELLER_APPOINTMENT';
+              const waitingHubReceipt = stage === 'WAITING_HUB_RECEIPT';
+              const waitingForDispatchInput = waitingSellerAppt || waitingHubReceipt;
               const waitingCenterApproval = stage === 'WAITING_CENTER_APPROVAL';
               const waitingSellerCounter = stage === 'WAITING_SELLER_APPROVAL';
-              const actionLabel = waitingSellerAppt
-                ? 'Chờ hẹn lịch'
-                : waitingCenterApproval
-                  ? 'Duyệt lịch hẹn'
-                  : waitingSellerCounter
-                    ? 'Xem phản hồi'
-                    : isInspectorLocked
-                      ? (isInspecting ? 'Đang kiểm định' : 'Đã khóa đổi KTV')
-                      : assigned
-                        ? 'Đổi KTV'
-                        : 'Giao task';
-              const ActionIcon = waitingSellerAppt
+              const actionLabel = waitingHubReceipt
+                ? 'Chờ hàng đến Hub'
+                : waitingSellerAppt
+                  ? 'Chờ hẹn lịch'
+                  : waitingCenterApproval
+                    ? 'Duyệt lịch hẹn'
+                    : waitingSellerCounter
+                      ? 'Xem phản hồi'
+                      : isInspectorLocked
+                        ? (isInspecting ? 'Đang kiểm định' : 'Đã khóa')
+                        : assigned
+                          ? 'Đổi KTV'
+                          : 'Giao task';
+              const ActionIcon = waitingForDispatchInput
                 ? Clock
                 : waitingCenterApproval
                   ? CalendarCheck
@@ -240,48 +260,23 @@ export function CenterDispatch({
                     <div className="mb-0.5 text-[10px] font-bold uppercase text-slate-500 @[56rem]:hidden">Hình thức &amp; phí</div>
                     <div className="font-semibold text-slate-800">{order.orderType === 'AT_HOME' ? 'Tại nhà' : 'Tại Hub'}</div>
                     {order.orderType === 'AT_HOME' && (() => {
-                      let apptTime = order.appointmentScheduledAt;
-                      if (typeof window !== 'undefined') {
+                      let apptTime = waitingSellerCounter
+                        ? order.counterScheduledAt || order.appointmentScheduledAt
+                        : order.appointmentScheduledAt;
+                      if (!apptTime && typeof window !== 'undefined') {
                         const possibleIds = [order.id, (order as any).linkedOrderId, (order as any).orderId, (order as any).inspectionOrderId].filter(Boolean) as string[];
-                        const idSet = new Set(possibleIds);
                         for (const pid of possibleIds) {
                           try {
                             const raw = localStorage.getItem(`order_appointment_${pid}`);
                             if (raw) {
                               const parsed = JSON.parse(raw);
-                              if (parsed.status === 'PENDING_CENTER_CONFIRMATION' && parsed.scheduledAt) {
+                              if (parsed.scheduledAt) {
                                 apptTime = parsed.scheduledAt;
                                 break;
-                              } else if (parsed.scheduledAt && !apptTime) {
-                                apptTime = parsed.scheduledAt;
                               }
                             }
                           } catch { }
                         }
-                        try {
-                          const rawCenter = localStorage.getItem('center_inspection_orders');
-                          if (rawCenter) {
-                            const list = JSON.parse(rawCenter);
-                            if (Array.isArray(list)) {
-                              const m = list.find((o: any) => idSet.has(o.id) || idSet.has(o.linkedOrderId) || idSet.has(o.orderId) || idSet.has(o.inspectionOrderId));
-                              if (m && m.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && m.appointmentScheduledAt) {
-                                apptTime = m.appointmentScheduledAt;
-                              }
-                            }
-                          }
-                        } catch { }
-                        try {
-                          const rawSeller = localStorage.getItem('my_seller_inspection_orders');
-                          if (rawSeller) {
-                            const list = JSON.parse(rawSeller);
-                            if (Array.isArray(list)) {
-                              const m = list.find((o: any) => idSet.has(o.id) || idSet.has(o.linkedOrderId) || idSet.has(o.orderId) || idSet.has(o.inspectionOrderId));
-                              if (m && m.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && m.appointmentScheduledAt) {
-                                apptTime = m.appointmentScheduledAt;
-                              }
-                            }
-                          }
-                        } catch { }
                       }
                       if (!apptTime) return null;
                       return (
@@ -323,7 +318,7 @@ export function CenterDispatch({
                   <td role="cell" className="min-w-0 text-right @[56rem]:px-4 @[56rem]:py-3 @[56rem]:text-center">
                     <button
                       type="button"
-                      disabled={waitingSellerAppt || isInspectorLocked}
+                      disabled={waitingForDispatchInput || isInspectorLocked}
                       onClick={() => {
                         if (isInspectorLocked) return;
                         if (waitingCenterApproval || waitingSellerCounter) {
@@ -332,7 +327,7 @@ export function CenterDispatch({
                           handleOpenAssign(order);
                         }
                       }}
-                      className={`inline-flex min-h-9 w-full max-w-32 items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs font-bold transition ${waitingSellerAppt
+                      className={`inline-flex min-h-9 w-full max-w-[9.5rem] items-center justify-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold whitespace-nowrap transition ${waitingForDispatchInput
                         ? 'border-amber-200 bg-amber-50 text-amber-800 cursor-not-allowed opacity-80'
                         : isInspectorLocked
                           ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed opacity-90'
@@ -357,7 +352,7 @@ export function CenterDispatch({
                       }
                     >
                       <ActionIcon aria-hidden="true" className="size-3.5 shrink-0" />
-                      {actionLabel}
+                      <span className="whitespace-nowrap">{actionLabel}</span>
                     </button>
                   </td>
                 </tr>

@@ -52,6 +52,12 @@ export interface MultiStagePhotos {
   handoverPhotos?: string[];
 }
 
+export interface SellerListingActions {
+  editContent: boolean;
+  updateShippingPackage: boolean;
+  reclassifyItem: boolean;
+}
+
 export interface Listing {
   id: string;
   categoryId?: string;
@@ -87,6 +93,7 @@ export interface Listing {
   isInspected?: boolean;
   inspectionPassed?: boolean;
   inspectionStatus?: string;
+  inspectionMethod?: 'AT_HOME' | 'AT_CENTER' | string | null;
   inspectionSeal?: string;
   photos: PhotoChecklist;
   photoGallery: string[];
@@ -112,6 +119,7 @@ export interface Listing {
   rejectionReason?: string;
   listingCreditCharged?: boolean;
   aiDescription?: string | null;
+  sellerActions?: SellerListingActions;
 }
 
 export interface SellerPostDetailDto {
@@ -130,6 +138,11 @@ export interface SellerPostDetailDto {
   aiSuggestedPrice?: number | null;
   rejectionReason?: string | null;
   listingCreditCharged?: boolean;
+  isInspected?: boolean;
+  tamperSealId?: string | null;
+  conditionGrade?: string | null;
+  inspectionMethod?: 'AT_HOME' | 'AT_CENTER' | string | null;
+  sellerActions?: SellerListingActions;
   shippingWeight?: number | null;
   shippingLength?: number | null;
   shippingWidth?: number | null;
@@ -193,6 +206,15 @@ export interface ShippingLeg {
     description: string;
     location?: string;
   }[];
+}
+
+export interface OrderReturnInfo {
+  orderId: string;
+  reportId: string;
+  shipmentId?: string | null;
+  shipmentStatus?: string | null;
+  orderCode?: string | null;
+  refundedAt?: string | null;
 }
 
 export interface EscrowOrder {
@@ -260,9 +282,13 @@ export interface EscrowOrder {
   userReview?: ProductReview;
   backendStatus?: OrderBackendStatus;
   backendEscrowStatus?: EscrowStatusBackend;
+  hasActiveDispute?: boolean;
   status?: OrderBackendStatus | string | null;
   shippingQuoteId?: string;
   shippingDeliveredAt?: string;
+  orderReturn?: OrderReturnInfo | null;
+  shipments?: ShipmentBackend[];
+  returnShipment?: ShipmentBackend | null;
   deliveryAddress?: any;
   sellerConfirmedAt?: string | null;
   confirmationDeadline?: string | null;
@@ -301,6 +327,7 @@ export interface ProductReview {
   orderId?: string;
   listingId: string;
   productName: string;
+  productImage?: string;
   sellerId: string;
   sellerName: string;
   sellerPhone?: string;
@@ -761,7 +788,7 @@ export interface Negotiation {
 // ==========================================
 // 3. Order & Escrow Types
 // ==========================================
-export type OrderStatusBackend = 'PENDING' | 'PENDING_PAYMENT' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'COMPLETED' | 'CANCELLED' | 'WAITING_SELLER_APPROVAL';
+export type OrderStatusBackend = 'PENDING' | 'PENDING_PAYMENT' | 'PROCESSING' | 'CONFIRMED' | 'SHIPPED' | 'DELIVERED' | 'COMPLETED' | 'CANCELLED' | 'WAITING_SELLER_APPROVAL';
 export type OrderBackendStatus = OrderStatusBackend | 'PASSED' | 'FAILED';
 export type EscrowStatusBackend = 'PENDING' | 'HELD' | 'RELEASED' | 'REFUNDED' | 'FROZEN';
 
@@ -885,6 +912,7 @@ export interface CreateShipmentRequestDto {
 
 export interface ShipmentBackend {
   shipmentId: string;
+  canRebook?: boolean;
   cashPayerId?: string | null;
   cashConfirmedAt?: string | null;
   cashPaidAmount?: number | null;

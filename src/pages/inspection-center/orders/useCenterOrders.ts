@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, type RefObject } from 'react';
 import { inspectorService, InspectionOrderDto } from '../../../services';
 import { Language, UserProfile, EscrowOrder } from '../../../types';
-import { filterCenterApiOrders, shouldTrackCenterInspectionShipments, isHubReturnCase } from '../../../utils/inspectionCenterData';
+import { filterCenterApiOrders, hasCenterCounterProposal, shouldTrackCenterInspectionShipments, isHubReturnCase } from '../../../utils/inspectionCenterData';
 
 interface Options {
   currentUser: UserProfile | null | undefined;
@@ -15,6 +15,7 @@ interface Options {
 export function useCenterOrders({ currentUser, initialOrders, lang, loadingShipmentsRef, showNotice, showOrderShipments }: Options) {
   const ordersRequestRef = useRef(0);
   const loadingOrdersRef = useRef(false);
+  const counterUpdatesDuringLoad = useRef(new Map<string, InspectionOrderDto>());
 
   // Convert initial escrow orders into InspectionOrderDto fallback
   const fallbackOrders: InspectionOrderDto[] = useMemo(() => {
@@ -63,21 +64,54 @@ export function useCenterOrders({ currentUser, initialOrders, lang, loadingShipm
         let counterNote = (o as any).counterNote;
         let appointmentRejectionReason = (o as any).appointmentRejectionReason;
 
+        const isBackendConfirmed = (appointmentStatus === 'CONFIRMED' || o.status === 'SCHEDULED' || (o as any).backendStatus === 'SCHEDULED') && !counterScheduledAt;
+        const isBackendPendingNoCounter = appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !counterScheduledAt;
+        if (isBackendConfirmed) {
+          counterScheduledAt = undefined;
+          counterShift = undefined;
+          counterNote = undefined;
+          appointmentStatus = 'CONFIRMED';
+        } else if (isBackendPendingNoCounter) {
+          counterScheduledAt = undefined;
+          counterShift = undefined;
+          counterNote = undefined;
+        }
+
         const apptPossibleIds = [o.id, (o as any).linkedOrderId, (o as any).orderId, (o as any).inspectionOrderId].filter(Boolean) as string[];
-        for (const pid of apptPossibleIds) {
-          try {
-            const rawAppt = localStorage.getItem(`order_appointment_${pid}`);
-            if (rawAppt) {
-              const apptData = JSON.parse(rawAppt);
-              appointmentScheduledAt = apptData.scheduledAt || appointmentScheduledAt;
-              appointmentNote = apptData.note || appointmentNote;
-              appointmentStatus = apptData.status || appointmentStatus;
-              counterScheduledAt = apptData.counterScheduledAt || counterScheduledAt;
-              counterShift = apptData.counterShift || counterShift;
-              counterNote = apptData.counterNote || counterNote;
-              break;
-            }
-          } catch { }
+        if (!isBackendConfirmed && !isBackendPendingNoCounter && !hasCenterCounterProposal(o)) {
+          for (const pid of apptPossibleIds) {
+            try {
+              const rawAppt = localStorage.getItem(`order_appointment_${pid}`);
+              if (rawAppt) {
+                const apptData = JSON.parse(rawAppt);
+                if (apptData.status === 'CONFIRMED' || appointmentStatus === 'CONFIRMED') {
+                  appointmentStatus = 'CONFIRMED';
+                  if (apptData.scheduledAt) appointmentScheduledAt = apptData.scheduledAt;
+                  appointmentNote = apptData.note || appointmentNote;
+                  counterScheduledAt = undefined;
+                  counterShift = undefined;
+                  counterNote = undefined;
+                  appointmentRejectionReason = undefined;
+                } else if (apptData.status === 'PENDING_CENTER_CONFIRMATION' && !apptData.counterScheduledAt) {
+                  appointmentStatus = 'PENDING_CENTER_CONFIRMATION';
+                  if (apptData.scheduledAt) appointmentScheduledAt = apptData.scheduledAt;
+                  appointmentNote = apptData.note || appointmentNote;
+                  counterScheduledAt = undefined;
+                  counterShift = undefined;
+                  counterNote = undefined;
+                } else if (apptData.counterScheduledAt) {
+                  counterScheduledAt = apptData.counterScheduledAt;
+                  counterShift = apptData.counterShift || counterShift;
+                  counterNote = apptData.counterNote || counterNote;
+                  appointmentStatus = 'COUNTERED_BY_CENTER';
+                } else {
+                  if (!appointmentScheduledAt && apptData.scheduledAt) appointmentScheduledAt = apptData.scheduledAt;
+                  if (!appointmentStatus) appointmentStatus = apptData.status;
+                }
+                break;
+              }
+            } catch { }
+          }
         }
 
         for (const pid of apptPossibleIds) {
@@ -93,7 +127,64 @@ export function useCenterOrders({ currentUser, initialOrders, lang, loadingShipm
           } catch { }
         }
 
-        if (counterScheduledAt) {
+        if (!hasCenterCounterProposal(o) && appointmentStatus !== 'PENDING_CENTER_CONFIRMATION') {
+          const idSet = new Set(apptPossibleIds);
+          try {
+            const rawCenter = localStorage.getItem('center_inspection_orders');
+            if (rawCenter) {
+              const listCenter = JSON.parse(rawCenter);
+              if (Array.isArray(listCenter)) {
+                const m = listCenter.find((co: any) => idSet.has(co.id) || idSet.has(co.linkedOrderId) || idSet.has(co.orderId) || idSet.has(co.inspectionOrderId));
+                if (m) {
+                  if (m.appointmentStatus === 'CONFIRMED') {
+                    appointmentStatus = 'CONFIRMED';
+                    if (m.appointmentScheduledAt) appointmentScheduledAt = m.appointmentScheduledAt;
+                    appointmentNote = m.appointmentNote || appointmentNote;
+                    counterScheduledAt = undefined;
+                    counterShift = undefined;
+                    counterNote = undefined;
+                    appointmentRejectionReason = undefined;
+                  } else if (m.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !m.counterScheduledAt) {
+                    appointmentScheduledAt = m.appointmentScheduledAt || appointmentScheduledAt;
+                    appointmentNote = m.appointmentNote || appointmentNote;
+                    appointmentStatus = 'PENDING_CENTER_CONFIRMATION';
+                    counterScheduledAt = undefined;
+                    counterShift = undefined;
+                    counterNote = undefined;
+                  }
+                }
+              }
+            }
+          } catch {}
+          try {
+            const rawRecent = localStorage.getItem('recent_placed_orders');
+            if (rawRecent && appointmentStatus !== 'CONFIRMED') {
+              const listRecent = JSON.parse(rawRecent);
+              if (Array.isArray(listRecent)) {
+                const m = listRecent.find((ro: any) => idSet.has(ro.id) || idSet.has(ro.linkedOrderId) || idSet.has(ro.orderId) || idSet.has(ro.inspectionOrderId));
+                if (m && m.appointmentStatus === 'CONFIRMED') {
+                  appointmentStatus = 'CONFIRMED';
+                  if (m.appointmentScheduledAt) appointmentScheduledAt = m.appointmentScheduledAt;
+                  appointmentNote = m.appointmentNote || appointmentNote;
+                  counterScheduledAt = undefined;
+                  counterShift = undefined;
+                  counterNote = undefined;
+                  appointmentRejectionReason = undefined;
+                }
+              }
+            }
+          } catch {}
+        }
+
+        if (appointmentStatus === 'CONFIRMED') {
+          counterScheduledAt = undefined;
+          counterShift = undefined;
+          counterNote = undefined;
+        } else if (appointmentStatus === 'PENDING_CENTER_CONFIRMATION') {
+          counterScheduledAt = undefined;
+          counterShift = undefined;
+          counterNote = undefined;
+        } else if (counterScheduledAt) {
           appointmentStatus = 'COUNTERED_BY_CENTER';
         }
 
@@ -166,6 +257,15 @@ export function useCenterOrders({ currentUser, initialOrders, lang, loadingShipm
   const [isLoadingOrders, setIsLoadingOrders] = useState(false);
   const visibleOrderHistory = centerOrderHistory?.centerId === currentUser?.id ? centerOrderHistory : null;
 
+  const applyCounterResponse = (updated: InspectionOrderDto) => {
+    counterUpdatesDuringLoad.current.set(updated.id, updated);
+    const apply = (items: InspectionOrderDto[]) => items.map((order) => order.id === updated.id ? { ...order, ...updated } : order);
+    setOrders(apply);
+    setCenterOrderHistory((previous) => previous?.centerId === currentUser?.id && previous
+      ? { ...previous, items: apply(previous.items) }
+      : previous);
+  };
+
   // Handler: Xác nhận đã tiếp nhận kiện hàng thực tế tại Hub
   const handleReceivePackageAtHub = (orderId: string, orderTitle?: string) => {
     try {
@@ -194,20 +294,32 @@ export function useCenterOrders({ currentUser, initialOrders, lang, loadingShipm
   };
 
   // --- API Fetch: Orders ---
+  const inFlightOrdersPromiseRef = useRef<Promise<void> | null>(null);
+
   const loadOrders = async (background = false) => {
     const centerId = currentUser?.id;
     if (!centerId) return;
-    if (background && (loadingOrdersRef.current || loadingShipmentsRef.current)) return;
+    if (inFlightOrdersPromiseRef.current) {
+      return inFlightOrdersPromiseRef.current;
+    }
     const requestId = ++ordersRequestRef.current;
+    // A list request already running when a proposal succeeds may still return the old appointment.
+    const counterUpdates = new Map<string, InspectionOrderDto>();
+    counterUpdatesDuringLoad.current = counterUpdates;
     loadingOrdersRef.current = true;
     if (!background) setIsLoadingOrders(true);
-    try {
-      const options = background ? { isBackground: true } : undefined;
-      const result = await inspectorService.getCenterOrderHistory(options);
+
+    const promise = (async () => {
+      try {
+        const options = background ? { isBackground: true } : undefined;
+        const result = await inspectorService.getCenterOrderHistory(options);
       if (requestId !== ordersRequestRef.current) return;
       if (!Array.isArray(result?.items)) throw new Error('Invalid center orders response');
 
-      const backendItems = filterCenterApiOrders(result.items, centerId);
+      const backendItems = filterCenterApiOrders(result.items, centerId).map((order) => {
+        const updated = counterUpdates.get(order.id);
+        return updated ? { ...order, ...updated } : order;
+      });
       const total = backendItems.length === result.items.length ? result.totalElements : backendItems.length;
       setCenterOrderHistory({ centerId, items: backendItems, total });
       setTrackedOrders(backendItems.filter((order) =>
@@ -297,27 +409,54 @@ export function useCenterOrders({ currentUser, initialOrders, lang, loadingShipm
             let counterNote = (o as any).counterNote;
             let appointmentRejectionReason = (o as any).appointmentRejectionReason;
 
+            const isBackendConfirmed = (appointmentStatus === 'CONFIRMED' || o.status === 'SCHEDULED' || (o as any).backendStatus === 'SCHEDULED') && !counterScheduledAt;
+            const isBackendPendingNoCounter = appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !counterScheduledAt;
+            if (isBackendConfirmed) {
+              counterScheduledAt = undefined;
+              counterShift = undefined;
+              counterNote = undefined;
+              appointmentStatus = 'CONFIRMED';
+            } else if (isBackendPendingNoCounter) {
+              counterScheduledAt = undefined;
+              counterShift = undefined;
+              counterNote = undefined;
+            }
+
             const apptPossibleIds = [o.id, (o as any).linkedOrderId, (o as any).orderId, (o as any).inspectionOrderId].filter(Boolean) as string[];
-            for (const pid of apptPossibleIds) {
-              try {
-                const rawAppt = localStorage.getItem(`order_appointment_${pid}`);
-                if (rawAppt) {
-                  const apptData = JSON.parse(rawAppt);
-                  appointmentScheduledAt = apptData.scheduledAt || appointmentScheduledAt;
-                  appointmentNote = apptData.note || appointmentNote;
-                  appointmentStatus = apptData.status || appointmentStatus;
-                  if (apptData.status === 'PENDING_CENTER_CONFIRMATION' && !apptData.counterScheduledAt) {
-                    counterScheduledAt = undefined;
-                    counterShift = undefined;
-                    counterNote = undefined;
-                  } else {
-                    counterScheduledAt = apptData.counterScheduledAt || counterScheduledAt;
-                    counterShift = apptData.counterShift || counterShift;
-                    counterNote = apptData.counterNote || counterNote;
+            if (!isBackendConfirmed && !isBackendPendingNoCounter && !hasCenterCounterProposal(o)) {
+              for (const pid of apptPossibleIds) {
+                try {
+                  const rawAppt = localStorage.getItem(`order_appointment_${pid}`);
+                  if (rawAppt) {
+                    const apptData = JSON.parse(rawAppt);
+                    if (apptData.status === 'CONFIRMED' || appointmentStatus === 'CONFIRMED') {
+                      appointmentStatus = 'CONFIRMED';
+                      if (apptData.scheduledAt) appointmentScheduledAt = apptData.scheduledAt;
+                      appointmentNote = apptData.note || appointmentNote;
+                      counterScheduledAt = undefined;
+                      counterShift = undefined;
+                      counterNote = undefined;
+                      appointmentRejectionReason = undefined;
+                    } else if (apptData.status === 'PENDING_CENTER_CONFIRMATION' && !apptData.counterScheduledAt) {
+                      appointmentStatus = 'PENDING_CENTER_CONFIRMATION';
+                      if (apptData.scheduledAt) appointmentScheduledAt = apptData.scheduledAt;
+                      appointmentNote = apptData.note || appointmentNote;
+                      counterScheduledAt = undefined;
+                      counterShift = undefined;
+                      counterNote = undefined;
+                    } else if (apptData.counterScheduledAt) {
+                      counterScheduledAt = apptData.counterScheduledAt;
+                      counterShift = apptData.counterShift || counterShift;
+                      counterNote = apptData.counterNote || counterNote;
+                      appointmentStatus = 'COUNTERED_BY_CENTER';
+                    } else {
+                      if (!appointmentScheduledAt && apptData.scheduledAt) appointmentScheduledAt = apptData.scheduledAt;
+                      if (!appointmentStatus) appointmentStatus = apptData.status;
+                    }
+                    break;
                   }
-                  break;
-                }
-              } catch { }
+                } catch { }
+              }
             }
 
             for (const pid of apptPossibleIds) {
@@ -333,7 +472,7 @@ export function useCenterOrders({ currentUser, initialOrders, lang, loadingShipm
               } catch { }
             }
 
-            if (appointmentStatus !== 'PENDING_CENTER_CONFIRMATION') {
+            if (!hasCenterCounterProposal(o) && appointmentStatus !== 'PENDING_CENTER_CONFIRMATION') {
               const idSet = new Set(apptPossibleIds);
               try {
                 const rawCenter = localStorage.getItem('center_inspection_orders');
@@ -341,13 +480,23 @@ export function useCenterOrders({ currentUser, initialOrders, lang, loadingShipm
                   const listCenter = JSON.parse(rawCenter);
                   if (Array.isArray(listCenter)) {
                     const m = listCenter.find((co: any) => idSet.has(co.id) || idSet.has(co.linkedOrderId) || idSet.has(co.orderId) || idSet.has(co.inspectionOrderId));
-                    if (m && m.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !m.counterScheduledAt) {
-                      appointmentScheduledAt = m.appointmentScheduledAt || appointmentScheduledAt;
-                      appointmentNote = m.appointmentNote || appointmentNote;
-                      appointmentStatus = 'PENDING_CENTER_CONFIRMATION';
-                      counterScheduledAt = undefined;
-                      counterShift = undefined;
-                      counterNote = undefined;
+                    if (m) {
+                      if (m.appointmentStatus === 'CONFIRMED') {
+                        appointmentStatus = 'CONFIRMED';
+                        if (m.appointmentScheduledAt) appointmentScheduledAt = m.appointmentScheduledAt;
+                        appointmentNote = m.appointmentNote || appointmentNote;
+                        counterScheduledAt = undefined;
+                        counterShift = undefined;
+                        counterNote = undefined;
+                        appointmentRejectionReason = undefined;
+                      } else if (m.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !m.counterScheduledAt) {
+                        appointmentScheduledAt = m.appointmentScheduledAt || appointmentScheduledAt;
+                        appointmentNote = m.appointmentNote || appointmentNote;
+                        appointmentStatus = 'PENDING_CENTER_CONFIRMATION';
+                        counterScheduledAt = undefined;
+                        counterShift = undefined;
+                        counterNote = undefined;
+                      }
                     }
                   }
                 }
@@ -369,12 +518,43 @@ export function useCenterOrders({ currentUser, initialOrders, lang, loadingShipm
                   }
                 }
               } catch {}
+              try {
+                const rawRecent = localStorage.getItem('recent_placed_orders');
+                if (rawRecent && appointmentStatus !== 'CONFIRMED') {
+                  const listRecent = JSON.parse(rawRecent);
+                  if (Array.isArray(listRecent)) {
+                    const m = listRecent.find((ro: any) => idSet.has(ro.id) || idSet.has(ro.linkedOrderId) || idSet.has(ro.orderId) || idSet.has(ro.inspectionOrderId));
+                    if (m && m.appointmentStatus === 'CONFIRMED') {
+                      appointmentStatus = 'CONFIRMED';
+                      if (m.appointmentScheduledAt) appointmentScheduledAt = m.appointmentScheduledAt;
+                      appointmentNote = m.appointmentNote || appointmentNote;
+                      counterScheduledAt = undefined;
+                      counterShift = undefined;
+                      counterNote = undefined;
+                      appointmentRejectionReason = undefined;
+                    }
+                  }
+                }
+              } catch {}
             }
 
-            if (appointmentStatus === 'PENDING_CENTER_CONFIRMATION') {
+            const savedStatus = typeof window !== 'undefined' ? localStorage.getItem(`inspection_status_${o.id}`) : null;
+            let resolvedStatus = savedStatus || o.status || o.escrowStatus || 'CONFIRMED_PENDING_DISPATCH';
+
+            if (appointmentStatus === 'CONFIRMED') {
               counterScheduledAt = undefined;
               counterShift = undefined;
               counterNote = undefined;
+              if (resolvedStatus === 'WAITING_SELLER_APPROVAL') {
+                resolvedStatus = 'CONFIRMED_PENDING_DISPATCH';
+              }
+            } else if (appointmentStatus === 'PENDING_CENTER_CONFIRMATION') {
+              counterScheduledAt = undefined;
+              counterShift = undefined;
+              counterNote = undefined;
+              if (resolvedStatus === 'WAITING_SELLER_APPROVAL') {
+                resolvedStatus = 'CONFIRMED_PENDING_DISPATCH';
+              }
             } else if (counterScheduledAt) {
               appointmentStatus = 'COUNTERED_BY_CENTER';
             }
@@ -386,8 +566,6 @@ export function useCenterOrders({ currentUser, initialOrders, lang, loadingShipm
               appointmentStatus = 'PENDING_CENTER_CONFIRMATION';
             }
 
-            const savedStatus = typeof window !== 'undefined' ? localStorage.getItem(`inspection_status_${o.id}`) : null;
-            let resolvedStatus = savedStatus || o.status || o.escrowStatus || 'CONFIRMED_PENDING_DISPATCH';
             if (savedStatus === 'PASSED' || o.status === 'PASSED' || o.escrowStatus === 'INSPECTION_PASSED' || (o as any).backendStatus === 'PASSED') {
               resolvedStatus = 'PASSED';
             } else if (savedStatus === 'FAILED' || o.status === 'FAILED' || o.escrowStatus === 'INSPECTION_FAILED') {
@@ -493,27 +671,97 @@ export function useCenterOrders({ currentUser, initialOrders, lang, loadingShipm
           let counterNote = (ord as any).counterNote;
           let appointmentRejectionReason = (ord as any).appointmentRejectionReason;
 
+          const isBackendConfirmed = (appointmentStatus === 'CONFIRMED' || ord.status === 'SCHEDULED' || (ord as any).backendStatus === 'SCHEDULED') && !counterScheduledAt;
+          const isBackendPendingNoCounter = appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !counterScheduledAt;
+          if (isBackendConfirmed) {
+            counterScheduledAt = undefined;
+            counterShift = undefined;
+            counterNote = undefined;
+            appointmentStatus = 'CONFIRMED';
+          } else if (isBackendPendingNoCounter) {
+            counterScheduledAt = undefined;
+            counterShift = undefined;
+            counterNote = undefined;
+          }
+
           const apptPossibleIds = [ord.id, (ord as any).linkedOrderId, (ord as any).orderId, (ord as any).inspectionOrderId].filter(Boolean) as string[];
-          for (const pid of apptPossibleIds) {
-            try {
-              const rawAppt = localStorage.getItem(`order_appointment_${pid}`);
-              if (rawAppt) {
-                const apptData = JSON.parse(rawAppt);
-                appointmentScheduledAt = apptData.scheduledAt || appointmentScheduledAt;
-                appointmentNote = apptData.note || appointmentNote;
-                appointmentStatus = apptData.status || appointmentStatus;
-                if (apptData.status === 'PENDING_CENTER_CONFIRMATION' && !apptData.counterScheduledAt) {
-                  counterScheduledAt = undefined;
-                  counterShift = undefined;
-                  counterNote = undefined;
-                } else {
-                  counterScheduledAt = apptData.counterScheduledAt || counterScheduledAt;
-                  counterShift = apptData.counterShift || counterShift;
-                  counterNote = apptData.counterNote || counterNote;
+          if (isBackendConfirmed || isBackendPendingNoCounter) {
+            for (const pid of apptPossibleIds) {
+              try {
+                const rawAppt = localStorage.getItem(`order_appointment_${pid}`);
+                if (rawAppt) {
+                  const apptData = JSON.parse(rawAppt);
+                  if (apptData.counterScheduledAt || (isBackendConfirmed && apptData.status !== 'CONFIRMED')) {
+                    delete apptData.counterScheduledAt;
+                    delete apptData.counterShift;
+                    delete apptData.counterNote;
+                    apptData.status = isBackendConfirmed ? 'CONFIRMED' : 'PENDING_CENTER_CONFIRMATION';
+                    if (appointmentScheduledAt) apptData.scheduledAt = appointmentScheduledAt;
+                    localStorage.setItem(`order_appointment_${pid}`, JSON.stringify(apptData));
+                  }
                 }
-                break;
+              } catch {}
+            }
+            const idSet = new Set(apptPossibleIds);
+            try {
+              const rawCenter = localStorage.getItem('center_inspection_orders');
+              if (rawCenter) {
+                const listCenter = JSON.parse(rawCenter);
+                if (Array.isArray(listCenter)) {
+                  let changed = false;
+                  const updated = listCenter.map((co: any) => {
+                    if (idSet.has(co.id) || idSet.has(co.linkedOrderId) || idSet.has(co.orderId) || idSet.has(co.inspectionOrderId)) {
+                      if (co.counterScheduledAt || (isBackendConfirmed && co.appointmentStatus !== 'CONFIRMED') || (!isBackendConfirmed && co.appointmentStatus !== 'PENDING_CENTER_CONFIRMATION')) {
+                        delete co.counterScheduledAt;
+                        delete co.counterShift;
+                        delete co.counterNote;
+                        co.appointmentStatus = isBackendConfirmed ? 'CONFIRMED' : 'PENDING_CENTER_CONFIRMATION';
+                        if (appointmentScheduledAt) co.appointmentScheduledAt = appointmentScheduledAt;
+                        changed = true;
+                      }
+                    }
+                    return co;
+                  });
+                  if (changed) {
+                    localStorage.setItem('center_inspection_orders', JSON.stringify(updated));
+                  }
+                }
               }
-            } catch { }
+            } catch {}
+          } else if (!hasCenterCounterProposal(ord)) {
+            for (const pid of apptPossibleIds) {
+              try {
+                const rawAppt = localStorage.getItem(`order_appointment_${pid}`);
+                if (rawAppt) {
+                  const apptData = JSON.parse(rawAppt);
+                  if (apptData.status === 'CONFIRMED' || appointmentStatus === 'CONFIRMED') {
+                    appointmentStatus = 'CONFIRMED';
+                    if (apptData.scheduledAt) appointmentScheduledAt = apptData.scheduledAt;
+                    appointmentNote = apptData.note || appointmentNote;
+                    counterScheduledAt = undefined;
+                    counterShift = undefined;
+                    counterNote = undefined;
+                    appointmentRejectionReason = undefined;
+                  } else if (apptData.status === 'PENDING_CENTER_CONFIRMATION' && !apptData.counterScheduledAt) {
+                    appointmentStatus = 'PENDING_CENTER_CONFIRMATION';
+                    if (apptData.scheduledAt) appointmentScheduledAt = apptData.scheduledAt;
+                    appointmentNote = apptData.note || appointmentNote;
+                    counterScheduledAt = undefined;
+                    counterShift = undefined;
+                    counterNote = undefined;
+                  } else if (apptData.counterScheduledAt) {
+                    counterScheduledAt = apptData.counterScheduledAt;
+                    counterShift = apptData.counterShift || counterShift;
+                    counterNote = apptData.counterNote || counterNote;
+                    appointmentStatus = 'COUNTERED_BY_CENTER';
+                  } else {
+                    if (!appointmentScheduledAt && apptData.scheduledAt) appointmentScheduledAt = apptData.scheduledAt;
+                    if (!appointmentStatus) appointmentStatus = apptData.status;
+                  }
+                  break;
+                }
+              } catch { }
+            }
           }
 
           for (const pid of apptPossibleIds) {
@@ -529,7 +777,7 @@ export function useCenterOrders({ currentUser, initialOrders, lang, loadingShipm
             } catch { }
           }
 
-          if (appointmentStatus !== 'PENDING_CENTER_CONFIRMATION') {
+          if (!hasCenterCounterProposal(ord) && appointmentStatus !== 'PENDING_CENTER_CONFIRMATION') {
             const idSet = new Set(apptPossibleIds);
             try {
               const rawCenter = localStorage.getItem('center_inspection_orders');
@@ -537,13 +785,23 @@ export function useCenterOrders({ currentUser, initialOrders, lang, loadingShipm
                 const listCenter = JSON.parse(rawCenter);
                 if (Array.isArray(listCenter)) {
                   const m = listCenter.find((co: any) => idSet.has(co.id) || idSet.has(co.linkedOrderId) || idSet.has(co.orderId) || idSet.has(co.inspectionOrderId));
-                  if (m && m.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !m.counterScheduledAt) {
-                    appointmentScheduledAt = m.appointmentScheduledAt || appointmentScheduledAt;
-                    appointmentNote = m.appointmentNote || appointmentNote;
-                    appointmentStatus = 'PENDING_CENTER_CONFIRMATION';
-                    counterScheduledAt = undefined;
-                    counterShift = undefined;
-                    counterNote = undefined;
+                  if (m) {
+                    if (m.appointmentStatus === 'CONFIRMED') {
+                      appointmentStatus = 'CONFIRMED';
+                      if (m.appointmentScheduledAt) appointmentScheduledAt = m.appointmentScheduledAt;
+                      appointmentNote = m.appointmentNote || appointmentNote;
+                      counterScheduledAt = undefined;
+                      counterShift = undefined;
+                      counterNote = undefined;
+                      appointmentRejectionReason = undefined;
+                    } else if (m.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !m.counterScheduledAt) {
+                      appointmentScheduledAt = m.appointmentScheduledAt || appointmentScheduledAt;
+                      appointmentNote = m.appointmentNote || appointmentNote;
+                      appointmentStatus = 'PENDING_CENTER_CONFIRMATION';
+                      counterScheduledAt = undefined;
+                      counterShift = undefined;
+                      counterNote = undefined;
+                    }
                   }
                 }
               }
@@ -565,9 +823,34 @@ export function useCenterOrders({ currentUser, initialOrders, lang, loadingShipm
                 }
               }
             } catch {}
+            try {
+              const rawRecent = localStorage.getItem('recent_placed_orders');
+              if (rawRecent && appointmentStatus !== 'CONFIRMED') {
+                const listRecent = JSON.parse(rawRecent);
+                if (Array.isArray(listRecent)) {
+                  const m = listRecent.find((ro: any) => idSet.has(ro.id) || idSet.has(ro.linkedOrderId) || idSet.has(ro.orderId) || idSet.has(ro.inspectionOrderId));
+                  if (m && m.appointmentStatus === 'CONFIRMED') {
+                    appointmentStatus = 'CONFIRMED';
+                    if (m.appointmentScheduledAt) appointmentScheduledAt = m.appointmentScheduledAt;
+                    appointmentNote = m.appointmentNote || appointmentNote;
+                    counterScheduledAt = undefined;
+                    counterShift = undefined;
+                    counterNote = undefined;
+                    appointmentRejectionReason = undefined;
+                  }
+                }
+              }
+            } catch {}
           }
 
-          if (appointmentStatus === 'PENDING_CENTER_CONFIRMATION') {
+          if (appointmentStatus === 'CONFIRMED') {
+            counterScheduledAt = undefined;
+            counterShift = undefined;
+            counterNote = undefined;
+            if (resolvedStatus === 'WAITING_SELLER_APPROVAL') {
+              resolvedStatus = 'CONFIRMED_PENDING_DISPATCH';
+            }
+          } else if (appointmentStatus === 'PENDING_CENTER_CONFIRMATION') {
             counterScheduledAt = undefined;
             counterShift = undefined;
             counterNote = undefined;
@@ -621,7 +904,12 @@ export function useCenterOrders({ currentUser, initialOrders, lang, loadingShipm
       });
 
       const finalOrders = Array.from(combinedMap.values());
-      finalOrders.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+      finalOrders.sort((a, b) => {
+        const timeA = new Date(a.createdAt || (a as any).orderDate || (a as any).createdDate || a.appointmentScheduledAt || a.updatedAt || 0).getTime() || 0;
+        const timeB = new Date(b.createdAt || (b as any).orderDate || (b as any).createdDate || b.appointmentScheduledAt || b.updatedAt || 0).getTime() || 0;
+        if (timeB !== timeA) return timeB - timeA;
+        return (b.id || '').localeCompare(a.id || '');
+      });
       setOrders(finalOrders);
     } catch (err) {
       if (requestId !== ordersRequestRef.current || background) return;
@@ -633,11 +921,18 @@ export function useCenterOrders({ currentUser, initialOrders, lang, loadingShipm
       if (requestId === ordersRequestRef.current) {
         loadingOrdersRef.current = false;
         if (!background) setIsLoadingOrders(false);
+        inFlightOrdersPromiseRef.current = null;
+        if (counterUpdates.size > 0) void loadOrders(true);
       }
     }
-  };
+  })();
+
+  inFlightOrdersPromiseRef.current = promise;
+  return promise;
+};
 
   return {
+    applyCounterResponse,
     handleReceivePackageAtHub,
     isLoadingOrders,
     loadOrders,

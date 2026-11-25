@@ -51,6 +51,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   token,
 }) => {
   const t = translations[lang];
+  const canOpenProfile = (currentRole === 'buyer' || currentRole === 'seller') &&
+    (currentUser?.role === 'buyer' || currentUser?.role === 'seller');
+  const ProfileBadge = canOpenProfile ? 'button' : 'div';
 
   // Hỗ trợ hiển thị số dư trừ trực tiếp Realtime khi thanh toán
   const [localBalance, setLocalBalance] = useState<number | null>(null);
@@ -176,8 +179,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               onClick={() => onTabChange('admin-dashboard')}
               className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${activeTab === 'admin-dashboard'
-                  ? 'bg-[#c34c36] text-white shadow-sm'
-                  : 'text-white/80 hover:text-white hover:bg-white/10'
+                ? 'bg-[#c34c36] text-white shadow-sm'
+                : 'text-white/80 hover:text-white hover:bg-white/10'
                 }`}
             >
               <ShieldAlert className="w-4 h-4" />
@@ -188,8 +191,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               onClick={() => onTabChange(currentRole === 'inspection_center' ? 'inspection-center' : 'inspection-hub')}
               className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${activeTab === 'inspection-center' || activeTab === 'inspection-hub'
-                  ? 'bg-[#c34c36] text-white shadow-sm'
-                  : 'text-white/80 hover:text-white hover:bg-white/10'
+                ? 'bg-[#c34c36] text-white shadow-sm'
+                : 'text-white/80 hover:text-white hover:bg-white/10'
                 }`}
             >
               <Building2 className="w-4 h-4" />
@@ -201,8 +204,8 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 onClick={() => onTabChange('home')}
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${activeTab === 'home'
-                    ? 'bg-[#c34c36] text-white shadow-sm font-black'
-                    : 'text-white/80 hover:text-white hover:bg-white/10'
+                  ? 'bg-[#c34c36] text-white shadow-sm font-black'
+                  : 'text-white/80 hover:text-white hover:bg-white/10'
                   }`}
               >
                 <Home className="w-3.5 h-3.5" />
@@ -212,8 +215,8 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 onClick={() => onTabChange('marketplace')}
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${activeTab === 'marketplace'
-                    ? 'bg-[#c34c36] text-white shadow-sm font-black'
-                    : 'text-white/80 hover:text-white hover:bg-white/10'
+                  ? 'bg-[#c34c36] text-white shadow-sm font-black'
+                  : 'text-white/80 hover:text-white hover:bg-white/10'
                   }`}
               >
                 <ShoppingBag className="w-3.5 h-3.5" />
@@ -224,8 +227,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <button
                   onClick={() => onTabChange('seller-dashboard')}
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${activeTab === 'seller-dashboard'
-                      ? 'bg-[#c34c36] text-white shadow-sm font-black'
-                      : 'text-white/80 hover:text-white hover:bg-white/10'
+                    ? 'bg-[#c34c36] text-white shadow-sm font-black'
+                    : 'text-white/80 hover:text-white hover:bg-white/10'
                     }`}
                 >
                   <Building2 className="w-3.5 h-3.5" />
@@ -237,12 +240,12 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <button
                   onClick={() => onTabChange('orders')}
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer relative ${activeTab === 'orders'
-                      ? 'bg-[#c34c36] text-white shadow-sm font-black'
-                      : 'text-white/80 hover:text-white hover:bg-white/10'
+                    ? 'bg-[#c34c36] text-white shadow-sm font-black'
+                    : 'text-white/80 hover:text-white hover:bg-white/10'
                     }`}
                 >
                   <Clock className="w-3.5 h-3.5" />
-                  <span>{lang === 'vi' ? (currentRole === 'buyer' ? 'Đơn Ký Quỹ' : 'Quản Lý Đơn') : 'Orders'}</span>
+                  <span>{lang === 'vi' ? (currentRole === 'buyer' ? 'Đơn hàng' : 'Quản Lý Đơn') : 'Orders'}</span>
                   {activeOrdersCount > 0 && (
                     <span className="ml-0.5 px-1.5 py-0.2 bg-[#c34c36] text-white rounded-full text-[10px] font-extrabold shadow-xs">
                       {activeOrdersCount}
@@ -255,8 +258,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <button
                   onClick={() => onTabChange('disputes')}
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer relative ${activeTab === 'disputes'
-                      ? 'bg-[#c34c36] text-white shadow-sm font-black'
-                      : 'text-white/80 hover:text-white hover:bg-white/10'
+                    ? 'bg-[#c34c36] text-white shadow-sm font-black'
+                    : 'text-white/80 hover:text-white hover:bg-white/10'
                     }`}
                   title={lang === 'vi' ? 'Khiếu nại & Trọng tài Escrow' : 'Disputes & Escrow Arbitration'}
                 >
@@ -270,8 +273,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <button
                   onClick={() => onTabChange('staff-workspace')}
                   className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${activeTab === 'staff-workspace'
-                      ? 'bg-[#c34c36] text-white shadow-sm font-black'
-                      : 'text-white/80 hover:text-white hover:bg-white/10'
+                    ? 'bg-[#c34c36] text-white shadow-sm font-black'
+                    : 'text-white/80 hover:text-white hover:bg-white/10'
                     }`}
                 >
                   <FileCheck className="w-3.5 h-3.5 text-[#cea981]" />
@@ -373,11 +376,11 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Profile User Badge */}
           {currentUser ? (
             <div className="flex items-center gap-1.5 pl-2 border-l border-white/20">
-              <button
-                type="button"
-                onClick={onOpenProfile}
-                className="flex items-center gap-2 text-left hover:opacity-90 transition cursor-pointer p-1 rounded-xl hover:bg-white/10"
-                title={lang === 'vi' ? 'Xem hồ sơ người dùng' : 'View User Profile'}
+              <ProfileBadge
+                type={canOpenProfile ? 'button' : undefined}
+                onClick={canOpenProfile ? onOpenProfile : undefined}
+                className={`flex items-center gap-2 text-left p-1 rounded-xl ${canOpenProfile ? 'hover:opacity-90 transition cursor-pointer hover:bg-white/10' : ''}`}
+                title={canOpenProfile ? (lang === 'vi' ? 'Xem hồ sơ người dùng' : 'View User Profile') : undefined}
               >
                 <div className="w-7 h-7 rounded-full bg-[#c34c36] text-white flex items-center justify-center font-bold text-[11px] shadow-xs shrink-0">
                   {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
@@ -394,7 +397,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     {currentRole === 'admin' && 'Admin'}
                   </div>
                 </div>
-              </button>
+              </ProfileBadge>
               <button
                 onClick={onLogout}
                 className="p-1.5 rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition cursor-pointer"
@@ -427,45 +430,23 @@ export const Navbar: React.FC<NavbarProps> = ({
       {/* Mobile Nav Bar */}
       <div className="md:hidden border-t border-[#24263e]/15 bg-[#c34c36]/95 px-3 py-1.5 flex items-center justify-around text-[11px] font-medium text-white">
         {currentUser && currentRole === 'admin' ? (
-          <>
-            <button
-              onClick={() => onTabChange('admin-dashboard')}
-              className={`flex items-center gap-1 py-1 px-2 rounded-md ${activeTab === 'admin-dashboard' ? 'text-[#24263e] font-bold bg-white shadow-xs' : 'text-white/90'
-                }`}
-            >
-              <ShieldAlert className="w-3.5 h-3.5" />
-              <span>Quản Trị Admin</span>
-            </button>
-            <button
-              onClick={onOpenProfile}
-              className="flex items-center gap-1 py-1 px-2 rounded-md text-white/90 hover:text-white"
-            >
-              <div className="w-4 h-4 rounded-full bg-white text-[#c34c36] flex items-center justify-center font-bold text-[9px]">
-                {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
-              </div>
-              <span>Hồ Sơ</span>
-            </button>
-          </>
+          <button
+            onClick={() => onTabChange('admin-dashboard')}
+            className={`flex items-center gap-1 py-1 px-2 rounded-md ${activeTab === 'admin-dashboard' ? 'text-[#24263e] font-bold bg-white shadow-xs' : 'text-white/90'
+              }`}
+          >
+            <ShieldAlert className="w-3.5 h-3.5" />
+            <span>Quản Trị Admin</span>
+          </button>
         ) : currentUser && (currentRole === 'inspector' || currentRole === 'inspection_center') ? (
-          <>
-            <button
-              onClick={() => onTabChange(currentRole === 'inspection_center' ? 'inspection-center' : 'inspection-hub')}
-              className={`flex items-center gap-1 py-1 px-2 rounded-md ${activeTab === 'inspection-center' || activeTab === 'inspection-hub' ? 'text-[#24263e] font-bold bg-white shadow-xs' : 'text-white/90'
-                }`}
-            >
-              <Building2 className="w-3.5 h-3.5" />
-              <span>{currentRole === 'inspection_center' ? 'Trưởng Trạm KĐ' : 'Trung Tâm KĐ'}</span>
-            </button>
-            <button
-              onClick={onOpenProfile}
-              className="flex items-center gap-1 py-1 px-2 rounded-md text-white/90 hover:text-white"
-            >
-              <div className="w-4 h-4 rounded-full bg-white text-[#c34c36] flex items-center justify-center font-bold text-[9px]">
-                {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
-              </div>
-              <span>Hồ Sơ</span>
-            </button>
-          </>
+          <button
+            onClick={() => onTabChange(currentRole === 'inspection_center' ? 'inspection-center' : 'inspection-hub')}
+            className={`flex items-center gap-1 py-1 px-2 rounded-md ${activeTab === 'inspection-center' || activeTab === 'inspection-hub' ? 'text-[#24263e] font-bold bg-white shadow-xs' : 'text-white/90'
+              }`}
+          >
+            <Building2 className="w-3.5 h-3.5" />
+            <span>{currentRole === 'inspection_center' ? 'Trưởng Trạm KĐ' : 'Trung Tâm KĐ'}</span>
+          </button>
         ) : (
           <>
             <button
@@ -528,7 +509,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <span>Nghiệp Vụ Staff</span>
               </button>
             )}
-            {currentUser ? (
+            {currentUser && canOpenProfile && (
               <button
                 onClick={onOpenProfile}
                 className="flex items-center gap-1 py-1 px-2 rounded-md text-white/90 hover:text-white"
@@ -538,7 +519,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </div>
                 <span className="truncate max-w-[60px] font-bold">{currentUser.name.split(' ')[0]}</span>
               </button>
-            ) : (
+            )}
+            {!currentUser && (
               <button
                 onClick={() => onOpenAuth('login')}
                 className="flex items-center gap-1 py-1 px-2 rounded-md text-[#24263e] bg-white hover:bg-white/90 font-bold shadow-xs"

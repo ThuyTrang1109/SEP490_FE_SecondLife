@@ -57,6 +57,21 @@ test('sellers retain their existing buyer capabilities without granting internal
   assert.equal(getRouteAccess(resolveAppRoute('/admin/users'), { role: 'seller' }), 'unauthorized');
 });
 
+test('personal profiles open a dedicated /profile route for authenticated customers', () => {
+  for (const role of ['buyer', 'seller'] as const) {
+    const route = resolveAppRoute(pathForTab('profile', role), role);
+    assert.equal(route.url, '/profile');
+    assert.equal(route.tab, 'profile');
+    assert.equal(route.modal, 'profile');
+    assert.equal(getRouteAccess(route, { role }), 'allowed');
+    assert.equal(resolveAppRoute(`/${role}/profile?ref=account`, role).url, '/profile?ref=account');
+  }
+  const profile = resolveAppRoute('/profile');
+  assert.equal(getRouteAccess(profile, null), 'login');
+  assert.equal(getRouteAccess(profile, null, true), 'loading');
+  assert.equal(getRouteAccess(profile, { role: 'staff' }), 'unauthorized');
+});
+
 test('dynamic routes preserve the exact product, order, conversation, inspection and user IDs', () => {
   for (const [url, key, expected] of [
     ['/products/product-1', 'productId', 'product-1'],
@@ -203,4 +218,29 @@ test('admin login redirects fall back safely to admin dashboard when returnTo is
 
   // /unauthorized is rejected by safeReturnPath
   assert.equal(safeReturnPath('/unauthorized'), null);
+});
+
+test('inspector routes resolve safely to inspector workbench instead of customer home or unauthorized links', () => {
+  const inspectorUser = { role: 'inspector' as const, roles: ['INSPECTOR'] };
+
+  // Inspector visiting / redirects to /inspector/dashboard
+  const rootRoute = resolveAppRoute('/', 'inspector');
+  assert.equal(rootRoute.url, '/inspector/dashboard');
+  assert.equal(getRouteAccess(rootRoute, inspectorUser), 'allowed');
+
+  // Inspector pathForTab home and marketplace go to inspector workbench
+  assert.equal(pathForTab('home', 'inspector'), '/inspector/dashboard');
+  assert.equal(pathForTab('marketplace', 'inspector'), '/inspector/dashboard');
+  assert.equal(pathForTab('orders', 'inspector'), '/inspector/inspections');
+
+  // paths.decision and paths.orders generate valid inspector routes instead of buyer ones
+  assert.equal(paths.decision('inspector', 'insp-123'), '/inspector/inspections/insp-123');
+  assert.equal(paths.orders('inspector', 'ord-123'), '/inspector/inspections/ord-123');
+  assert.equal(paths.orders('inspector'), '/inspector/inspections');
+
+  // Legacy inspection decision URLs resolve to inspector inspection detail
+  assert.equal(resolveAppRoute('/buyer/inspections/insp-99/decision', 'inspector').url, '/inspector/inspections/insp-99');
+  assert.equal(resolveAppRoute('/inspections/insp-99', 'inspector').url, '/inspector/inspections/insp-99');
+  assert.equal(resolveAppRoute('/orders/ord-99', 'inspector').url, '/inspector/inspections/ord-99');
+  assert.equal(resolveAppRoute('/marketplace', 'inspector').url, '/inspector/dashboard');
 });

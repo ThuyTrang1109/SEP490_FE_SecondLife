@@ -39,12 +39,17 @@ export function createSellerOrderActions({
       subMessage: lang === 'vi'
         ? 'Sản phẩm sẽ được mở lại hiển thị trên sàn để người mua khác có thể tiếp tục xem và đặt mua.'
         : 'The listing will be reopened on the marketplace.',
+      requireReasonInput: true,
+      reasonLabel: lang === 'vi' ? 'Lý do từ chối kiểm định' : 'Reason for rejection',
+      reasonPlaceholder: lang === 'vi'
+        ? 'Nhập lý do cụ thể (bắt buộc trên 10 ký tự và dưới 100 ký tự)...'
+        : 'Enter specific reason (required between 11 and 99 characters)...',
       confirmText: lang === 'vi' ? 'Từ chối kiểm định' : 'Reject Inspection',
       cancelText: lang === 'vi' ? 'Đóng' : 'Cancel',
       variant: 'danger',
       iconType: 'alert',
-      onConfirm: async () => {
-        await handleRespondInspection(ord.id, 'REJECT', 'Người bán từ chối kiểm định');
+      onConfirm: async (customReason?: string) => {
+        await handleRespondInspection(ord.id, 'REJECT', customReason?.trim() || 'Người bán từ chối kiểm định');
         setConfirmDialog(null);
       }
     });
@@ -102,22 +107,6 @@ export function createSellerOrderActions({
             });
           } else {
             await orderService.confirmOrder(orderId);
-          }
-
-          // Tự động tạo vận đơn Lalamove ngay khi người bán xác nhận đơn hàng thông thường (chặng SELLER_TO_BUYER)
-          let createdShipment: ShipmentBackend | null = null;
-          let shipmentNotice: string | null = null;
-          if (!orderHasInspection) {
-            try {
-              createdShipment = await shippingService.createShipment(orderId, {
-                requestId: crypto.randomUUID(),
-                leg: 'SELLER_TO_BUYER',
-              });
-              console.log('Lalamove shipment created successfully on order confirm:', createdShipment);
-            } catch (shipErr: any) {
-              console.warn('Auto create Lalamove shipment notice:', shipErr);
-              shipmentNotice = shipErr?.response?.data?.message || shipErr?.message || '';
-            }
           }
 
           const confirmedAt = new Date().toISOString();
@@ -233,15 +222,7 @@ export function createSellerOrderActions({
           setInspectionActionNotice(
             orderHasInspection
               ? (lang === 'vi' ? 'Đã đồng ý kiểm định! Task đã chuyển sang Trung tâm điều phối.' : 'Inspection accepted! Task dispatched to Center.')
-              : createdShipment?.orderCode
-                ? (lang === 'vi'
-                  ? `Đã xác nhận đơn hàng & tạo vận đơn Lalamove thành công! Mã vận đơn: #${createdShipment.orderCode}`
-                  : `Order confirmed & Lalamove shipment created! #${createdShipment.orderCode}`)
-                : shipmentNotice
-                  ? (lang === 'vi'
-                    ? `Đã xác nhận đơn hàng thành công. Lưu ý Lalamove: ${translateSystemNotification(shipmentNotice)}. Bạn có thể bấm "Tạo Vận Đơn Lalamove" để tạo lại.`
-                    : `Order confirmed! (Lalamove note: ${shipmentNotice})`)
-                  : (lang === 'vi' ? 'Đã xác nhận đơn hàng thành công! Vui lòng đóng gói và báo sẵn sàng giao.' : 'Order confirmed successfully!')
+              : (lang === 'vi' ? 'Đã xác nhận đơn hàng thành công! Vui lòng đóng gói và bấm "Đã gói hàng • Tạo đơn vận chuyển" khi sẵn sàng.' : 'Order confirmed successfully! Please pack the item and create shipment when ready.')
           );
           onRefreshOrders?.();
           setDetailModalOrder((prev) =>

@@ -2,6 +2,10 @@ import { NotificationItem } from '../types/notification';
 import { UserProfile, UserRole } from '../types';
 import { translateSystemNotification } from './systemNotificationTranslator';
 
+export function isLegacySellerDisputeLink(item: NotificationItem): boolean {
+  return item.referenceType === 'REPORT' && Boolean(item.actionUrl?.startsWith('/seller/orders/'));
+}
+
 export function compareNotificationsNewestFirst(first: NotificationItem, second: NotificationItem): number {
   const parseTime = (iso?: string | null): number => {
     if (!iso) return 0;

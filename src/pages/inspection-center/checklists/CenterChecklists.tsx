@@ -1,3 +1,4 @@
+import { useState, useMemo, useEffect } from 'react';
 import {
   Clock,
   Search,
@@ -14,10 +15,14 @@ import {
   CheckSquare,
   FileText,
   Boxes,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { APPLIANCE_PRESETS } from './appliancePresets';
 import type { useCenterCatalog } from './useCenterCatalog';
 import type { useCenterChecklists } from './useCenterChecklists';
+
+const PAGE_SIZE = 10;
 
 interface Props {
   categories: ReturnType<typeof useCenterCatalog>['categories'];
@@ -57,6 +62,21 @@ export function CenterChecklists({ categories, checklist }: Props) {
     setChecklistSearch,
   } = checklist;
 
+  const [currentPage, setCurrentPage] = useState(0);
+
+  // Reset pagination when search query or category filter changes
+  useEffect(() => {
+    setCurrentPage(0);
+  }, [checklistSearch, checklistCategoryFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredChecklists.length / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages - 1);
+
+  const paginatedChecklists = useMemo(() => {
+    const start = safePage * PAGE_SIZE;
+    return filteredChecklists.slice(start, start + PAGE_SIZE);
+  }, [filteredChecklists, safePage]);
+
   return (
     <div className="space-y-4 animate-fadeIn">
       {/* Top Banner & Actions */}
@@ -71,7 +91,7 @@ export function CenterChecklists({ categories, checklist }: Props) {
                 Checklist Studio: Bộ Tiêu Chuẩn Kỹ Thuật Kiểm Định Sản Phẩm
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Thiết lập tiêu chuẩn kiểm định chuyên sâu từng dòng sản phẩm gia dụng (Tủ lạnh, Máy giặt, Điều hòa, Bếp từ, Lò vi sóng...) theo chuẩn ISO 17025 & SecondLife Hub
+                Thiết lập tiêu chuẩn kiểm định chuyên sâu từng dòng sản phẩm gia dụng (Tủ lạnh, Máy giặt, Điều hòa, Bếp từ, Lò vi sóng...).
               </p>
             </div>
           </div>
@@ -83,7 +103,7 @@ export function CenterChecklists({ categories, checklist }: Props) {
             className="px-4 py-2.5 rounded-xl bg-[#24263e] hover:bg-black text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-sm shrink-0"
           >
             <Plus className="w-4 h-4 text-[#c34c36]" />
-            <span>+ Tạo Bộ Tiêu Chuẩn Mới</span>
+            <span>Tạo Bộ Tiêu Chuẩn Mới</span>
           </button>
           <button
             type="button"
@@ -229,7 +249,13 @@ export function CenterChecklists({ categories, checklist }: Props) {
         </div>
 
         <div className="text-xs font-bold text-slate-500">
-          Hiển thị <span className="text-slate-900 font-black">{filteredChecklists.length}</span> / {checklists.length} bộ tiêu chuẩn
+          Hiển thị{' '}
+          <span className="text-slate-900 font-black">
+            {filteredChecklists.length > 0
+              ? `${safePage * PAGE_SIZE + 1} - ${Math.min((safePage + 1) * PAGE_SIZE, filteredChecklists.length)}`
+              : 0}
+          </span>{' '}
+          / {filteredChecklists.length} bộ tiêu chuẩn
         </div>
       </div>
 
@@ -275,12 +301,13 @@ export function CenterChecklists({ categories, checklist }: Props) {
                   </td>
                 </tr>
               ) : (
-                filteredChecklists.map((chk, idx) => {
+                paginatedChecklists.map((chk, idx) => {
+                  const rowIndex = safePage * PAGE_SIZE + idx + 1;
                   const itemsCount = chk.items?.length || 0;
                   const mandatoryCount = (chk.items || []).filter((i) => i.mandatory !== false).length;
                   return (
                     <tr key={chk.id} className="hover:bg-slate-50/70 transition group">
-                      <td className="py-3.5 px-4 font-mono text-slate-400 text-[11px] text-center">{idx + 1}</td>
+                      <td className="py-3.5 px-4 font-mono text-slate-400 text-[11px] text-center">{rowIndex}</td>
                       <td className="py-3.5 px-4">
                         <div className="font-black text-slate-900 text-xs sm:text-sm group-hover:text-[#c34c36] transition">
                           {chk.title}
@@ -411,6 +438,73 @@ export function CenterChecklists({ categories, checklist }: Props) {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Controls */}
+        {filteredChecklists.length > 0 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 bg-slate-50 border-t border-slate-100 text-xs">
+            <div className="text-slate-500 font-medium">
+              Trang <span className="font-bold text-slate-800">{safePage + 1}</span> / <span className="font-bold text-slate-800">{totalPages}</span>
+              {' '}(10 mục / trang)
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
+                disabled={safePage <= 0}
+                className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-1 font-bold text-slate-700 cursor-pointer"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+                <span>Trước</span>
+              </button>
+
+              <div className="flex items-center gap-1">
+                {Array.from({ length: totalPages }, (_, i) => i).map((pageNum) => {
+                  if (
+                    pageNum === 0 ||
+                    pageNum === totalPages - 1 ||
+                    Math.abs(pageNum - safePage) <= 1
+                  ) {
+                    return (
+                      <button
+                        key={pageNum}
+                        type="button"
+                        onClick={() => setCurrentPage(pageNum)}
+                        className={`w-7 h-7 rounded-lg text-xs font-bold transition cursor-pointer ${
+                          pageNum === safePage
+                            ? 'bg-[#24263e] text-white shadow-xs'
+                            : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                        }`}
+                      >
+                        {pageNum + 1}
+                      </button>
+                    );
+                  }
+                  if (
+                    (pageNum === 1 && safePage > 2) ||
+                    (pageNum === totalPages - 2 && safePage < totalPages - 3)
+                  ) {
+                    return (
+                      <span key={pageNum} className="px-1 text-slate-400">
+                        ...
+                      </span>
+                    );
+                  }
+                  return null;
+                })}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.min(totalPages - 1, p + 1))}
+                disabled={safePage >= totalPages - 1}
+                className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-1 font-bold text-slate-700 cursor-pointer"
+              >
+                <span>Sau</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

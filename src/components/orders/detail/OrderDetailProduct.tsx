@@ -1,7 +1,7 @@
 import { CheckCircle2, Clock, XCircle } from 'lucide-react';
 import type { EscrowOrder, Language } from '../../../types';
 import type { OrderCheck } from '../../../types/orders/orderTypes';
-import { formatVND } from '../../../utils/translations';
+import { formatConditionGrade, formatVND } from '../../../utils/translations';
 import { getCancellationReasonDisplay } from '../../../utils/orders/orderCancellation';
 import { resolveListingCategory } from '../../../utils/catalogCache';
 
@@ -42,7 +42,7 @@ export function OrderDetailProduct({
                 </div>
               </div>
               {cancelInfo.code && (
-                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-lg bg-rose-100 text-rose-800 border border-rose-200">
+                <span className="text-[11px] font-sans font-medium px-2 py-0.5 rounded-lg bg-rose-100 text-rose-800 border border-rose-200">
                   {cancelInfo.code}
                 </span>
               )}
@@ -83,7 +83,7 @@ export function OrderDetailProduct({
                 {resolveListingCategory(detailModalOrder.listing)}
               </span>
               <span>•</span>
-              <span>{lang === 'vi' ? 'Tình trạng:' : 'Condition:'} <strong className="text-slate-800">{detailModalOrder.listing.conditionGrade}</strong></span>
+              <span>{lang === 'vi' ? 'Tình trạng:' : 'Condition:'} <strong className="text-slate-800">{formatConditionGrade(detailModalOrder.listing.conditionGrade || (detailModalOrder.listing as any).itemCondition, lang)}</strong></span>
               <span>•</span>
               <span>{lang === 'vi' ? 'Số lượng: 1' : 'Qty: 1'}</span>
             </div>

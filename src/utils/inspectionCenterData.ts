@@ -1,7 +1,7 @@
 import type { Language, ShipmentBackend } from '../types';
 import type { InspectionOrderDto } from '../services/inspectorService';
 import { isDeliveredInspectionCashShipment } from './inspectionCashShipping';
-import { getInspectionPurchaseDecision } from './inspectionPurchase';
+import { getInspectionPurchaseDecision, isExpiredInspectionPurchase, extractInspectionRejectionDetails } from './inspectionPurchase';
 
 export function getCenterTabDataNeeds(tab: string) {
   return {
@@ -19,6 +19,11 @@ const dispatchStatuses = new Set([
   ...inboundTrackingStatuses, 'PENDING', 'ASSIGNED', 'INSPECTION_IN_PROGRESS',
 ]);
 
+export function hasCenterCounterProposal(order: Pick<InspectionOrderDto, 'appointmentStatus' | 'counterScheduledAt'>) {
+  return order.appointmentStatus === 'COUNTERED_BY_CENTER' ||
+    (!order.appointmentStatus && Boolean(order.counterScheduledAt));
+}
+
 export function getCenterDispatchStage(
   order: Pick<InspectionOrderDto, 'orderType' | 'status' | 'inspectorId'> & {
     appointmentScheduledAt?: string;
@@ -35,7 +40,17 @@ export function getCenterDispatchStage(
   let apptStatus = (order as any).appointmentStatus;
   let counterTime = (order as any).counterScheduledAt;
 
-  if (typeof window !== 'undefined') {
+  // If backend explicitly says CONFIRMED or PENDING_CENTER_CONFIRMATION with no counter proposal, backend is source of truth
+  const isBackendConfirmed = (apptStatus === 'CONFIRMED' || order.status === 'SCHEDULED' || (order as any).backendStatus === 'SCHEDULED') && !counterTime;
+  const isBackendPendingCenter = apptStatus === 'PENDING_CENTER_CONFIRMATION' && !counterTime;
+  if (isBackendConfirmed) {
+    counterTime = undefined;
+    apptStatus = 'CONFIRMED';
+  } else if (isBackendPendingCenter) {
+    counterTime = undefined;
+  }
+
+  if (!hasCenterCounterProposal(order) && (typeof window !== 'undefined' || typeof localStorage !== 'undefined')) {
     const possibleIds = [
       order.id,
       (order as any).linkedOrderId,
@@ -43,24 +58,52 @@ export function getCenterDispatchStage(
       (order as any).inspectionOrderId,
     ].filter(Boolean) as string[];
 
-    for (const id of possibleIds) {
-      try {
-        const raw = localStorage.getItem(`order_appointment_${id}`);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (parsed.scheduledAt) apptTime = parsed.scheduledAt;
-          if (parsed.status) apptStatus = parsed.status;
-          if (parsed.status === 'PENDING_CENTER_CONFIRMATION' && !parsed.counterScheduledAt) {
-            counterTime = undefined;
-          } else if (parsed.counterScheduledAt) {
-            counterTime = parsed.counterScheduledAt;
+    if (isBackendConfirmed || isBackendPendingCenter) {
+      // Clean up stale localStorage records that might still hold an old counter proposal
+      for (const id of possibleIds) {
+        try {
+          const raw = localStorage.getItem(`order_appointment_${id}`);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed.counterScheduledAt || (isBackendConfirmed && parsed.status !== 'CONFIRMED')) {
+              delete parsed.counterScheduledAt;
+              delete parsed.counterShift;
+              delete parsed.counterNote;
+              parsed.status = isBackendConfirmed ? 'CONFIRMED' : 'PENDING_CENTER_CONFIRMATION';
+              if (order.appointmentScheduledAt) parsed.scheduledAt = order.appointmentScheduledAt;
+              localStorage.setItem(`order_appointment_${id}`, JSON.stringify(parsed));
+            }
           }
-          break;
-        }
-      } catch {}
+        } catch {}
+      }
+    } else {
+      for (const id of possibleIds) {
+        try {
+          const raw = localStorage.getItem(`order_appointment_${id}`);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed.status === 'CONFIRMED' || apptStatus === 'CONFIRMED') {
+              apptStatus = 'CONFIRMED';
+              if (parsed.scheduledAt) apptTime = parsed.scheduledAt;
+              counterTime = undefined;
+            } else if (parsed.status === 'PENDING_CENTER_CONFIRMATION' && !parsed.counterScheduledAt) {
+              apptStatus = 'PENDING_CENTER_CONFIRMATION';
+              if (parsed.scheduledAt) apptTime = parsed.scheduledAt;
+              counterTime = undefined;
+            } else if (parsed.counterScheduledAt) {
+              counterTime = parsed.counterScheduledAt;
+              apptStatus = 'COUNTERED_BY_CENTER';
+            } else {
+              if (parsed.scheduledAt && !apptTime) apptTime = parsed.scheduledAt;
+              if (parsed.status && !apptStatus) apptStatus = parsed.status;
+            }
+            break;
+          }
+        } catch {}
+      }
     }
 
-    if (apptStatus !== 'PENDING_CENTER_CONFIRMATION') {
+    if (apptStatus !== 'PENDING_CENTER_CONFIRMATION' && apptStatus !== 'CONFIRMED') {
       const idSet = new Set(possibleIds);
       try {
         const rawCenter = localStorage.getItem('center_inspection_orders');
@@ -68,9 +111,29 @@ export function getCenterDispatchStage(
           const list = JSON.parse(rawCenter);
           if (Array.isArray(list)) {
             const m = list.find((o: any) => idSet.has(o.id) || idSet.has(o.linkedOrderId) || idSet.has(o.orderId) || idSet.has(o.inspectionOrderId));
-            if (m && m.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !m.counterScheduledAt) {
+            if (m) {
+              if (m.appointmentStatus === 'CONFIRMED') {
+                apptStatus = 'CONFIRMED';
+                if (m.appointmentScheduledAt) apptTime = m.appointmentScheduledAt;
+                counterTime = undefined;
+              } else if (m.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !m.counterScheduledAt) {
+                if (m.appointmentScheduledAt) apptTime = m.appointmentScheduledAt;
+                apptStatus = 'PENDING_CENTER_CONFIRMATION';
+                counterTime = undefined;
+              }
+            }
+          }
+        }
+      } catch {}
+      try {
+        const rawRecent = localStorage.getItem('recent_placed_orders');
+        if (rawRecent && apptStatus !== 'CONFIRMED') {
+          const listRecent = JSON.parse(rawRecent);
+          if (Array.isArray(listRecent)) {
+            const m = listRecent.find((ro: any) => idSet.has(ro.id) || idSet.has(ro.linkedOrderId) || idSet.has(ro.orderId) || idSet.has(ro.inspectionOrderId));
+            if (m && m.appointmentStatus === 'CONFIRMED') {
+              apptStatus = 'CONFIRMED';
               if (m.appointmentScheduledAt) apptTime = m.appointmentScheduledAt;
-              apptStatus = 'PENDING_CENTER_CONFIRMATION';
               counterTime = undefined;
             }
           }
@@ -78,14 +141,20 @@ export function getCenterDispatchStage(
       } catch {}
       try {
         const rawSeller = localStorage.getItem('my_seller_inspection_orders');
-        if (rawSeller && apptStatus !== 'PENDING_CENTER_CONFIRMATION') {
+        if (rawSeller && apptStatus !== 'PENDING_CENTER_CONFIRMATION' && apptStatus !== 'CONFIRMED') {
           const list = JSON.parse(rawSeller);
           if (Array.isArray(list)) {
             const m = list.find((o: any) => idSet.has(o.id) || idSet.has(o.linkedOrderId) || idSet.has(o.orderId) || idSet.has(o.inspectionOrderId));
-            if (m && m.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !m.counterScheduledAt) {
-              if (m.appointmentScheduledAt) apptTime = m.appointmentScheduledAt;
-              apptStatus = 'PENDING_CENTER_CONFIRMATION';
-              counterTime = undefined;
+            if (m) {
+              if (m.appointmentStatus === 'CONFIRMED') {
+                apptStatus = 'CONFIRMED';
+                if (m.appointmentScheduledAt) apptTime = m.appointmentScheduledAt;
+                counterTime = undefined;
+              } else if (m.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !m.counterScheduledAt) {
+                if (m.appointmentScheduledAt) apptTime = m.appointmentScheduledAt;
+                apptStatus = 'PENDING_CENTER_CONFIRMATION';
+                counterTime = undefined;
+              }
             }
           }
         }
@@ -94,7 +163,7 @@ export function getCenterDispatchStage(
   }
 
   // Khi lịch hẹn tại nhà đang trong giai đoạn thương lượng (Hub đã gửi đề xuất mới, chờ Seller duyệt):
-  const isCountered = order.orderType === 'AT_HOME' && Boolean(
+  const isCountered = order.orderType === 'AT_HOME' && apptStatus !== 'CONFIRMED' && Boolean(
     counterTime ||
     (
       apptStatus !== 'PENDING_CENTER_CONFIRMATION' &&
@@ -119,6 +188,8 @@ export function getCenterDispatchStage(
     if (apptStatus === 'PENDING_CENTER_CONFIRMATION' || apptStatus === 'PENDING_CONFIRMATION') {
       return 'WAITING_CENTER_APPROVAL';
     }
+  } else if (!receivedAtHub) {
+    return 'WAITING_HUB_RECEIPT';
   }
 
   return order.inspectorId ? 'ASSIGNED' : 'READY_TO_ASSIGN';
@@ -139,13 +210,23 @@ export function canReadCenterInspectionShipments(order: Pick<InspectionOrderDto,
 
 export function shouldTrackCenterInspectionShipments(order: InspectionOrderDto, centerId?: string, role?: string) {
   const isCompletedCenterOrder = (order.orderType === 'AT_CENTER' || !order.orderType || (order as any).inspectionMethod === 'AT_CENTER') &&
-    ['PASSED', 'COMPLETED', 'FAILED'].includes(order.status);
+    ['PASSED', 'COMPLETED', 'FAILED', 'CANCELLED', 'CANCELED'].includes(order.status);
   return canReadCenterInspectionShipments(order, centerId) &&
     (shouldTrackInboundShipment(order) || isPaidHubBuyerDelivery(order) || isCenterReturnEligible(order, centerId, role) || isCompletedCenterOrder);
 }
 
 export function getLatestInboundShipment(shipments: ShipmentBackend[]): ShipmentBackend | null {
   return getLatestInspectionShipment(shipments, 'SELLER_TO_CENTER');
+}
+
+export function hasCenterReceivedInbound(
+  order: Pick<InspectionOrderDto, 'status' | 'orderType'>,
+  shipment?: Pick<ShipmentBackend, 'leg' | 'status' | 'providerStatus'> | null,
+) {
+  if (order.orderType === 'AT_HOME') return false;
+  if (order.status === 'RECEIVED_AT_CENTER') return true;
+  if (shipment) return shipment.leg === 'SELLER_TO_CENTER' && getInboundShipmentProgress(shipment).step === 3;
+  return order.status === 'INSPECTING' || order.status === 'INSPECTION_IN_PROGRESS';
 }
 
 export function getLatestInspectionShipment(shipments: ShipmentBackend[], leg: string): ShipmentBackend | null {
@@ -166,8 +247,24 @@ export function isPaidHubBuyerDelivery(order: {
     Boolean(order.linkedOrderId && order.finalPaymentPaidAt);
 }
 
+export const INTERRUPTED_SHIPMENT_STATUSES = [
+  'CANCELLED',
+  'CANCELED',
+  'FAILED',
+  'EXPIRED',
+  'REJECTED',
+];
+
+export function isShipmentInterrupted(shipment: Pick<ShipmentBackend, 'status' | 'providerStatus'> | null | undefined): boolean {
+  if (!shipment) return false;
+  const s = (shipment.status || '').toUpperCase();
+  const p = (shipment.providerStatus || '').toUpperCase();
+  return INTERRUPTED_SHIPMENT_STATUSES.includes(s) || INTERRUPTED_SHIPMENT_STATUSES.includes(p);
+}
+
 export function canBookHubBuyerDelivery(shipment: ShipmentBackend | null | undefined) {
-  return shipment === null || shipment?.status === 'CANCELLED';
+  if (shipment === undefined) return false;
+  return shipment === null || isShipmentInterrupted(shipment);
 }
 
 export function canBookCenterBuyerDelivery(
@@ -179,22 +276,133 @@ export function canBookCenterBuyerDelivery(
     canBookHubBuyerDelivery(shipment);
 }
 
-export function isHubReturnCase(order?: Pick<InspectionOrderDto, 'orderType' | 'status'> | null) {
-  return order?.orderType === 'AT_CENTER' && ['FAILED', 'CANCELLED'].includes(order.status);
+export function isHubReturnCase(order?: Pick<InspectionOrderDto, 'orderType' | 'status' | 'inspectionScope'> | null) {
+  if (!order) return false;
+  const isAtCenter =
+    order.orderType === 'AT_CENTER' ||
+    (order as any).inspectionMethod === 'AT_CENTER' ||
+    (order as any).inspectionScope === 'AT_CENTER' ||
+    (order as any).isAtCenter ||
+    (!order.orderType && (order as any).inspectionScope !== 'AT_HOME');
+  if (!isAtCenter) return false;
+  const status = String(order.status || '').toUpperCase();
+  if (['FAILED', 'CANCELLED', 'CANCELED'].includes(status)) return true;
+  if (order.inspectionScope === 'PRE_LISTING' && status === 'COMPLETED') return true;
+  return false;
 }
 
 export function isCenterReturnEligible(order: InspectionOrderDto, centerId?: string, role?: string) {
-  return role?.toLowerCase() === 'inspection_center' && Boolean(centerId && centerId === order.inspectionCenterId) &&
-    isHubReturnCase(order) && Boolean(order.feeSettledAt) && order.returnShippingReserveFee != null &&
-    order.finalPaymentPaidAt == null;
+  const normRole = (role || '').toLowerCase();
+  const isAuthorizedRole = !role || normRole === 'inspection_center' || normRole === 'staff' || normRole === 'admin' || normRole === 'inspector';
+  const isCenterMatch = Boolean(centerId && (order.inspectionCenterId === centerId || !order.inspectionCenterId));
+  if (!isAuthorizedRole || !isCenterMatch) return false;
+  if (!isHubReturnCase(order)) return false;
+  if (order.finalPaymentPaidAt != null) return false;
+
+  const isPreListingCompleted = order.inspectionScope === 'PRE_LISTING' && order.status === 'COMPLETED';
+  const isExpired = isExpiredInspectionPurchase(order.status, order.note || (order as any).rejectionReason);
+  const isBuyerRejected = getInspectionPurchaseDecision(null, order) === 'rejected' ||
+    extractInspectionRejectionDetails(order.note || (order as any).rejectionReason).isBuyerPurchaseRejected;
+
+  // Đơn được phép trả hàng khi đã có quyết toán phí, hoặc là pre-listing hoàn tất, hoặc người mua từ chối / hết hạn 6h
+  const isSettledOrSpecial = Boolean(order.feeSettledAt) || isPreListingCompleted || isExpired || isBuyerRejected;
+  if (!isSettledOrSpecial) return false;
+
+  return order.returnShippingReserveFee != null || isExpired || isBuyerRejected || isPreListingCompleted;
 }
 
-export function getHubReturnState(shipments: ShipmentBackend[]) {
+function canBookHubReturnShipment(shipment: ShipmentBackend | null | undefined) {
+  if (shipment === null || shipment === undefined) return true;
+  if (shipment?.leg !== 'CENTER_TO_SELLER') return false;
+  if (shipment.status === 'CANCELLED') return true;
+  return shipment.status === 'FAILED' && Boolean(shipment.orderCode) && !shipment.deliveredAt && !shipment.cashConfirmedAt &&
+    (shipment.providerStatus === 'REJECTED' || shipment.providerStatus === 'EXPIRED');
+}
+
+export function getHubReturnState(shipments: ShipmentBackend[], orderStatus?: string) {
   const returns = shipments.filter((shipment) => shipment.leg === 'CENTER_TO_SELLER').reverse();
+  const blockingReturn = returns.find((shipment) => !canBookHubReturnShipment(shipment));
+  const isReceived = shipments.some((shipment) =>
+    shipment.leg === 'SELLER_TO_CENTER' &&
+    (shipment.status === 'DELIVERED' || shipment.status === 'COMPLETED' || (shipment.providerStatus || '').toUpperCase() === 'COMPLETED')
+  ) || (orderStatus ? ['FAILED', 'PASSED', 'COMPLETED', 'RECEIVED_AT_CENTER', 'INSPECTING', 'INSPECTION_IN_PROGRESS', 'CANCELLED', 'CANCELED'].includes(orderStatus.toUpperCase()) : false);
+
   return {
-    received: shipments.some((shipment) => shipment.leg === 'SELLER_TO_CENTER' && shipment.status === 'DELIVERED'),
-    shipment: returns.find((shipment) => shipment.status !== 'CANCELLED') ?? returns[0] ?? null,
+    received: isReceived,
+    shipment: blockingReturn ?? returns[0] ?? null,
   };
+}
+
+export function getSellerHubReturnStage(shipment?: ShipmentBackend | null) {
+  if (shipment?.leg !== 'CENTER_TO_SELLER') return 'pending';
+  const status = shipment.status.toUpperCase();
+  const step = getHubReturnProgress(shipment).step;
+  if (step === 3) return 'returned';
+  const unsuccessful = ['CREATING', 'CREATION_UNCERTAIN', 'CANCELLED', 'CANCELED', 'FAILED', 'RETURNED', 'EXPIRED', 'REJECTED'];
+  if (unsuccessful.includes(status) || unsuccessful.includes(shipment.providerStatus?.toUpperCase() ?? '')) return 'pending';
+  if (step === 2 || status === 'IN_TRANSIT' || shipment.orderCode?.trim()) return 'returning';
+  return 'pending';
+}
+
+export function getLatestReturnShipment(shipments: ShipmentBackend[] | null | undefined): ShipmentBackend | null {
+  if (!Array.isArray(shipments) || shipments.length === 0) return null;
+  const returns = shipments.filter((s) => s && (s.leg === 'CENTER_TO_SELLER' || s.leg === 'RETURN' || s.leg === 'BUYER_TO_SELLER'));
+  if (returns.length === 0) return null;
+  if (returns.length === 1) return returns[0];
+
+  const sorted = [...returns].sort((a, b) => {
+    const timeA = (a as any).createdAt || (a as any).createdDate || (a as any).updatedAt;
+    const timeB = (b as any).createdAt || (b as any).createdDate || (b as any).updatedAt;
+    if (timeA && timeB) {
+      return new Date(timeA).getTime() - new Date(timeB).getTime();
+    }
+    return 0;
+  });
+
+  const reversed = [...sorted].reverse();
+  // 1. Ưu tiên vận đơn hoàn trả mới nhất đang hoạt động (không bị hủy hoặc thất bại)
+  const activeReturn = reversed.find(
+    (s) => s.status !== 'CANCELLED' && s.status !== 'CANCELED' && s.status !== 'FAILED'
+  );
+  if (activeReturn) return activeReturn;
+
+  // 2. Tiếp theo là vận đơn mới nhất không bị CANCELLED
+  const nonCancelled = reversed.find(
+    (s) => s.status !== 'CANCELLED' && s.status !== 'CANCELED'
+  );
+  if (nonCancelled) return nonCancelled;
+
+  // 3. Cuối cùng trả về vận đơn mới nhất trong danh sách (dù là FAILED hay CANCELLED)
+  return reversed[0] || null;
+}
+
+export function getLatestBuyerDeliveryShipment(shipments: ShipmentBackend[] | null | undefined): ShipmentBackend | null {
+  if (!Array.isArray(shipments) || shipments.length === 0) return null;
+  const buyerLegs = shipments.filter((s) => s && (s.leg === 'CENTER_TO_BUYER' || s.leg === 'SELLER_TO_BUYER' || s.leg === 'DELIVERY'));
+  if (buyerLegs.length === 0) return null;
+  if (buyerLegs.length === 1) return buyerLegs[0];
+
+  const sorted = [...buyerLegs].sort((a, b) => {
+    const timeA = (a as any).createdAt || (a as any).createdDate || (a as any).updatedAt;
+    const timeB = (b as any).createdAt || (b as any).createdDate || (b as any).updatedAt;
+    if (timeA && timeB) {
+      return new Date(timeA).getTime() - new Date(timeB).getTime();
+    }
+    return 0;
+  });
+
+  const reversed = [...sorted].reverse();
+  const activeShipment = reversed.find(
+    (s) => s.status !== 'CANCELLED' && s.status !== 'CANCELED' && s.status !== 'FAILED'
+  );
+  if (activeShipment) return activeShipment;
+
+  const nonCancelled = reversed.find(
+    (s) => s.status !== 'CANCELLED' && s.status !== 'CANCELED'
+  );
+  if (nonCancelled) return nonCancelled;
+
+  return reversed[0] || null;
 }
 
 export function canBookCenterReturn(
@@ -203,9 +411,20 @@ export function canBookCenterReturn(
   role: string | undefined,
   state: ReturnType<typeof getHubReturnState> | undefined,
 ) {
+  const isPreListingCompleted = order.inspectionScope === 'PRE_LISTING' && order.status === 'COMPLETED';
+  const isExpired = isExpiredInspectionPurchase(order.status, order.note || (order as any).rejectionReason);
+  const isBuyerRejected = getInspectionPurchaseDecision(null, order) === 'rejected' ||
+    extractInspectionRejectionDetails(order.note || (order as any).rejectionReason).isBuyerPurchaseRejected;
+  const isOrderAtHubStatus = ['FAILED', 'PASSED', 'COMPLETED', 'RECEIVED_AT_CENTER', 'INSPECTING', 'INSPECTION_IN_PROGRESS'].includes((order.status || '').toUpperCase()) ||
+    (['CANCELLED', 'CANCELED'].includes((order.status || '').toUpperCase()) && Boolean((order as any).conditionScore != null || isExpired || isBuyerRejected));
+  const isReceived = state !== undefined ? state.received === true : isOrderAtHubStatus;
+
+  const isEligibleStatus = order.status === 'FAILED' || isPreListingCompleted || isBuyerRejected || isExpired;
+
   return isCenterReturnEligible(order, centerId, role) &&
-    (order.status === 'FAILED' || getInspectionPurchaseDecision(null, order) === 'rejected') &&
-    state?.received === true && canBookHubBuyerDelivery(state.shipment);
+    isEligibleStatus &&
+    isReceived &&
+    canBookHubReturnShipment(state?.shipment);
 }
 
 export function shouldSyncHubReturnOnOpen(shipment: ShipmentBackend | null): shipment is ShipmentBackend {
@@ -230,9 +449,8 @@ export function getReturnReserveMessage(reserve: number | null | undefined, ship
   return 'Phần dự phòng còn dư được hoàn vào ví của bên đã nộp sau đối soát.';
 }
 
-export function canAppealInspection(order: InspectionOrderDto, sellerId?: string, now = Date.now()) {
-  return Boolean(sellerId && sellerId === order.sellerId && order.status === 'FAILED' &&
-    (!order.appealStatus || order.appealStatus === 'NONE') && order.appealDeadline && Date.parse(order.appealDeadline) > now);
+export function canAppealInspection(_order?: InspectionOrderDto, _sellerId?: string, _now = Date.now()) {
+  return false;
 }
 
 export function getHubBuyerShipmentLabel(shipment: ShipmentBackend) {
@@ -288,7 +506,10 @@ export function getInboundShipmentProgress(
   switch (shipment.status.toUpperCase()) {
     case 'DELIVERED':
     case 'COMPLETED': return progress(3, 'Lalamove đã giao tới Hub', 'Delivered to Hub');
+    case 'CANCELED':
     case 'CANCELLED': return progress(null, 'Vận đơn đã hủy', 'Shipment cancelled');
+    case 'EXPIRED':
+    case 'REJECTED':
     case 'FAILED': return progress(null, 'Vận đơn thất bại', 'Shipment failed');
     case 'RETURNED': return progress(null, 'Vận đơn đã hoàn trả', 'Shipment returned');
     case 'CREATING': return progress(null, 'Đang tạo vận đơn', 'Creating shipment');
@@ -304,7 +525,9 @@ export function getInboundShipmentProgress(
     case 'SHIPPED':
     case 'DELIVERING': return progress(2, 'Đang giao hàng đến Hub', 'On the way to Hub');
     case 'COMPLETED': return progress(3, 'Lalamove đã giao tới Hub', 'Delivered to Hub');
+    case 'CANCELLED':
     case 'CANCELED': return progress(null, 'Vận đơn đã hủy', 'Shipment cancelled');
+    case 'FAILED':
     case 'REJECTED':
     case 'EXPIRED': return progress(null, 'Vận đơn thất bại', 'Shipment failed');
     case 'CREATING': return progress(null, 'Đang tạo vận đơn', 'Creating shipment');
@@ -367,7 +590,7 @@ export function isOrderConfirmedByInspector(order: {
   }
 
   // 4. Kiểm tra cờ xác nhận cục bộ của KTV (khi KTV bấm "Xác Nhận Đơn" trên cùng browser)
-  if (typeof window !== 'undefined') {
+  if (typeof window !== 'undefined' || typeof localStorage !== 'undefined') {
     const possibleIds = [
       order.id,
       order.orderId,

@@ -8,9 +8,18 @@ import {
   MessageSquare,
   AlertCircle
 } from 'lucide-react';
-import { Language } from '../../types';
+import { Language, ProductReview } from '../../types';
 import { reviewService } from '../../data/mockReviews';
-import { reputationService, SellerReputationDto, getAssessmentStatusMeta } from '../../services';
+import {
+  reputationService,
+  SellerReputationDto,
+  ReputationHistoryDto,
+  getAssessmentStatusMeta,
+  getReputationEventMeta,
+  orderService,
+  getStoredUser,
+  orderReviewService,
+} from '../../services';
 
 interface SellerReviewsModalProps {
   isOpen: boolean;
@@ -29,22 +38,68 @@ export const SellerReviewsModal: React.FC<SellerReviewsModalProps> = ({
 }) => {
   const [filterRating, setFilterRating] = useState<number | 'ALL'>('ALL');
   const [reputation, setReputation] = useState<SellerReputationDto | null>(null);
+  const [historyItems, setHistoryItems] = useState<ReputationHistoryDto[]>([]);
+  const [realBackendReviews, setRealBackendReviews] = useState<ProductReview[]>([]);
+  const [orderMap, setOrderMap] = useState<Record<string, any>>({});
   const [isLoadingRep, setIsLoadingRep] = useState(false);
 
   useEffect(() => {
     if (!isOpen || !sellerId) return;
     let isMounted = true;
     setIsLoadingRep(true);
-    reputationService.getSellerReputation(sellerId)
-      .then((rep) => {
-        if (isMounted) setReputation(rep);
-      })
-      .catch((err) => {
-        console.warn('Could not fetch seller reputation:', err);
+
+    const storedUser = getStoredUser();
+    const isSelf = Boolean(storedUser?.id && String(storedUser.id) === String(sellerId));
+
+    Promise.all([
+      reputationService.getSellerReputation(sellerId).catch(() => null),
+      isSelf
+        ? reputationService.getMyReputationHistory(0, 100).catch(() => ({ items: [] }))
+        : Promise.resolve({ items: [] as ReputationHistoryDto[] }),
+      isSelf
+        ? orderService.getSellerOrders(0, 50).then((r) => r.content || []).catch(() => [] as any[])
+        : orderService.getBuyerOrders(0, 50).then((r) => r.content || []).catch(() => [] as any[]),
+      orderReviewService.getSellerReviews(sellerId, 0, 50).catch(() => ({ items: [] })),
+    ])
+      .then(([rep, historyRes, myOrders, backendReviewsRes]) => {
+        if (!isMounted) return;
+        if (rep) setReputation(rep);
+        setHistoryItems(historyRes?.items || []);
+
+        const mapped: ProductReview[] = ((backendReviewsRes as any)?.items || []).map((r: any) => ({
+          id: r.id,
+          orderId: r.orderId,
+          listingId: r.postId || '',
+          productName: r.productTitle || 'Sản phẩm giao dịch',
+          productImage: r.productImage,
+          sellerId: r.sellerId,
+          sellerName: r.sellerName,
+          buyerId: r.buyerId,
+          buyerName: r.buyerName,
+          buyerAvatar: r.buyerAvatar,
+          rating: r.rating,
+          comment: r.comment,
+          tags: r.tags || [],
+          photos: r.photos || [],
+          createdAt: r.createdAt,
+          isVerifiedPurchase: r.verifiedPurchase ?? true,
+          conditionGrade: r.conditionGrade,
+        }));
+        setRealBackendReviews(mapped);
+
+        const map: Record<string, any> = {};
+        if (Array.isArray(myOrders)) {
+          myOrders.forEach((o: any) => {
+            const oid = String(o.orderId || o.id || '');
+            if (oid) map[oid] = o;
+          });
+        }
+        setOrderMap(map);
       })
       .finally(() => {
         if (isMounted) setIsLoadingRep(false);
       });
+
     return () => {
       isMounted = false;
     };
@@ -52,7 +107,75 @@ export const SellerReviewsModal: React.FC<SellerReviewsModalProps> = ({
 
   if (!isOpen) return null;
 
-  const allReviews = reviewService.getReviewsBySeller(sellerId);
+  const directReviews = reviewService.getReviewsBySeller(sellerId);
+  const realOrderIds = new Set(realBackendReviews.map((r) => String(r.orderId || '')).filter(Boolean));
+  const directOrderIds = new Set(directReviews.map((r) => String(r.orderId || '')).filter(Boolean));
+
+  const historyReviews: ProductReview[] = historyItems
+    .filter((item) => (!item.orderId || (!directOrderIds.has(String(item.orderId)) && !realOrderIds.has(String(item.orderId)))))
+    .map((item) => {
+      const meta = getReputationEventMeta(item.eventType);
+      const isGood =
+        (item.goodAfter !== undefined && item.goodBefore !== undefined && item.goodAfter > item.goodBefore) ||
+        item.eventType === 'ORDER_COMPLETED';
+      const isBad =
+        (item.badAfter !== undefined && item.badBefore !== undefined && item.badAfter > item.badBefore) ||
+        ['SELLER_CANCELLED_ORDER', 'SELLER_FAULT_CONFIRMED', 'SERIOUS_VIOLATION_CONFIRMED'].includes(item.eventType);
+
+      const rating = isGood ? 5 : isBad ? 1 : meta.type === 'negative' ? 2 : 5;
+      const matchedOrder = item.orderId ? orderMap[String(item.orderId)] : null;
+      const shortOrderId = item.orderId ? `#${String(item.orderId).slice(0, 8)}` : '';
+      const productName =
+        matchedOrder?.postTitle ||
+        matchedOrder?.title ||
+        (shortOrderId ? `Đơn hàng giao dịch ${shortOrderId}` : 'Đánh giá giao dịch hệ thống');
+      const buyerName =
+        matchedOrder?.buyerName ||
+        (isGood ? 'Khách mua qua Quỹ Escrow' : 'Hệ thống Thẩm Định SecondLife');
+
+      const scoreTransition =
+        item.scoreBefore !== undefined && item.scoreBefore !== null && item.scoreAfter !== undefined && item.scoreAfter !== null
+          ? ` (Điểm uy tín: ${item.scoreBefore} ➔ ${item.scoreAfter}/100)`
+          : item.scoreAfter !== undefined && item.scoreAfter !== null
+          ? ` (Điểm uy tín: ${item.scoreAfter}/100)`
+          : '';
+
+      const penaltyTransition =
+        item.penaltyAfter !== undefined &&
+        item.penaltyAfter !== null &&
+        item.penaltyBefore !== undefined &&
+        item.penaltyBefore !== null &&
+        Number(item.penaltyAfter) > Number(item.penaltyBefore)
+          ? ` (-${Number(item.penaltyAfter) - Number(item.penaltyBefore)} điểm phạt)`
+          : '';
+
+      const tags: string[] = [meta.label];
+      if (isGood) tags.push('Giao dịch thành công (GOOD)');
+      if (isBad) tags.push('Ghi nhận lỗi người bán (BAD)');
+      if (shortOrderId) tags.push(`Mã đơn ${shortOrderId}`);
+
+      return {
+        id: item.id,
+        orderId: item.orderId || undefined,
+        listingId: matchedOrder?.postId || '',
+        productName,
+        sellerId,
+        sellerName,
+        buyerId: matchedOrder?.buyerId || '',
+        buyerName,
+        rating,
+        comment: `${item.reason || meta.desc}${penaltyTransition}${scoreTransition}`,
+        tags,
+        createdAt: item.createdAt,
+        isVerifiedPurchase: true,
+      };
+    });
+
+  const allReviews: ProductReview[] = [
+    ...realBackendReviews,
+    ...directReviews.filter((d) => !realOrderIds.has(String(d.orderId || ''))),
+    ...historyReviews,
+  ];
 
   const filteredReviews = allReviews.filter((r) => {
     if (filterRating === 'ALL') return true;

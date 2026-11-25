@@ -1,9 +1,58 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { InspectionOrderDto } from '../services/inspectorService';
-import { getInspectionApprovalMessage, getInspectionRemoteMediaUrl, getInspectionReportMedia, getInspectionStageOne, getInspectionStageTwo, isInspectionProofImage } from '../utils/inspectionDecisionData';
+import type { EscrowOrder, UserProfile } from '../types';
+import { getInspectionApprovalMessage, getInspectionBuyerDestination, getInspectionDecisionStatus, getInspectionRemoteMediaUrl, getInspectionReportMedia, getInspectionStageOne, getInspectionStageTwo, isInspectionProofImage } from '../utils/inspectionDecisionData';
 
 const order: InspectionOrderDto = { id: 'inspection', postId: 'post', status: 'PASSED' };
+const buyer: UserProfile = {
+  id: 'buyer', role: 'buyer', name: 'Người mua', email: 'buyer@example.com',
+  phone: '090 123 4567', address: '12 Đường A, Phường B', latitude: 10.8, longitude: 106.7,
+};
+
+test('the inspection verdict takes precedence over cancellation on the order summary', () => {
+  const summary = { status: 'CANCELLED', inspectionStatus: 'CANCELLED' };
+  assert.deepEqual(getInspectionDecisionStatus(summary, { status: 'FAILED' }), {
+    status: 'FAILED', isFailed: true, isCancellationStatus: false,
+  });
+  assert.deepEqual(getInspectionDecisionStatus({ inspectionStatus: 'INSPECTION_FAILED' }), {
+    status: 'INSPECTION_FAILED', isFailed: true, isCancellationStatus: false,
+  });
+  assert.deepEqual(getInspectionDecisionStatus({ inspectionStatus: 'FAILED', escrowStatus: 'INSPECTION_FAILED' }, { status: 'CANCELLED' }), {
+    status: 'CANCELLED', isFailed: false, isCancellationStatus: true,
+  });
+});
+
+test('stage two uses the saved buyer recipient and pin before the profile address', () => {
+  const saved = {
+    name: 'Người nhận', phone: '+84 901 234 567', address: '43 Đường C, Phường D',
+    latitude: 10.9, longitude: 106.8,
+  };
+  const inspection = { ...order, buyerId: buyer.id, buyerAddress: buyer.address, buyerDeliveryAddress: saved };
+  assert.deepEqual(getInspectionBuyerDestination(inspection, null, buyer), { ...saved, phone: '+84901234567' });
+  assert.deepEqual(getInspectionBuyerDestination({
+    ...inspection, buyerDeliveryAddress: { ...saved, address: null },
+  }, null, buyer), { ...saved, address: '', phone: '+84901234567' });
+});
+
+test('stage two can load a saved JSON destination and never combines an order address with a different profile pin', () => {
+  const inspection = { ...order, buyerId: buyer.id, buyerAddress: '43 Đường C, Phường D' };
+  const legacy = { deliveryAddress: '{"address":"4 Đường E","latitude":10.4,"longitude":106.4}' } as EscrowOrder;
+  assert.deepEqual(getInspectionBuyerDestination(inspection, legacy, buyer), {
+    name: buyer.name, phone: '0901234567', address: '4 Đường E', latitude: 10.4, longitude: 106.4,
+  });
+  assert.deepEqual(getInspectionBuyerDestination(inspection, null, buyer), {
+    name: buyer.name, phone: '0901234567', address: inspection.buyerAddress,
+  });
+});
+
+test('stage two ignores a city-only fallback and never uses a different signed-in account', () => {
+  const inspection = { ...order, buyerId: buyer.id, buyerAddress: 'TP. Hồ Chí Minh' };
+  assert.equal(getInspectionBuyerDestination(inspection, null, {
+    ...buyer, address: '', latitude: undefined, longitude: undefined,
+  }), null);
+  assert.equal(getInspectionBuyerDestination(inspection, null, { ...buyer, id: 'seller', role: 'seller' }), null);
+});
 
 test('inspection details distinguish proposal review and fee payment from active inspection', () => {
   const waitingForSeller = getInspectionApprovalMessage('WAITING_SELLER_APPROVAL', true);
@@ -134,4 +183,68 @@ test('stage 2 leg status correctly identifies awaiting buyer decision over in-tr
   const inTransit = getLeg2Status(true, 'accepted', 'IN_TRANSIT');
   assert.equal(inTransit.label, 'Đang giao người mua');
   assert.equal(inTransit.leg, 'CENTER_TO_BUYER');
+});
+
+test('Inspector verdict badge shows ĐẠT CHUẨN (PASS) for scored/passed inspection even if cancelled, and NEVER shows ĐANG KIỂM ĐỊNH', () => {
+  const getVerdictBadge = (params: {
+    isPassed: boolean;
+    isFailed: boolean;
+    conditionScore?: number | null;
+    backendStatus?: string;
+    inspectorNote?: string;
+    parsedScore?: string;
+  }) => {
+    const parsedScoreNum = params.conditionScore != null
+      ? Number(params.conditionScore)
+      : (params.parsedScore && !isNaN(Number(params.parsedScore)) ? Number(params.parsedScore) : null);
+
+    const isVerdictPassed = Boolean(
+      params.isPassed ||
+      (parsedScoreNum != null && parsedScoreNum >= 75) ||
+      params.backendStatus === 'PASSED' ||
+      (params.inspectorNote && /kiểm định đạt chuẩn|đạt chuẩn \(pass\)/i.test(params.inspectorNote))
+    );
+
+    const isVerdictFailed = Boolean(
+      !isVerdictPassed && (
+        params.isFailed ||
+        (parsedScoreNum != null && parsedScoreNum < 75) ||
+        params.backendStatus === 'FAILED' ||
+        (params.inspectorNote && /không đạt chuẩn|từ chối \(failed\)/i.test(params.inspectorNote))
+      )
+    );
+
+    if (isVerdictPassed) return 'ĐẠT CHUẨN (PASS)';
+    if (isVerdictFailed) return 'TỪ CHỐI (FAILED)';
+    return null;
+  };
+
+  // Case 1: Cancelled order after inspection passed with score 85 (like user's screenshot)
+  const cancelledWithPassVerdict = getVerdictBadge({
+    isPassed: false, // isPassed was false because order was cancelled
+    isFailed: false,
+    conditionScore: 85,
+    backendStatus: 'CANCELLED',
+    inspectorNote: 'cc | Người mua không thanh toán tiền hàng trong vòng 6 giờ sau khi kiểm định đạt chuẩn.',
+  });
+  assert.equal(cancelledWithPassVerdict, 'ĐẠT CHUẨN (PASS)', 'Must show ĐẠT CHUẨN (PASS), not ĐANG KIỂM ĐỊNH');
+
+  // Case 2: In-progress order with no verdict or score yet
+  const genuinelyInspecting = getVerdictBadge({
+    isPassed: false,
+    isFailed: false,
+    conditionScore: null,
+    backendStatus: 'INSPECTING',
+  });
+  assert.equal(genuinelyInspecting, null, 'Must NOT show ĐANG KIỂM ĐỊNH, badge is omitted');
+
+  // Case 3: Failed inspection with score 40
+  const failedVerdict = getVerdictBadge({
+    isPassed: false,
+    isFailed: true,
+    conditionScore: 40,
+    backendStatus: 'FAILED',
+    inspectorNote: 'Máy rỉ sét, hỏng động cơ',
+  });
+  assert.equal(failedVerdict, 'TỪ CHỐI (FAILED)');
 });

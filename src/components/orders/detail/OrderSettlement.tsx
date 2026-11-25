@@ -1,11 +1,13 @@
 import type { BuyerInspectionStage, OrderCheck } from '../../../types/orders/orderTypes';
-import { Clock, Receipt } from 'lucide-react';
-import type { EscrowOrder, OrderCommissionDTO, OrderSettlementDTO } from '../../../types';
+import { AlertTriangle, Clock, Receipt } from 'lucide-react';
+import type { EscrowOrder, Language, OrderCommissionDTO, OrderSettlementDTO } from '../../../types';
 import { formatVND } from '../../../utils/translations';
 import { getCommissionPayout } from '../../../utils/orders/orderFinance';
+import { getOrderEscrowHoldNotice, isOrderEscrowOnHold } from '../../../utils/orders/orderDispute';
 
 interface Props {
   order: EscrowOrder;
+  lang?: Language;
   detailBuyerInspectionStage: BuyerInspectionStage | null;
   isOrderReceiptConfirmed: OrderCheck;
   orderSettlement: OrderSettlementDTO | null;
@@ -17,6 +19,7 @@ interface Props {
 
 export function OrderSettlement({
   order: detailModalOrder,
+  lang = 'vi',
   detailBuyerInspectionStage,
   isOrderReceiptConfirmed,
   orderSettlement,
@@ -28,20 +31,34 @@ export function OrderSettlement({
   if (isSeller === false) return null;
 
   const commissionPayout = orderCommission && getCommissionPayout(orderCommission);
+  const escrowNotice = getOrderEscrowHoldNotice(detailModalOrder, lang);
+
   return (
     <>
-      {!isEscrowReleased && !detailBuyerInspectionStage && detailModalOrder.shippingDeliveredAt &&
-        !isOrderReceiptConfirmed(detailModalOrder) && detailModalOrder.escrowStatus !== 'DISPUTED' && (
-        <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-1.5">
+      {escrowNotice && (
+        <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-1.5 animate-fadeIn">
           <div className="flex items-center gap-2 font-bold text-amber-900">
-            <Clock className="w-4 h-4 text-amber-600 shrink-0" />
-            <span>Quy Trình Tự Động Giải Ngân Sau 48 Giờ</span>
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>{escrowNotice.title}</span>
           </div>
           <p className="text-[11px] text-amber-800 leading-relaxed">
-            Đơn hàng đã được bưu tá xác nhận giao thành công vào lúc <strong>{new Date(detailModalOrder.shippingDeliveredAt).toLocaleString('vi-VN')}</strong>.
-            Theo chính sách bảo vệ người mua của SecondLife, hệ thống sẽ tự động giải ngân cho người bán sau 48 giờ kể từ thời điểm này nếu không có khiếu nại phát sinh.
+            {escrowNotice.description}
           </p>
         </div>
+      )}
+
+      {!isEscrowReleased && !detailBuyerInspectionStage && detailModalOrder.shippingDeliveredAt &&
+        !isOrderReceiptConfirmed(detailModalOrder) && !isOrderEscrowOnHold(detailModalOrder) && (
+          <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-1.5">
+            <div className="flex items-center gap-2 font-bold text-amber-900">
+              <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>Quy Trình Tự Động Giải Ngân Sau 48 Giờ</span>
+            </div>
+            <p className="text-[11px] text-amber-800 leading-relaxed">
+              Đơn hàng đã được bưu tá xác nhận giao thành công vào lúc <strong>{new Date(detailModalOrder.shippingDeliveredAt).toLocaleString('vi-VN')}</strong>.
+              Người mua có thể khiếu nại trong vòng 48 giờ kể từ lúc giao thành công, khi tiền còn trong Escrow.
+            </p>
+          </div>
         )}
 
       <div className="rounded-2xl p-4 border border-gray-200 bg-[#faf8f5] space-y-3">
@@ -83,10 +100,7 @@ export function OrderSettlement({
                 </span>
               </div>
               <div className="flex justify-between items-center text-slate-600 text-[11px]">
-                <span>Cước vận chuyển:</span>
-                <span className="font-bold text-slate-800">
-                  {formatVND(orderSettlement.shippingFee)}
-                </span>
+
               </div>
               <div className="flex justify-between items-center text-slate-600 text-[11px]">
                 <span>Giá cơ sở tính hoa hồng:</span>
@@ -111,9 +125,6 @@ export function OrderSettlement({
               <span className="font-bold text-slate-800 flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
                 Chưa quyết toán giải ngân
-              </span>
-              <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-blue-100 text-blue-800">
-                {orderCommission.ruleName || orderCommission.ruleCode || 'Biểu phí chuẩn'}
               </span>
             </div>
             <div className="space-y-1.5 pt-1 border-t border-slate-200/80">

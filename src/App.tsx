@@ -3,16 +3,16 @@ import { getRoleLandingPath, getRouteAccess, getUserRoles, pathForTab, paths, re
 import { navigatePath, useBrowserLocation } from './app/router/browser';
 import { RouteStatusPage } from './app/router/RouteStatusPage';
 import React, { useState, lazy, Suspense, useRef, useCallback, useEffect } from 'react';
-import { UserRole, Language, Listing, EscrowOrder, DisputeCase, UserProfile, UserCredit, ItemCategory, ConditionGrade, EscrowStatus, InspectionReport, InspectionProposalPrefillData } from './types';
+import { UserRole, Language, Listing, EscrowOrder, DisputeCase, UserProfile, UserCredit, ItemCategory, ConditionGrade, EscrowStatus, InspectionReport, InspectionProposalPrefillData, SellerPostDetailDto } from './types';
 import { formatVND } from './utils/translations';
 import { extractWardAndCity, getSavedSellerAddress, saveSellerAddress, cleanFullAddress, formatCombinedAddress } from './utils/addressUtils';
-import { getSortableOrderTimestamp, getBoughtListingIds, markListingAsBought, markListingAsAvailable, reconcileBoughtListingIds, isOrderCancelledOrRefunded, getResolvedPostParcel, extractListingIdFromOrder } from './utils/orderUtils';
+import { getSortableOrderTimestamp, getBoughtListingIds, markListingAsBought, markListingAsAvailable, reconcileBoughtListingIds, isOrderCancelledOrRefunded, isPostUnderInspectionOrReturning, getPostReturnStatus, getResolvedPostParcel, extractListingIdFromOrder } from './utils/orderUtils';
 import { getBuyerInspectionStage } from './utils/inspectionPurchase';
 import { resolveCategoryAndItem, initCatalogCache, resolveOrderListing, resolveListingCategory, extractSellerOriginalPrice } from './utils/catalogCache';
 import { translateSystemNotification } from './utils/systemNotificationTranslator';
 import { useEscrowOrderFeed } from './hooks/orders/useEscrowOrderFeed';
 import { readOrderFeedQuery } from './utils/escrowOrderFilters';
-import { orderFeedItemToRaw } from './services/orderFeedService';
+import { getPreListingInspection, orderFeedItemToRaw } from './services/orderFeedService';
 import { mapEscrowOrder } from './utils/mapEscrowOrder';
 import { lazyWithRetry } from './utils/lazyWithRetry';
 import { Navbar } from './components/layout/Navbar';
@@ -29,11 +29,11 @@ import type { PolicyTabKey } from './components/modals/PolicyModal';
 import './utils/dialogService';
 import { clearNotificationsOnLogout, saveScopedLocalNotification } from './utils/notificationStorage';
 import { NotificationItem } from './types/notification';
+import { canOpenOrderDispute } from './utils/orders/orderDispute';
 import { notificationWsClient } from './services/notificationWsClient';
 import { ShieldCheck, Sparkles, CheckCircle2, Store, AlertTriangle } from 'lucide-react';
 import { authService, userService, topupService, walletService, orderService, inspectorService, negotiationService, postService, adminPostService, shippingService, sellerCreditService, chatService, getAccessToken, getRefreshToken, clearAuthTokens, getStoredUser, setStoredUser, isTokenExpired, isTokenExpiringSoon, recordUserActivity, resetActivityTimer, isUserIdle, refreshAccessToken, checkAndRenewSessionOnReturn, ChatRoomDto } from './services';
 import { inspectionCashConfirmedEvent } from './utils/inspectionCashShipping';
-import { isListingInspectionPassed, markListingInspectionPassed, normalizeListingTitle, isOrderInspectionVerdictPassed } from './utils/listingInspection';
 
 // Code-split heavy views via lazyWithRetry to prevent dynamic import fetch errors
 const CreateListingView = lazyWithRetry(() => import('./pages/CreateListingView').then(m => ({ default: m.CreateListingView })), 'CreateListingView');
@@ -49,7 +49,13 @@ const BuyerInspectionDecisionView = lazyWithRetry(() => import('./pages/BuyerIns
 const MyDisputesView = lazyWithRetry(() => import('./pages/MyDisputesView').then(m => ({ default: m.MyDisputesView })), 'MyDisputesView');
 
 // Code-split heavy modals via lazyWithRetry
-const ListingDetailModal = lazyWithRetry(() => import('./components/modals/ListingDetailModal').then(m => ({ default: m.ListingDetailModal })), 'ListingDetailModal');
+const importListingDetail = () => import('./components/modals/ListingDetailModal').then(m => ({ default: m.ListingDetailModal }));
+let listingDetailImport: ReturnType<typeof importListingDetail> | undefined;
+const loadListingDetail = () => listingDetailImport ??= importListingDetail().catch((error) => {
+  listingDetailImport = undefined;
+  throw error;
+});
+const ListingDetailModal = lazyWithRetry(loadListingDetail, 'ListingDetailModal');
 const CheckoutModal = lazyWithRetry(() => import('./components/modals/CheckoutModal').then(m => ({ default: m.CheckoutModal })), 'CheckoutModal');
 const ChatModal = lazyWithRetry(() => import('./components/modals/ChatModal').then(m => ({ default: m.ChatModal })), 'ChatModal');
 const ProfileDialog = lazyWithRetry(() => import('./components/modals/ProfileDialog').then(m => ({ default: m.ProfileDialog })), 'ProfileDialog');
@@ -150,7 +156,6 @@ export default function App() {
   // Pending action after login (redirect or resume action)
   const [pendingTab, setPendingTab] = useState<string | null>(null);
   const [pendingCheckoutItem, setPendingCheckoutItem] = useState<Listing | null>(null);
-  const [editingDraft, setEditingDraft] = useState<Listing | null>(null);
   const [createListingReturnTab, setCreateListingReturnTab] = useState<string>('marketplace');
   const [inspectionDecisionOrder, setInspectionDecisionOrder] = useState<EscrowOrder | null>(null);
   const [inspectionDecisionOrderId, setInspectionDecisionOrderId] = useState<string | null>(null);
@@ -185,10 +190,10 @@ export default function App() {
               const results = await Promise.allSettled(tasks);
               const obRes = results[0];
               const paRes = isSeller ? results[1] : null;
-              if (obRes && obRes.status === 'fulfilled' && obRes.value?.pickupAddress) {
-                pickupAddr = obRes.value.pickupAddress;
-              } else if (paRes && paRes.status === 'fulfilled' && paRes.value) {
+              if (paRes && paRes.status === 'fulfilled' && paRes.value?.address) {
                 pickupAddr = paRes.value;
+              } else if (obRes && obRes.status === 'fulfilled' && obRes.value?.pickupAddress) {
+                pickupAddr = obRes.value.pickupAddress;
               }
             } catch (_) { }
           }
@@ -208,12 +213,8 @@ export default function App() {
             profile.province
           );
 
-          // Ưu tiên địa chỉ kho lấy hàng chính thức từ BE (fullPickup)
           const resolvedPickup = cleanFullAddress(
-            fullPickup ||
-            (isSeller ? (stored?.pickupAddress && stored.pickupAddress !== profileFullAddress ? stored.pickupAddress : '') : (stored?.pickupAddress || profileFullAddress || '')) ||
-            savedAddr?.address ||
-            ''
+            fullPickup || (isSeller ? '' : stored?.pickupAddress || profileFullAddress || savedAddr?.address || '')
           );
           const resolvedAddress = cleanFullAddress(stored?.address || profileFullAddress || savedAddr?.address || '');
           const resolvedWard = stored?.wardName || pickupAddr?.wardName || profile.ward || savedAddr?.wardName || '';
@@ -255,6 +256,30 @@ export default function App() {
             emailVerified: Boolean(profile.emailVerified),
             roles: profile.roles,
             permissions: profile.permissions,
+            trustScore:
+              (profile as any).sellerReputation?.score !== undefined && (profile as any).sellerReputation?.score !== null
+                ? Number((profile as any).sellerReputation.score)
+                : stored?.trustScore,
+            completedOrdersCount:
+              (profile as any).sellerReputation?.goodTransactions !== undefined &&
+              (profile as any).sellerReputation?.goodTransactions !== null
+                ? Number((profile as any).sellerReputation.goodTransactions)
+                : stored?.completedOrdersCount,
+            sellerRating:
+              Number((profile as any).sellerReputation?.evaluatedOrders ?? 0) > 0
+                ? Math.max(
+                    0,
+                    Math.min(
+                      5,
+                      ((profile as any).sellerReputation?.transactionScore !== undefined &&
+                      (profile as any).sellerReputation?.transactionScore !== null
+                        ? Number((profile as any).sellerReputation.transactionScore)
+                        : (Number((profile as any).sellerReputation?.goodTransactions ?? 0) /
+                            Number((profile as any).sellerReputation.evaluatedOrders)) *
+                          100) / 20
+                    )
+                  )
+                : 0,
           };
           setCurrentUser(syncedUser);
           setCurrentRole(syncedUser.role);
@@ -342,15 +367,19 @@ export default function App() {
   });
 
   const closeRouteModal = (fallback: string) => {
+    const role = currentUser?.role || currentRole;
+    const safeFallback = ['admin', 'inspector', 'inspection_center', 'staff'].includes(role) && (fallback === '/' || fallback === paths.products)
+      ? getRoleLandingPath(role)
+      : fallback;
     const previous = safeReturnPath(window.history.state?.returnPath || null);
     if (previous && previous !== browserLocation) {
-      const targetRoute = resolveAppRoute(previous, currentUser?.role || currentRole);
-      if (getRouteAccess(targetRoute, currentUser) === 'allowed') {
+      const targetRoute = resolveAppRoute(previous, role);
+      if (getRouteAccess(targetRoute, currentUser) === 'allowed' && (!['admin', 'inspector', 'inspection_center'].includes(role) || previous !== '/')) {
         navigatePath(previous, { replace: true });
         return;
       }
     }
-    navigatePath(fallback, { replace: true });
+    navigatePath(safeFallback, { replace: true });
   };
   const openAuth = (mode: 'login' | 'register' | 'forgot' = 'login', returnTo?: string) => {
     setAuthModalMode(mode);
@@ -361,7 +390,8 @@ export default function App() {
     });
   };
   const openProfile = () => {
-    navigatePath(paths.profile(navigationRole), { state: { returnPath: browserLocation } });
+    const { pathname, search, hash } = window.location;
+    navigatePath(paths.profile, { state: { returnPath: `${pathname}${search}${hash}` } });
   };
   const openChat = (listing: Listing, action?: string, prefill?: InspectionProposalPrefillData) => {
     setSelectedListing(null);
@@ -385,13 +415,19 @@ export default function App() {
     navigatePath(paths.chat(navigationRole) + query);
   };
   const openProduct = (listing: Listing, own = false) => {
+    initialSellerDetail.current = null;
     setSelectedListing(listing);
     const adminPath = activeTab === 'admin-dashboard' && getUserRoles(currentUser).includes('admin');
-    const target = own ? `/seller/products/${encodeURIComponent(listing.id)}`
+    const target = own ? paths.sellerProduct(listing.id)
       : adminPath ? `/admin/products/${encodeURIComponent(listing.id)}` : paths.product(listing.id);
     navigatePath(target, {
       state: { returnPath: browserLocation },
     });
+  };
+
+  const closeProductDetail = () => {
+    setSelectedListing(null);
+    closeRouteModal(route.role === 'seller' ? '/seller/products' : route.role === 'admin' ? '/admin/products' : paths.products);
   };
 
   // Policy Modal State
@@ -506,7 +542,6 @@ export default function App() {
       setCurrentRole('buyer');
       setActiveTab('marketplace');
       setIsProfileDialogOpen(false);
-      setEditingDraft(null);
       setOrders([]);
 
       // Xóa toàn bộ thông tin bài đăng nháp và cache đơn hàng dở dang của tài khoản để tránh rò rỉ sang tài khoản khác
@@ -676,41 +711,6 @@ export default function App() {
   const ordersRef = useRef<EscrowOrder[]>(orders);
   ordersRef.current = orders;
 
-  // Lắng nghe sự kiện kiểm định đạt chuẩn để cập nhật huy hiệu realtime cho các sản phẩm
-  useEffect(() => {
-    const handleInspectionCompleted = (e: any) => {
-      const detail = e.detail;
-      if (detail && detail.status === 'PASSED') {
-        const passedId = detail.id ? String(detail.id) : null;
-        const passedTitle = detail.title ? normalizeListingTitle(detail.title) : null;
-        setListings((prev) =>
-          prev.map((l) => {
-            const lId = String(l.id || '');
-            const lPostId = String((l as any).postId || '');
-            const lTitle = normalizeListingTitle(l.title);
-            const idMatches = Boolean(passedId && (lId === passedId || lPostId === passedId));
-            const titleMatches = Boolean(
-              passedTitle &&
-                (lTitle === passedTitle ||
-                  (lTitle.length >= 8 &&
-                    (lTitle.includes(passedTitle) || passedTitle.includes(lTitle))))
-            );
-            if (idMatches || titleMatches) {
-              return {
-                ...l,
-                isInspected: true,
-                inspectionPassed: true,
-              };
-            }
-            return l;
-          })
-        );
-      }
-    };
-    window.addEventListener('secondlife_inspection_completed', handleInspectionCompleted);
-    return () => window.removeEventListener('secondlife_inspection_completed', handleInspectionCompleted);
-  }, []);
-
   const lastListingsFetchRef = useRef<number>(0);
   const isFetchingListingsRef = useRef<boolean>(false);
   const lastOrdersFetchRef = useRef<number>(0);
@@ -736,6 +736,7 @@ export default function App() {
 
   // Modals
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
+  const initialSellerDetail = useRef<SellerPostDetailDto | null>(null);
   const [checkoutListing, setCheckoutListing] = useState<Listing | null>(null);
   const [checkoutAgreedPrice, setCheckoutAgreedPrice] = useState<number | undefined>(undefined);
   const [chatListing, setChatListing] = useState<Listing | null>(null);
@@ -852,7 +853,7 @@ export default function App() {
   }, [currentUser]);
 
   // Auth Guard Helper
-  const protectedTabs = ['create-listing', 'seller-dashboard', 'orders', 'inspection-hub', 'inspection-center', 'admin-dashboard', 'staff-workspace', 'chat', 'notifications', 'disputes'];
+  const protectedTabs = ['create-listing', 'seller-dashboard', 'orders', 'inspection-hub', 'inspection-center', 'admin-dashboard', 'staff-workspace', 'chat', 'notifications', 'disputes', 'profile'];
 
   const requireAuth = (onSuccessAction?: () => void, customMsg?: string): boolean => {
     if (!currentUser) {
@@ -914,11 +915,16 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleNotificationNavigate = React.useCallback((actionUrl: string | null) => {
+  const handleNotificationNavigate = React.useCallback((actionUrl: string | null, notification?: NotificationItem) => {
     if (!actionUrl) { navigatePath(pathForTab('notifications', currentRole)); return; }
     const target = new URL(actionUrl, window.location.origin);
     if (target.origin !== window.location.origin) return;
     if (target.pathname.includes('/wallet')) { setIsTopUpModalOpen(true); return; }
+    if (notification?.referenceType === 'REPORT' && isValidUUID(notification.referenceId ?? '')) {
+      if (target.pathname.startsWith('/staff/reports/')) {
+        target.pathname = '/staff/disputes/' + encodeURIComponent(notification.referenceId!);
+      }
+    }
     const match = resolveAppRoute(`${target.pathname}${target.search}${target.hash}`, currentRole);
     const access = getRouteAccess(match, currentUser);
     if (access === 'unauthorized') {
@@ -969,8 +975,6 @@ export default function App() {
     const isPendingInspection = newListing.backendStatus === 'PENDING_INSPECTION';
     const isPendingReview = newListing.backendStatus === 'PENDING';
     const isInsufficientCredit = newListing.backendStatus === 'INSUFFICIENT_CREDIT';
-
-    setEditingDraft(null);
 
     // 1. Trường hợp bài đăng bị AI từ chối duyệt
     if (isRejected) {
@@ -1027,7 +1031,7 @@ export default function App() {
     );
   };
 
-  const mapBackendPostToListing = React.useCallback((post: any): Listing => {
+  const mapBackendPostToListing = React.useCallback((post: any, alreadyAvailable = false): Listing => {
     const rawTitle = post.title || 'Thiết bị gia dụng SecondLife';
     const cleanTitle = rawTitle.replace(/^Tiêu đề:\s*/i, '').trim();
     const titleLower = cleanTitle.toLowerCase();
@@ -1124,10 +1128,6 @@ export default function App() {
     const photoList = rawImgs.length > 0 ? rawImgs : [defaultImg];
     const price = Number(post.price || 0);
 
-    // Xác định địa chỉ sản phẩm từ người bán (cập nhật theo địa chỉ người bán)
-    let postLocation = '';
-    let postSellerAddress = '';
-
     const isOwner = Boolean(
       currentUser && (
         (post.userId && String(post.userId) === String(currentUser.id)) ||
@@ -1139,43 +1139,8 @@ export default function App() {
       )
     );
 
-    const savedAddr = getSavedSellerAddress();
-    const currentSellerAddr = currentUser?.pickupAddress || currentUser?.address || savedAddr.address;
-    const currentSellerWard = currentUser?.wardName || currentUser?.ward || savedAddr.wardName;
-    const currentSellerProv = currentUser?.provinceName || currentUser?.province || savedAddr.provinceName;
-
-    // 1. Nếu là bài đăng của chính seller hiện tại, ưu tiên lấy địa chỉ người bán mới nhất từ profile / onboarding
-    if (isOwner && (currentSellerAddr || currentSellerWard || currentSellerProv)) {
-      postLocation = extractWardAndCity(currentSellerAddr, currentSellerWard, currentSellerProv);
-      postSellerAddress = cleanFullAddress(currentSellerAddr) || (currentSellerWard && currentSellerProv ? `${currentSellerWard}, ${currentSellerProv}` : '');
-    } else {
-      // 2. Bài đăng từ backend của seller khác
-      const rawPostAddr = post.sellerAddress || post.pickupAddress || post.user?.address || (
-        post.user?.profile ? formatCombinedAddress(post.user.profile.streetAddress, post.user.profile.ward, post.user.profile.district, post.user.profile.province) : null
-      );
-      if (rawPostAddr) {
-        postSellerAddress = cleanFullAddress(rawPostAddr);
-        postLocation = extractWardAndCity(postSellerAddress);
-      } else if (post.location && post.location.toLowerCase() !== 'việt nam' && post.location.toLowerCase() !== 'toàn quốc') {
-        postSellerAddress = cleanFullAddress(post.location);
-        postLocation = extractWardAndCity(postSellerAddress);
-      }
-    }
-
-    if ((!postLocation || !postSellerAddress) && isOwner && (currentSellerAddr || currentSellerWard || currentSellerProv)) {
-      postLocation = postLocation || extractWardAndCity(currentSellerAddr, currentSellerWard, currentSellerProv);
-      postSellerAddress = postSellerAddress || cleanFullAddress(currentSellerAddr);
-    }
-
-    if (postSellerAddress) {
-      postSellerAddress = cleanFullAddress(postSellerAddress);
-    }
-    if (!postLocation) {
-      postLocation = postSellerAddress ? extractWardAndCity(postSellerAddress) : 'Hà Nội';
-    }
-    if (!postSellerAddress) {
-      postSellerAddress = postLocation;
-    }
+    const postSellerAddress = cleanFullAddress(post.sellerAddress ?? post.pickupAddress ?? post.user?.address ?? '');
+    const postLocation = extractWardAndCity(postSellerAddress);
 
     const resolvedParcel = getResolvedPostParcel(
       post.postId || post.id,
@@ -1208,22 +1173,32 @@ export default function App() {
       sellerRating: post.sellerRating ?? 0,
       sellerCompletedOrders: post.sellerCompletedOrders ?? (post.user?.completedOrdersCount ?? 0),
       sellerVerified: true,
-      status: (
-        localStorage.getItem(`listing_available_${post.postId || post.id}`) === 'true'
-          ? 'active'
-          : (getBoughtListingIds().has(String(post.postId || post.id)) ? 'reserved' : (post.status === 'ACTIVE' ? 'active' : post.status === 'DRAFT' ? 'draft' : 'reserved'))
-      ) as any,
-      backendStatus: (
-        localStorage.getItem(`listing_available_${post.postId || post.id}`) === 'true'
-          ? 'ACTIVE'
-          : (getBoughtListingIds().has(String(post.postId || post.id)) ? 'RESERVED' : (post.status || 'ACTIVE'))
-      ),
+      status: (() => {
+        if (alreadyAvailable) return 'active';
+        const returnStatus = getPostReturnStatus(post, ordersRef.current);
+        if (returnStatus?.isReturning) return 'reserved';
+        if (returnStatus?.isReturned) return 'draft';
+        if (isPostUnderInspectionOrReturning(post, ordersRef.current) || isPostUnderInspectionOrReturning(post.postId || post.id, ordersRef.current)) return 'reserved';
+        if (localStorage.getItem(`listing_available_${post.postId || post.id}`) === 'true') return 'active';
+        if (String(post.status || '').toUpperCase() === 'SOLD') return 'sold';
+        return getBoughtListingIds().has(String(post.postId || post.id)) ? 'reserved' : (post.status === 'ACTIVE' ? 'active' : post.status === 'DRAFT' ? 'draft' : post.status === 'REJECTED' ? 'rejected' : 'reserved');
+      })() as any,
+      backendStatus: (() => {
+        if (alreadyAvailable) return post.status;
+        const returnStatus = getPostReturnStatus(post, ordersRef.current);
+        if (returnStatus?.isReturning) return 'RETURNING';
+        if (returnStatus?.isReturned) return 'RETURNED';
+        if (isPostUnderInspectionOrReturning(post, ordersRef.current) || isPostUnderInspectionOrReturning(post.postId || post.id, ordersRef.current)) return 'RESERVED';
+        if (localStorage.getItem(`listing_available_${post.postId || post.id}`) === 'true') return 'ACTIVE';
+        if (String(post.status || '').toUpperCase() === 'SOLD') return 'SOLD';
+        return getBoughtListingIds().has(String(post.postId || post.id)) ? 'RESERVED' : (post.status || 'ACTIVE');
+      })(),
       rejectionReason: post.rejectionReason,
       createdAt: post.publishedAt || post.createdAt || new Date().toISOString(),
       isInspectionGuaranteed: true,
       requiresInspection: price > 5000000,
-      isInspected: isListingInspectionPassed(post, ordersRef.current),
-      inspectionPassed: isListingInspectionPassed(post, ordersRef.current),
+      isInspected: post.isInspected === true,
+      inspectionMethod: post.inspectionMethod || post.orderType || undefined,
       photos: {
         front: photoList[0] || defaultImg,
         back: photoList[1] || '',
@@ -1250,12 +1225,6 @@ export default function App() {
     currentUser?.id,
     currentUser?.name,
     currentUser?.email,
-    currentUser?.address,
-    currentUser?.pickupAddress,
-    currentUser?.ward,
-    currentUser?.wardName,
-    currentUser?.province,
-    currentUser?.provinceName,
   ]);
 
   // Synchronize listings directly with Backend
@@ -1314,7 +1283,7 @@ export default function App() {
       }
 
       if (postsData.length > 0) {
-        const mapped = postsData.map(mapBackendPostToListing);
+        const mapped = postsData.map((post) => mapBackendPostToListing(post));
         mapped.forEach((l) => {
           if (l?.id) {
             postCacheMap.set(String(l.id), l);
@@ -1353,50 +1322,15 @@ export default function App() {
     }
   }, [mapBackendPostToListing, currentUser?.role, currentRole]);
 
-  // Handle user profile updates (especially seller address) and sync across all listings
+  // Reload listings after profile updates so their pickup address comes from the listing API.
   const handleUserProfileUpdated = React.useCallback(
     (updated: UserProfile, successToast?: string) => {
       setCurrentUser(updated);
       setStoredUser(updated);
-      const effectiveAddr = cleanFullAddress(updated.pickupAddress || updated.address || '');
-      const effectiveWard = updated.wardName || updated.ward || '';
-      const effectiveProv = updated.provinceName || updated.province || '';
-      saveSellerAddress(effectiveAddr, effectiveWard, effectiveProv);
-      const newLoc = extractWardAndCity(effectiveAddr, effectiveWard, effectiveProv);
-      if (newLoc || effectiveAddr) {
-        setListings((prev) =>
-          prev.map((item) => {
-            const isOwner =
-              item.sellerId === updated.id ||
-              item.sellerId === 'me' ||
-              (updated.name && item.sellerName?.trim().toLowerCase() === updated.name?.trim().toLowerCase());
-            if (isOwner) {
-              return {
-                ...item,
-                location: newLoc || item.location,
-                sellerAddress: effectiveAddr || item.sellerAddress || newLoc,
-              };
-            }
-            return item;
-          })
-        );
-
-        // Đồng bộ tức thì địa chỉ mới vào tất cả đơn hàng liên quan
+      const buyerAddress = cleanFullAddress(updated.pickupAddress || updated.address || '');
+      if (buyerAddress) {
         setOrders((prevOrders) =>
-          prevOrders.map((ord) => {
-            let updatedOrd = { ...ord };
-            if (ord.buyerId === updated.id) {
-              updatedOrd.buyerAddress = effectiveAddr || updatedOrd.buyerAddress;
-            }
-            if (ord.sellerId === updated.id && updatedOrd.listing) {
-              updatedOrd.listing = {
-                ...updatedOrd.listing,
-                location: newLoc || updatedOrd.listing.location,
-                sellerAddress: effectiveAddr || updatedOrd.listing.sellerAddress || newLoc,
-              };
-            }
-            return updatedOrd;
-          })
+          prevOrders.map((order) => order.buyerId === updated.id ? { ...order, buyerAddress } : order)
         );
       }
       loadListingsFromBackend(true);
@@ -1407,7 +1341,11 @@ export default function App() {
     [loadListingsFromBackend]
   );
 
-  const orderFeedQuery = readOrderFeedQuery(browserLocation);
+  const requestedOrderFeedQuery = readOrderFeedQuery(browserLocation);
+  const orderFeedQuery = requestedOrderFeedQuery.filter === 'pre_listing' &&
+    (route.role === 'buyer' || currentRole !== 'seller' || requestedOrderFeedQuery.perspective === 'buyer')
+    ? { ...requestedOrderFeedQuery, filter: 'all' as const, page: 0 }
+    : requestedOrderFeedQuery;
   const orderFeed = useEscrowOrderFeed(
     activeTab === 'orders' && routeAccess === 'allowed' && !isRestoringSession && Boolean(currentUser?.id),
     ordersScope,
@@ -1421,7 +1359,10 @@ export default function App() {
       currentListings: listingsRef.current, currentUser: currentUserRef.current, currentRole,
       postCacheMap, postTitleCacheMap, authoritative: true,
     });
-    return { orders: data.items.map(mapRow), detail: data.detail ? mapRow(data.detail) : null };
+    return {
+      orders: data.items.filter((row) => !getPreListingInspection(row)).map(mapRow),
+      detail: data.detail && !getPreListingInspection(data.detail) ? mapRow(data.detail) : null,
+    };
   }, [orderFeed.data, currentRole]);
   const refreshOrderFeedRef = useRef(orderFeed.refresh);
   refreshOrderFeedRef.current = orderFeed.refresh;
@@ -1532,15 +1473,6 @@ export default function App() {
         if (insp.id) inspById.set(insp.id, insp);
         if (insp.linkedOrderId) inspByLinkedId.set(insp.linkedOrderId, insp);
 
-        // Đánh dấu bài đăng đã đạt kiểm định Hub (kể cả khi người mua từ chối mua tiếp)
-        if (isOrderInspectionVerdictPassed(insp)) {
-          const targetPid = insp.postId || insp.listingId || insp.listing?.id;
-          const targetTitle = insp.postTitle || insp.listing?.title || insp.title;
-          if (targetPid) {
-            markListingInspectionPassed(String(targetPid), targetTitle);
-          }
-        }
-
         // Đồng bộ realtime appointment từ BE vào localStorage
         if (insp.counterScheduledAt || insp.appointmentScheduledAt) {
           const targetIds = [insp.id, insp.linkedOrderId].filter(Boolean);
@@ -1649,7 +1581,7 @@ export default function App() {
 
       // Thêm các đơn kiểm định độc lập chưa có trong orderMap
       allInspDtos.forEach((insp: any) => {
-        if (!insp?.id) return;
+        if (!insp?.id || insp.inspectionScope === 'PRE_LISTING') return;
         if (insp.linkedOrderId && orderMap.has(insp.linkedOrderId)) return;
         if (!orderMap.has(insp.id)) {
           orderMap.set(insp.id, { ...insp, __isInspection: true });
@@ -1663,7 +1595,8 @@ export default function App() {
           const list = JSON.parse(rawLocalSellerInsp);
           if (Array.isArray(list)) {
             list.forEach((item: any) => {
-              if (item?.id && !orderMap.has(item.id)) {
+              if (item?.id && item.inspectionScope !== 'PRE_LISTING' &&
+                  inspById.get(item.id)?.inspectionScope !== 'PRE_LISTING' && !orderMap.has(item.id)) {
                 orderMap.set(item.id, { ...item, __isInspection: true });
               }
             });
@@ -1798,7 +1731,7 @@ export default function App() {
             (currentUserName && locOrd.listing?.sellerName && locOrd.listing.sellerName.trim().toLowerCase() === currentUserName) ||
             (currentUser?.email && (locOrd as any).sellerEmail && String((locOrd as any).sellerEmail).trim().toLowerCase() === currentUser.email.trim().toLowerCase()) ||
             (currentUser?.email && (locOrd.listing as any)?.sellerEmail && String((locOrd.listing as any).sellerEmail).trim().toLowerCase() === currentUser.email.trim().toLowerCase()) ||
-            (currentRole === 'seller' && !isBuyer)
+            (currentRole === 'seller' && !isBuyer && !locOrd.sellerId && !locOrd.listing?.sellerId)
           );
           const isInspectionRole = Boolean(
             currentUser?.role === 'inspector' ||
@@ -1861,9 +1794,6 @@ export default function App() {
           if (isOrderCancelledOrRefunded(o)) {
             cancelledListingIds.add(lid);
           }
-          if (isOrderInspectionVerdictPassed(o)) {
-            markListingInspectionPassed(lid, o.listing?.title || (o as any).postTitle || (o as any).title);
-          }
         });
 
         const freeListings = Array.from(cancelledListingIds);
@@ -1917,6 +1847,17 @@ export default function App() {
     if (activeTab === 'marketplace' || listingTabs.includes(activeTab)) initCatalogCache();
     if (listingTabs.includes(activeTab)) loadListingsFromBackend();
   }, [loadListingsFromBackend, activeTab, routeAccess, isRestoringSession]);
+
+  useEffect(() => {
+    if (routeAccess !== 'allowed' || isRestoringSession || !['marketplace', 'seller-dashboard'].includes(activeTab)) return;
+    const preload = () => { void loadListingDetail().catch(() => { }); };
+    if (typeof window.requestIdleCallback === 'function') {
+      const idle = window.requestIdleCallback(preload, { timeout: 1000 });
+      return () => window.cancelIdleCallback(idle);
+    }
+    const timer = window.setTimeout(preload, 250);
+    return () => window.clearTimeout(timer);
+  }, [activeTab, routeAccess, isRestoringSession]);
 
   // Orders are only refreshed when user accesses order-sensitive tabs or on auth change
   React.useEffect(() => {
@@ -1983,7 +1924,7 @@ export default function App() {
         ref === 'ESCROW' ||
         ref === 'SHIPMENT' ||
         ref === 'PAYMENT' ||
-        ref === 'DISPUTE'
+          ref === 'DISPUTE' || ref === 'REPORT'
       ) {
         void loadUserOrders(true);
       }
@@ -2390,8 +2331,8 @@ export default function App() {
   };
 
   const handleOpenDispute = (order: EscrowOrder) => {
-    if (currentRole === 'seller' || currentUser?.role === 'seller' || (order.sellerId && String(order.sellerId) === String(currentUser?.id))) {
-      showToast(lang === 'vi' ? 'Tài khoản người bán không có quyền thực hiện tạo khiếu nại.' : 'Seller accounts cannot file disputes.');
+    if (order.buyerId !== currentUser?.id || !canOpenOrderDispute(order)) {
+      showToast(lang === 'vi' ? 'Đơn hàng hiện không đủ điều kiện khiếu nại.' : 'This order is not eligible for a dispute.');
       return;
     }
     setReportingOrderForDispute(order);
@@ -2517,12 +2458,6 @@ export default function App() {
 
     try {
       localStorage.setItem(`inspection_status_${orderId}`, nextBackendStatus);
-      if (isPass) {
-        markListingInspectionPassed(
-          targetOrder?.postId || targetOrder?.listing?.id || (targetOrder as any)?.listingId,
-          targetOrder?.listing?.title || (targetOrder as any)?.postTitle || targetOrder?.title
-        );
-      }
       window.dispatchEvent(new CustomEvent('secondlife_inspection_completed', {
         detail: { orderId, status: nextBackendStatus }
       }));
@@ -2651,6 +2586,10 @@ export default function App() {
 
   React.useEffect(() => {
     if (isRestoringSession) return;
+    if (['admin', 'inspector', 'inspection_center'].includes(effectiveRole) && (browserLocation === '/' || activeTab === 'home')) {
+      navigatePath(getRoleLandingPath(effectiveRole), { replace: true });
+      return;
+    }
     if (routeAccess === 'login') {
       navigatePath(`/login?redirect=${encodeURIComponent(browserLocation)}`, { replace: true });
       return;
@@ -2685,41 +2624,104 @@ export default function App() {
   const [routeProductError, setRouteProductError] = useState<string | null>(null);
   const selectedListingRef = React.useRef(selectedListing);
   selectedListingRef.current = selectedListing;
-  const editingDraftRef = React.useRef(editingDraft);
-  editingDraftRef.current = editingDraft;
   const checkoutListingRef = React.useRef(checkoutListing);
   checkoutListingRef.current = checkoutListing;
+
+  const editProductId = activeTab === 'create-listing' ? route.params.productId : undefined;
+  const [draftEdit, setDraftEdit] = useState<{
+    postId: string;
+    ownerId: string;
+    result: 'ready' | 'locked' | 'failed';
+    listing?: Listing;
+  } | null>(null);
+  const editResult = draftEdit?.postId === editProductId && draftEdit?.ownerId === currentUserId ? draftEdit : null;
+  const editingDraft = editResult?.listing;
+
+  React.useEffect(() => {
+    setDraftEdit(null);
+    if (!editProductId || !currentUserId || routeAccess !== 'allowed' || isRestoringSession) return;
+    const controller = new AbortController();
+    const target = { postId: editProductId, ownerId: currentUserId };
+    postService.getMyPostDetail(editProductId, controller.signal).then((post) => {
+      if (controller.signal.aborted) return;
+      if (!post.sellerActions?.editContent) {
+        setDraftEdit({ ...target, result: 'locked' });
+        return;
+      }
+      const listing = {
+        ...mapBackendPostToListing(post),
+        title: post.title ?? '',
+        description: post.description ?? post.aiDescription ?? '',
+        backendStatus: post.status,
+      };
+      setDraftEdit({ ...target, result: 'ready', listing });
+    }).catch(() => {
+      if (!controller.signal.aborted) setDraftEdit({ ...target, result: 'failed' });
+    });
+    return () => controller.abort();
+  }, [editProductId, currentUserId, routeAccess, isRestoringSession, mapBackendPostToListing]);
 
   React.useEffect(() => {
     let cancelled = false;
     const productId = route.params.productId;
     setRouteProductError(null);
-    if (!productId || routeAccess !== 'allowed' || isRestoringSession) return;
-    const isEdit = activeTab === 'create-listing';
-    if (isEdit && (editingDraft?.id === productId || editingDraftRef.current?.id === productId)) return;
-    if (!isEdit && (selectedListing?.id === productId || selectedListingRef.current?.id === productId || checkoutListing?.id === productId || checkoutListingRef.current?.id === productId)) return;
-    const load = isEdit ? postService.getDraft(productId)
-      : route.role === 'seller' ? postService.getMyPostDetail(productId)
-        : route.role === 'admin' ? adminPostService.getAdminPosts().then((response) => {
+    if (!productId || activeTab === 'create-listing' || routeAccess !== 'allowed' || isRestoringSession) return;
+    if (selectedListing?.id === productId || selectedListingRef.current?.id === productId || checkoutListing?.id === productId || checkoutListingRef.current?.id === productId) return;
+    const load = route.role === 'seller' ? postService.getMyPostDetail(productId)
+      : route.role === 'admin' ? adminPostService.getAdminPosts().then((response) => {
           const posts = response?.content || response?.items || (Array.isArray(response) ? response : []);
           return posts.find((post: any) => String(post.id || post.postId) === productId);
         }) : postService.getListingDetail(productId);
     load.then((data) => {
       if (cancelled) return;
       if (!data) { setRouteProductError('Không tìm thấy sản phẩm hoặc sản phẩm không còn công khai.'); return; }
-      const listing = mapBackendPostToListing(data);
-      if (isEdit) setEditingDraft(listing); else setSelectedListing(listing);
+      initialSellerDetail.current = route.role === 'seller' ? data as SellerPostDetailDto : null;
+      setSelectedListing(mapBackendPostToListing(data));
     }).catch((error) => { if (!cancelled) setRouteProductError(error.message || 'Không thể tải sản phẩm.'); });
     return () => { cancelled = true; };
-  }, [browserLocation, routeAccess, isRestoringSession, mapBackendPostToListing, selectedListing?.id, checkoutListing?.id, editingDraft?.id]);
+  }, [browserLocation, routeAccess, isRestoringSession, mapBackendPostToListing, selectedListing?.id, checkoutListing?.id]);
 
   if (routeAccess !== 'allowed') return <ViewLoadingFallback />;
   if (activeTab === 'unauthorized' || activeTab === 'not-found') {
     const landingHome = effectiveUser ? getRoleLandingPath(effectiveRole) : '/';
     return <RouteStatusPage status={activeTab} home={landingHome} />;
   }
-  if (route.params.productId && activeTab === 'create-listing' && editingDraft?.id !== route.params.productId) {
-    return routeProductError ? <div className="p-12 text-center"><p>{routeProductError}</p><button onClick={() => navigatePath(paths.products)}>Về danh sách sản phẩm</button></div> : <ViewLoadingFallback />;
+  if (editProductId && !editingDraft) {
+    if (!editResult) return <ViewLoadingFallback />;
+    const dashboardPath = pathForTab('seller-dashboard', 'seller');
+    const locked = editResult.result === 'locked';
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#faf8f5] p-4">
+        <section className="w-full max-w-lg space-y-4 rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+          <h1 className="text-xl font-bold text-[#24263e]">
+            {locked
+              ? (lang === 'vi' ? 'Bài đăng đã khóa chỉnh sửa' : 'Listing editing is locked')
+              : (lang === 'vi' ? 'Không thể mở bài đăng' : 'Could not open this listing')}
+          </h1>
+          {locked && (
+            <p className="text-sm text-slate-600">
+              {lang === 'vi'
+                ? 'Bạn có thể sửa nội dung bản nháp hoặc bài bị từ chối chưa trừ credit đăng bài.'
+                : 'You can edit drafts and rejected listings that have not used a listing credit.'}
+            </p>
+          )}
+          <div className="flex flex-wrap justify-center gap-2 text-sm font-semibold">
+            {locked && (
+              <button
+                type="button"
+                onClick={() => navigatePath(paths.sellerProduct(editProductId), { state: { returnPath: dashboardPath } })}
+                className="rounded-xl bg-[#24263e] px-4 py-2 text-white hover:bg-black"
+              >
+                {lang === 'vi' ? 'Xem chi tiết' : 'View details'}
+              </button>
+            )}
+            <button type="button" onClick={() => navigatePath(dashboardPath)} className="rounded-xl border border-slate-200 px-4 py-2 text-slate-700 hover:bg-slate-50">
+              {lang === 'vi' ? 'Về Kênh Người Bán' : 'Back to Seller Dashboard'}
+            </button>
+          </div>
+        </section>
+      </main>
+    );
   }
 
   return (
@@ -2728,7 +2730,8 @@ export default function App() {
       {/* Navigation */}
       {activeTab !== 'admin-dashboard' &&
         activeTab !== 'inspection-center' &&
-        activeTab !== 'inspection-hub' && (
+        activeTab !== 'inspection-hub' &&
+        activeTab !== 'staff-workspace' && (
           <Navbar
             currentRole={currentRole}
             onRoleChange={handleRoleChange}
@@ -2737,7 +2740,6 @@ export default function App() {
             activeTab={activeTab}
             onTabChange={(tab) => {
               if (tab === 'create-listing') {
-                setEditingDraft(null);
                 setCreateListingReturnTab(activeTab === 'seller-dashboard' ? 'seller-dashboard' : 'marketplace');
               }
               handleTabChange(tab);
@@ -2913,9 +2915,9 @@ export default function App() {
               {activeTab === 'seller-dashboard' && (
                 <SellerDashboardView
                   listings={listings}
+                  orders={orders}
                   onSelectListing={(listing) => openProduct(listing, true)}
-                  onCreateListing={(draft?: any) => {
-                    setEditingDraft(draft && draft.id ? draft : null);
+                  onCreateListing={(draft) => {
                     setCreateListingReturnTab('seller-dashboard');
                     navigatePath(draft?.id ? paths.editProduct(draft.id) : pathForTab('create-listing', currentRole));
                   }}
@@ -2971,7 +2973,6 @@ export default function App() {
                     lang={lang}
                     onCancel={() => {
                       const targetTab = createListingReturnTab || (editingDraft ? 'seller-dashboard' : 'marketplace');
-                      setEditingDraft(null);
                       try {
                         for (let i = localStorage.length - 1; i >= 0; i--) {
                           const key = localStorage.key(i);
@@ -2987,7 +2988,7 @@ export default function App() {
                       setListings((prev) => prev.filter((l) => l.id !== draftId));
                     }}
                     currentUser={currentUser}
-                    initialDraft={route.params.productId ? editingDraft || undefined : undefined}
+                    initialDraft={editingDraft}
                     onOpenTopUp={(tab) => {
                       setTopUpInitialTab(tab || 'packages');
                       setIsTopUpModalOpen(true);
@@ -3051,7 +3052,6 @@ export default function App() {
                   currentUser={currentUser}
                   lang={lang}
                   onNavigate={setActiveTab}
-                  onOpenProfile={openProfile}
                   onLogout={() => setIsLogoutModalOpen(true)}
                   onViewWebsite={() => setActiveTab('home')}
                 />
@@ -3065,7 +3065,6 @@ export default function App() {
                     currentUser={currentUser}
                     lang={lang}
                     onNavigate={setActiveTab}
-                    onOpenProfile={openProfile}
                     onLogout={() => setIsLogoutModalOpen(true)}
                     onViewWebsite={() => setActiveTab('home')}
                   />
@@ -3076,7 +3075,6 @@ export default function App() {
                     onCompleteInspection={handleCompleteInspection}
                     lang={lang}
                     onNavigate={setActiveTab}
-                    onOpenProfile={openProfile}
                     onLogout={() => setIsLogoutModalOpen(true)}
                     onViewWebsite={() => setActiveTab('home')}
                   />
@@ -3089,7 +3087,6 @@ export default function App() {
                   orders={orders}
                   lang={lang}
                   currentUser={currentUser}
-                  onOpenProfile={openProfile}
                   onLogout={() => setIsLogoutModalOpen(true)}
                   onViewWebsite={() => setActiveTab('home')}
                 />
@@ -3103,7 +3100,6 @@ export default function App() {
                   onResolveDispute={handleResolveDispute}
                   lang={lang}
                   currentUser={currentUser}
-                  onOpenProfile={openProfile}
                   onLogout={() => setIsLogoutModalOpen(true)}
                   onOpenListingDetail={(listing) => openProduct(listing)}
                 />
@@ -3155,12 +3151,12 @@ export default function App() {
               {activeTab === 'disputes' && (
                 <MyDisputesView
                   currentUser={currentUser}
-                  currentRole={currentRole}
+                  currentRole={route.role ?? currentRole}
                   lang={lang}
                   orders={orders}
-                  onNavigateToOrder={() => {
-                    handleTabChange('orders');
-                  }}
+                  initialReportId={route.params.reportId}
+                  onCloseReport={() => navigatePath(pathForTab('disputes', route.role ?? currentRole), { replace: true })}
+                  onNavigateToOrder={(orderId) => navigatePath(paths.orders(currentRole, orderId))}
                   onNavigateToPost={(postId) => {
                     const item = listings.find((l) => l.id === postId);
                     if (item) openProduct(item);
@@ -3213,52 +3209,64 @@ export default function App() {
 
         {/* Listing Detail Modal */}
         {selectedListing && !checkoutListing && (
-          <ListingDetailModal
-            listing={selectedListing}
-            currentUser={currentUser}
-            onClose={() => { setSelectedListing(null); closeRouteModal(route.role === 'seller' ? '/seller/products' : route.role === 'admin' ? '/admin/products' : paths.products); }}
-            isAdmin={currentRole === 'admin'}
-            onBuyClick={(item) => {
-              if (!currentUser) {
-                setPendingCheckoutItem(item);
-                requireAuth(undefined, lang === 'vi'
-                  ? 'Vui lòng đăng nhập để tiến hành mua hàng bảo đảm Escrow và kiểm định Hub.'
-                  : 'Please log in to purchase with Escrow protection.');
-                return;
-              }
-              if (currentUser.id === item.sellerId) {
-                showToast(lang === 'vi' ? 'Bạn không thể tự mua sản phẩm của chính mình.' : 'You cannot buy your own product.');
-                return;
-              }
-              // Retain selectedListing so route stays active and user returns seamlessly if checkout is closed
-              setCheckoutAgreedPrice(undefined);
-              setCheckoutNegotiationId(undefined);
-              setCheckoutListing(item);
-            }}
-            onChatClick={(item) => {
-              if (!currentUser) {
-                requireAuth(undefined, lang === 'vi'
-                  ? 'Vui lòng đăng nhập để chat và thương lượng giá với người bán.'
-                  : 'Please log in to chat and negotiate with seller.');
-                return;
-              }
-              if (currentUser.id === item.sellerId) {
-                showToast(lang === 'vi' ? 'Bạn không thể tự chat hoặc thương lượng với chính mình.' : 'You cannot chat with yourself.');
-                return;
-              }
-              setSelectedListing(null);
-              setChatListing(item);
-              setChatPredefinedRoomId(undefined);
-              setChatPartnerName(item.sellerName);
-              setChatPartnerAvatar(item.sellerAvatar);
-              setChatRoom(undefined);
-              openChat(item);
-            }}
-            onOpenSellerReviews={(sellerId, sellerName) => {
-              setSellerReviewsModalData({ sellerId, sellerName });
-            }}
-            lang={lang}
-          />
+          <Suspense fallback={
+            <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4">
+              <div className="w-full max-w-sm space-y-3 rounded-2xl bg-white p-5 text-center shadow-xl">
+                <p className="font-semibold">{selectedListing.title}</p>
+                <p role="status" className="text-sm text-slate-600">{lang === 'vi' ? 'Đang mở chi tiết sản phẩm…' : 'Opening product details…'}</p>
+                <button type="button" className="rounded-lg border px-3 py-1 text-sm"
+                  onClick={closeProductDetail}>
+                  {lang === 'vi' ? 'Đóng' : 'Close'}
+                </button>
+              </div>
+            </div>
+          }>
+            <ListingDetailModal
+              key={selectedListing.id}
+              listing={selectedListing}
+              initialSellerDetail={initialSellerDetail.current?.id === selectedListing.id ? initialSellerDetail.current : null}
+              currentUser={currentUser}
+              onClose={closeProductDetail}
+              isAdmin={currentRole === 'admin'}
+              onBuyClick={(item) => {
+                if (!currentUser) {
+                  setPendingCheckoutItem(item);
+                  requireAuth(undefined, lang === 'vi'
+                    ? 'Vui lòng đăng nhập để tiến hành mua hàng bảo đảm Escrow và kiểm định Hub.'
+                    : 'Please log in to purchase with Escrow protection.');
+                  return;
+                }
+                if (currentUser.id === item.sellerId) {
+                  showToast(lang === 'vi' ? 'Bạn không thể tự mua sản phẩm của chính mình.' : 'You cannot buy your own product.');
+                  return;
+                }
+                // Retain selectedListing so route stays active and user returns seamlessly if checkout is closed
+                setCheckoutAgreedPrice(undefined);
+                setCheckoutNegotiationId(undefined);
+                setCheckoutListing(item);
+              }}
+              onChatClick={(item) => {
+                if (!currentUser) {
+                  requireAuth(undefined, lang === 'vi'
+                    ? 'Vui lòng đăng nhập để chat và thương lượng giá với người bán.'
+                    : 'Please log in to chat and negotiate with seller.');
+                  return;
+                }
+                if (currentUser.id === item.sellerId) {
+                  showToast(lang === 'vi' ? 'Bạn không thể tự chat hoặc thương lượng với chính mình.' : 'You cannot chat with yourself.');
+                  return;
+                }
+                setSelectedListing(null);
+                setChatListing(item);
+                setChatPredefinedRoomId(undefined);
+                setChatPartnerName(item.sellerName);
+                setChatPartnerAvatar(item.sellerAvatar);
+                setChatRoom(undefined);
+                openChat(item);
+              }}
+              lang={lang}
+            />
+          </Suspense>
         )}
 
         {/* Checkout Modal rendered inside main */}
@@ -3282,15 +3290,11 @@ export default function App() {
           <UserReportModal
             isOpen={!!reportingOrderForDispute}
             onClose={() => setReportingOrderForDispute(null)}
-            orderId={reportingOrderForDispute.id}
+            orderId={reportingOrderForDispute.linkedOrderId || reportingOrderForDispute.id}
+            shippingDeliveredAt={reportingOrderForDispute.shippingDeliveredAt}
             itemTitle={reportingOrderForDispute.listing?.title}
             onNavigateToDisputes={() => handleTabChange('disputes')}
-            onSuccess={() => {
-              setOrders((prev) =>
-                prev.map((o) => (o.id === reportingOrderForDispute.id ? { ...o, escrowStatus: 'DISPUTED' } : o))
-              );
-              loadUserOrders(true);
-            }}
+            onSuccess={() => { void loadUserOrders(true); }}
           />
         )}
 
@@ -3344,6 +3348,24 @@ export default function App() {
               } else {
                 destination = getRoleLandingPath('admin');
               }
+            } else if (user.role === 'inspector') {
+              if (rawReturnTo && rawReturnTo.startsWith('/inspector') && getRouteAccess(resolveAppRoute(rawReturnTo, user.role), profileUser) === 'allowed') {
+                destination = rawReturnTo;
+              } else {
+                destination = getRoleLandingPath('inspector');
+              }
+            } else if (user.role === 'inspection_center') {
+              if (rawReturnTo && (rawReturnTo.startsWith('/inspection-center') || rawReturnTo.startsWith('/inspector-center')) && getRouteAccess(resolveAppRoute(rawReturnTo, user.role), profileUser) === 'allowed') {
+                destination = rawReturnTo;
+              } else {
+                destination = getRoleLandingPath('inspection_center');
+              }
+            } else if (user.role === 'staff') {
+              if (rawReturnTo && rawReturnTo.startsWith('/staff') && getRouteAccess(resolveAppRoute(rawReturnTo, user.role), profileUser) === 'allowed') {
+                destination = rawReturnTo;
+              } else {
+                destination = getRoleLandingPath('staff');
+              }
             } else if (rawReturnTo) {
               const testRoute = resolveAppRoute(rawReturnTo, user.role);
               const access = getRouteAccess(testRoute, profileUser);
@@ -3385,6 +3407,10 @@ export default function App() {
             currentUser={currentUser}
             currentRole={currentRole}
             lang={lang}
+            onOpenDisputes={['buyer', 'seller'].includes(currentRole) ? (reportId) => {
+              setIsProfileDialogOpen(false);
+              navigatePath(reportId ? '/buyer/disputes/' + encodeURIComponent(reportId) : pathForTab('disputes', currentRole));
+            } : undefined}
             onUpdateProfile={(updated) => {
               handleUserProfileUpdated(
                 updated,

@@ -1,4 +1,4 @@
-import { Award, Calendar, Check, CheckCircle2, Clock, Eye, MessageSquare, PackageCheck, QrCode, Star, Truck, Wallet, Wrench, X, XCircle } from 'lucide-react';
+import { AlertTriangle, Award, Calendar, Check, CheckCircle2, Clock, Eye, MessageSquare, PackageCheck, QrCode, Star, Truck, Wallet, Wrench, X, XCircle } from 'lucide-react';
 import type { BuyerInspectionStage, CancelOrder, ConfirmDialogState, OrderCheck } from '../../../types/orders/orderTypes';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import type { EscrowOrder, Language, Listing } from '../../../types';
@@ -8,6 +8,10 @@ import { formatInspectionDeadline, isInspectionPaymentExpired } from '../../../u
 import { formatVND } from '../../../utils/translations';
 import { isOrderDeliveredToBuyer, isOrderInTransitToBuyer } from '../../../utils/orders/orderReceipt';
 import { getInspectionPurchaseDecision } from '../../../utils/inspectionPurchase';
+import { isOrderEscrowOnHold } from '../../../utils/orders/orderDispute';
+import { getRebookableDirectShipment } from '../../../utils/orders/directShipment';
+import { getLalamoveInterruption, getLatestDirectShipment } from '../../../utils/lalamoveTracking';
+import { getOrderAllShipments } from '../../../utils/orders/shipmentCache';
 
 export interface OrderCardActionsProps {
   order: EscrowOrder;
@@ -108,6 +112,43 @@ export function OrderCardActions({
     String((ord as any).status || '').toUpperCase() === 'DELIVERING_TO_BUYER' ||
     String((ord as any).inspectionStatus || '').toUpperCase() === 'DELIVERING_TO_BUYER' ||
     String((ord as any).inspectionOrder?.status || '').toUpperCase() === 'DELIVERING_TO_BUYER'
+  );
+  const escrowOnHold = isOrderEscrowOnHold(ord);
+  const isDirectOrder = !hasInspection;
+  const allOrderShipments = ord.shipments ?? (ord?.id ? getOrderAllShipments(ord.id, (ord as any).linkedOrderId) : []);
+  const directShipment = isDirectOrder ? getLatestDirectShipment(allOrderShipments) : null;
+  const isDirectShipInterrupted = directShipment ? Boolean(getLalamoveInterruption(directShipment)) : false;
+  const hasActiveDirectShip = Boolean(directShipment && !isDirectShipInterrupted);
+  const canRebookDirectShipment = Boolean(
+    isDirectOrder &&
+    orderIsSeller &&
+    isOrderSellerConfirmed(ord) &&
+    !isOrderCancelledOrRefunded(ord) &&
+    getRebookableDirectShipment(ord, allOrderShipments)
+  );
+
+  const canSellerCreateDirectShipment = Boolean(
+    isDirectOrder &&
+    orderIsSeller &&
+    isOrderSellerConfirmed(ord) &&
+    !isOrderCancelledOrRefunded(ord) &&
+    !isOrderReceiptConfirmed(ord) &&
+    !escrowOnHold &&
+    ord.backendStatus !== 'COMPLETED' &&
+    ord.backendStatus !== 'DELIVERED' &&
+    ord.escrowStatus !== 'COMPLETED_RELEASED' &&
+    ord.escrowStatus !== 'DELIVERED_INSPECTION_WINDOW' &&
+    !ord.shippingDeliveredAt &&
+    !directShipment
+  );
+
+  const canSellerTrackDirectShipment = Boolean(
+    isDirectOrder &&
+    orderIsSeller &&
+    hasActiveDirectShip &&
+    !ord.orderReturn?.shipmentId &&
+    !ord.orderReturn?.orderCode &&
+    !isOrderCancelledOrRefunded(ord)
   );
 
   return (
@@ -337,8 +378,52 @@ export function OrderCardActions({
                 })()
               )}
 
-              {/* GIAI ĐOẠN 2: ĐÃ XÁC NHẬN • ĐANG ĐÓNG GÓI */}
-              {isOrderSellerConfirmed(ord) &&
+              {/* Nút Tạo Vận Đơn / Tạo Lại Vận Đơn Lalamove cho người bán khi mua trực tiếp sau khi xác nhận đơn */}
+              {(canSellerCreateDirectShipment || canRebookDirectShipment) && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (ord.escrowStatus === 'AWAITING_PAYMENT') {
+                      dialogService.error(
+                        lang === 'vi'
+                          ? 'Đơn hàng đang chờ người mua nộp tiền ký quỹ Escrow. Chỉ có thể tạo vận đơn sau khi tiền đã được giữ trong Escrow.'
+                          : 'Order is awaiting buyer escrow deposit before driver dispatch.'
+                      );
+                      return;
+                    }
+                    setCreateShipmentOrder(ord);
+                  }}
+                  className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:opacity-90 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-sm whitespace-nowrap shrink-0"
+                  title={lang === 'vi' ? 'Tạo vận đơn Lalamove để tài xế đến lấy hàng' : 'Create Lalamove shipment'}
+                >
+                  <Truck className="w-3.5 h-3.5" />
+                  <span>
+                    {canRebookDirectShipment
+                      ? (lang === 'vi' ? 'Tạo lại vận đơn' : 'Rebook shipment')
+                      : (lang === 'vi' ? 'Tạo vận đơn' : 'Create Shipment')}
+                  </span>
+                </button>
+              )}
+
+              {/* Nút Theo Dõi Lalamove cho người bán khi đơn trực tiếp đang có vận đơn hoạt động */}
+              {canSellerTrackDirectShipment && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setTrackingOrder(ord);
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
+                  title={lang === 'vi' ? 'Theo dõi hành trình Lalamove' : 'Track Lalamove shipment'}
+                >
+                  <Truck className="w-3.5 h-3.5 text-blue-600" />
+                  <span>{lang === 'vi' ? 'Theo Dõi Lalamove' : 'Lalamove Tracking'}</span>
+                </button>
+              )}
+
+              {/* GIAI ĐOẠN 2: ĐÃ XÁC NHẬN • ĐANG ĐÓNG GÓI (CHO ĐƠN CÓ KIỂM ĐỊNH) */}
+              {hasInspection && isOrderSellerConfirmed(ord) &&
                 !isPendingApprovalOrFeeInAction &&
                 !['WAITING_SELLER_APPROVAL', 'WAITING_BUYER_APPROVAL', 'WAITING_FEE_PAYMENT', 'PENDING', 'INSPECTION_FAILED', 'FAILED'].includes(String((ord as any)?.backendStatus || (ord as any)?.inspectionStatus || (ord as any)?.inspectionOrder?.status || ord.status || '').toUpperCase()) &&
                 (ord.status as string) !== 'WAITING_SELLER_APPROVAL' &&
@@ -361,15 +446,15 @@ export function OrderCardActions({
                   (isAtHome && isPurchaseAccepted)
                 ) && (
                   <>
-                    {/* Nút Đã Đóng Gói • Tạo Đơn Lalamove cho Chặng 1 hoặc đơn thông thường hoặc đơn AT_HOME sau khi người mua chốt mua */}
-                    {(!hasInspection || !isAtHome || (isAtHome && isPurchaseAccepted && !isOrderPacked(ord))) && (
+                    {/* Nút Đã Đóng Gói • Tạo Đơn Lalamove cho Chặng 1 của AT_CENTER hoặc đơn AT_HOME sau khi người mua chốt mua */}
+                    {!escrowOnHold && (!isAtHome || (isPurchaseAccepted && !isOrderPacked(ord))) && (
                       <button
+                        type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           setCreateShipmentOrder(ord);
                         }}
                         className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:opacity-90 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-sm whitespace-nowrap shrink-0"
-                        title={lang === 'vi' ? 'Kiện hàng đã đóng gói. Bấm để tạo vận đơn Lalamove điều phối tài xế lấy hàng' : 'Package is packed. Click to create Lalamove shipment'}
                       >
                         <Truck className="w-3.5 h-3.5" />
                         <span>
@@ -408,80 +493,6 @@ export function OrderCardActions({
                     )}
                   </>
                 )}
-
-              {/* GIAI ĐOẠN 3: ĐÃ ĐÓNG GÓI • CHỜ SHIPPER ĐẾN LẤY (CHỈ DÀNH CHO ĐƠN TRỰC TIẾP KHÔNG KIỂM ĐỊNH) */}
-              {!isPendingApprovalOrFeeInAction &&
-                !hasInspection &&
-                !isAtHome &&
-                isOrderPacked(ord) &&
-                !isOrderReceiptConfirmed(ord) &&
-                ord.backendStatus !== 'COMPLETED' &&
-                !ord.shippingDeliveredAt &&
-                !ord.carrierPickedUpAt &&
-                ord.backendStatus !== 'SHIPPED' &&
-                ord.backendStatus !== 'DELIVERED' &&
-                (ord.escrowStatus as string) !== 'SHIPPED_TO_BUYER' &&
-                (ord.escrowStatus as string) !== 'DELIVERED_INSPECTION_WINDOW' &&
-                (ord.escrowStatus as string) !== 'COMPLETED_RELEASED' && (
-                  <>
-                    <span
-                      onClick={(e) => e.stopPropagation()}
-                      className="inline-flex items-center gap-1.5 text-xs font-bold text-teal-800 bg-teal-50 px-3 py-1.5 rounded-xl border border-teal-200 whitespace-nowrap shrink-0 shadow-xs cursor-default select-none pointer-events-none"
-                    >
-                      <PackageCheck className="w-4 h-4 text-teal-600" />
-                      <span>{lang === 'vi' ? 'Đã Đóng Gói • Chờ Tài Xế Lấy' : 'Packed • Waiting for Carrier'}</span>
-                    </span>
-                    {(hasActiveShipment || isOrderPacked(ord)) && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setTrackingOrder(ord);
-                        }}
-                        className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
-                      >
-                        <Truck className="w-3.5 h-3.5 text-white" />
-                        <span>{lang === 'vi' ? 'Theo Dõi Lalamove' : 'Lalamove Tracking'}</span>
-                      </button>
-                    )}
-                  </>
-                )}
-
-              {/* GIAI ĐOẠN 4: ĐANG GIAO HÀNG (Hoặc đã hoàn thành) (CHỈ DÀNH CHO ĐƠN TRỰC TIẾP KHÔNG KIỂM ĐỊNH) */}
-              {!isPendingApprovalOrFeeInAction &&
-                !hasInspection &&
-                !isAtHome &&
-                (ord.carrierPickedUpAt ||
-                ord.backendStatus === 'SHIPPED' ||
-                ord.backendStatus === 'DELIVERED' ||
-                (ord.escrowStatus as string) === 'SHIPPED_TO_BUYER' ||
-                (ord.escrowStatus as string) === 'DELIVERED_INSPECTION_WINDOW' ||
-                (ord.escrowStatus as string) === 'COMPLETED_RELEASED') && (
-                  <>
-                    <span className="inline-flex items-center gap-1 text-xs font-bold text-blue-700 bg-blue-50 px-2.5 py-1.5 rounded-xl border border-blue-200 whitespace-nowrap shrink-0">
-                      <Truck className="w-3.5 h-3.5 text-blue-600" />
-                      <span>
-                        {ord.backendStatus === 'DELIVERED' || (ord.escrowStatus as string) === 'COMPLETED_RELEASED'
-                          ? (lang === 'vi' ? 'Đã Giao Thành Công' : 'Delivered')
-                          : (lang === 'vi' ? 'Đang Giao Hàng' : 'In Transit')}
-                      </span>
-                    </span>
-
-                    {(hasActiveShipment || isOrderPacked(ord)) && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setTrackingOrder(ord);
-                        }}
-                        className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
-                      >
-                        <Truck className="w-3.5 h-3.5 text-white" />
-                        <span>{lang === 'vi' ? 'Theo Dõi Lalamove' : 'Lalamove Tracking'}</span>
-                      </button>
-                    )}
-                  </>
-                )}
-
-
 
               {/* Completed: Escrow released notice */}
               {!hasInspection && ord.escrowStatus === 'COMPLETED_RELEASED' && (
@@ -564,20 +575,20 @@ export function OrderCardActions({
                 })()
               )}
 
-              {/* Buyer tracking is available outside the inspection and purchase-decision stages, or when inspection order is passed and shipment is created */}
-              {!isAtHome && (!hasInspection || ord.carrierPickedUpAt || (ord.escrowStatus as string) === 'DELIVERING_TO_BUYER' || (ord as any).backendStatus === 'SHIPPED') &&
+              {/* Buyer tracking on card is only for inspection orders (direct orders track inside detail modal) */}
+              {hasInspection && !isAtHome && (ord.carrierPickedUpAt || (ord.escrowStatus as string) === 'DELIVERING_TO_BUYER' || (ord as any).backendStatus === 'SHIPPED') &&
                 isOrderPacked(ord) && !buyerInspectionStage && !isOrderUnpaid(ord) && ord.escrowStatus !== 'CANCELLED' && ord.escrowStatus !== 'REFUNDED_TO_BUYER' && ord.backendStatus !== 'CANCELLED' && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setTrackingOrder(ord);
-                  }}
-                  className="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
-                >
-                  <Truck className="w-3.5 h-3.5 text-blue-600" />
-                  <span>{lang === 'vi' ? 'Theo Dõi Lalamove' : 'Lalamove Tracking'}</span>
-                </button>
-              )}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setTrackingOrder(ord);
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
+                  >
+                    <Truck className="w-3.5 h-3.5 text-blue-600" />
+                    <span>{lang === 'vi' ? 'Theo Dõi Lalamove' : 'Lalamove Tracking'}</span>
+                  </button>
+                )}
 
               {/* Inspection Certificate Button for Buyer (ONLY when inspection passed and already decided/completed) */}
               {hasInspection && (ord.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' || ord.escrowStatus === 'SHIPPED_TO_BUYER' || ord.escrowStatus === 'COMPLETED_RELEASED') && (
@@ -705,8 +716,8 @@ export function OrderCardActions({
                 })()
               )}
 
-              {/* Nút Đã Nhận Hàng (Giải Ngân): Chỉ hiện khi đơn đã thực sự giao thành công đến Người mua và chưa xác nhận */}
-              {!buyerInspectionStage && !isOrderReceiptConfirmed(ord) && isOrderDeliveredToBuyer(ord) ? (
+              {/* Nút Đã Nhận Hàng (Giải Ngân): Chỉ hiện khi đơn đã thực sự giao thành công đến Người mua, chưa xác nhận và không có khiếu nại tranh chấp */}
+              {!buyerInspectionStage && !isOrderReceiptConfirmed(ord) && isOrderDeliveredToBuyer(ord) && !escrowOnHold ? (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -741,9 +752,9 @@ export function OrderCardActions({
                   title="Xác nhận đã nhận máy an toàn"
                 >
                   <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>{confirmingReceiptIds.has(ord.id) ? (lang === 'vi' ? 'Đang xử lý...' : 'Processing...') : (lang === 'vi' ? 'Đã Nhận Hàng' : 'Confirm Delivery')}</span>
+                  <span>{confirmingReceiptIds.has(ord.id) ? (lang === 'vi' ? 'Đang xử lý...' : 'Processing...') : (lang === 'vi' ? 'Xác nhận đơn hàng' : 'Confirm Delivery')}</span>
                 </button>
-              ) : !buyerInspectionStage && !isOrderReceiptConfirmed(ord) && !isAtHome && isOrderInTransitToBuyer(ord) ? (
+              ) : hasInspection && !buyerInspectionStage && !isOrderReceiptConfirmed(ord) && !isAtHome && isOrderInTransitToBuyer(ord) && !escrowOnHold ? (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -757,27 +768,56 @@ export function OrderCardActions({
                 </button>
               ) : null}
 
-              {/* Leave Product Review button for delivered / completed orders */}
-              {!buyerInspectionStage && (isOrderReceiptConfirmed(ord) || ord.escrowStatus === 'COMPLETED_RELEASED' || ord.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' || ord.backendStatus === 'DELIVERED') && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setReviewModalOrder(ord);
-                  }}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0 ${reviewedOrderIds.includes(ord.id)
-                    ? 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
-                    : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:opacity-90 text-white'
-                    }`}
-                  title="Đánh giá chất lượng sản phẩm & mức độ uy tín người bán"
-                >
-                  <Star className="w-3.5 h-3.5 fill-current" />
-                  <span>
-                    {reviewedOrderIds.includes(ord.id)
-                      ? (lang === 'vi' ? 'Xem / Sửa Đánh Giá' : 'Edit Review')
-                      : (lang === 'vi' ? 'Đánh Giá Sản Phẩm' : 'Write Review')}
-                  </span>
-                </button>
-              )}
+              {/* Nút Đánh Giá Người Bán & Đơn Hàng (hiện ngay khi bưu tá giao hàng thành công, ẩn khi đang có tranh chấp) */}
+              {!buyerInspectionStage && !escrowOnHold && (
+                isOrderDeliveredToBuyer(ord) ||
+                Boolean(ord.shippingDeliveredAt) ||
+                isOrderReceiptConfirmed(ord) ||
+                ord.escrowStatus === 'COMPLETED_RELEASED' ||
+                ord.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' ||
+                ord.backendStatus === 'DELIVERED' ||
+                (ord as any).backendStatus === 'COMPLETED' ||
+                ord.status === 'DELIVERED' ||
+                ord.status === 'COMPLETED'
+              ) && (() => {
+                const deliveredTime = ord.shippingDeliveredAt
+                  ? new Date(ord.shippingDeliveredAt).getTime()
+                  : (ord.updatedAt ? new Date(ord.updatedAt).getTime() : null);
+                const isDelivered48hExpired = deliveredTime ? (Date.now() - deliveredTime > 48 * 3600 * 1000) : false;
+                const isReviewed = reviewedOrderIds.includes(ord.id);
+
+                if (isDelivered48hExpired && !isReviewed) {
+                  return (
+                    <span className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed whitespace-nowrap shrink-0 flex items-center gap-1">
+                      <Star className="w-3.5 h-3.5 text-slate-300" />
+                      <span>{lang === 'vi' ? 'Hết hạn đánh giá (48h)' : 'Review expired (48h)'}</span>
+                    </span>
+                  );
+                }
+
+                return (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setReviewModalOrder(ord);
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0 ${isReviewed
+                      ? 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
+                      : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:opacity-90 text-white'
+                      }`}
+                    title={isReviewed ? "Xem hoặc chỉnh sửa đánh giá người bán" : "Đánh giá chất lượng phục vụ & mức độ uy tín của người bán"}
+                  >
+                    <Star className="w-3.5 h-3.5 fill-current" />
+                    <span>
+                      {isReviewed
+                        ? (isDelivered48hExpired
+                          ? (lang === 'vi' ? 'Xem Đánh Giá' : 'View Review')
+                          : (lang === 'vi' ? 'Xem / Sửa Đánh Giá' : 'Edit Review'))
+                        : (lang === 'vi' ? 'Đánh Giá Người Bán' : 'Review Seller')}
+                    </span>
+                  </button>
+                );
+              })()}
             </>
           )
         )}

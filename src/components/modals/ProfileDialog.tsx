@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { formatDisputeReason, formatDisputeStatus } from '../../utils/orders/orderDispute';
 import {
   X,
   User,
@@ -69,6 +70,7 @@ import {
   getAssessmentStatusMeta,
   getReputationWarningMeta,
   getReputationEventMeta,
+  formatReputationReason,
 } from '../../services/reputationService';
 import { LiveFaceScannerModal, VnptEkycResultData } from './LiveFaceScannerModal';
 import { extractWardAndCity, cleanFullAddress, formatCombinedAddress } from '../../utils/addressUtils';
@@ -142,6 +144,7 @@ interface ProfileDialogProps {
   onOpenVerifyEmail?: (email: string) => void;
   onOpenTopUp?: () => void;
   onOpenSellerRegister?: () => void;
+  onOpenDisputes?: (reportId?: string) => void;
   lang?: Language;
   initialTab?: ProfileTab;
 }
@@ -158,6 +161,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   onOpenVerifyEmail,
   onOpenTopUp,
   onOpenSellerRegister,
+  onOpenDisputes,
   lang = 'vi',
   initialTab = 'info',
 }) => {
@@ -270,6 +274,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   const [reputationHistoryPage, setReputationHistoryPage] = useState(0);
   const [reputationHistoryTotalPages, setReputationHistoryTotalPages] = useState(1);
   const [reputationHistoryTotalElements, setReputationHistoryTotalElements] = useState(0);
+  const [showReputationWarning, setShowReputationWarning] = useState(true);
 
   const fetchReputation = useCallback(async () => {
     if (!currentUser || currentUser.role !== 'seller') {
@@ -319,6 +324,17 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       fetchReputationHistory(0);
     }
   }, [activeTab, fetchReputation, fetchReputationHistory]);
+
+  // Thông báo vi phạm hiển thị 5 giây rồi tự động ẩn đi theo yêu cầu người dùng
+  useEffect(() => {
+    if (isOpen && activeTab === 'reputation' && (reputationData?.warningCode || reputationData?.sellingRestricted)) {
+      setShowReputationWarning(true);
+      const timer = setTimeout(() => {
+        setShowReputationWarning(false);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen, activeTab, reputationData?.warningCode, reputationData?.sellingRestricted]);
 
 
   // Reports State (GET /api/v1/reports/me & GET /api/v1/reports/{id})
@@ -1006,19 +1022,22 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
     updateCombinedAddress(selectedProvinceId, selectedWardId, text);
   };
 
-  // Load provinces and saved pickup address on open
+  // Load provinces when editing/settings and saved pickup address on open
   useEffect(() => {
-    if (isOpen) {
-      shippingService.getProvinces()
-        .then((pList) => {
-          if (Array.isArray(pList) && pList.length > 0) {
-            setProvinces(pList);
-          }
-        })
-        .catch((err) => console.warn('Load provinces fallback:', err));
-      fetchAddressFromBackend(false);
-    }
+    if (!isOpen) return;
+    fetchAddressFromBackend(false);
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || (!isEditing && activeTab !== 'settings')) return;
+    shippingService.getProvinces()
+      .then((pList) => {
+        if (Array.isArray(pList) && pList.length > 0) {
+          setProvinces(pList);
+        }
+      })
+      .catch(() => { });
+  }, [isOpen, isEditing, activeTab]);
 
   // Định vị GPS trực tiếp & tự động điền địa chỉ kho
   const handleUseCurrentLocation = () => {
@@ -2448,7 +2467,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                         }}
                         lang={lang}
                         title={lang === 'vi'
-                          ? (isApprovedSeller ? 'Địa chỉ kho bưu tá lấy hàng (Lalamove Pickup Warehouse)' : 'Địa chỉ kho / nhận hàng vận chuyển')
+                          ? (isApprovedSeller ? 'Địa chỉ kho bưu tá lấy hàng ' : 'Địa chỉ kho / nhận hàng vận chuyển')
                           : (isApprovedSeller ? 'Warehouse Pickup Address' : 'Shipping / Delivery Address')}
                         description={lang === 'vi'
                           ? 'Địa chỉ kho nơi bưu tá và kỹ thuật viên đến nhận máy / kiểm định. Hệ thống sử dụng địa chỉ này để tính phí vận chuyển và điều phối bưu tá (không dùng địa chỉ hồ sơ cá nhân).'
@@ -2495,13 +2514,10 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                         <h3 className="text-lg sm:text-xl font-black text-white tracking-tight">
                           {lang === 'vi' ? 'Hồ Sơ Điểm Uy Tín Người Dùng' : 'User Reputation Profile'}
                         </h3>
-                        <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-white/15 text-amber-300 font-mono font-extrabold border border-white/10">
-                          {reputationData?.formulaVersion || 'V3 Standard'}
-                        </span>
                       </div>
                       <p className="text-xs text-slate-300 mt-1 max-w-xl leading-relaxed">
                         {lang === 'vi'
-                          ? 'Chỉ số được hệ thống tự động thẩm định dựa trên tỷ lệ giao dịch thành công (GOOD/BAD), tốc độ xác nhận đơn 24h và uy tín khi xử lý đơn hàng.'
+                          ? 'Chỉ số được hệ thống tự động thẩm định dựa trên tỷ lệ giao dịch thành công, tốc độ xác nhận đơn 24h và uy tín khi xử lý đơn hàng.'
                           : 'Calculated automatically based on completed transactions, 24h confirmation speed, and fulfillment compliance.'}
                       </p>
                     </div>
@@ -2537,54 +2553,65 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                   </div>
                 </div>
 
-                {/* Sub-status & Assessment Badge */}
-                <div className="mt-5 pt-4 border-t border-white/15 flex flex-wrap items-center justify-between gap-3 text-xs">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-slate-300 font-medium">Trạng thái thẩm định:</span>
-                    <span className={`px-2.5 py-1 rounded-xl text-xs font-bold border ${getAssessmentStatusMeta(reputationData?.assessmentStatus).badgeClass}`}>
-                      {getAssessmentStatusMeta(reputationData?.assessmentStatus).label}
-                    </span>
-                    <span className="text-slate-400 text-[11px] hidden sm:inline">
-                      • {getAssessmentStatusMeta(reputationData?.assessmentStatus).desc}
-                    </span>
-                  </div>
-
-                  {reputationData?.updatedAt && (
+                {reputationData?.updatedAt && (
+                  <div className="mt-4 pt-3 border-t border-white/10 flex justify-end text-xs">
                     <span className="text-slate-400 text-[11px] font-mono">
                       Cập nhật: {new Date(reputationData.updatedAt).toLocaleTimeString('vi-VN')} {new Date(reputationData.updatedAt).toLocaleDateString('vi-VN')}
                     </span>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
 
-              {/* Warning Banner if any */}
-              {reputationData?.sellingRestricted && (
-                <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 flex items-start gap-3">
-                  <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
-                  <div>
-                    <h5 className="font-extrabold text-xs">Tài khoản đang bị hạn chế đăng bán sản phẩm mới</h5>
-                    <p className="text-[11px] text-rose-700 mt-0.5">
-                      Do vi phạm chính sách hoặc điểm phạt tích lũy vượt ngưỡng an toàn. Vui lòng liên hệ Quản trị viên để được hỗ trợ.
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {reputationData?.warningCode && !reputationData?.sellingRestricted && (
-                <div className={`p-4 rounded-2xl border flex items-start gap-3 ${getReputationWarningMeta(reputationData.warningCode)?.severity === 'danger'
-                  ? 'bg-rose-50 border-rose-200 text-rose-800'
-                  : 'bg-amber-50 border-amber-200 text-amber-800'
-                  }`}>
-                  <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
-                  <div>
-                    <h5 className="font-extrabold text-xs">
-                      {getReputationWarningMeta(reputationData.warningCode)?.title}
-                    </h5>
-                    <p className="text-[11px] mt-0.5 opacity-90">
-                      {getReputationWarningMeta(reputationData.warningCode)?.desc}
-                    </p>
-                  </div>
-                </div>
+              {/* Warning Banner if any - hiển thị vài giây rồi tự ẩn */}
+              {showReputationWarning && (
+                <>
+                  {reputationData?.sellingRestricted ? (
+                    <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 flex items-start justify-between gap-3 animate-fadeIn">
+                      <div className="flex items-start gap-3">
+                        <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                        <div>
+                          <h5 className="font-extrabold text-xs">Tài khoản đang bị hạn chế đăng bán sản phẩm mới</h5>
+                          <p className="text-[11px] text-rose-700 mt-0.5">
+                            Do vi phạm chính sách hoặc điểm phạt tích lũy vượt ngưỡng an toàn. Vui lòng liên hệ Quản trị viên để được hỗ trợ.
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowReputationWarning(false)}
+                        className="p-1 rounded-lg hover:bg-black/5 text-rose-700 opacity-70 hover:opacity-100 cursor-pointer transition"
+                        title="Đóng thông báo"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : reputationData?.warningCode ? (
+                    <div className={`p-4 rounded-2xl border flex items-start justify-between gap-3 animate-fadeIn ${getReputationWarningMeta(reputationData.warningCode)?.severity === 'danger'
+                      ? 'bg-rose-50 border-rose-200 text-rose-800'
+                      : 'bg-amber-50 border-amber-200 text-amber-800'
+                      }`}>
+                      <div className="flex items-start gap-3">
+                        <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+                        <div>
+                          <h5 className="font-extrabold text-xs">
+                            {getReputationWarningMeta(reputationData.warningCode)?.title}
+                          </h5>
+                          <p className="text-[11px] mt-0.5 opacity-90">
+                            {getReputationWarningMeta(reputationData.warningCode)?.desc}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowReputationWarning(false)}
+                        className="p-1 rounded-lg hover:bg-black/5 text-current opacity-70 hover:opacity-100 cursor-pointer transition"
+                        title="Đóng thông báo"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : null}
+                </>
               )}
 
               {/* 6 Key Metrics Grid */}
@@ -2603,7 +2630,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     <span className="text-xs text-slate-400 font-bold">/100</span>
                   </div>
                   <span className="text-[10px] text-slate-500 block leading-tight">
-                    Tính từ tỷ lệ hoàn thành (100 × G / N)
+                    Tính từ tỷ lệ giao dịch thành công
                   </span>
                 </div>
 
@@ -2633,17 +2660,17 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     <span className="text-xl sm:text-2xl font-black text-slate-800 font-mono">
                       {reputationData?.evaluatedOrders ?? 0}
                     </span>
-                    <span className="text-xs text-slate-400 font-bold">đơn (N)</span>
+                    <span className="text-xs text-slate-400 font-bold">đơn</span>
                   </div>
                   <span className="text-[10px] text-slate-500 block leading-tight">
-                    Mốc tối thiểu BE: {reputationData?.minimumEvaluatedOrders ?? 5} đơn
+                    Mốc tối thiểu: {reputationData?.minimumEvaluatedOrders ?? 5} đơn
                   </span>
                 </div>
 
-                {/* Metric 4: Giao dịch thành công (GOOD) */}
+                {/* Metric 4: Giao dịch thành công */}
                 <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-1">
                   <span className="text-[11px] font-bold text-emerald-600 uppercase tracking-wide block">
-                    Thành Công (GOOD)
+                    Thành Công
                   </span>
                   <div className="flex items-baseline gap-1">
                     <span className="text-xl sm:text-2xl font-black text-emerald-700 font-mono">
@@ -2656,10 +2683,10 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                   </span>
                 </div>
 
-                {/* Metric 5: Giao dịch có lỗi (BAD) */}
+                {/* Metric 5: Giao dịch có lỗi */}
                 <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-1">
                   <span className="text-[11px] font-bold text-rose-600 uppercase tracking-wide block">
-                    Lỗi Người Bán (BAD)
+                    Lỗi Người Bán
                   </span>
                   <div className="flex items-baseline gap-1">
                     <span className="text-xl sm:text-2xl font-black text-rose-600 font-mono">
@@ -2772,7 +2799,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                                 )}
                               </td>
                               <td className="py-3 px-4 text-slate-600 max-w-xs truncate text-[11px]">
-                                {item.reason || eventMeta.desc}
+                                {formatReputationReason(item.reason || eventMeta.desc)}
                               </td>
                             </tr>
                           );
@@ -3671,14 +3698,20 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                             type="email"
                             required
                             value={shopEmail}
+                            disabled={isShopEmailVerified}
+                            readOnly={isShopEmailVerified}
                             onChange={(e) => {
+                              if (isShopEmailVerified) return;
                               setShopEmail(e.target.value);
                               setIsShopEmailVerified(false);
                               setShopOtpSuccess(null);
                               setShopOtpError(null);
                             }}
                             placeholder="seller@example.com"
-                            className="flex-1 px-3 py-2 rounded-xl border border-gray-200 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none text-xs bg-white text-slate-900"
+                            className={`flex-1 px-3 py-2 rounded-xl border border-gray-200 outline-none text-xs ${isShopEmailVerified
+                              ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200'
+                              : 'bg-white text-slate-900 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36]'
+                              }`}
                           />
 
                           <button
@@ -3686,7 +3719,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                             onClick={handleSendShopOtp}
                             disabled={isSendingShopOtp || shopOtpCountdown > 0 || isShopEmailVerified}
                             className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer ${isShopEmailVerified
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-default'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-not-allowed'
                               : 'bg-[#24263e] hover:bg-black text-white disabled:opacity-50'
                               }`}
                           >
@@ -3948,9 +3981,6 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                               <label className="text-[10px] font-bold text-slate-700 block truncate">
                                 {lang === 'vi' ? '3. Ảnh Chân Dung Selfie' : '3. Selfie Photo'} <span className="text-red-500">*</span>
                               </label>
-                              <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 shrink-0">
-                                {lang === 'vi' ? 'AI So Khớp' : 'AI Match'}
-                              </span>
                             </div>
                             <div className="relative border border-dashed border-slate-300 hover:border-[#c34c36] rounded-2xl p-2.5 bg-white text-center transition h-[145px] flex flex-col justify-between">
                               {selfieUrl ? (
@@ -3974,19 +4004,15 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                                       {vnptClientSession ? 'VNPT eKYC' : 'OK'}
                                     </div>
                                   </div>
-                                  <div className="flex items-center justify-between px-0.5 text-[10px]">
+                                  <div className="flex items-center justify-center px-0.5 text-[10px]">
                                     <button
                                       type="button"
                                       onClick={() => setIsFaceScannerOpen(true)}
-                                      className="text-[#c34c36] font-bold hover:underline cursor-pointer flex items-center gap-0.5"
+                                      className="text-[#c34c36] font-bold hover:underline cursor-pointer flex items-center gap-1"
                                     >
                                       <Camera className="w-3 h-3" />
                                       <span>{lang === 'vi' ? 'Quét lại' : 'Rescan'}</span>
                                     </button>
-                                    <label className="text-slate-500 hover:text-slate-800 font-bold underline cursor-pointer">
-                                      {lang === 'vi' ? 'Đổi tệp' : 'Upload'}
-                                      <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, 'selfie')} />
-                                    </label>
                                   </div>
                                 </div>
                               ) : (
@@ -3996,15 +4022,12 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                                     onClick={() => setIsFaceScannerOpen(true)}
                                     className="w-full py-2 px-2 bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-slate-900 rounded-xl text-[10px] font-bold shadow-xs hover:opacity-95 transition flex items-center justify-center gap-1 cursor-pointer"
                                   >
-                                    <Camera className="w-3.5 h-3.5 text-slate-900" />
+                                    <Camera className="w-3.5 h-3.5 text-slate-900 shrink-0" />
                                     <span>{lang === 'vi' ? 'Mở Camera Quét Mặt' : 'Scan Face'}</span>
                                   </button>
-                                  <label className="text-[9px] text-slate-500 hover:text-[#24263e] underline font-bold cursor-pointer block text-center">
-                                    {uploadingField === 'selfie'
-                                      ? (lang === 'vi' ? 'Đang tải lên...' : 'Uploading...')
-                                      : (lang === 'vi' ? 'Hoặc chọn ảnh từ máy' : 'Or select photo')}
-                                    <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, 'selfie')} />
-                                  </label>
+                                  <span className="text-[9px] text-slate-500 font-medium block text-center">
+                                    {lang === 'vi' ? 'Bắt buộc quét camera trực tiếp' : 'Live camera scan required'}
+                                  </span>
                                 </div>
                               )}
                             </div>
@@ -4178,6 +4201,11 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                   </div>
                 </div>
 
+                {onOpenDisputes && <button type="button" onClick={() => onOpenDisputes()}
+                  className="rounded-xl bg-white/10 px-3 py-1.5 text-xs font-bold text-white hover:bg-white/20">
+                  {lang === 'vi' ? 'Mở trang khiếu nại' : 'Open disputes'}
+                </button>}
+
                 <button
                   type="button"
                   onClick={() => fetchMyReports(reportPage)}
@@ -4268,7 +4296,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
                         <div className="text-xs text-slate-700 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
                           <div className="font-semibold text-slate-900 mb-0.5">
-                            Lý do: <span className="font-bold text-[#c34c36]">{rep.reasonCode}</span>
+                            Lý do: <span className="font-bold text-[#c34c36]">{formatDisputeReason(rep.reasonCode, lang)}</span>
                           </div>
                           <p className="line-clamp-2 text-slate-600">{rep.description}</p>
                         </div>
@@ -4277,7 +4305,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                           <span>Ngày tạo: {new Date(rep.createdAt).toLocaleString('vi-VN')}</span>
                           <button
                             type="button"
-                            onClick={() => handleOpenReportDetail(rep.id)}
+                            onClick={() => rep.orderId && onOpenDisputes ? onOpenDisputes(rep.id) : void handleOpenReportDetail(rep.id)}
                             className="px-3 py-1 rounded-lg bg-[#24263e] hover:bg-[#c34c36] text-white font-bold text-xs transition cursor-pointer flex items-center gap-1 shadow-2xs"
                           >
                             <Eye className="w-3.5 h-3.5" />
@@ -4316,11 +4344,11 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       <div className="grid grid-cols-2 gap-2 p-3 rounded-xl bg-slate-50 border border-slate-100">
                         <div>
                           <span className="text-slate-400 block text-[10px] uppercase font-bold">Trạng Thái</span>
-                          <span className="font-bold text-slate-900">{selectedReportDetail.status}</span>
+                          <span className="font-bold text-slate-900">{formatDisputeStatus(selectedReportDetail.status, lang)}</span>
                         </div>
                         <div>
                           <span className="text-slate-400 block text-[10px] uppercase font-bold">Lý Do Vi Phạm</span>
-                          <span className="font-bold text-[#c34c36]">{selectedReportDetail.reasonCode}</span>
+                          <span className="font-bold text-[#c34c36]">{formatDisputeReason(selectedReportDetail.reasonCode, lang)}</span>
                         </div>
                         {selectedReportDetail.postId && (
                           <div className="col-span-2">

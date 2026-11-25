@@ -351,7 +351,7 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
       return;
     }
     if (!agreedZinLoss) {
-      setSubmitError(lang === 'vi' ? 'Vui lòng xác nhận đồng ý điều khoản kiểm định và mở niêm phong.' : 'Please agree to inspection terms.');
+      setSubmitError(lang === 'vi' ? 'Vui lòng xác nhận đồng ý điều khoản kiểm định.' : 'Please agree to inspection terms.');
       return;
     }
 
@@ -570,8 +570,8 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
               <div
                 onClick={() => setInspectionMethod('AT_CENTER')}
                 className={`p-2.5 rounded-xl border-2 transition cursor-pointer text-left ${inspectionMethod === 'AT_CENTER'
-                    ? 'border-blue-600 bg-blue-50/50 shadow-xs'
-                    : 'border-slate-200 bg-white hover:border-slate-300'
+                  ? 'border-blue-600 bg-blue-50/50 shadow-xs'
+                  : 'border-slate-200 bg-white hover:border-slate-300'
                   }`}
               >
                 <div className="font-extrabold text-xs text-slate-800 flex items-center justify-between">
@@ -589,8 +589,8 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
               <div
                 onClick={() => setInspectionMethod('AT_HOME')}
                 className={`p-2.5 rounded-xl border-2 transition cursor-pointer text-left ${inspectionMethod === 'AT_HOME'
-                    ? 'border-purple-600 bg-purple-50/50 shadow-xs'
-                    : 'border-slate-200 bg-white hover:border-slate-300'
+                  ? 'border-purple-600 bg-purple-50/50 shadow-xs'
+                  : 'border-slate-200 bg-white hover:border-slate-300'
                   }`}
               >
                 <div className="font-extrabold text-xs text-slate-800 flex items-center justify-between">
@@ -618,12 +618,6 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
                     : (lang === 'vi' ? '3. Báo giá kiểm định tại trung tâm' : '3. Center inspection fees')}
                 </span>
               </label>
-              {quoteExpiresAt && !isQuoteExpired && (
-                <span className="text-[10px] text-slate-400 font-medium">
-                  {lang === 'vi' ? 'Hạn báo giá:' : 'Valid until:'}{' '}
-                  {quoteExpiresAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </span>
-              )}
             </div>
 
             {loadingQuote && !quote ? (
@@ -696,7 +690,7 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
                 {/* Dòng 2: Cước Seller → Trung tâm */}
                 <div className="flex justify-between items-center py-0.5">
                   <span className="text-slate-600 flex items-center gap-1">
-                    <span>• {lang === 'vi' ? 'Cước Seller → Trung tâm' : 'Seller → Center shipping'}:</span>
+                    <span>• {lang === 'vi' ? 'Cước người bán → Trung tâm' : 'Seller → Center shipping'}:</span>
                     {currentCenterQuote?.shippingQuote?.outbound?.serviceType && (
                       <span className="text-[10px] bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.2 rounded font-semibold">
                         {formatLalamoveVehicle(currentCenterQuote.shippingQuote.outbound.serviceType).name}
@@ -709,7 +703,7 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
                 {/* Dòng 3: Tạm giữ dự phòng cước trả về Seller */}
                 <div className="flex justify-between items-center py-0.5">
                   <span className="text-slate-600 flex items-center gap-1">
-                    <span>• {lang === 'vi' ? 'Tạm giữ dự phòng cước trả về Seller' : 'Return reserve fee'}:</span>
+                    <span>• {lang === 'vi' ? 'Tạm giữ dự phòng cước trả về người bán' : 'Return reserve fee'}:</span>
                     {currentCenterQuote?.shippingQuote?.returnReserve?.serviceType && (
                       <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded font-medium">
                         {formatLalamoveVehicle(currentCenterQuote.shippingQuote.returnReserve.serviceType).name}
@@ -774,11 +768,11 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
             </div>
             <div className="text-xs text-slate-700 leading-snug select-none">
               <strong className="font-bold text-slate-900 block mb-0.5">
-                {lang === 'vi' ? 'Đồng ý mở niêm phong & kiểm tra kỹ thuật máy' : 'Consent to disassembly inspection'}
+                {lang === 'vi' ? 'Đồng ý mở kiểm tra kỹ thuật máy' : 'Consent to disassembly inspection'}
               </strong>
               <span>
                 {lang === 'vi'
-                  ? 'Tôi đồng ý để kỹ thuật viên trung tâm kiểm định mở niêm phong/máy để đánh giá chi tiết tình trạng linh kiện bên trong sản phẩm.'
+                  ? 'Tôi đồng ý để kỹ thuật viên trung tâm kiểm định máy để đánh giá chi tiết tình trạng linh kiện bên trong sản phẩm.'
                   : 'I agree for inspection center technicians to unseal and inspect internal components.'}
               </span>
             </div>

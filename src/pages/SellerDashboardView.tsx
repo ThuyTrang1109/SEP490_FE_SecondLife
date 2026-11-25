@@ -7,7 +7,6 @@ import {
   Clock,
   Tag,
   Eye,
-  Edit3,
   Star,
   TrendingUp,
   AlertCircle,
@@ -23,33 +22,54 @@ import {
   Trash2,
   FileText,
   Sliders,
-  RotateCcw
+  RotateCcw,
+  Sparkles,
+  ChevronLeft,
+  ChevronRight,
+  PackageCheck,
+  Package
 } from 'lucide-react';
-import { Listing, Language, UserProfile, ItemBackend } from '../types';
+import { Listing, Language, UserProfile, ItemBackend, EscrowOrder } from '../types';
 import { itemService } from '../services/itemService';
-import { formatVND } from '../utils/translations';
-import { getBoughtListingIds, getSortablePostTimestamp } from '../utils/orderUtils';
+import { formatConditionGrade, formatVND } from '../utils/translations';
+import { getSortablePostTimestamp } from '../utils/orderUtils';
 import { sellerService, SellerVerificationResponseDto } from '../services/sellerService';
-import { sellerCreditService, CreditBalanceResponseDto, CreditLedgerResponseDto, CreditPurchaseResponseDto } from '../services/sellerCreditService';
+import { sellerCreditService, CreditBalanceResponseDto } from '../services/sellerCreditService';
 import { mediaService } from '../services/mediaService';
 import { postService } from '../services/postService';
 import { walletService } from '../services/walletService';
-import { reputationService, SellerReputationDto, ReputationHistoryDto, getAssessmentStatusMeta, getReputationWarningMeta, getReputationEventMeta } from '../services/reputationService';
+import { reputationService, SellerReputationDto, ReputationHistoryDto, getAssessmentStatusMeta, getReputationWarningMeta, getReputationEventMeta, formatReputationReason, formatFormulaVersion } from '../services/reputationService';
 import { reviewService } from '../data/mockReviews';
 import { SellerReviewsModal } from '../components/modals/SellerReviewsModal';
 import { translateSystemNotification } from '../utils/systemNotificationTranslator';
 import { WithdrawalModal } from '../components/modals/WithdrawalModal';
-import { extractWardAndCity, getSavedSellerAddress, cleanFullAddress } from '../utils/addressUtils';
+import { extractWardAndCity, cleanFullAddress } from '../utils/addressUtils';
 import { dialogService } from '../utils/dialogService';
 import { resolveCategoryAndItem } from '../utils/catalogCache';
-import { returnShippingFeeService, SellerReturnShippingDebtResponse } from '../services';
-import { SellerReturnShippingFeesSection } from '../components/seller/SellerReturnShippingFeesSection';
-import { isListingInspectionPassed } from '../utils/listingInspection';
-import { SellerDisputeResponseModal } from '../components/seller/SellerDisputeResponseModal';
+import {
+  isListingInspectionPassed,
+  getListingInspectionBadgeText,
+  resolveSellerListingInspectionState,
+} from '../utils/listingInspection';
 import { UserAvatar } from '../components/common/UserAvatar';
+import { PreListingInspectionWorkflow } from '../components/listing/PreListingInspectionWorkflow';
+import { SellerListingEditActions } from '../components/listing/SellerListingEditActions';
+import { ListingShippingPackageModal } from '../components/listing/ListingShippingPackageModal';
+import { DigitalInspectionCertificateModal } from '../components/modals/DigitalInspectionCertificateModal';
+import { getSellerPreListingInspections, hasPreListingInspectionResult } from '../services/orderFeedService';
+import { inspectorService, type InspectionOrderDto } from '../services/inspectorService';
+import { notificationWsClient } from '../services/notificationWsClient';
+import { getPreListingHomeAppointmentStage } from '../utils/inspectionTaskStatus';
+import { formatInspectionFailureReason } from '../utils/inspectionPurchase';
+import { getLatestInboundShipment } from '../utils/inspectionCenterData';
+import { getSellerHubShipmentBadge, type SellerHubShipmentSnapshot } from '../utils/sellerHighValueInspection';
+import { shippingService, type ShippingParcel } from '../services/shippingService';
+import { getPostReturnStatus } from '../utils/orderUtils';
+import { userReportService, type SellerOrderDisputeDto } from '../services/userReportService';
 
 interface SellerDashboardViewProps {
   listings: Listing[];
+  orders?: EscrowOrder[];
   onSelectListing: (listing: Listing) => void;
   onCreateListing: (draft?: Listing) => void;
   onViewOrders?: () => void;
@@ -58,8 +78,31 @@ interface SellerDashboardViewProps {
   onDeleteListing?: (listingId: string) => void;
 }
 
+const homeAppointmentLabels = {
+  awaiting_schedule: { vi: 'Chờ đặt lịch kiểm định tại nhà', en: 'Awaiting home inspection scheduling' },
+  awaiting_center: { vi: 'Chờ trung tâm xác nhận lịch hẹn', en: 'Awaiting center approval of appointment' },
+  countered: { vi: 'Trung tâm đề xuất lịch hẹn mới', en: 'Center proposed a new appointment' },
+  scheduled: { vi: 'Đã đặt lịch kiểm định tại nhà', en: 'Home inspection scheduled' },
+};
+
+const ITEMS_PER_PAGE = 10;
+
+function getPaginationRange(current: number, total: number): (number | '...')[] {
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, i) => i + 1);
+  }
+  if (current <= 3) {
+    return [1, 2, 3, 4, '...', total];
+  }
+  if (current >= total - 2) {
+    return [1, '...', total - 3, total - 2, total - 1, total];
+  }
+  return [1, '...', current - 1, current, current + 1, '...', total];
+}
+
 export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
   listings,
+  orders,
   onSelectListing,
   onCreateListing,
   onViewOrders,
@@ -72,6 +115,34 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
   const [draftToDelete, setDraftToDelete] = useState<{ id: string; title: string } | null>(null);
   const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null);
   const [toastNotice, setToastNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [sellerDisputes, setSellerDisputes] = useState<SellerOrderDisputeDto[]>([]);
+  const [preListingPost, setPreListingPost] = useState<Listing | null>(null);
+  const [publishingPostId, setPublishingPostId] = useState<string | null>(null);
+  const [resultListing, setResultListing] = useState<Listing | null>(null);
+  const [inspectionFeed, setInspectionFeed] = useState<{
+    sellerId: string;
+    byPost: ReadonlyMap<string, InspectionOrderDto>;
+  }>();
+  const [inspectionRefresh, setInspectionRefresh] = useState(0);
+  const sellerId = currentUser?.id;
+  const inspectionByPost = inspectionFeed?.sellerId === sellerId ? inspectionFeed?.byPost : undefined;
+  const resultInspection = resultListing ? inspectionByPost?.get(resultListing.id) : undefined;
+
+  useEffect(() => {
+    if (!sellerId) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      void getSellerPreListingInspections(controller.signal)
+        .then((byPost) => {
+          if (!controller.signal.aborted) setInspectionFeed({ sellerId, byPost });
+        })
+        .catch(() => { });
+    }, 0);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [sellerId, inspectionRefresh]);
 
   const showToastNotice = (type: 'success' | 'error', message: string) => {
     setToastNotice({ type, message: translateSystemNotification(message) });
@@ -95,85 +166,6 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
     } finally {
       setDeletingDraftId(null);
     }
-  };
-
-  const [loadingDetailPostId, setLoadingDetailPostId] = useState<string | null>(null);
-
-  const handleOpenSellerPostDetail = async (item: Listing) => {
-    try {
-      setLoadingDetailPostId(item.id);
-      const detail = await postService.getMyPostDetail(item.id);
-      if (detail && detail.id) {
-        const rawImages: string[] = Array.isArray(detail.imageUrls) && detail.imageUrls.length > 0
-          ? detail.imageUrls
-          : (item.photoGallery || []);
-
-        const enriched: Listing = {
-          ...item,
-          id: detail.id,
-          categoryId: detail.categoryId || item.categoryId,
-          itemId: detail.itemId || item.itemId,
-          title: detail.title || item.title,
-          description: detail.description || item.description,
-          priceVnd: Number(detail.price ?? item.priceVnd),
-          originalPriceVnd: Number(detail.aiSuggestedPrice || detail.price || item.originalPriceVnd),
-          declaredConditionText: detail.itemCondition || item.declaredConditionText,
-          conditionGrade: (detail.itemCondition || item.conditionGrade) as any,
-          status: (
-            detail.status === 'ACTIVE'
-              ? 'active'
-              : detail.status === 'DRAFT'
-              ? 'draft'
-              : detail.status === 'REJECTED'
-              ? 'rejected'
-              : 'reserved'
-          ) as any,
-          backendStatus: detail.status || item.backendStatus,
-          rejectionReason: detail.rejectionReason ?? item.rejectionReason,
-          listingCreditCharged: detail.listingCreditCharged ?? item.listingCreditCharged,
-          shippingWeight: detail.shippingWeight != null ? Number(detail.shippingWeight) : item.shippingWeight,
-          shippingLength: detail.shippingLength != null ? Number(detail.shippingLength) : item.shippingLength,
-          shippingWidth: detail.shippingWidth != null ? Number(detail.shippingWidth) : item.shippingWidth,
-          shippingHeight: detail.shippingHeight != null ? Number(detail.shippingHeight) : item.shippingHeight,
-          sellerAddress: detail.user?.address || item.sellerAddress,
-          sellerName: detail.user?.fullName || currentUser?.name || item.sellerName,
-          sellerId: detail.user?.id || item.sellerId,
-          photoGallery: rawImages,
-          photos: {
-            ...item.photos,
-            front: rawImages[0] || item.photos?.front || '',
-            back: rawImages[1] || item.photos?.back || '',
-            screenOrDetails: rawImages[2] || item.photos?.screenOrDetails || '',
-            accessoriesOrBox: rawImages[3] || item.photos?.accessoriesOrBox || '',
-            serialOrReceipt: rawImages[4] || item.photos?.serialOrReceipt || '',
-            extraDetail: rawImages[5] || item.photos?.extraDetail || '',
-          },
-          createdAt: detail.createdAt || item.createdAt,
-        };
-
-        onSelectListing(enriched);
-        return;
-      }
-    } catch (err: any) {
-      console.warn('Lỗi gọi API GET /v1/posts/my-posts/{postId}, fallback sang item hiện tại:', err);
-      if (err?.status === 404) {
-        showToastNotice('error', lang === 'vi' ? 'Bài đăng không tồn tại hoặc đã bị xóa.' : 'Listing not found.');
-        fetchSellerData();
-        return;
-      }
-      if (err?.status === 403) {
-        showToastNotice('error', lang === 'vi' ? 'Bạn không có quyền xem chi tiết bài đăng này.' : 'You do not have permission to view this listing.');
-        return;
-      }
-      if (err?.status === 400) {
-        showToastNotice('error', lang === 'vi' ? 'Mã bài đăng không hợp lệ.' : 'Invalid listing ID.');
-        return;
-      }
-    } finally {
-      setLoadingDetailPostId(null);
-    }
-    // Fallback nếu có lỗi mạng
-    onSelectListing(item);
   };
 
   const [isPayoutModalOpen, setIsPayoutModalOpen] = useState(false);
@@ -205,62 +197,24 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
   const [isUploading, setIsUploading] = useState(false);
   const [resubmitMsg, setResubmitMsg] = useState<string | null>(null);
 
-  // Credit Balance & Ledger State
+  // Credit Balance State
   const [creditBalance, setCreditBalance] = useState<CreditBalanceResponseDto | null>(null);
-  const [isCreditLedgerOpen, setIsCreditLedgerOpen] = useState(false);
-  const [creditLedgerItems, setCreditLedgerItems] = useState<CreditLedgerResponseDto[]>([]);
-  const [creditPurchases, setCreditPurchases] = useState<CreditPurchaseResponseDto[]>([]);
-  const [creditModalTab, setCreditModalTab] = useState<'ledger' | 'purchases' | 'buy'>('ledger');
-  const [isLoadingLedger, setIsLoadingLedger] = useState(false);
-  const [buyListingQty, setBuyListingQty] = useState<number>(5);
-  const [buyValuationQty, setBuyValuationQty] = useState<number>(5);
-  const [buyChatQty, setBuyChatQty] = useState<number>(5);
-  const [calculatedPricing, setCalculatedPricing] = useState<any>(null);
-  const [isCalculatingPricing, setIsCalculatingPricing] = useState<boolean>(false);
-  const [isSubmittingPurchase, setIsSubmittingPurchase] = useState<boolean>(false);
-
-  useEffect(() => {
-    if (creditModalTab === 'buy') {
-      setIsCalculatingPricing(true);
-      sellerCreditService
-        .getPricing(buyListingQty, buyValuationQty)
-        .then((res) => setCalculatedPricing(res))
-        .catch((err) => console.warn('Lỗi tính giá credit:', err))
-        .finally(() => setIsCalculatingPricing(false));
-    }
-  }, [creditModalTab, buyListingQty, buyValuationQty]);
-
-  const handleCreateCreditPurchase = async () => {
-    setIsSubmittingPurchase(true);
-    try {
-      const res = await sellerCreditService.createPurchase({
-        listingQuantity: buyListingQty,
-        valuationQuantity: buyValuationQty,
-        aiChatQuantity: buyChatQty,
-      });
-      showToastNotice('success', `Đã tạo đơn mua #${res?.id ? res.id.slice(0, 8) : ''} thành công!`);
-      const [bal, purchases] = await Promise.all([
-        sellerCreditService.getCredits(),
-        sellerCreditService.getPurchases(0, 30),
-      ]);
-      if (bal) setCreditBalance(bal);
-      const purchaseItems =
-        (purchases as any)?.items ||
-        (purchases as any)?.content ||
-        (purchases as any)?.data?.items ||
-        (purchases as any)?.data ||
-        (Array.isArray(purchases) ? purchases : []);
-      setCreditPurchases(purchaseItems);
-      setCreditModalTab('purchases');
-    } catch (err: any) {
-      showToastNotice('error', err?.message || 'Không thể tạo đơn mua tín dụng');
-    } finally {
-      setIsSubmittingPurchase(false);
-    }
-  };
 
   // Real Backend Posts State
   const [myServerPosts, setMyServerPosts] = useState<Listing[]>([]);
+  const [editingPackagePost, setEditingPackagePost] = useState<Listing | null>(null);
+
+  const handlePackageSaved = (postId: string, parcel: ShippingParcel) => {
+    setMyServerPosts((posts) => posts.map((post) => post.id === postId ? {
+      ...post,
+      shippingWeight: parcel.weight,
+      shippingLength: parcel.length,
+      shippingWidth: parcel.width,
+      shippingHeight: parcel.height,
+    } : post));
+    setEditingPackagePost(null);
+    showToastNotice('success', lang === 'vi' ? 'Đã cập nhật thông tin kiện hàng.' : 'Shipping package updated.');
+  };
   const [isLoadingPosts, setIsLoadingPosts] = useState(false);
 
   // Reclassify Item Modal State (chọn lại loại thiết bị khi danh mục tách item)
@@ -273,16 +227,15 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
 
   const handleOpenReclassifyModal = async (item: Listing) => {
     setReclassifyingPost(item);
+    setReclassifyItems([]);
     setSelectedReclassifyItemId(item.itemId || '');
     setReclassifyError(null);
     setIsLoadingReclassifyItems(true);
     try {
       const itms = await itemService.getItemsByCategory(item.categoryId || '');
-      const selectable = (Array.isArray(itms) ? itms : []).filter((i: any) => i.selectable !== false);
+      const selectable = itms.filter((item) => item.selectable !== false);
       setReclassifyItems(selectable);
-      if (selectable.length > 0 && !selectable.some((i: any) => i.id === item.itemId)) {
-        setSelectedReclassifyItemId(selectable[0].id);
-      }
+      setSelectedReclassifyItemId(selectable[0]?.id ?? '');
     } catch (err: any) {
       setReclassifyError(err?.message || 'Không thể tải danh sách thiết bị');
     } finally {
@@ -304,6 +257,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
               ...p,
               itemId: selectedReclassifyItemId,
               itemName: chosenItem?.name || p.itemName,
+              sellerActions: p.sellerActions && { ...p.sellerActions, reclassifyItem: false },
             };
           }
           return p;
@@ -319,37 +273,32 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
     }
   };
 
-  // Return Shipping Fees & Dispute Modal State
-  const [sellerActiveTab, setSellerActiveTab] = useState<'listings' | 'return_fees'>('listings');
-  const [sellerDebt, setSellerDebt] = useState<SellerReturnShippingDebtResponse | null>(null);
-  const [disputeModalReportId, setDisputeModalReportId] = useState<string | null>(null);
-  const [disputeModalOrderId, setDisputeModalOrderId] = useState<string | null>(null);
-  const [isDisputeModalOpen, setIsDisputeModalOpen] = useState(false);
-
+  const [sellerActiveTab, setSellerActiveTab] = useState<'listings' | 'high_value_inspections'>('listings');
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      const tab = params.get('seller_tab');
-      if (tab === 'return_fees') setSellerActiveTab('return_fees');
-
-      const rId = params.get('reportId') || params.get('report_id');
-      const oId = params.get('orderId') || params.get('order_id');
-      if (rId) {
-        setDisputeModalReportId(rId);
-        if (oId) setDisputeModalOrderId(oId);
-        setIsDisputeModalOpen(true);
+      const tab = params.get('seller_tab') || params.get('tab');
+      if (tab === 'high_value_inspections' || tab === 'pre_listing' || tab === 'inspections') {
+        setSellerActiveTab('high_value_inspections');
+      } else if (tab === 'listings') {
+        setSellerActiveTab('listings');
       }
+
     }
   }, []);
 
   // Seller Reputation State (GET /api/v1/seller/reputation/me & /history)
   const [myReputation, setMyReputation] = useState<SellerReputationDto | null>(null);
+
   const sellerReviewCount = useMemo(() => {
     const sellerId = currentUser?.id;
-    if (!sellerId) return myReputation?.evaluatedOrders ?? 0;
-    const directReviews = reviewService.getReviewsBySeller(sellerId).length;
-    return directReviews > 0 ? directReviews : (myReputation?.evaluatedOrders ?? 0);
-  }, [currentUser?.id, myReputation?.evaluatedOrders]);
+    const directReviews = sellerId ? reviewService.getReviewsBySeller(sellerId).length : 0;
+    const evaluatedFromRep = Number(myReputation?.evaluatedOrders ?? 0);
+    if (evaluatedFromRep > 0 || directReviews > 0) {
+      return Math.max(evaluatedFromRep, directReviews);
+    }
+    return Number((currentUser as any)?.reviewCount ?? 0);
+  }, [currentUser?.id, (currentUser as any)?.reviewCount, myReputation?.evaluatedOrders]);
 
   const sellerAverageRatingText = useMemo(() => {
     const sellerId = currentUser?.id;
@@ -358,25 +307,64 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       const avg = directReviews.reduce((sum, r) => sum + r.rating, 0) / directReviews.length;
       return `${avg.toFixed(1)} / 5.0`;
     }
+    const evaluated = Number(myReputation?.evaluatedOrders ?? 0);
+    if (evaluated > 0) {
+      const txScore =
+        myReputation?.transactionScore !== undefined && myReputation?.transactionScore !== null
+          ? Number(myReputation.transactionScore)
+          : (Number(myReputation?.goodTransactions ?? 0) / evaluated) * 100;
+      const starRating = Math.max(0, Math.min(5, txScore / 20));
+      return `${starRating.toFixed(1)} / 5.0`;
+    }
     if (currentUser?.sellerRating && currentUser.sellerRating > 0) {
       return `${currentUser.sellerRating.toFixed(1)} / 5.0`;
     }
-    if (myReputation?.score !== undefined && myReputation?.score !== null && (myReputation.evaluatedOrders ?? 0) > 0) {
-      return `${(myReputation.score / 20).toFixed(1)} / 5.0`;
-    }
     return lang === 'vi' ? 'Chưa có đánh giá' : 'No ratings yet';
   }, [currentUser?.id, currentUser?.sellerRating, myReputation, lang]);
+
   const [isReputationHistoryOpen, setIsReputationHistoryOpen] = useState(false);
   const [reputationHistoryItems, setReputationHistoryItems] = useState<ReputationHistoryDto[]>([]);
   const [isLoadingReputationHistory, setIsLoadingReputationHistory] = useState(false);
   const [isReloadingReputation, setIsReloadingReputation] = useState(false);
+  const [showViolationWarning, setShowViolationWarning] = useState(true);
+  const [showModalViolationWarning, setShowModalViolationWarning] = useState(true);
+  const [reputationPage, setReputationPage] = useState(0);
+  const REPUTATION_PAGE_SIZE = 10;
+
+  const totalReputationPages = Math.max(1, Math.ceil(reputationHistoryItems.length / REPUTATION_PAGE_SIZE));
+  const safeReputationPage = Math.min(reputationPage, totalReputationPages - 1);
+  const paginatedReputationItems = useMemo(() => {
+    const start = safeReputationPage * REPUTATION_PAGE_SIZE;
+    return reputationHistoryItems.slice(start, start + REPUTATION_PAGE_SIZE);
+  }, [reputationHistoryItems, safeReputationPage]);
+
+  useEffect(() => {
+    if (myReputation?.sellingRestricted || myReputation?.warningCode) {
+      setShowViolationWarning(true);
+      const timer = setTimeout(() => {
+        setShowViolationWarning(false);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [myReputation?.sellingRestricted, myReputation?.warningCode]);
+
+  useEffect(() => {
+    if (isReputationHistoryOpen && (myReputation?.sellingRestricted || myReputation?.warningCode)) {
+      setShowModalViolationWarning(true);
+      const timer = setTimeout(() => {
+        setShowModalViolationWarning(false);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [isReputationHistoryOpen, myReputation?.sellingRestricted, myReputation?.warningCode]);
 
   const handleRefreshReputation = async () => {
     setIsReloadingReputation(true);
+    setReputationPage(0);
     try {
       const [rep, historyRes] = await Promise.all([
         reputationService.getMyReputation(),
-        reputationService.getMyReputationHistory(0, 30),
+        reputationService.getMyReputationHistory(0, 100),
       ]);
       if (rep) setMyReputation(rep);
       setReputationHistoryItems(historyRes.items || []);
@@ -390,10 +378,11 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
   const handleOpenReputationHistory = async () => {
     setIsReputationHistoryOpen(true);
     setIsLoadingReputationHistory(true);
+    setReputationPage(0);
     try {
       const [rep, res] = await Promise.all([
         reputationService.getMyReputation(),
-        reputationService.getMyReputationHistory(0, 30),
+        reputationService.getMyReputationHistory(0, 100),
       ]);
       if (rep) setMyReputation(rep);
       setReputationHistoryItems(res.items || []);
@@ -526,38 +515,39 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             setResubmitSelfieUrl(ver.selfieUrl || '');
           }
         })
-        .catch(() => {});
+        .catch(() => { });
 
       sellerCreditService.getCredits()
         .then((bal) => {
           if (bal) setCreditBalance(bal);
         })
-        .catch(() => {});
+        .catch(() => { });
 
       walletService.getMyWallet()
         .then((w) => {
           if (w) setSellerWalletBalance(Number(w.balance || 0));
         })
-        .catch(() => {});
+        .catch(() => { });
 
       reputationService.getMyReputation()
         .then((rep) => {
           if (rep) setMyReputation(rep);
         })
-        .catch(() => {});
+        .catch(() => { });
 
-      returnShippingFeeService.getMyReturnShippingDebt()
-        .then((d) => setSellerDebt(d))
-        .catch(() => {});
+      userReportService.getSellerDisputes(0, 50)
+        .then((dispRes) => {
+          const items = dispRes?.items || [];
+          setSellerDisputes(items);
+          try {
+            localStorage.setItem('sl_seller_disputes', JSON.stringify(items));
+          } catch {}
+        })
+        .catch(() => { });
 
       const res = await postService.getMyPosts(0, 50);
-      const posts = (res as any)?.content || (res as any)?.data || (Array.isArray(res) ? res : []);
+      const posts = (res as any)?.items || (res as any)?.data?.items || (res as any)?.content || (res as any)?.data || (Array.isArray(res) ? res : []);
       if (posts && posts.length > 0) {
-        const savedAddr = getSavedSellerAddress();
-        const currentSellerAddr = currentUser?.pickupAddress || currentUser?.address || savedAddr.address;
-        const currentSellerWard = currentUser?.wardName || currentUser?.ward || savedAddr.wardName;
-        const currentSellerProv = currentUser?.provinceName || currentUser?.province || savedAddr.provinceName;
-
         const mapped: Listing[] = posts.map((p: any) => {
           const rawImages: string[] = Array.isArray(p.imageUrls) && p.imageUrls.length > 0
             ? p.imageUrls
@@ -565,13 +555,15 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
           const fallbackImage = 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=800';
           const primaryImage = rawImages[0] || fallbackImage;
 
-          // Xác định địa chỉ người bán: Ưu tiên địa chỉ người bán mới nhất từ profile của seller
-          const sellerAddr = cleanFullAddress(currentSellerAddr || p.sellerAddress || p.pickupAddress || p.user?.address || '');
-          const loc = (currentSellerAddr ? extractWardAndCity(currentSellerAddr, currentSellerWard, currentSellerProv) : '') ||
-            extractWardAndCity(p.sellerAddress || p.pickupAddress || p.user?.address, currentSellerWard, currentSellerProv) ||
-            'Hà Nội';
+          const sellerAddr = cleanFullAddress(p.sellerAddress ?? p.pickupAddress ?? p.user?.address ?? '');
+          const loc = extractWardAndCity(sellerAddr);
 
           const isDraft = p.status === 'DRAFT';
+          const returnStatus = getPostReturnStatus(p, orders, sellerDisputes);
+          const isReturning = Boolean(returnStatus?.isReturning);
+          const isReturned = Boolean(returnStatus?.isReturned);
+          const isSold = !isReturning && !isReturned && String(p.status || '').toUpperCase() === 'SOLD';
+          const isAwaitingInspectionPublication = p.status === 'PENDING_INSPECTION' || p.status === 'READY_TO_PUBLISH';
           const draftTitle = p.title || (isDraft ? 'Bản nháp sản phẩm' : 'Thiết bị gia dụng SecondLife');
           const draftDesc = p.description || p.aiDescription || '';
 
@@ -613,20 +605,23 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             })(),
             sellerCompletedOrders: 0,
             sellerVerified: true,
-            status: (
-              localStorage.getItem(`listing_available_${p.postId || p.id}`) === 'true'
-                ? 'active'
-                : (getBoughtListingIds().has(String(p.postId || p.id)) ? 'reserved' : (p.status === 'ACTIVE' ? 'active' : p.status === 'DRAFT' ? 'draft' : 'reserved'))
-            ) as any,
-            backendStatus: (
-              localStorage.getItem(`listing_available_${p.postId || p.id}`) === 'true'
-                ? 'ACTIVE'
-                : (getBoughtListingIds().has(String(p.postId || p.id)) ? 'RESERVED' : p.status)
-            ),
+            status: isAwaitingInspectionPublication ? 'pending_inspection'
+              : isReturning ? 'reserved'
+                : isReturned ? 'draft'
+                  : isSold ? 'sold'
+                    : p.status === 'ACTIVE' ? 'active'
+                      : isDraft ? 'draft'
+                        : p.status === 'REJECTED' ? 'rejected' : 'reserved',
+            backendStatus: isReturning ? 'RETURNING'
+              : isReturned ? 'RETURNED'
+                : p.status,
+            sellerActions: p.sellerActions,
             rejectionReason: p.rejectionReason,
             createdAt: p.createdAt || p.createdDate || p.created_at || p.publishedAt || p.updatedAt || new Date().toISOString(),
             isInspectionGuaranteed: true,
             requiresInspection: Number(p.price || 0) > 5000000,
+            isInspected: typeof p.isInspected === 'boolean' ? p.isInspected : undefined,
+            inspectionMethod: p.inspectionMethod || p.orderType || undefined,
             photos: {
               front: rawImages[0] || primaryImage,
               back: rawImages[1] || '',
@@ -669,22 +664,31 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
     fetchSellerData();
   }, [fetchSellerData]);
 
-  const handleOpenCreditLedger = async () => {
-    setIsCreditLedgerOpen(true);
-    setIsLoadingLedger(true);
+  useEffect(() => {
+    if (!sellerId) return;
+    return notificationWsClient.subscribeListener((notification) => {
+      const reference = notification.referenceType?.toUpperCase();
+      if (reference === 'INSPECTION_ORDER' || reference === 'SHIPMENT') {
+        setInspectionRefresh((previous) => previous + 1);
+        void fetchSellerData();
+      }
+    });
+  }, [sellerId, fetchSellerData]);
+
+  const handlePublishInspectedPost = async (item: Listing) => {
+    if (publishingPostId || item.backendStatus !== 'READY_TO_PUBLISH') return;
+    setPublishingPostId(item.id);
     try {
-      const [ledgerRes, purchasesRes] = await Promise.all([
-        sellerCreditService.getLedger(0, 30),
-        sellerCreditService.getPurchases(0, 30),
-      ]);
-      const ledgerItems = (ledgerRes as any)?.items || (ledgerRes as any)?.content || (ledgerRes as any)?.data?.items || (ledgerRes as any)?.data || (Array.isArray(ledgerRes) ? ledgerRes : []);
-      const purchaseItems = (purchasesRes as any)?.items || (purchasesRes as any)?.content || (purchasesRes as any)?.data?.items || (purchasesRes as any)?.data || (Array.isArray(purchasesRes) ? purchasesRes : []);
-      setCreditLedgerItems(ledgerItems);
-      setCreditPurchases(purchaseItems);
-    } catch (err) {
-      console.warn('Lỗi lấy dữ liệu credit:', err);
+      const published = await postService.publishInspectedPost(item.id);
+      setMyServerPosts((posts) => posts.map((post) => post.id === item.id
+        ? { ...post, status: 'active', backendStatus: published.status }
+        : post));
+      void fetchSellerData();
+      showToastNotice('success', lang === 'vi' ? 'Đã đăng bán sản phẩm.' : 'Listing published.');
+    } catch (error) {
+      showToastNotice('error', error instanceof Error ? error.message : (lang === 'vi' ? 'Không thể đăng bán sản phẩm.' : 'Could not publish the listing.'));
     } finally {
-      setIsLoadingLedger(false);
+      setPublishingPostId(null);
     }
   };
 
@@ -724,13 +728,16 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
 
   // Chỉ lấy bài đăng thuộc về chính tài khoản người bán hiện tại (tuyệt đối không lấy bài/bản nháp của người bán khác)
   const combinedListings = React.useMemo(() => {
-    const savedAddr = getSavedSellerAddress();
-    const currentSellerAddr = currentUser?.pickupAddress || currentUser?.address || savedAddr.address;
-    const currentSellerWard = currentUser?.wardName || currentUser?.ward || savedAddr.wardName;
-    const currentSellerProv = currentUser?.provinceName || currentUser?.province || savedAddr.provinceName;
-    const latestLoc = currentSellerAddr ? extractWardAndCity(currentSellerAddr, currentSellerWard, currentSellerProv) : '';
-
-    const list = [...myServerPosts];
+    const listingsById = new Map(listings.map((item) => [item.id, item]));
+    const list = myServerPosts.map((post) => {
+      const fromApp = listingsById.get(post.id);
+      if (!fromApp) return post;
+      return {
+        ...post,
+        isInspected: post.isInspected ?? fromApp.isInspected,
+        inspectionMethod: post.inspectionMethod ?? fromApp.inspectionMethod,
+      };
+    });
     const existingIds = new Set(myServerPosts.map(p => p.id));
     for (const item of listings) {
       const isMine =
@@ -742,7 +749,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
         list.push(item);
       }
     }
-    // Lọc lại để đảm bảo 100% chỉ có bài đăng của chính tài khoản người bán này và luôn cập nhật địa chỉ theo profile mới nhất
+    // Only show listings that belong to the active seller.
     return list
       .filter(item => {
         const isMine =
@@ -750,16 +757,6 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
           Boolean(currentUser?.name && item.sellerName?.trim().toLowerCase() === currentUser.name.trim().toLowerCase()) ||
           item.sellerId === 'me';
         return isMine;
-      })
-      .map(item => {
-        if (latestLoc || currentSellerAddr) {
-          return {
-            ...item,
-            location: latestLoc || item.location,
-            sellerAddress: cleanFullAddress(currentSellerAddr || item.sellerAddress || latestLoc),
-          };
-        }
-        return item;
       })
       .sort((a, b) => {
         const timeA = getSortablePostTimestamp(a);
@@ -771,40 +768,166 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
     listings,
     currentUser?.id,
     currentUser?.name,
-    currentUser?.address,
-    currentUser?.pickupAddress,
-    currentUser?.wardName,
-    currentUser?.ward,
-    currentUser?.provinceName,
-    currentUser?.province,
   ]);
 
-  const filteredListings = React.useMemo(() => {
-    const list = combinedListings.filter((l) => {
+  // Đơn hoàn thành thực tế của người bán (đồng bộ từ myReputation.goodTransactions hoặc currentUser)
+  const completedOrdersCount = useMemo(() => {
+    if (myReputation?.goodTransactions !== undefined && myReputation?.goodTransactions !== null && myReputation.goodTransactions > 0) {
+      return myReputation.goodTransactions;
+    }
+    if (currentUser?.completedOrdersCount !== undefined && currentUser?.completedOrdersCount !== null && currentUser.completedOrdersCount > 0) {
+      return currentUser.completedOrdersCount;
+    }
+    const soldListingsCount = combinedListings.filter((l) =>
+      (l.status === 'sold' || (l as any).backendStatus === 'SOLD') &&
+      (l as any).backendStatus !== 'RETURNING' &&
+      (l as any).backendStatus !== 'RETURNED'
+    ).length;
+    return soldListingsCount > 0 ? soldListingsCount : (myReputation?.goodTransactions ?? 0);
+  }, [myReputation?.goodTransactions, currentUser?.completedOrdersCount, combinedListings]);
+
+  // Ngưỡng giá trị cao bắt buộc kiểm định (mặc định 10.000.000 đ hoặc theo policy)
+  const [highValueThreshold, setHighValueThreshold] = useState<number>(10000000);
+
+  useEffect(() => {
+    let isMounted = true;
+    inspectorService.getHighValueInspectionPolicy()
+      .then((policy) => {
+        if (isMounted && policy && typeof policy.thresholdPrice === 'number' && policy.thresholdPrice > 0) {
+          setHighValueThreshold(policy.thresholdPrice);
+        }
+      })
+      .catch(() => { });
+    return () => { isMounted = false; };
+  }, []);
+
+  // Kiểm tra bài đăng có thuộc diện Giá Trị Cao / Kiểm Định Trước Đăng hay không
+  const isHighValueListing = React.useCallback((l: Listing): boolean => {
+    // 1. Đang ở trạng thái PENDING_INSPECTION
+    if (l.backendStatus === 'PENDING_INSPECTION' || l.backendStatus === 'READY_TO_PUBLISH') return true;
+    // 2. Có bản ghi trong pre-listing inspection feed
+    if (Boolean(inspectionByPost?.has(l.id))) return true;
+    // 3. Có kết quả kiểm định trước đăng (PASSED / FAILED / REJECTED)
+    if (hasPreListingInspectionResult(inspectionByPost?.get(l.id))) return true;
+    // 4. Có cờ kiểm định bắt buộc từ backend
+    if ((l as any).isMandatoryInspection === true || (l as any).mandatoryInspection === true) return true;
+    // 5. Giá bán vượt ngưỡng giá trị cao (highValueThreshold, mặc định 10.000.000 đ)
+    const threshold = highValueThreshold > 0 ? highValueThreshold : 10000000;
+    if (Number(l.priceVnd || 0) > threshold) return true;
+    return false;
+  }, [inspectionByPost, highValueThreshold]);
+
+  // Tin đăng thông thường và bản nháp (loại bỏ hoàn toàn các đơn giá trị cao)
+  const normalListings = React.useMemo(() => {
+    return combinedListings.filter((l) => !isHighValueListing(l));
+  }, [combinedListings, isHighValueListing]);
+
+  // Danh sách sản phẩm kiểm định giá trị cao
+  const highValueListings = React.useMemo(() => {
+    const list: Listing[] = [];
+    const seenIds = new Set<string>();
+
+    for (const l of combinedListings) {
+      if (isHighValueListing(l)) {
+        list.push(l);
+        seenIds.add(l.id);
+      }
+    }
+
+    if (inspectionByPost) {
+      inspectionByPost.forEach((insp, pId) => {
+        if (!seenIds.has(pId)) {
+          list.push({
+            id: pId,
+            categoryId: (insp as any).categoryId || 'home_appliances',
+            itemId: (insp as any).itemId || 'appliance',
+            title: insp.postTitle || (lang === 'vi' ? 'Thiết bị kiểm định giá trị cao' : 'High-value inspected device'),
+            category: 'Đồ gia dụng' as any,
+            brand: 'Khác',
+            model: '',
+            purchaseYear: 2024,
+            priceVnd: insp.postPrice ?? 0,
+            conditionGrade: 'Good',
+            declaredConditionText: 'Tình trạng tốt',
+            description: '',
+            location: insp.inspectionCenterAddress || 'Hà Nội',
+            sellerAddress: insp.inspectionCenterAddress || 'Hà Nội',
+            createdAt: (insp as any).createdAt || new Date().toISOString(),
+            status: 'pending_inspection' as any,
+            backendStatus: 'PENDING_INSPECTION',
+            photos: {
+              front: insp.postImageUrls?.[0] || 'https://images.unsplash.com/photo-1550009158-9ebf69173e03?auto=format&fit=crop&q=80&w=800',
+              back: insp.postImageUrls?.[1] || '',
+              screenOrDetails: '',
+              accessoriesOrBox: '',
+              serialOrReceipt: '',
+              extraDetail: '',
+            },
+            photoGallery: insp.postImageUrls || [],
+            sellerId: currentUser?.id || 'me',
+            sellerName: currentUser?.name || 'Tôi',
+            sellerRating: 5,
+            sellerCompletedOrders: 0,
+            sellerVerified: true,
+            isInspectionGuaranteed: true,
+            requiresInspection: true,
+          });
+          seenIds.add(pId);
+        }
+      });
+    }
+
+    return list;
+  }, [combinedListings, inspectionByPost, lang, currentUser]);
+
+  const [highValueFilter, setHighValueFilter] = useState<'ALL' | 'pending_payment' | 'inspecting' | 'passed' | 'failed'>('ALL');
+
+  const getItemInspectionOrder = React.useCallback((item: Listing): InspectionOrderDto | undefined => {
+    return inspectionByPost?.get(item.id);
+  }, [inspectionByPost]);
+
+  const getHighValueItemStage = React.useCallback((item: Listing): 'pending_payment' | 'inspecting' | 'passed' | 'failed' => {
+    const insp = inspectionByPost?.get(item.id);
+    const inspStatus = String(insp?.status || '').toUpperCase();
+    if (inspStatus === 'FAILED' || inspStatus === 'REJECTED') return 'failed';
+    if (item.backendStatus === 'READY_TO_PUBLISH' || inspStatus === 'PASSED' || inspStatus === 'COMPLETED' || isListingInspectionPassed(item)) {
+      return 'passed';
+    }
+    if (item.backendStatus === 'REJECTED') {
+      return 'failed';
+    }
+    const appointmentStage = getPreListingHomeAppointmentStage(insp);
+    if (appointmentStage === 'awaiting_schedule' || appointmentStage === 'countered') return 'pending_payment';
+    if (appointmentStage) return 'inspecting';
+    if (
+      inspStatus === 'CONFIRMED_PENDING_DISPATCH' ||
+      inspStatus === 'SCHEDULED' ||
+      inspStatus === 'SHIPPING_TO_CENTER' ||
+      inspStatus === 'INSPECTING' ||
+      inspStatus === 'INSPECTION_IN_PROGRESS' ||
+      inspStatus === 'CENTER_HOLDING'
+    ) {
+      return 'inspecting';
+    }
+    return 'pending_payment';
+  }, [inspectionByPost]);
+
+  const filteredNormalListings = React.useMemo(() => {
+    const list = normalListings.filter((l) => {
       if (filterStatus === 'ALL') return true;
       if (filterStatus === 'draft') {
         return l.backendStatus === 'DRAFT' || l.status === 'draft';
       }
       if (filterStatus === 'pending') {
-        return (
-          (l.backendStatus === 'PENDING' || l.backendStatus === 'PENDING_INSPECTION' || l.backendStatus === 'PENDING_REVIEW') &&
-          l.status !== 'draft'
-        );
+        return (l.backendStatus === 'PENDING' || l.backendStatus === 'PENDING_REVIEW') && l.status !== 'draft';
       }
       if (filterStatus === 'rejected') {
         return l.backendStatus === 'REJECTED';
       }
-      if (filterStatus === 'active') {
-        const isExplicitlyAvail = localStorage.getItem(`listing_available_${l.id}`) === 'true';
-        if (!isExplicitlyAvail && (getBoughtListingIds().has(String(l.id)) || l.backendStatus === 'RESERVED' || l.backendStatus === 'SOLD' || l.status === 'reserved' || l.status === 'sold')) {
-          return false;
-        }
-        return l.backendStatus === 'ACTIVE' || l.status === 'active' || isExplicitlyAvail;
-      }
-      if (filterStatus === 'reserved') {
-        const isExplicitlyAvail = localStorage.getItem(`listing_available_${l.id}`) === 'true';
-        if (isExplicitlyAvail) return false;
-        return getBoughtListingIds().has(String(l.id)) || l.backendStatus === 'RESERVED' || l.status === 'reserved';
+      if (filterStatus === 'active') return (l.backendStatus === 'ACTIVE' || l.status === 'active') && l.backendStatus !== 'RETURNING' && l.backendStatus !== 'RETURNED';
+      if (filterStatus === 'reserved') return l.backendStatus === 'RESERVED' || l.status === 'reserved' || l.backendStatus === 'RETURNING';
+      if (filterStatus === 'sold') {
+        return (l.backendStatus === 'SOLD' || l.status === 'sold') && l.backendStatus !== 'RETURNING' && l.backendStatus !== 'RETURNED';
       }
       return l.status === filterStatus;
     });
@@ -814,7 +937,204 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       const timeB = getSortablePostTimestamp(b);
       return sortOrder === 'oldest' ? timeA - timeB : timeB - timeA;
     });
-  }, [combinedListings, filterStatus, sortOrder]);
+  }, [normalListings, filterStatus, sortOrder]);
+
+  const filteredHighValueListings = React.useMemo(() => {
+    const list = highValueListings.filter((l) => {
+      if (highValueFilter === 'ALL') return true;
+      return getHighValueItemStage(l) === highValueFilter;
+    });
+
+    return [...list].sort((a, b) => {
+      const timeA = getSortablePostTimestamp(a);
+      const timeB = getSortablePostTimestamp(b);
+      return sortOrder === 'oldest' ? timeA - timeB : timeB - timeA;
+    });
+  }, [highValueListings, highValueFilter, sortOrder, getHighValueItemStage]);
+
+  const highValueFilterTabs = React.useMemo(() => [
+    { key: 'ALL' as const, label: lang === 'vi' ? 'Tất cả' : 'All', count: highValueListings.length },
+    { key: 'pending_payment' as const, label: lang === 'vi' ? 'Chờ nộp phí & đặt lịch' : 'Awaiting Fee / Schedule', count: highValueListings.filter(l => getHighValueItemStage(l) === 'pending_payment').length },
+    { key: 'inspecting' as const, label: lang === 'vi' ? 'Đang xử lý kiểm định' : 'Inspection in progress', count: highValueListings.filter(l => getHighValueItemStage(l) === 'inspecting').length },
+    { key: 'passed' as const, label: lang === 'vi' ? 'Đã đạt kiểm định' : 'Passed Inspection', count: highValueListings.filter(l => getHighValueItemStage(l) === 'passed').length },
+    { key: 'failed' as const, label: lang === 'vi' ? 'Không đạt' : 'Failed', count: highValueListings.filter(l => getHighValueItemStage(l) === 'failed').length },
+  ], [highValueListings, getHighValueItemStage, lang]);
+
+  // Backward compatibility alias
+  const filteredListings = filteredNormalListings;
+
+  // Pagination State for Listings and High-Value Tabs (10 items per page)
+  const [listingsPage, setListingsPage] = useState(1);
+  const [highValuePage, setHighValuePage] = useState(1);
+
+  useEffect(() => {
+    setListingsPage(1);
+  }, [filterStatus, sortOrder]);
+
+  useEffect(() => {
+    setHighValuePage(1);
+  }, [highValueFilter, sortOrder]);
+
+  const totalListingsPages = Math.ceil(filteredNormalListings.length / ITEMS_PER_PAGE) || 1;
+  const currentListingsPage = Math.min(Math.max(1, listingsPage), totalListingsPages);
+  const paginatedNormalListings = React.useMemo(() => {
+    const start = (currentListingsPage - 1) * ITEMS_PER_PAGE;
+    return filteredNormalListings.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredNormalListings, currentListingsPage]);
+
+  const totalHighValuePages = Math.ceil(filteredHighValueListings.length / ITEMS_PER_PAGE) || 1;
+  const currentHighValuePage = Math.min(Math.max(1, highValuePage), totalHighValuePages);
+  const paginatedHighValueListings = React.useMemo(() => {
+    const start = (currentHighValuePage - 1) * ITEMS_PER_PAGE;
+    return filteredHighValueListings.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredHighValueListings, currentHighValuePage]);
+
+  const handleListingsPageChange = (newPage: number) => {
+    setListingsPage(newPage);
+    const el = document.getElementById('seller-listings-container');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
+  const handleHighValuePageChange = (newPage: number) => {
+    setHighValuePage(newPage);
+    const el = document.getElementById('seller-highvalue-container');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
+  const [hubShipmentFeed, setHubShipmentFeed] = useState<{
+    sellerId: string;
+    byInspection: ReadonlyMap<string, SellerHubShipmentSnapshot>;
+  }>();
+  const hubShipments = hubShipmentFeed?.sellerId === sellerId ? hubShipmentFeed?.byInspection : undefined;
+  const hubInspectionIdsKey = Array.from(inspectionByPost?.values() ?? [])
+    .filter((inspection) => inspection.id && inspection.orderType !== 'AT_HOME')
+    .map((inspection) => inspection.id).sort().join(',');
+
+  useEffect(() => {
+    if (!sellerId || !hubInspectionIdsKey || sellerActiveTab !== 'high_value_inspections') return;
+    const inspectionIds = new Set(hubInspectionIdsKey.split(','));
+    const requests = new Map<string, AbortController>();
+    const saveSnapshot = (id: string, snapshot: SellerHubShipmentSnapshot) => {
+      setHubShipmentFeed((previous) => {
+        const current = previous?.sellerId === sellerId ? previous.byInspection : undefined;
+        if (snapshot === 'unavailable' && current?.has(id)) return previous;
+        return { sellerId, byInspection: new Map(current).set(id, snapshot) };
+      });
+    };
+    const refreshShipment = (id: string) => {
+      if (!inspectionIds.has(id)) return;
+      requests.get(id)?.abort();
+      const controller = new AbortController();
+      requests.set(id, controller);
+      const { signal } = controller;
+      void shippingService.getInspectionShipments(id, { signal, updateCache: false, isBackground: true })
+        .then((shipments) => {
+          if (!signal.aborted) saveSnapshot(id, getLatestInboundShipment(shipments));
+        })
+        .catch(() => {
+          if (!signal.aborted) saveSnapshot(id, 'unavailable');
+        })
+        .finally(() => {
+          if (requests.get(id) === controller) requests.delete(id);
+        });
+    };
+    const handleShipmentUpdate = (event: Event) => {
+      const id = (event as CustomEvent<{ orderId?: string }>).detail?.orderId;
+      if (id) refreshShipment(id);
+    };
+    const handleStorageUpdate = (event: StorageEvent) => {
+      const prefix = 'sl_insp_shipments_';
+      if (event.key?.startsWith(prefix)) refreshShipment(event.key.slice(prefix.length));
+    };
+
+    window.addEventListener('secondlife_shipment_updated', handleShipmentUpdate);
+    window.addEventListener('storage', handleStorageUpdate);
+    inspectionIds.forEach(refreshShipment);
+    return () => {
+      window.removeEventListener('secondlife_shipment_updated', handleShipmentUpdate);
+      window.removeEventListener('storage', handleStorageUpdate);
+      requests.forEach((request) => request.abort());
+    };
+  }, [hubInspectionIdsKey, inspectionRefresh, sellerActiveTab, sellerId]);
+
+  const getHighValueBadgeInfo = React.useCallback((item: Listing): { label: string; colorClass: string; isPassed?: boolean } => {
+    const stage = getHighValueItemStage(item);
+    const insp = getItemInspectionOrder(item);
+    const appointmentStage = getPreListingHomeAppointmentStage(insp);
+    const canPublish = item.backendStatus === 'READY_TO_PUBLISH';
+    const vi = lang === 'vi';
+
+    // 1. Kiểm định đạt chuẩn
+    if (stage === 'passed') {
+      let label = vi ? '● Đã Kiểm Định' : '● Inspected';
+      if (canPublish) {
+        label = vi ? '● Sẵn sàng đăng bán' : '● Ready to publish';
+      } else if (item.status === 'active' || item.backendStatus === 'ACTIVE') {
+        label = vi ? '● Đang bán' : '● Active';
+      } else if (item.backendStatus === 'RESERVED' || item.backendStatus === 'PAYMENT_PENDING') {
+        label = vi ? '● Đã Cọc Ký Quỹ' : '● Escrow Deposited';
+      } else if (item.backendStatus === 'RETURNING') {
+        label = vi ? '● Đang hoàn trả' : '● Returning';
+      } else if (item.backendStatus === 'RETURNED') {
+        label = vi ? '● Đã hoàn trả' : '● Returned';
+      } else if (item.backendStatus === 'SOLD') {
+        label = vi ? '● Đã bán' : '● Sold';
+      } else if (item.backendStatus === 'PENDING_INSPECTION' && insp?.orderType === 'AT_CENTER') {
+        label = vi ? '● Đạt kiểm định · Chờ nhận lại hàng' : '● Inspected · Awaiting return';
+      }
+      return {
+        label,
+        colorClass: 'bg-emerald-600 text-white shadow-2xs',
+        isPassed: true,
+      };
+    }
+
+    // 2. Kiểm định không đạt
+    if (stage === 'failed') {
+      return {
+        label: vi ? '● Không Đạt Tiêu Chuẩn' : '● Inspection Failed',
+        colorClass: 'bg-rose-600 text-white shadow-2xs',
+      };
+    }
+
+    // 3. Kiểm định tại nhà (AT_HOME)
+    if (insp?.orderType === 'AT_HOME') {
+      if (appointmentStage) {
+        const apptLabel = `● ${homeAppointmentLabels[appointmentStage][lang]}`;
+        const colorClass = appointmentStage === 'scheduled'
+          ? 'bg-teal-600 text-white shadow-2xs'
+          : 'bg-amber-600 text-white shadow-2xs';
+        return { label: apptLabel, colorClass };
+      }
+      if (stage === 'inspecting') {
+        return {
+          label: vi ? '● Đang kiểm định tại nhà' : '● Home inspection in progress',
+          colorClass: 'bg-indigo-600 text-white shadow-2xs',
+        };
+      }
+      return {
+        label: vi ? '● Chờ Nộp Phí & Đặt Lịch' : '● Awaiting Fee / Schedule',
+        colorClass: 'bg-amber-600 text-white shadow-2xs',
+      };
+    }
+
+    // 4. Kiểm định tại Trung tâm / Hub (AT_CENTER)
+    const inspStatus = String(insp?.status || '').toUpperCase();
+    const isUnpaid = !insp || inspStatus === 'PENDING' || inspStatus === 'WAITING_FEE_PAYMENT';
+
+    if (isUnpaid) {
+      return {
+        label: vi ? '● Chờ Nộp Phí & Đặt Lịch' : '● Awaiting Fee / Schedule',
+        colorClass: 'bg-amber-600 text-white shadow-2xs',
+      };
+    }
+
+    return getSellerHubShipmentBadge(inspStatus, hubShipments?.get(insp.id), lang);
+  }, [getHighValueItemStage, getItemInspectionOrder, lang, hubShipments]);
 
   const formatPostDateTime = (item: any) => {
     const ts = getSortablePostTimestamp(item);
@@ -838,19 +1158,15 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
 
   return (
     <div className="space-y-8 pb-16 text-[#24263e]">
-      {/* eKYC Verification Status Banner */}
-      {myVerification && (
-        <div className={`p-4 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-xs ${
-          myVerification.status === 'APPROVED' ? 'bg-emerald-50 border-emerald-200 text-emerald-900' :
-          myVerification.status === 'NEEDS_REVIEW' ? 'bg-amber-50 border-amber-200 text-amber-900' :
+      {/* eKYC Verification Status Banner (Ẩn khi đã duyệt APPROVED thành công) */}
+      {myVerification && myVerification.status !== 'APPROVED' && (
+        <div className={`p-4 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-xs ${myVerification.status === 'NEEDS_REVIEW' ? 'bg-amber-50 border-amber-200 text-amber-900' :
           myVerification.status === 'RESUBMIT_REQUIRED' ? 'bg-orange-50 border-orange-200 text-orange-950' :
-          myVerification.status === 'REJECTED' ? 'bg-rose-50 border-rose-200 text-rose-900' :
-          'bg-blue-50 border-blue-200 text-blue-900'
-        }`}>
+            myVerification.status === 'REJECTED' ? 'bg-rose-50 border-rose-200 text-rose-900' :
+              'bg-blue-50 border-blue-200 text-blue-900'
+          }`}>
           <div className="flex items-center gap-3">
-            {myVerification.status === 'APPROVED' ? (
-              <ShieldCheck className="w-6 h-6 text-emerald-600 shrink-0" />
-            ) : myVerification.status === 'NEEDS_REVIEW' ? (
+            {myVerification.status === 'NEEDS_REVIEW' ? (
               <Clock className="w-6 h-6 text-amber-600 shrink-0" />
             ) : myVerification.status === 'RESUBMIT_REQUIRED' ? (
               <AlertCircle className="w-6 h-6 text-orange-600 shrink-0" />
@@ -861,16 +1177,12 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             )}
             <div>
               <div className="font-bold text-sm">
-                {myVerification.status === 'APPROVED' && (lang === 'vi' ? 'Xác thực thành công! Tài khoản người bán đã kích hoạt.' : 'eKYC Verified! Seller account active.')}
                 {myVerification.status === 'NEEDS_REVIEW' && (lang === 'vi' ? 'Đang chờ Quản trị viên duyệt' : 'Pending Admin Review')}
                 {(myVerification.status === 'EKYC_PENDING' || myVerification.status === 'SUBMITTED' || myVerification.status === 'PENDING') && (lang === 'vi' ? 'Đang đối soát eKYC' : 'eKYC Verification In Progress')}
                 {myVerification.status === 'RESUBMIT_REQUIRED' && (lang === 'vi' ? 'Cần chụp lại ảnh' : 'Resubmission Required')}
                 {myVerification.status === 'REJECTED' && (lang === 'vi' ? 'Hồ sơ bị từ chối' : 'Verification Rejected')}
               </div>
               <div className="mt-0.5 text-[11px] leading-relaxed">
-                {myVerification.status === 'APPROVED' && (
-                  <span>{lang === 'vi' ? 'Tất cả các tin đăng của bạn sẽ hiển thị huy hiệu Người Bán Uy Tín & Đã Kiểm Định.' : 'All your listings will display the Verified Seller badge.'}</span>
-                )}
                 {myVerification.status === 'NEEDS_REVIEW' && (
                   <span>{lang === 'vi' ? `Hồ sơ đang được chuyên viên thẩm định thủ công trong 24h. Mã CCCD: ${myVerification.documentNumber}` : `Application is under manual review within 24h. ID: ${myVerification.documentNumber}`}</span>
                 )}
@@ -931,133 +1243,155 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       )}
 
       {/* Top Banner */}
-      <div className="bg-[#fce5da] text-[#24263e] rounded-3xl p-6 sm:p-8 shadow-xl border border-[#24263e]/15 space-y-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="flex items-center gap-4">
-            <div className="relative">
+      <div className="bg-[#fce5da] text-[#24263e] rounded-2xl p-4 sm:p-5 shadow-sm border border-[#24263e]/15 space-y-3.5">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div className="relative shrink-0">
               <UserAvatar
                 src={currentUser?.avatar}
                 name={currentUser?.name}
-                className="w-16 h-16 rounded-2xl border-2 border-[#24263e]/20 shadow-md"
+                className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl border-2 border-[#24263e]/20 shadow-xs"
                 role="seller"
               />
               <div
-                className="absolute -bottom-1 -right-1 bg-[#24263e] text-white p-1 rounded-full text-xs shadow-xs"
+                className="absolute -bottom-1 -right-1 bg-emerald-600 text-white p-0.5 rounded-full text-xs shadow-xs"
                 title={lang === 'vi' ? 'Đã xác minh eKYC' : 'eKYC Verified'}
               >
                 <ShieldCheck className="w-3.5 h-3.5" />
               </div>
             </div>
 
-            <div>
+            <div className="space-y-1.5 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-xl sm:text-2xl font-black text-[#24263e]">
+                <h1 className="text-lg sm:text-xl font-black text-[#24263e] truncate">
                   {currentUser?.name || currentUser?.email?.split('@')[0] || 'Người Bán SecondLife'}
                 </h1>
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white/80 border border-[#24263e]/15 text-[#24263e] text-[11px] font-bold shadow-xs">
+                <button
+                  type="button"
+                  onClick={handleOpenVerificationHistory}
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-[11px] font-bold shadow-2xs transition cursor-pointer"
+                  title={lang === 'vi' ? 'Đã xác minh eKYC - Bấm để xem lịch sử nộp hồ sơ' : 'eKYC Verified - Click to view history'}
+                >
                   <CheckCircle2 className={`w-3 h-3 ${myVerification?.status === 'APPROVED' ? 'text-emerald-600' : 'text-amber-500'}`} />
-                  {myVerification?.status === 'APPROVED' ? (lang === 'vi' ? 'Đã xác minh eKYC' : 'eKYC Verified') : (lang === 'vi' ? 'Chưa xác minh eKYC' : 'Unverified')}
-                </span>
+                  <span>{myVerification?.status === 'APPROVED' ? (lang === 'vi' ? 'Đã xác minh eKYC' : 'eKYC Verified') : (lang === 'vi' ? 'Chưa xác minh eKYC' : 'Unverified')}</span>
+                </button>
                 <button
                   type="button"
                   onClick={handleOpenReputationHistory}
-                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#24263e] hover:bg-[#c34c36] text-white text-[11px] font-black shadow-xs transition cursor-pointer"
-                  title="Bấm để xem chi tiết chỉ số và lịch sử uy tín"
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-[11px] font-bold shadow-2xs transition cursor-pointer"
+                  title="Bấm để xem chi tiết bảng điểm và lịch sử uy tín"
                 >
-                  <Award className="w-3.5 h-3.5 text-amber-300" />
-                  <span>
+                  <Award className="w-3 h-3 text-amber-600" />
+                  <span className="font-mono font-black">
                     {myReputation?.assessmentStatus === 'NO_TRANSACTIONS'
-                      ? 'Chưa có đơn (Mới)'
+                      ? 'Chưa có đơn'
                       : myReputation?.score !== undefined && myReputation?.score !== null
-                      ? `${myReputation.score}/100 Điểm Uy Tín`
-                      : currentUser?.trustScore
-                      ? `${currentUser.trustScore}/100 Điểm Uy Tín`
-                      : 'Chưa có điểm'}
+                        ? `${myReputation.score}/100`
+                        : currentUser?.trustScore
+                          ? `${currentUser.trustScore}/100`
+                          : '—'}
                   </span>
+                  <span>Uy Tín</span>
                   {myReputation?.sellingRestricted && (
                     <span className="px-1.5 py-0.2 rounded text-[9px] bg-rose-500 text-white font-bold animate-pulse">
                       Hạn chế
                     </span>
                   )}
-                  <History className="w-3 h-3 text-slate-300 ml-0.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={handleOpenVerificationHistory}
-                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/90 hover:bg-white text-[#24263e] text-[11px] font-black shadow-xs transition cursor-pointer border border-[#24263e]/15"
-                  title="Bấm để xem lịch sử nộp hồ sơ eKYC"
-                >
-                  <ShieldCheck className="w-3.5 h-3.5 text-[#c34c36]" />
-                  <span>{lang === 'vi' ? 'Lịch Sử eKYC' : 'eKYC History'}</span>
+                  <ChevronRight className="w-2.5 h-2.5 text-amber-700/60" />
                 </button>
               </div>
-              <p className="text-xs text-[#24263e]/80 mt-1 flex items-center gap-3 font-semibold flex-wrap">
+
+              {/* Dải chỉ số uy tín & bán hàng: Tinh gọn, chuyên nghiệp, không vỡ dòng */}
+              <div className="flex items-center gap-2.5 text-xs text-[#24263e]/85 font-semibold flex-wrap">
                 <span className="flex items-center gap-1 text-[#24263e] font-bold">
-                  <Star className="w-3.5 h-3.5 fill-[#c34c36] text-[#c34c36]" />
-                  {sellerAverageRatingText}
+                  <PackageCheck className="w-3.5 h-3.5 text-emerald-700" />
+                  <span>{completedOrdersCount} {lang === 'vi' ? 'đơn hoàn thành' : 'completed orders'}</span>
                 </span>
-                <span>•</span>
-                <span>{filteredListings.filter((l) => l.status === 'sold').length} {lang === 'vi' ? 'đơn hoàn thành' : 'completed orders'}</span>
-                <span>•</span>
-                <span>{lang === 'vi' ? 'Tỷ lệ phản hồi 100%' : '100% response rate'}</span>
-              </p>
+                <span className="text-slate-400">•</span>
+                <button
+                  type="button"
+                  onClick={() => setIsSellerReviewsOpen(true)}
+                  className="flex items-center gap-1 hover:text-[#c34c36] text-[#24263e] font-bold transition cursor-pointer"
+                  title="Bấm để xem đánh giá khách hàng"
+                >
+                  <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-500" />
+                  <span>
+                    {sellerAverageRatingText}
+                    {sellerReviewCount > 0 ? ` (${sellerReviewCount})` : ''}
+                  </span>
+                </button>
+              </div>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
+          {/* Cụm nút thao tác: phân cấp chính/phụ rõ ràng, bố cục cân đối */}
+          <div className="flex flex-col sm:items-end gap-2 shrink-0">
             <button
               onClick={() => onCreateListing()}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#c34c36] hover:bg-[#a83d2a] text-white font-black text-xs shadow-md transition cursor-pointer"
+              className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-[#c34c36] hover:bg-[#a83d2a] text-white font-black text-xs shadow-sm hover:shadow transition cursor-pointer"
             >
               <PlusCircle className="w-4 h-4" />
               <span>{lang === 'vi' ? 'Đăng Bán Đồ Gia Dụng Mới (AI)' : 'Post New Appliance (AI)'}</span>
             </button>
-            <button
-              onClick={() => setIsSellerReviewsOpen(true)}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/80 hover:bg-white text-[#24263e] border border-[#24263e]/15 font-bold text-xs transition cursor-pointer shadow-xs"
-            >
-              <Star className="w-4 h-4 text-amber-500 fill-amber-400" />
-              <span>{lang === 'vi' ? `Xem Đánh Giá Của Khách Hàng (${sellerReviewCount})` : `Customer Reviews (${sellerReviewCount})`}</span>
-            </button>
-            {onViewOrders && (
+
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {onViewOrders && (
+                <button
+                  onClick={onViewOrders}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/90 hover:bg-white text-[#24263e] border border-[#24263e]/15 font-bold text-xs transition cursor-pointer shadow-2xs"
+                >
+                  <Clock className="w-3.5 h-3.5 text-emerald-800" />
+                  <span>{lang === 'vi' ? 'Quản Lý Đơn' : 'Orders'}</span>
+                </button>
+              )}
               <button
-                onClick={onViewOrders}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/80 hover:bg-white text-[#24263e] border border-[#24263e]/15 font-bold text-xs transition cursor-pointer shadow-xs"
+                onClick={() => setIsPayoutModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/90 hover:bg-white text-[#24263e] border border-[#24263e]/15 font-bold text-xs transition cursor-pointer shadow-2xs"
               >
-                <Clock className="w-4 h-4 text-emerald-800" />
-                <span>{lang === 'vi' ? 'Quản Lý Đơn Bán Hàng' : 'Manage Sales Orders'}</span>
+                <Wallet className="w-3.5 h-3.5 text-[#24263e]" />
+                <span>{lang === 'vi' ? 'Rút Tiền Ví' : 'Withdraw'}</span>
               </button>
-            )}
-            <button
-              onClick={() => setIsPayoutModalOpen(true)}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/80 hover:bg-white text-[#24263e] border border-[#24263e]/15 font-bold text-xs transition cursor-pointer shadow-xs"
-            >
-              <Wallet className="w-4 h-4 text-[#24263e]" />
-              <span>{lang === 'vi' ? 'Rút Tiền Ví Doanh Thu' : 'Withdraw Revenue'}</span>
-            </button>
+              <button
+                onClick={() => setIsSellerReviewsOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/90 hover:bg-white text-[#24263e] border border-[#24263e]/15 font-bold text-xs transition cursor-pointer shadow-2xs"
+              >
+                <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
+                <span>{lang === 'vi' ? `Đánh Giá (${sellerReviewCount})` : `Reviews (${sellerReviewCount})`}</span>
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Cảnh báo hạn chế bán hàng hoặc cảnh báo vi phạm uy tín theo tài liệu BE */}
-        {myReputation?.sellingRestricted ? (
-          <div className="bg-rose-50 border border-rose-300 text-rose-900 p-4 rounded-2xl flex items-start gap-3 shadow-xs animate-fadeIn mt-4">
-            <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
-            <div className="flex-1 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-sm text-rose-900">
-                  Tài khoản đang bị hạn chế bán hàng (Selling Restricted)
+        {/* Cảnh báo hạn chế bán hàng hoặc cảnh báo vi phạm uy tín theo tài liệu BE (tự động tắt sau 15s) */}
+        {showViolationWarning && (myReputation?.sellingRestricted ? (
+          <div className="bg-rose-50 border border-rose-300 text-rose-900 p-2.5 sm:p-3 rounded-xl flex items-center justify-between gap-3 shadow-xs animate-fadeIn text-xs">
+            <div className="flex items-center gap-2 min-w-0">
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+              <div className="truncate">
+                <span className="font-bold text-rose-900 mr-2">
+                  Tài khoản đang bị hạn chế bán hàng:
                 </span>
-                <button
-                  type="button"
-                  onClick={handleOpenReputationHistory}
-                  className="text-xs font-bold text-rose-700 underline hover:text-rose-900 cursor-pointer"
-                >
-                  Xem lý do & lịch sử
-                </button>
+                <span className="text-rose-700 text-[11px]">
+                  Quyền đăng bán bị tạm khóa do vi phạm hoặc điểm phạt.
+                </span>
               </div>
-              <p className="mt-1 text-rose-700 leading-relaxed">
-                Quyền đăng bán sản phẩm mới đang tạm thời bị khóa do điểm phạt hoặc vi phạm quy chế sàn. Bạn vẫn có thể tiếp tục thực hiện và hoàn tất các đơn hàng đang xử lý. Vui lòng liên hệ Quản trị viên để được hỗ trợ gỡ hạn chế.
-              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleOpenReputationHistory}
+                className="text-xs font-bold text-rose-700 underline hover:text-rose-900 cursor-pointer"
+              >
+                Xem chi tiết
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowViolationWarning(false)}
+                className="text-rose-500 hover:text-rose-800 p-1 text-xs"
+                title="Đóng thông báo"
+              >
+                ✕
+              </button>
             </div>
           </div>
         ) : myReputation?.warningCode ? (
@@ -1065,127 +1399,127 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             const warnMeta = getReputationWarningMeta(myReputation.warningCode);
             if (!warnMeta) return null;
             return (
-              <div className={`p-3.5 rounded-2xl border flex items-start gap-3 shadow-xs animate-fadeIn mt-4 ${warnMeta.badgeClass}`}>
-                <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
-                <div className="flex-1 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-sm">{warnMeta.title}</span>
-                    <button
-                      type="button"
-                      onClick={handleOpenReputationHistory}
-                      className="text-[11px] font-bold underline hover:opacity-80 cursor-pointer"
-                    >
-                      Chi tiết uy tín
-                    </button>
+              <div className={`p-2.5 sm:p-3 rounded-xl border flex items-center justify-between gap-3 shadow-xs animate-fadeIn text-xs ${warnMeta.badgeClass}`}>
+                <div className="flex items-center gap-2 min-w-0">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <div className="truncate">
+                    <span className="font-bold mr-2">{warnMeta.title}:</span>
+                    <span className="opacity-90 text-[11px]">{warnMeta.desc}</span>
                   </div>
-                  <p className="mt-0.5 opacity-90">{warnMeta.desc}</p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleOpenReputationHistory}
+                    className="text-[11px] font-bold underline hover:opacity-80 cursor-pointer"
+                  >
+                    Chi tiết uy tín
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowViolationWarning(false)}
+                    className="opacity-70 hover:opacity-100 p-1 text-xs"
+                    title="Đóng thông báo"
+                  >
+                    ✕
+                  </button>
                 </div>
               </div>
             );
           })()
-        ) : null}
+        ) : null)}
 
-        {/* Financial Metrics Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-4 border-t border-[#24263e]/15">
-          <div className="bg-[#FFFFFF] text-[#24263e] rounded-2xl p-4 border border-gray-200 shadow-sm space-y-1">
-            <div className="text-xs text-[#24263e]/70 flex items-center justify-between">
-              <span>{lang === 'vi' ? 'Số dư ví khả dụng' : 'Available wallet balance'}</span>
-              <Wallet className="w-4 h-4 text-[#24263e]" />
+        {/* Financial Metrics Cards (gọn gàng, thanh thoát) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2 border-t border-[#24263e]/15">
+          <div className="bg-[#FFFFFF] text-[#24263e] rounded-xl p-3 border border-gray-200 shadow-xs flex flex-col justify-between space-y-1">
+            <div className="text-[11px] text-[#24263e]/70 flex items-center justify-between font-medium">
+              <span>{lang === 'vi' ? 'Số dư ví khả dụng' : 'Available balance'}</span>
+              <Wallet className="w-3.5 h-3.5 text-[#24263e]" />
             </div>
-            <div className="text-2xl font-black text-[#24263e]">
+            <div className="text-xl font-black text-[#24263e] tracking-tight">
               {formatVND(totalEarnings)}
             </div>
-            <div className="text-[11px] text-[#24263e]/60">
-              {lang === 'vi' ? 'Có thể rút về Ngân hàng ngay' : 'Can withdraw to bank immediately'}
+            <div className="text-[10px] text-[#24263e]/60">
+              {lang === 'vi' ? 'Có thể rút về Ngân hàng ngay' : 'Can withdraw to bank'}
             </div>
           </div>
 
-          <div className="bg-[#FFFFFF] text-[#24263e] rounded-2xl p-4 border border-gray-200 shadow-sm space-y-1">
-            <div className="text-xs text-[#24263e]/70 flex items-center justify-between">
+          <div className="bg-[#FFFFFF] text-[#24263e] rounded-xl p-3 border border-gray-200 shadow-xs flex flex-col justify-between space-y-1">
+            <div className="text-[11px] text-[#24263e]/70 flex items-center justify-between font-medium">
               <span>{lang === 'vi' ? 'Đang đóng băng Escrow' : 'Held in Escrow'}</span>
-              <Clock className="w-4 h-4 text-gray-400" />
+              <Clock className="w-3.5 h-3.5 text-gray-400" />
             </div>
-            <div className="text-2xl font-black text-[#24263e]">
+            <div className="text-xl font-black text-[#24263e] tracking-tight">
               {formatVND(pendingEscrow)}
             </div>
-            <div className="text-[11px] text-[#24263e]/60">
-              {lang === 'vi' ? 'Giải ngân sau khi Buyer nhận hàng' : 'Released after buyer confirms delivery'}
+            <div className="text-[10px] text-[#24263e]/60">
+              {lang === 'vi' ? 'Giải ngân khi Buyer nhận hàng' : 'Released after confirmation'}
             </div>
           </div>
 
-          <div className="bg-[#FFFFFF] text-[#24263e] rounded-2xl p-4 border border-gray-200 shadow-sm space-y-1">
-            <div className="text-xs text-[#24263e]/70 flex items-center justify-between">
-              <span>{lang === 'vi' ? 'Điểm Tín Dụng (Credits)' : 'Active Credits'}</span>
-              <Coins className="w-4 h-4 text-amber-500" />
+          <div className="bg-[#FFFFFF] text-[#24263e] rounded-xl p-3 border border-gray-200 shadow-xs flex flex-col justify-between space-y-1">
+            <div className="text-[11px] text-[#24263e]/70 flex items-center justify-between font-medium">
+              <span>{lang === 'vi' ? 'Điểm Tín Dụng' : 'Active Credits'}</span>
+              <Coins className="w-3.5 h-3.5 text-amber-500" />
             </div>
-            <div className="flex flex-wrap items-baseline gap-2">
-              <span className="text-2xl font-black text-[#24263e]">
+            <div className="flex flex-wrap items-baseline gap-1.5">
+              <span className="text-xl font-black text-[#24263e]">
                 {creditBalance ? creditBalance.postCredits : (currentUser as any)?.postCredits ?? 0}
               </span>
-              <span className="text-xs font-bold text-slate-500">Đăng tin</span>
+              <span className="text-[11px] font-bold text-slate-500">Đăng tin</span>
               <span className="text-slate-300">•</span>
-              <span className="text-lg font-black text-emerald-600">
+              <span className="text-base font-black text-emerald-600">
                 {creditBalance ? creditBalance.valuationCredits : (currentUser as any)?.valuationCredits ?? 0}
               </span>
-              <span className="text-xs font-bold text-slate-500">Định giá</span>
+              <span className="text-[11px] font-bold text-slate-500">Định giá</span>
               <span className="text-slate-300">•</span>
-              <span className="text-lg font-black text-blue-600">
+              <span className="text-base font-black text-blue-600">
                 {creditBalance ? creditBalance.chatCredits : (currentUser as any)?.chatCredits ?? 0}
               </span>
-              <span className="text-xs font-bold text-slate-500">Chat AI</span>
-            </div>
-            <div className="pt-1 flex items-center justify-between">
-              <button
-                type="button"
-                onClick={handleOpenCreditLedger}
-                className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 transition cursor-pointer"
-              >
-                <History className="w-3 h-3" />
-                <span>Xem sổ cái điểm</span>
-              </button>
+              <span className="text-[11px] font-bold text-slate-500">Chat AI</span>
             </div>
           </div>
 
           <div
             onClick={handleOpenReputationHistory}
-            className="bg-[#FFFFFF] text-[#24263e] rounded-2xl p-4 border border-gray-200 shadow-sm space-y-1 hover:border-[#c34c36]/40 transition cursor-pointer group"
+            className="bg-[#FFFFFF] text-[#24263e] rounded-xl p-3 border border-gray-200 shadow-xs flex flex-col justify-between space-y-1 hover:border-[#c34c36]/40 transition cursor-pointer group"
             title="Bấm để xem bảng chỉ số uy tín và lịch sử"
           >
-            <div className="text-xs text-[#24263e]/70 flex items-center justify-between">
-              <span className="font-bold flex items-center gap-1.5">
-                <Award className="w-4 h-4 text-amber-500" />
+            <div className="text-[11px] text-[#24263e]/70 flex items-center justify-between font-medium">
+              <span className="font-bold flex items-center gap-1">
+                <Award className="w-3.5 h-3.5 text-amber-500" />
                 <span>{lang === 'vi' ? 'Uy Tín Giao Dịch' : 'Seller Reputation'}</span>
               </span>
               {(() => {
                 const statusMeta = getAssessmentStatusMeta(myReputation?.assessmentStatus);
                 return (
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${statusMeta.badgeClass}`}>
+                  <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold border ${statusMeta.badgeClass}`}>
                     {statusMeta.shortLabel}
                   </span>
                 );
               })()}
             </div>
-            <div className="text-2xl font-black text-[#24263e] flex items-baseline gap-1">
+            <div className="text-xl font-black text-[#24263e] flex items-baseline gap-1">
               <span>
                 {myReputation?.score !== null && myReputation?.score !== undefined
                   ? myReputation.score
                   : myReputation?.assessmentStatus === 'NO_TRANSACTIONS'
-                  ? 'Chưa có đơn'
-                  : '—'}
+                    ? 'Chưa có đơn'
+                    : '—'}
               </span>
               {myReputation?.score !== null && myReputation?.score !== undefined && (
                 <span className="text-xs font-bold text-slate-400">/ 100</span>
               )}
             </div>
-            <div className="text-[11px] text-[#24263e]/60 flex items-center justify-between pt-0.5">
-              <span>
+            <div className="text-[10px] text-[#24263e]/60 flex items-center justify-between pt-0.5">
+              <span className="truncate">
                 {myReputation?.evaluatedOrders
-                  ? `${myReputation.goodTransactions} thành công • ${myReputation.badTransactions} lỗi SELLER`
+                  ? `${myReputation.goodTransactions} thành công • ${myReputation.badTransactions} lỗi thuộc về bạn`
                   : lang === 'vi'
-                  ? 'Bấm xem chi tiết & lịch sử'
-                  : 'Click to view audit trail'}
+                    ? 'Bấm xem chi tiết & lịch sử'
+                    : 'Click to view audit trail'}
               </span>
-              <span className="text-xs font-bold text-[#c34c36] group-hover:translate-x-0.5 transition-transform">→</span>
+              <span className="text-xs font-bold text-[#c34c36] group-hover:translate-x-0.5 transition-transform ml-1">→</span>
             </div>
           </div>
         </div>
@@ -1199,250 +1533,672 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       )}
 
       {/* Seller Dashboard Sub-Navigation Tabs */}
-      <div className="flex items-center gap-3 border-b border-gray-200 pb-2">
+      <div className="flex items-center gap-2.5 flex-wrap">
         <button
-          onClick={() => setSellerActiveTab('listings')}
-          className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
-            sellerActiveTab === 'listings'
-              ? 'bg-[#24263e] text-white shadow-md'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
+          onClick={() => {
+            setSellerActiveTab('listings');
+            if (typeof window !== 'undefined') {
+              const url = new URL(window.location.href);
+              url.searchParams.set('tab', 'listings');
+              window.history.replaceState({}, '', url.toString());
+            }
+          }}
+          className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2.5 cursor-pointer ${sellerActiveTab === 'listings'
+            ? 'bg-[#24263e] text-white shadow-md ring-2 ring-[#24263e]/20'
+            : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-200/90 shadow-2xs'
+            }`}
         >
           <Tag className="w-4 h-4" />
-          <span>{lang === 'vi' ? 'Quản Lý Tin Đăng' : 'Listings'} ({filteredListings.length})</span>
+          <span>{lang === 'vi' ? 'Tin Đăng Bán & Bản Nháp' : 'Listings & Drafts'}</span>
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${sellerActiveTab === 'listings' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
+            }`}>
+            {normalListings.length}
+          </span>
         </button>
 
         <button
-          onClick={() => setSellerActiveTab('return_fees')}
-          className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
-            sellerActiveTab === 'return_fees'
-              ? 'bg-[#24263e] text-white shadow-md'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
+          onClick={() => {
+            setSellerActiveTab('high_value_inspections');
+            if (typeof window !== 'undefined') {
+              const url = new URL(window.location.href);
+              url.searchParams.set('tab', 'high_value_inspections');
+              window.history.replaceState({}, '', url.toString());
+            }
+          }}
+          className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2.5 cursor-pointer ${sellerActiveTab === 'high_value_inspections'
+            ? 'bg-[#24263e] text-white shadow-md ring-2 ring-[#24263e]/20'
+            : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-200/90 shadow-2xs'
+            }`}
         >
-          <RotateCcw className="w-4 h-4 text-[#c34c36]" />
-          <span>{lang === 'vi' ? 'Phí Hoàn Hàng & Công Nợ' : 'Return Fees & Debt'}</span>
-          {sellerDebt?.outstandingDebt && sellerDebt.outstandingDebt > 0 ? (
-            <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-black">
-              Nợ: {formatVND(sellerDebt.outstandingDebt)}
-            </span>
-          ) : null}
+          <ShieldCheck className="w-4 h-4 text-amber-500" />
+          <span>{lang === 'vi' ? 'Kiểm Định Giá Trị Cao' : 'High-Value Inspections'}</span>
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${sellerActiveTab === 'high_value_inspections' ? 'bg-amber-400 text-slate-900' : 'bg-amber-100 text-amber-800'
+            }`}>
+            {highValueListings.length}
+          </span>
         </button>
+
       </div>
 
-      {sellerActiveTab === 'return_fees' ? (
-        <SellerReturnShippingFeesSection />
-      ) : (
-        /* Seller Listings Management */
-        <div className="bg-[#FFFFFF] rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-xs space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 pb-4">
-          <div>
-            <h2 className="text-lg font-bold text-[#24263e] flex items-center gap-2">
-              <Tag className="w-5 h-5 text-[#24263e]" />
-              <span>
-                {lang === 'vi'
-                  ? `Quản Lý Tin Đăng Cá Nhân (${filteredListings.length})`
-                  : `My Listings Management (${filteredListings.length})`}
-              </span>
-            </h2>
-            <p className="text-xs text-[#24263e]/70 mt-0.5">
-              {lang === 'vi'
-                ? 'Quản lý trạng thái niêm yết, theo dõi phản hồi đề xuất giá từ người mua và cập nhật thông tin.'
-                : 'Manage listing status, monitor buyer price offers, and update item details.'}
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-            <button
-              onClick={fetchSellerData}
-              disabled={isLoadingPosts}
-              className="p-1.5 px-2.5 rounded-xl border border-gray-200 bg-[#faf8f5] hover:bg-gray-100 text-[#24263e] text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
-              title={lang === 'vi' ? 'Làm mới dữ liệu từ server' : 'Refresh server data'}
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isLoadingPosts ? 'animate-spin text-indigo-600' : ''}`} />
-              <span>{lang === 'vi' ? 'Làm mới' : 'Refresh'}</span>
-            </button>
-
-            <button
-              onClick={() => setSortOrder(prev => prev === 'newest' ? 'oldest' : 'newest')}
-              className="p-1.5 px-2.5 rounded-xl border border-gray-200 bg-[#faf8f5] hover:bg-gray-100 text-[#24263e] text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
-              title={lang === 'vi' ? 'Sắp xếp theo thời gian đăng bài' : 'Sort by posting time'}
-            >
-              <Clock className="w-3.5 h-3.5 text-[#c34c36]" />
-              <span>
-                {sortOrder === 'newest'
-                  ? (lang === 'vi' ? 'Mới đăng nhất' : 'Newest first')
-                  : (lang === 'vi' ? 'Cũ nhất trước' : 'Oldest first')}
-              </span>
-            </button>
-
-            <div className="flex items-center gap-1.5 bg-[#faf8f5] p-1 rounded-xl border border-gray-200">
-              {(['ALL', 'active', 'draft', 'pending', 'rejected', 'reserved', 'sold'] as const).map((st) => (
-                <button
-                  key={st}
-                  onClick={() => setFilterStatus(st)}
-                  className={`px-3 py-1 rounded-lg text-xs transition cursor-pointer ${
-                    filterStatus === st ? 'bg-[#24263e] text-white font-bold' : 'text-[#24263e]/70 hover:text-[#24263e] font-medium'
-                  }`}
-                >
-                  {st === 'ALL'
-                    ? (lang === 'vi' ? 'Tất cả' : 'All')
-                    : st === 'active'
-                    ? (lang === 'vi' ? 'Đang bán' : 'Active')
-                    : st === 'draft'
-                    ? (lang === 'vi' ? 'Bản nháp' : 'Drafts')
-                    : st === 'pending'
-                    ? (lang === 'vi' ? 'Chờ duyệt / Hub' : 'Pending')
-                    : st === 'rejected'
-                    ? (lang === 'vi' ? 'Bị từ chối' : 'Rejected')
-                    : st === 'reserved'
-                    ? (lang === 'vi' ? 'Đang giữ hàng' : 'Reserved')
-                    : (lang === 'vi' ? 'Đã bán' : 'Sold')}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {filteredListings.map((item) => (
-            <div
-              key={item.id}
-              className="bg-[#faf8f5] rounded-2xl p-4 border border-gray-200 hover:border-[#c34c36] transition shadow-2xs flex flex-col justify-between space-y-3"
-            >
-              <div className="flex gap-3">
-                <img
-                  src={item.photos.front}
-                  alt={item.title}
-                  className="w-20 h-20 rounded-xl object-cover border border-gray-200 shrink-0 bg-[#FFFFFF]"
-                />
-                <div className="space-y-1 overflow-hidden flex-1">
-                  <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                    item.backendStatus === 'REJECTED'
-                      ? 'bg-rose-600 text-white'
-                      : item.backendStatus === 'PENDING' || item.backendStatus === 'PENDING_INSPECTION'
-                      ? 'bg-amber-500 text-white'
-                      : item.backendStatus === 'DRAFT' || item.status === 'draft'
-                      ? 'bg-slate-500 text-white'
-                      : item.status === 'active'
-                      ? 'bg-[#24263e] text-white'
-                      : 'bg-[#c34c36] text-white'
-                  }`}>
-                    {item.backendStatus === 'REJECTED'
-                      ? (lang === 'vi' ? '● Bị Từ Chối' : '● Rejected')
-                      : item.backendStatus === 'PENDING' || item.backendStatus === 'PENDING_INSPECTION'
-                      ? (lang === 'vi' ? '● Chờ Duyệt / Hub' : '● Pending Review')
-                      : item.backendStatus === 'DRAFT' || item.status === 'draft'
-                      ? (lang === 'vi' ? '● Bản Nháp' : '● Draft')
-                      : item.status === 'active'
-                      ? (lang === 'vi' ? '● Đang Niêm Yết' : '● Active')
-                      : (lang === 'vi' ? '● Đã Cọc Ký Quỹ' : '● Escrow Deposited')}
+      {sellerActiveTab === 'high_value_inspections' ? (
+        /* Tab 2: High-Value Inspections Management */
+        <div id="seller-highvalue-container" className="bg-[#FFFFFF] rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-xs space-y-6">
+          <div className="space-y-4 border-b border-gray-100 pb-4">
+            {/* Top row: Section Title & Utility Controls */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-[#24263e] flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-amber-500" />
+                  <span>
+                    {lang === 'vi'
+                      ? `Sản Phẩm Kiểm Định Giá Trị Cao (${filteredHighValueListings.length})`
+                      : `High-Value Inspected Items (${filteredHighValueListings.length})`}
                   </span>
-                  {isListingInspectionPassed(item) && (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-600 text-white shadow-2xs ml-1.5">
-                      <ShieldCheck className="w-2.5 h-2.5 text-emerald-100" />
-                      <span>{lang === 'vi' ? 'Đã đạt kiểm định tại Hub' : 'Hub Inspected'}</span>
-                    </span>
-                  )}
-                  {item.backendStatus === 'REJECTED' && item.rejectionReason && (
-                    <div className="text-[10px] text-rose-700 bg-rose-50 p-1.5 rounded-lg border border-rose-200 mt-1 leading-snug">
-                      <span className="font-bold">{lang === 'vi' ? 'Lý do: ' : 'Reason: '}</span>
-                      <span>{item.rejectionReason}</span>
-                    </div>
-                  )}
-                  <h3 className="font-bold text-xs text-[#24263e] truncate" title={item.title}>
-                    {item.title}
-                  </h3>
-                  <div className="text-sm font-extrabold text-[#24263e]">
-                    {formatVND(item.priceVnd)}
-                  </div>
-                  <div className="text-[11px] text-[#24263e]/70 flex items-center justify-between">
-                    <span>
-                      {lang === 'vi' ? 'Độ mới: ' : 'Grade: '}
-                      <span className="font-semibold text-[#24263e]">{item.conditionGrade}</span>
-                    </span>
-                    <span className="truncate max-w-[130px] text-slate-500 font-medium" title={item.sellerAddress || item.location}>
-                      📍 {item.location || item.sellerAddress || 'Chưa cập nhật'}
-                    </span>
-                  </div>
-                  <div className="text-[10.5px] text-slate-500 flex items-center gap-1.5 pt-1 border-t border-gray-100">
-                    <Clock className="w-3 h-3 text-[#c34c36] shrink-0" />
-                    <span>
-                      {lang === 'vi' ? 'Đăng lúc: ' : 'Posted: '}
-                      <span className="font-semibold text-slate-700">{formatPostDateTime(item)}</span>
-                    </span>
-                  </div>
-                </div>
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {lang === 'vi'
+                    ? 'Các thiết bị thuộc diện kiểm định giá trị cao tại SecondLife Hub trước khi chính thức niêm yết lên sàn.'
+                    : 'Items subject to mandatory high-value inspection at SecondLife Hub prior to marketplace listing.'}
+                </p>
               </div>
 
-              <div className="pt-2 border-t border-gray-200 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 shrink-0">
                 <button
-                  onClick={() => handleOpenSellerPostDetail(item)}
-                  disabled={loadingDetailPostId === item.id}
-                  className="flex-1 py-1.5 px-2 bg-[#24263e] hover:bg-black border border-[#24263e] rounded-lg text-xs font-bold text-white flex items-center justify-center gap-1 cursor-pointer transition disabled:opacity-60"
+                  onClick={() => {
+                    void fetchSellerData();
+                    setInspectionRefresh((previous) => previous + 1);
+                  }}
+                  disabled={isLoadingPosts}
+                  className="px-3 py-1.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                  title={lang === 'vi' ? 'Làm mới dữ liệu từ server' : 'Refresh server data'}
                 >
-                  {loadingDetailPostId === item.id ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Eye className="w-3.5 h-3.5" />
-                  )}
-                  <span>{lang === 'vi' ? 'Xem Chi Tiết' : 'View Details'}</span>
+                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingPosts ? 'animate-spin text-indigo-600' : ''}`} />
+                  <span>{lang === 'vi' ? 'Làm mới' : 'Refresh'}</span>
                 </button>
+
                 <button
-                  onClick={() => onCreateListing(item)}
-                  className="py-1.5 px-2 bg-[#FFFFFF] hover:bg-[#faf8f5] border border-gray-200 text-[#24263e] rounded-lg text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition"
-                  title={
-                    item.backendStatus === 'DRAFT' || item.status === 'draft'
-                      ? (lang === 'vi' ? 'Tiếp tục soạn bản nháp' : 'Resume draft')
-                      : (lang === 'vi' ? 'Sửa tin đăng' : 'Edit listing')
-                  }
+                  onClick={() => setSortOrder(prev => prev === 'newest' ? 'oldest' : 'newest')}
+                  className="px-3 py-1.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                  title={lang === 'vi' ? 'Sắp xếp theo thời gian đăng bài' : 'Sort by posting time'}
                 >
-                  <Edit3 className="w-3.5 h-3.5 text-[#24263e]" />
+                  <Clock className="w-3.5 h-3.5 text-[#c34c36]" />
+                  <span>
+                    {sortOrder === 'newest'
+                      ? (lang === 'vi' ? 'Mới đăng nhất' : 'Newest first')
+                      : (lang === 'vi' ? 'Cũ nhất trước' : 'Oldest first')}
+                  </span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => handleOpenReclassifyModal(item)}
-                  className="py-1.5 px-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition"
-                  title={lang === 'vi' ? 'Chọn lại loại thiết bị cụ thể' : 'Reclassify item'}
-                >
-                  <Sliders className="w-3.5 h-3.5 text-slate-600" />
-                  <span className="hidden sm:inline">{lang === 'vi' ? 'Đổi Loại' : 'Reclassify'}</span>
-                </button>
-                {(item.backendStatus === 'DRAFT' || item.status === 'draft') && (
+              </div>
+            </div>
+
+            {/* Bottom row: Filter Segmented Bar */}
+            <div className="flex items-center gap-1.5 bg-slate-50 p-1.5 rounded-2xl border border-slate-200/80 overflow-x-auto scrollbar-none">
+              {highValueFilterTabs.map((tab) => {
+                const isActive = highValueFilter === tab.key;
+                return (
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDraftToDelete({ id: item.id, title: item.title });
-                    }}
-                    disabled={deletingDraftId === item.id}
-                    className="py-1.5 px-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition disabled:opacity-50"
-                    title={lang === 'vi' ? 'Xóa bản nháp này' : 'Delete draft'}
+                    key={tab.key}
+                    onClick={() => setHighValueFilter(tab.key)}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${isActive
+                      ? 'bg-[#24263e] text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
+                      }`}
                   >
-                    <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                    <span>{tab.label}</span>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${isActive ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
+                      }`}>
+                      {tab.count}
+                    </span>
                   </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {filteredHighValueListings.length === 0 ? (
+            <div className="text-center py-12 bg-[#faf8f5] rounded-2xl border border-dashed border-gray-200 space-y-3">
+              <ShieldCheck className="w-10 h-10 text-amber-500 mx-auto" />
+              <p className="text-sm font-bold text-[#24263e]">
+                {lang === 'vi' ? 'Không có sản phẩm kiểm định giá trị cao nào phù hợp' : 'No high-value inspection items found'}
+              </p>
+              <p className="text-xs text-[#24263e]/70">
+                {lang === 'vi'
+                  ? 'Các sản phẩm đồ gia dụng giá trị cao cần kiểm định tại Hub trước khi niêm yết sẽ hiển thị tại đây.'
+                  : 'High-value home appliances requiring inspection before publishing will appear here.'}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {paginatedHighValueListings.map((item) => {
+                const stage = getHighValueItemStage(item);
+                const insp = getItemInspectionOrder(item);
+                const appointmentStage = getPreListingHomeAppointmentStage(insp);
+                const canPublish = item.backendStatus === 'READY_TO_PUBLISH';
+                const canTrackInspection = item.backendStatus === 'PENDING_INSPECTION' || canPublish
+                  || (item.backendStatus === 'REJECTED' && stage === 'failed' && Boolean(insp));
+                const badgeInfo = getHighValueBadgeInfo(item);
+                const failureReason = stage === 'failed'
+                  ? formatInspectionFailureReason(item.rejectionReason, lang) ||
+                  formatInspectionFailureReason(insp?.note, lang) ||
+                  formatInspectionFailureReason((insp as any)?.cancellationReason, lang)
+                  : '';
+                return (
+                  <div
+                    key={item.id}
+                    className="bg-white hover:bg-slate-50/70 rounded-2xl p-4 sm:p-5 border border-slate-200 hover:border-slate-300 hover:shadow-md transition-all duration-200 flex flex-col lg:flex-row lg:items-center justify-between gap-5 group"
+                  >
+                    {/* Left & Middle: Thumbnail & Details */}
+                    <div className="flex items-start sm:items-center gap-4 sm:gap-5 flex-1 min-w-0">
+                      <div className="relative shrink-0">
+                        <img
+                          src={item.photos.front}
+                          alt={item.title}
+                          className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl object-cover border border-slate-200/90 shadow-2xs bg-slate-50 group-hover:scale-[1.02] transition-transform duration-200"
+                        />
+                      </div>
+
+                      <div className="space-y-2 flex-1 min-w-0">
+                        {/* Badges line */}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full ${badgeInfo.colorClass}`}>
+                            {badgeInfo.label}
+                          </span>
+                          {badgeInfo.isPassed && (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                              <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                              <span>{getListingInspectionBadgeText(insp?.orderType || item.inspectionMethod, lang, true)}</span>
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Rejection reason (if failed) */}
+                        {failureReason && (
+                          <div className="inline-flex items-start gap-1.5 text-xs text-rose-800 bg-rose-50/90 px-3 py-1.5 rounded-xl border border-rose-200/90 leading-snug w-fit max-w-full sm:max-w-xl">
+                            <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
+                            <div className="min-w-0 break-words">
+                              <span className="font-bold text-rose-900">{lang === 'vi' ? 'Lý do: ' : 'Reason: '}</span>
+                              <span>{failureReason}</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Title */}
+                        <h3 className="font-bold text-sm sm:text-base text-slate-900 group-hover:text-[#c34c36] transition-colors line-clamp-1" title={item.title}>
+                          {item.title}
+                        </h3>
+
+                        {/* Price & Meta info */}
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-slate-500">
+                          <span className="text-base sm:text-lg font-black text-[#24263e] tracking-tight">
+                            {formatVND(item.priceVnd)}
+                          </span>
+                          <span className="text-slate-300">•</span>
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-semibold text-[11px]">
+                            {lang === 'vi' ? 'Độ mới: ' : 'Grade: '}
+                            <strong className="text-slate-900">{formatConditionGrade(item.conditionGrade, lang)}</strong>
+                          </span>
+                          <span className="text-slate-300">•</span>
+                          <span className="font-medium truncate max-w-[200px]" title={item.sellerAddress || item.location}>
+                            📍 {item.location || item.sellerAddress || 'Chưa cập nhật'}
+                          </span>
+                          <span className="text-slate-300">•</span>
+                          <span className="flex items-center gap-1 text-[11px] text-slate-400">
+                            <Clock className="w-3 h-3 text-[#c34c36]" />
+                            <span>{formatPostDateTime(item)}</span>
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right: Actions */}
+                    <div className="pt-3 lg:pt-0 border-t lg:border-t-0 border-slate-100 flex items-center justify-end gap-2 flex-wrap lg:max-w-[55%] shrink-0 lg:self-center">
+                      {canPublish && (
+                        <button
+                          type="button"
+                          onClick={() => void handlePublishInspectedPost(item)}
+                          disabled={publishingPostId !== null}
+                          className="h-9 px-3.5 rounded-xl bg-[#c34c36] hover:bg-[#ad432f] text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition disabled:opacity-60"
+                        >
+                          {publishingPostId === item.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Tag className="w-3.5 h-3.5" />}
+                          {lang === 'vi' ? 'Đăng bán' : 'Publish listing'}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => onSelectListing(item)}
+                        className="h-9 px-3.5 w-[124px] bg-[#24263e] hover:bg-black border border-[#24263e] rounded-xl text-xs font-bold text-white flex items-center justify-center gap-1.5 cursor-pointer transition shadow-xs disabled:opacity-60 shrink-0"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>{lang === 'vi' ? 'Chi tiết' : 'View Details'}</span>
+                      </button>
+
+                      {canTrackInspection && <button
+                        type="button"
+                        onClick={() => setPreListingPost(item)}
+                        className={`h-9 px-3.5 min-w-[145px] rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition shadow-xs shrink-0 ${stage === 'passed'
+                          ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                          : stage === 'failed'
+                            ? 'bg-rose-600 hover:bg-rose-700 text-white'
+                            : 'bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white'
+                          }`}
+                        title={
+                          stage === 'passed'
+                            ? (lang === 'vi' ? 'Theo dõi quy trình hoàn tất & lên sàn' : 'Track Publish')
+                            : stage === 'failed'
+                              ? (lang === 'vi' ? 'Xem biên bản không đạt & thủ tục hoàn hàng' : 'Return Process')
+                              : (lang === 'vi' ? 'Tiếp tục quy trình nộp phí / đặt lịch kiểm định' : 'Resume Inspection')
+                        }
+                      >
+                        {stage === 'failed' ? (
+                          <RotateCcw className="w-3.5 h-3.5 text-rose-100" />
+                        ) : (
+                          <ShieldCheck className="w-3.5 h-3.5 text-amber-200" />
+                        )}
+                        <span>
+                          {stage === 'passed'
+                            ? (lang === 'vi' ? 'Theo dõi tiến trình' : 'Track Publish')
+                            : stage === 'failed'
+                              ? (lang === 'vi' ? 'Thủ tục hoàn hàng' : 'Return Process')
+                              : (lang === 'vi' ? 'Tiếp tục kiểm định' : 'Resume Inspection')}
+                        </span>
+                      </button>}
+
+                      {hasPreListingInspectionResult(insp) && (
+                        <button
+                          type="button"
+                          onClick={() => setResultListing(item)}
+                          className="h-9 px-3 rounded-xl border border-slate-200 bg-white text-slate-800 hover:bg-slate-100 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition shadow-2xs shrink-0"
+                        >
+                          <FileText className="w-3.5 h-3.5 text-slate-600" />
+                          <span>{lang === 'vi' ? 'Xem kết quả' : 'Result'}</span>
+                        </button>
+                      )}
+
+                      <SellerListingEditActions
+                        actions={item.sellerActions}
+                        lang={lang}
+                        onEdit={() => onCreateListing(item)}
+                        onUpdateShippingPackage={() => setEditingPackagePost(item)}
+                        onReclassify={() => handleOpenReclassifyModal(item)}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Pagination Controls for High-Value Inspections */}
+          {totalHighValuePages > 1 && (
+            <div className="pt-5 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600">
+              <div>
+                {lang === 'vi' ? (
+                  <>
+                    Hiển thị <strong>{(currentHighValuePage - 1) * ITEMS_PER_PAGE + 1}–{Math.min(currentHighValuePage * ITEMS_PER_PAGE, filteredHighValueListings.length)}</strong> trong tổng số <strong>{filteredHighValueListings.length}</strong> sản phẩm
+                  </>
+                ) : (
+                  <>
+                    Showing <strong>{(currentHighValuePage - 1) * ITEMS_PER_PAGE + 1}–{Math.min(currentHighValuePage * ITEMS_PER_PAGE, filteredHighValueListings.length)}</strong> of <strong>{filteredHighValueListings.length}</strong> products
+                  </>
                 )}
               </div>
-            </div>
-          ))}
-        </div>
-      </div>
-      )}
 
-      {/* Seller Dispute Response Modal */}
-      {isDisputeModalOpen && disputeModalReportId && (
-        <SellerDisputeResponseModal
-          isOpen={isDisputeModalOpen}
-          onClose={() => {
-            setIsDisputeModalOpen(false);
-            setDisputeModalReportId(null);
-            setDisputeModalOrderId(null);
-          }}
-          reportId={disputeModalReportId}
-          orderId={disputeModalOrderId || undefined}
-          onSuccess={() => {
-            fetchSellerData();
-          }}
-        />
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => handleHighValuePageChange(Math.max(1, currentHighValuePage - 1))}
+                  disabled={currentHighValuePage <= 1}
+                  className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 font-bold transition flex items-center gap-1 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  <span>{lang === 'vi' ? 'Trước' : 'Prev'}</span>
+                </button>
+
+                <div className="flex items-center gap-1">
+                  {getPaginationRange(currentHighValuePage, totalHighValuePages).map((p, idx) =>
+                    p === '...' ? (
+                      <span key={`hv-ellipsis-${idx}`} className="px-2 text-slate-400 font-bold">...</span>
+                    ) : (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => handleHighValuePageChange(Number(p))}
+                        className={`w-8 h-8 rounded-xl text-xs font-bold transition cursor-pointer flex items-center justify-center ${
+                          currentHighValuePage === p
+                            ? 'bg-[#24263e] text-white shadow-xs'
+                            : 'bg-white hover:bg-slate-100 border border-slate-200 text-slate-700'
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    )
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleHighValuePageChange(Math.min(totalHighValuePages, currentHighValuePage + 1))}
+                  disabled={currentHighValuePage >= totalHighValuePages}
+                  className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 font-bold transition flex items-center gap-1 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs"
+                >
+                  <span>{lang === 'vi' ? 'Tiếp' : 'Next'}</span>
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        /* Tab 1: Normal Seller Listings & Drafts Management */
+        <div id="seller-listings-container" className="bg-[#FFFFFF] rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-xs space-y-6">
+          <div className="space-y-4 border-b border-gray-100 pb-4">
+            {/* Top row: Section Title & Utility Controls */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-[#24263e] flex items-center gap-2">
+                  <Tag className="w-5 h-5 text-[#24263e]" />
+                  <span>
+                    {lang === 'vi'
+                      ? `Quản Lý Tin Đăng & Bản Nháp (${filteredNormalListings.length})`
+                      : `My Listings & Drafts (${filteredNormalListings.length})`}
+                  </span>
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {lang === 'vi'
+                    ? 'Quản lý các sản phẩm đang bán, bản nháp soạn thảo và theo dõi phản hồi đề xuất giá từ người mua.'
+                    : 'Manage active listings, draft posts, and monitor buyer price offers.'}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => {
+                    void fetchSellerData();
+                    setInspectionRefresh((previous) => previous + 1);
+                  }}
+                  disabled={isLoadingPosts}
+                  className="px-3 py-1.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                  title={lang === 'vi' ? 'Làm mới dữ liệu từ server' : 'Refresh server data'}
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingPosts ? 'animate-spin text-indigo-600' : ''}`} />
+                  <span>{lang === 'vi' ? 'Làm mới' : 'Refresh'}</span>
+                </button>
+
+                <button
+                  onClick={() => setSortOrder(prev => prev === 'newest' ? 'oldest' : 'newest')}
+                  className="px-3 py-1.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                  title={lang === 'vi' ? 'Sắp xếp theo thời gian đăng bài' : 'Sort by posting time'}
+                >
+                  <Clock className="w-3.5 h-3.5 text-[#c34c36]" />
+                  <span>
+                    {sortOrder === 'newest'
+                      ? (lang === 'vi' ? 'Mới đăng nhất' : 'Newest first')
+                      : (lang === 'vi' ? 'Cũ nhất trước' : 'Oldest first')}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {/* Bottom row: Filter Segmented Bar */}
+            <div className="flex items-center gap-1.5 bg-slate-50 p-1.5 rounded-2xl border border-slate-200/80 overflow-x-auto scrollbar-none">
+              {(['ALL', 'active', 'draft', 'reserved', 'sold', 'rejected'] as const).map((st) => {
+                const isActive = filterStatus === st;
+                const count = normalListings.filter(item => {
+                  if (st === 'ALL') return true;
+                  if (st === 'active') return (item.backendStatus === 'ACTIVE' || item.status === 'active') && item.backendStatus !== 'RETURNING' && item.backendStatus !== 'RETURNED';
+                  if (st === 'draft') return item.backendStatus === 'DRAFT' || item.status === 'draft' || item.backendStatus === 'RETURNED';
+                  if (st === 'reserved') return item.backendStatus === 'RESERVED' || item.status === 'reserved' || item.backendStatus === 'RETURNING';
+                  if (st === 'sold') return (item.status === 'sold' || item.backendStatus === 'SOLD') && item.backendStatus !== 'RETURNING' && item.backendStatus !== 'RETURNED';
+                  if (st === 'rejected') return item.backendStatus === 'REJECTED' || item.status === 'rejected';
+                  return true;
+                }).length;
+                const label = st === 'ALL'
+                  ? (lang === 'vi' ? 'Tất cả' : 'All')
+                  : st === 'active'
+                    ? (lang === 'vi' ? 'Đang bán' : 'Active')
+                    : st === 'draft'
+                      ? (lang === 'vi' ? 'Bản nháp' : 'Drafts')
+                      : st === 'reserved'
+                        ? (lang === 'vi' ? 'Đang giữ hàng' : 'Reserved')
+                        : st === 'sold'
+                          ? (lang === 'vi' ? 'Đã bán' : 'Sold')
+                          : (lang === 'vi' ? 'Bị từ chối' : 'Rejected');
+                return (
+                  <button
+                    key={st}
+                    onClick={() => setFilterStatus(st)}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${isActive
+                      ? 'bg-[#24263e] text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
+                      }`}
+                  >
+                    <span>{label}</span>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${isActive ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
+                      }`}>
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {filteredNormalListings.length === 0 ? (
+            <div className="text-center py-12 bg-[#faf8f5] rounded-2xl border border-dashed border-gray-200 space-y-3">
+              <Package className="w-10 h-10 text-gray-400 mx-auto" />
+              <p className="text-sm font-bold text-[#24263e]">
+                {lang === 'vi' ? 'Không tìm thấy tin đăng nào phù hợp' : 'No matching listings found'}
+              </p>
+              <p className="text-xs text-[#24263e]/70">
+                {lang === 'vi'
+                  ? 'Hãy thử thay đổi bộ lọc trạng thái hoặc tạo bài đăng bán mới.'
+                  : 'Try changing your filter status or create a new listing.'}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {paginatedNormalListings.map((item) => {
+                const sellerInspectionState = resolveSellerListingInspectionState(
+                  item,
+                  inspectionByPost?.get(item.id),
+                  orders,
+                );
+                const detailListing = sellerInspectionState.passed
+                  ? {
+                      ...item,
+                      isInspected: true,
+                      inspectionMethod: sellerInspectionState.method ?? item.inspectionMethod,
+                    }
+                  : item;
+                return (
+                <div
+                  key={item.id}
+                  className="bg-white hover:bg-slate-50/70 rounded-2xl p-4 sm:p-5 border border-slate-200 hover:border-slate-300 hover:shadow-md transition-all duration-200 flex flex-col lg:flex-row lg:items-center justify-between gap-5 group"
+                >
+                  <div className="flex items-start sm:items-center gap-4 flex-1 min-w-0">
+                    <img
+                      src={item.photos.front}
+                      alt={item.title}
+                      className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl object-cover border border-slate-200/90 shadow-2xs shrink-0 bg-slate-50 group-hover:scale-[1.02] transition-transform duration-200"
+                    />
+                    <div className="space-y-1.5 overflow-hidden flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`inline-block text-[11px] font-bold px-2.5 py-1 rounded-full ${item.backendStatus === 'REJECTED'
+                          ? 'bg-rose-600 text-white'
+                          : item.backendStatus === 'RETURNING'
+                            ? 'bg-amber-600 text-white'
+                            : item.backendStatus === 'RETURNED'
+                              ? 'bg-purple-600 text-white'
+                              : item.backendStatus === 'DRAFT' || item.status === 'draft'
+                                ? 'bg-slate-500 text-white'
+                                : item.status === 'sold' || item.backendStatus === 'SOLD'
+                                  ? 'bg-slate-700 text-white'
+                                  : item.status === 'active'
+                                    ? 'bg-[#24263e] text-white'
+                                    : 'bg-[#c34c36] text-white'
+                          }`}>
+                          {item.backendStatus === 'REJECTED'
+                            ? (lang === 'vi' ? '● Bị Từ Chối' : '● Rejected')
+                            : item.backendStatus === 'RETURNING'
+                              ? (lang === 'vi' ? '● Đang hoàn trả' : '● Returning')
+                              : item.backendStatus === 'RETURNED'
+                                ? (lang === 'vi' ? '● Đã hoàn trả' : '● Returned')
+                                : item.backendStatus === 'DRAFT' || item.status === 'draft'
+                                  ? (lang === 'vi' ? '● Bản Nháp' : '● Draft')
+                                  : item.status === 'sold' || item.backendStatus === 'SOLD'
+                                    ? (lang === 'vi' ? '● Đã bán' : '● Sold')
+                                    : item.status === 'active'
+                                      ? (lang === 'vi' ? '● Đang bán' : '● Active')
+                                      : (lang === 'vi' ? '● Đã Cọc Ký Quỹ' : '● Escrow Deposited')}
+                        </span>
+                        {sellerInspectionState.passed && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-600 text-white shadow-2xs">
+                            <ShieldCheck className="w-3 h-3 text-emerald-100" />
+                            <span>{getListingInspectionBadgeText(sellerInspectionState.method, lang, true)}</span>
+                          </span>
+                        )}
+                      </div>
+
+                      {item.backendStatus === 'REJECTED' && item.rejectionReason && (
+                        <div className="inline-flex items-start gap-1.5 text-xs text-rose-800 bg-rose-50/90 px-3 py-1.5 rounded-xl border border-rose-200/90 leading-snug w-fit max-w-full sm:max-w-xl">
+                          <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
+                          <div>
+                            <span className="font-bold text-rose-900">{lang === 'vi' ? 'Lý do: ' : 'Reason: '}</span>
+                            <span>{item.rejectionReason}</span>
+                          </div>
+                        </div>
+                      )}
+
+                      <h3 className="font-bold text-sm sm:text-base text-slate-900 group-hover:text-[#c34c36] transition-colors line-clamp-1" title={item.title}>
+                        {item.title}
+                      </h3>
+
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-slate-500">
+                        <span className="text-base sm:text-lg font-black text-[#24263e] tracking-tight">
+                          {formatVND(item.priceVnd)}
+                        </span>
+                        <span className="text-slate-300">•</span>
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-semibold text-[11px]">
+                          {lang === 'vi' ? 'Độ mới: ' : 'Grade: '}
+                          <strong className="text-slate-900">{formatConditionGrade(item.conditionGrade, lang)}</strong>
+                        </span>
+                        <span className="text-slate-300">•</span>
+                        <span className="font-medium truncate max-w-[200px]" title={item.sellerAddress || item.location}>
+                          📍 {item.location || item.sellerAddress || 'Chưa cập nhật'}
+                        </span>
+                        <span className="text-slate-300">•</span>
+                        <span className="flex items-center gap-1 text-[11px] text-slate-400">
+                          <Clock className="w-3 h-3 text-[#c34c36]" />
+                          <span>{formatPostDateTime(item)}</span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-3 lg:pt-0 border-t lg:border-t-0 border-slate-100 flex items-center justify-end gap-2 flex-wrap shrink-0 lg:max-w-[55%] lg:self-center">
+                    <button
+                      onClick={() => onSelectListing(detailListing)}
+                      className="h-9 px-3.5 w-[124px] bg-[#24263e] hover:bg-black border border-[#24263e] rounded-xl text-xs font-bold text-white flex items-center justify-center gap-1.5 cursor-pointer transition shadow-xs disabled:opacity-60 shrink-0"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>{lang === 'vi' ? 'Chi tiết' : 'View Details'}</span>
+                    </button>
+                    {hasPreListingInspectionResult(inspectionByPost?.get(item.id)) && (
+                      <button
+                        type="button"
+                        onClick={() => setResultListing(item)}
+                        className="h-9 px-3 rounded-xl border border-slate-200 bg-white text-slate-800 hover:bg-slate-100 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition shadow-2xs shrink-0"
+                      >
+                        <FileText className="w-3.5 h-3.5 text-slate-600" />
+                        <span>{lang === 'vi' ? 'Xem kết quả' : 'Result'}</span>
+                      </button>
+                    )}
+                    <SellerListingEditActions
+                      actions={item.sellerActions}
+                      lang={lang}
+                      onEdit={() => onCreateListing(item)}
+                      onUpdateShippingPackage={() => setEditingPackagePost(item)}
+                      onReclassify={() => handleOpenReclassifyModal(item)}
+                    />
+                    {item.backendStatus === 'DRAFT' && item.sellerActions?.editContent && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDraftToDelete({ id: item.id, title: item.title });
+                        }}
+                        disabled={deletingDraftId === item.id}
+                        className="w-9 h-9 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 rounded-xl text-xs font-semibold flex items-center justify-center cursor-pointer transition disabled:opacity-50 shadow-2xs shrink-0"
+                        title={lang === 'vi' ? 'Xóa bản nháp này' : 'Delete draft'}
+                      >
+                        <Trash2 className="w-4 h-4 text-rose-600" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Pagination Controls for Normal Listings & Drafts */}
+          {totalListingsPages > 1 && (
+            <div className="pt-5 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600">
+              <div>
+                {lang === 'vi' ? (
+                  <>
+                    Hiển thị <strong>{(currentListingsPage - 1) * ITEMS_PER_PAGE + 1}–{Math.min(currentListingsPage * ITEMS_PER_PAGE, filteredNormalListings.length)}</strong> trong tổng số <strong>{filteredNormalListings.length}</strong> sản phẩm
+                  </>
+                ) : (
+                  <>
+                    Showing <strong>{(currentListingsPage - 1) * ITEMS_PER_PAGE + 1}–{Math.min(currentListingsPage * ITEMS_PER_PAGE, filteredNormalListings.length)}</strong> of <strong>{filteredNormalListings.length}</strong> products
+                  </>
+                )}
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => handleListingsPageChange(Math.max(1, currentListingsPage - 1))}
+                  disabled={currentListingsPage <= 1}
+                  className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 font-bold transition flex items-center gap-1 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  <span>{lang === 'vi' ? 'Trước' : 'Prev'}</span>
+                </button>
+
+                <div className="flex items-center gap-1">
+                  {getPaginationRange(currentListingsPage, totalListingsPages).map((p, idx) =>
+                    p === '...' ? (
+                      <span key={`listings-ellipsis-${idx}`} className="px-2 text-slate-400 font-bold">...</span>
+                    ) : (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => handleListingsPageChange(Number(p))}
+                        className={`w-8 h-8 rounded-xl text-xs font-bold transition cursor-pointer flex items-center justify-center ${
+                          currentListingsPage === p
+                            ? 'bg-[#24263e] text-white shadow-xs'
+                            : 'bg-white hover:bg-slate-100 border border-slate-200 text-slate-700'
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    )
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleListingsPageChange(Math.min(totalListingsPages, currentListingsPage + 1))}
+                  disabled={currentListingsPage >= totalListingsPages}
+                  className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 font-bold transition flex items-center gap-1 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs"
+                >
+                  <span>{lang === 'vi' ? 'Tiếp' : 'Next'}</span>
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Payout / Withdrawal Modal */}
@@ -1459,6 +2215,17 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
           setTimeout(() => setPayoutSuccessMsg(null), 5000);
         }}
       />
+
+      {editingPackagePost && (
+        <ListingShippingPackageModal
+          key={editingPackagePost.id}
+          postId={editingPackagePost.id}
+          title={editingPackagePost.title}
+          lang={lang}
+          onClose={() => setEditingPackagePost(null)}
+          onSaved={(parcel) => handlePackageSaved(editingPackagePost.id, parcel)}
+        />
+      )}
 
       {/* Modal Chọn lại loại thiết bị (Reclassify Item Modal) */}
       {reclassifyingPost && (
@@ -1715,342 +2482,6 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
         />
       )}
 
-      {/* Credit Ledger Modal */}
-      {isCreditLedgerOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-2xl border border-slate-200">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <Coins className="w-5 h-5 text-amber-500" />
-                <h3 className="font-bold text-sm text-slate-900">
-                  Quản Lý Tín Dụng & Lịch Sử Nạp (Seller Credits)
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsCreditLedgerOpen(false)}
-                className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer p-1"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Sub-tab Switcher */}
-            <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
-              <button
-                onClick={() => setCreditModalTab('ledger')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
-                  creditModalTab === 'ledger'
-                    ? 'bg-slate-900 text-white shadow-xs'
-                    : 'text-slate-600 hover:bg-slate-100'
-                }`}
-              >
-                Sổ Cái Biến Động ({creditLedgerItems.length})
-              </button>
-              <button
-                onClick={() => setCreditModalTab('purchases')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
-                  creditModalTab === 'purchases'
-                    ? 'bg-slate-900 text-white shadow-xs'
-                    : 'text-slate-600 hover:bg-slate-100'
-                }`}
-              >
-                Lịch Sử Đơn Mua ({creditPurchases.length})
-              </button>
-              <button
-                onClick={() => setCreditModalTab('buy')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
-                  creditModalTab === 'buy'
-                    ? 'bg-[#c34c36] text-white shadow-xs'
-                    : 'text-[#c34c36] hover:bg-rose-50'
-                }`}
-              >
-                <PlusCircle className="w-3.5 h-3.5" />
-                <span>Mua Thêm Tín Dụng</span>
-              </button>
-            </div>
-
-            {isLoadingLedger ? (
-              <div className="py-12 flex flex-col items-center justify-center gap-2 text-slate-400">
-                <Loader2 className="w-6 h-6 animate-spin text-amber-500" />
-                <span className="text-xs">Đang tải lịch sử giao dịch credit...</span>
-              </div>
-            ) : creditModalTab === 'ledger' ? (
-              <div className="overflow-x-auto max-h-96">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-100 bg-slate-50 text-slate-600 text-[11px] font-bold">
-                      <th className="py-2.5 px-3">Thời gian</th>
-                      <th className="py-2.5 px-3">Loại Credit</th>
-                      <th className="py-2.5 px-3">Nghiệp vụ</th>
-                      <th className="py-2.5 px-3 text-right">Biến động</th>
-                      <th className="py-2.5 px-3 text-right">Số dư sau</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {creditLedgerItems.length > 0 ? (
-                      creditLedgerItems.map((item, idx) => (
-                        <tr key={item.id || idx} className="hover:bg-slate-50/60 transition">
-                          <td className="py-2.5 px-3 font-mono text-slate-500 text-[11px]">
-                            {item.createdAt ? new Date(item.createdAt).toLocaleString('vi-VN') : '—'}
-                          </td>
-                          <td className="py-2.5 px-3">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                              item.creditType === 'LISTING'
-                                ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                                : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            }`}>
-                              {item.creditType}
-                            </span>
-                          </td>
-                          <td className="py-2.5 px-3 font-semibold text-slate-800">
-                            {item.entryType === 'PURCHASE' ? 'Nạp gói Credit' :
-                             item.entryType === 'CONSUMPTION' ? 'Tiêu trừ dịch vụ' :
-                             item.entryType === 'REFUND' ? 'Hoàn trả điểm' : item.entryType}
-                          </td>
-                          <td className={`py-2.5 px-3 text-right font-mono font-bold ${
-                            item.quantityDelta > 0 ? 'text-emerald-600' : 'text-rose-600'
-                          }`}>
-                            {item.quantityDelta > 0 ? `+${item.quantityDelta}` : item.quantityDelta}
-                          </td>
-                          <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900">
-                            {item.balanceAfter}
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={5} className="py-8 text-center text-slate-400">
-                          Chưa có lịch sử giao dịch credit nào.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            ) : creditModalTab === 'purchases' ? (
-              <div className="overflow-x-auto max-h-96">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-100 bg-slate-50 text-slate-600 text-[11px] font-bold">
-                      <th className="py-2.5 px-3">Mã đơn mua</th>
-                      <th className="py-2.5 px-3">Thời gian</th>
-                      <th className="py-2.5 px-3 text-center">Gói mua</th>
-                      <th className="py-2.5 px-3 text-right">Tổng tiền</th>
-                      <th className="py-2.5 px-3 text-right">Trạng thái</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {creditPurchases.length > 0 ? (
-                      creditPurchases.map((purchase, idx) => (
-                        <tr key={purchase.id || idx} className="hover:bg-slate-50/60 transition">
-                          <td className="py-2.5 px-3 font-mono font-bold text-slate-900 text-[11px]">
-                            #{purchase.id.slice(0, 8)}
-                          </td>
-                          <td className="py-2.5 px-3 text-slate-500 text-[11px]">
-                            {purchase.createdAt ? new Date(purchase.createdAt).toLocaleString('vi-VN') : '—'}
-                          </td>
-                          <td className="py-2.5 px-3 text-center">
-                            <span className="text-slate-700 font-bold">
-                              {purchase.snapshot?.listingQuantity || 0} tin • {purchase.snapshot?.valuationQuantity || 0} định giá
-                            </span>
-                          </td>
-                          <td className="py-2.5 px-3 text-right font-black text-[#c34c36]">
-                            {formatVND(purchase.snapshot?.finalFee || 0)}
-                          </td>
-                          <td className="py-2.5 px-3 text-right">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                              purchase.status === 'PAID'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : purchase.status === 'FAILED' || purchase.status === 'EXPIRED'
-                                ? 'bg-rose-100 text-rose-800'
-                                : 'bg-amber-100 text-amber-800'
-                            }`}>
-                              {purchase.status}
-                            </span>
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={5} className="py-8 text-center text-slate-400">
-                          Chưa có đơn hàng mua tín dụng nào.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {/* Gói Tin Đăng */}
-                  <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50 space-y-2">
-                    <span className="text-[11px] font-bold text-slate-600 block uppercase">Lượt Đăng Bài (Listing)</span>
-                    <div className="flex items-center justify-between gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setBuyListingQty((q) => Math.max(1, q - 5))}
-                        className="w-8 h-8 rounded-lg bg-white border border-slate-200 font-bold hover:bg-slate-100 cursor-pointer"
-                      >
-                        -
-                      </button>
-                      <span className="font-mono font-black text-base text-slate-900">{buyListingQty}</span>
-                      <button
-                        type="button"
-                        onClick={() => setBuyListingQty((q) => q + 5)}
-                        className="w-8 h-8 rounded-lg bg-white border border-slate-200 font-bold hover:bg-slate-100 cursor-pointer"
-                      >
-                        +
-                      </button>
-                    </div>
-                    <div className="flex gap-1 justify-center">
-                      {[5, 10, 20].map((num) => (
-                        <button
-                          key={num}
-                          type="button"
-                          onClick={() => setBuyListingQty(num)}
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer ${
-                            buyListingQty === num ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 border'
-                          }`}
-                        >
-                          {num}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Gói Định Giá AI */}
-                  <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50 space-y-2">
-                    <span className="text-[11px] font-bold text-slate-600 block uppercase">Định Giá AI (Valuation)</span>
-                    <div className="flex items-center justify-between gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setBuyValuationQty((q) => Math.max(0, q - 5))}
-                        className="w-8 h-8 rounded-lg bg-white border border-slate-200 font-bold hover:bg-slate-100 cursor-pointer"
-                      >
-                        -
-                      </button>
-                      <span className="font-mono font-black text-base text-slate-900">{buyValuationQty}</span>
-                      <button
-                        type="button"
-                        onClick={() => setBuyValuationQty((q) => q + 5)}
-                        className="w-8 h-8 rounded-lg bg-white border border-slate-200 font-bold hover:bg-slate-100 cursor-pointer"
-                      >
-                        +
-                      </button>
-                    </div>
-                    <div className="flex gap-1 justify-center">
-                      {[0, 5, 10, 20].map((num) => (
-                        <button
-                          key={num}
-                          type="button"
-                          onClick={() => setBuyValuationQty(num)}
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer ${
-                            buyValuationQty === num ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 border'
-                          }`}
-                        >
-                          {num}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Gói AI Chat */}
-                  <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50 space-y-2">
-                    <span className="text-[11px] font-bold text-slate-600 block uppercase">Trợ Lý AI Chat</span>
-                    <div className="flex items-center justify-between gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setBuyChatQty((q) => Math.max(0, q - 5))}
-                        className="w-8 h-8 rounded-lg bg-white border border-slate-200 font-bold hover:bg-slate-100 cursor-pointer"
-                      >
-                        -
-                      </button>
-                      <span className="font-mono font-black text-base text-slate-900">{buyChatQty}</span>
-                      <button
-                        type="button"
-                        onClick={() => setBuyChatQty((q) => q + 5)}
-                        className="w-8 h-8 rounded-lg bg-white border border-slate-200 font-bold hover:bg-slate-100 cursor-pointer"
-                      >
-                        +
-                      </button>
-                    </div>
-                    <div className="flex gap-1 justify-center">
-                      {[0, 5, 10, 20].map((num) => (
-                        <button
-                          key={num}
-                          type="button"
-                          onClick={() => setBuyChatQty(num)}
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer ${
-                            buyChatQty === num ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 border'
-                          }`}
-                        >
-                          {num}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Bảng tạm tính */}
-                <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200 space-y-2 text-xs">
-                  <div className="flex justify-between items-center text-slate-600">
-                    <span>Đơn giá niêm yết:</span>
-                    <span className="font-mono">
-                      {formatVND(
-                        calculatedPricing?.quote?.totalBaseFee ||
-                          buyListingQty * 5000 + buyValuationQty * 5000 + buyChatQty * 2000
-                      )}
-                    </span>
-                  </div>
-                  {calculatedPricing?.quote?.discountAmount ? (
-                    <div className="flex justify-between items-center text-emerald-700 font-bold">
-                      <span>Chiết khấu ưu đãi:</span>
-                      <span className="font-mono">-{formatVND(calculatedPricing.quote.discountAmount)}</span>
-                    </div>
-                  ) : null}
-                  <div className="flex justify-between items-center pt-2 border-t border-amber-200/80 font-black text-sm text-[#c34c36]">
-                    <span>Tổng thanh toán:</span>
-                    <span className="font-mono text-base">
-                      {formatVND(
-                        calculatedPricing?.quote?.finalFee ||
-                          buyListingQty * 5000 + buyValuationQty * 5000 + buyChatQty * 2000
-                      )}
-                    </span>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleCreateCreditPurchase}
-                  disabled={isSubmittingPurchase || (buyListingQty <= 0 && buyValuationQty <= 0 && buyChatQty <= 0)}
-                  className="w-full py-3 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#dc4729] hover:opacity-95 text-white font-bold text-xs shadow-md transition cursor-pointer flex items-center justify-center gap-2 disabled:opacity-40"
-                >
-                  {isSubmittingPurchase ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Đang tạo đơn mua...</span>
-                    </>
-                  ) : (
-                    <span>Xác Nhận Tạo Đơn Mua Tín Dụng</span>
-                  )}
-                </button>
-              </div>
-            )}
-
-            <div className="pt-2 flex justify-end border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setIsCreditLedgerOpen(false)}
-                className="px-5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition cursor-pointer"
-              >
-                Đóng
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       {/* Custom Beautiful Confirmation Modal for Draft Deletion */}
       {draftToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
@@ -2100,40 +2531,40 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       {/* Modal: Uy Tín Của Tôi & Lịch Sử Biến Động (GET /api/v1/seller/reputation/me & /history) */}
       {isReputationHistoryOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
-          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 space-y-4 border border-slate-200 shadow-2xl text-[#24263e] max-h-[90vh] flex flex-col">
+          <div className="bg-white rounded-3xl max-w-3xl sm:max-w-4xl w-full p-6 sm:p-7 space-y-4 border border-slate-200 shadow-2xl text-[#24263e] max-h-[92vh] flex flex-col">
             {/* Header */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-3 shrink-0">
-              <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center font-black">
-                  <Award className="w-5 h-5 text-amber-600" />
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center font-black shadow-xs">
+                  <Award className="w-6 h-6 text-amber-600" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h4 className="font-extrabold text-base text-slate-900">
+                    <h4 className="font-extrabold text-lg text-slate-900 tracking-tight">
                       {lang === 'vi' ? 'UY TÍN CỦA TÔI' : 'MY REPUTATION'}
                     </h4>
                     {(() => {
                       const statusMeta = getAssessmentStatusMeta(myReputation?.assessmentStatus);
                       return (
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${statusMeta.badgeClass}`}>
+                        <span className={`text-[11px] px-2.5 py-0.5 rounded-full font-bold border ${statusMeta.badgeClass}`}>
                           {statusMeta.label}
                         </span>
                       );
                     })()}
                   </div>
-                  <p className="text-[11px] text-slate-500">
+                  <p className="text-xs text-slate-500 mt-0.5">
                     {lang === 'vi'
-                      ? 'Đánh giá dựa trên tỷ lệ giao dịch thành công (GOOD/evaluatedOrders) và trừ điểm vi phạm/trễ hạn'
+                      ? 'Đánh giá dựa trên tỷ lệ giao dịch thành công và trừ điểm vi phạm hoặc trễ hạn xác nhận'
                       : 'Evaluated on completed transaction success rate and penalty deductions'}
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={handleRefreshReputation}
                   disabled={isReloadingReputation}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold transition cursor-pointer disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold transition cursor-pointer disabled:opacity-50 shadow-xs"
                   title="Tải lại số liệu mới nhất từ server"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isReloadingReputation ? 'animate-spin text-[#c34c36]' : ''}`} />
@@ -2142,7 +2573,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsReputationHistoryOpen(false)}
-                  className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  className="p-2 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 cursor-pointer transition"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -2151,45 +2582,65 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
 
             {/* Modal Body: Scrollable */}
             <div className="space-y-4 overflow-y-auto pr-1">
-              {/* Cảnh báo ưu tiên nếu có */}
-              {myReputation?.sellingRestricted ? (
-                <div className="p-3 rounded-2xl bg-rose-50 border border-rose-300 text-rose-900 text-xs flex items-start gap-2.5">
-                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-bold block">Tài khoản đang bị hạn chế bán hàng</span>
-                    <span className="text-[11px] text-rose-700">Quyền đăng tin đang tạm khóa. Vui lòng hoàn tất xử lý đơn và liên hệ Quản trị viên.</span>
+              {/* Cảnh báo ưu tiên nếu có (hiển thị 5 giây rồi tự ẩn) */}
+              {showModalViolationWarning && (myReputation?.sellingRestricted ? (
+                <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-300 text-rose-900 text-xs flex items-start justify-between gap-2.5 animate-fadeIn">
+                  <div className="flex items-start gap-2.5">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold block">Tài khoản đang bị hạn chế bán hàng</span>
+                      <span className="text-[11px] text-rose-700">Quyền đăng tin đang tạm khóa. Vui lòng hoàn tất xử lý đơn và liên hệ Quản trị viên.</span>
+                    </div>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowModalViolationWarning(false)}
+                    className="text-rose-500 hover:text-rose-800 p-1 text-xs cursor-pointer"
+                    title="Đóng thông báo"
+                  >
+                    ✕
+                  </button>
                 </div>
               ) : myReputation?.warningCode ? (
                 (() => {
                   const warnMeta = getReputationWarningMeta(myReputation.warningCode);
                   if (!warnMeta) return null;
                   return (
-                    <div className={`p-3 rounded-2xl border text-xs flex items-start gap-2.5 ${warnMeta.badgeClass}`}>
-                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                      <div>
-                        <span className="font-bold block">{warnMeta.title}</span>
-                        <span className="text-[11px] opacity-90">{warnMeta.desc}</span>
+                    <div className={`p-3.5 rounded-2xl border text-xs flex items-start justify-between gap-2.5 animate-fadeIn ${warnMeta.badgeClass}`}>
+                      <div className="flex items-start gap-2.5">
+                        <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                        <div>
+                          <span className="font-bold block">{warnMeta.title}</span>
+                          <span className="text-[11px] opacity-90">{warnMeta.desc}</span>
+                        </div>
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowModalViolationWarning(false)}
+                        className="hover:opacity-80 p-1 text-xs cursor-pointer"
+                        title="Đóng thông báo"
+                      >
+                        ✕
+                      </button>
                     </div>
                   );
                 })()
-              ) : null}
+              ) : null)}
 
               {/* Main Score Hero Card */}
-              <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-900 to-[#24263e] text-white shadow-md">
+              <div className="p-5 rounded-2xl bg-gradient-to-br from-slate-900 to-[#24263e] text-white shadow-md">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div>
-                    <span className="text-[11px] uppercase tracking-wider text-slate-300 font-bold block">
+                    <span className="text-xs uppercase tracking-wider text-slate-300 font-bold block">
                       Điểm Uy Tín Tổng Kết
                     </span>
-                    <div className="flex items-baseline gap-2 mt-0.5">
-                      <span className="text-3xl sm:text-4xl font-black text-amber-300 font-mono">
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <span className="text-4xl sm:text-5xl font-black text-amber-300 font-mono">
                         {myReputation?.score !== null && myReputation?.score !== undefined
                           ? myReputation.score
                           : '—'}
                       </span>
-                      <span className="text-sm font-bold text-slate-300">/ 100</span>
+                      <span className="text-base font-bold text-slate-300">/ 100</span>
                       {myReputation?.score === null && (
                         <span className="text-xs font-medium text-slate-300 ml-2">
                           (Chưa có đơn hàng kết thúc)
@@ -2198,18 +2649,18 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 text-right">
-                    <div className="bg-white/10 px-3 py-2 rounded-xl backdrop-blur-xs">
-                      <span className="text-[10px] text-slate-300 block font-semibold">Điểm giao dịch</span>
-                      <span className="text-base font-black text-emerald-400 font-mono">
+                  <div className="grid grid-cols-2 gap-2.5 text-right">
+                    <div className="bg-white/10 px-3.5 py-2.5 rounded-xl backdrop-blur-xs">
+                      <span className="text-[11px] text-slate-300 block font-semibold">Điểm giao dịch</span>
+                      <span className="text-lg font-black text-emerald-400 font-mono">
                         {myReputation?.transactionScore !== null && myReputation?.transactionScore !== undefined
                           ? `${myReputation.transactionScore}`
                           : '—'}
                       </span>
                     </div>
-                    <div className="bg-white/10 px-3 py-2 rounded-xl backdrop-blur-xs">
-                      <span className="text-[10px] text-slate-300 block font-semibold">Điểm phạt tích lũy</span>
-                      <span className={`text-base font-black font-mono ${(myReputation?.confirmationPenaltyPoints || 0) > 0 ? 'text-rose-400' : 'text-slate-200'}`}>
+                    <div className="bg-white/10 px-3.5 py-2.5 rounded-xl backdrop-blur-xs">
+                      <span className="text-[11px] text-slate-300 block font-semibold">Điểm phạt tích lũy</span>
+                      <span className={`text-lg font-black font-mono ${(myReputation?.confirmationPenaltyPoints || 0) > 0 ? 'text-rose-400' : 'text-slate-200'}`}>
                         {myReputation?.confirmationPenaltyPoints ?? 0}
                       </span>
                     </div>
@@ -2217,79 +2668,38 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                 </div>
 
                 {/* 3 Pills: good / bad / evaluated */}
-                <div className="flex flex-wrap items-center gap-2 mt-4 pt-3 border-t border-white/15 text-xs">
-                  <span className="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-400/30">
-                    {myReputation?.goodTransactions ?? 0} đơn thành công (GOOD)
+                <div className="flex flex-wrap items-center gap-2.5 mt-4 pt-3.5 border-t border-white/15 text-xs">
+                  <span className="px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-400/30">
+                    {myReputation?.goodTransactions ?? 0} đơn thành công
                   </span>
-                  <span className="px-2.5 py-1 rounded-lg bg-rose-500/20 text-rose-300 font-bold border border-rose-400/30">
-                    {myReputation?.badTransactions ?? 0} đơn lỗi SELLER (BAD)
+                  <span className="px-3 py-1.5 rounded-xl bg-rose-500/20 text-rose-300 font-bold border border-rose-400/30">
+                    {myReputation?.badTransactions ?? 0} đơn lỗi Người bán
                   </span>
-                  <span className="px-2.5 py-1 rounded-lg bg-white/10 text-white font-bold border border-white/20">
+                  <span className="px-3 py-1.5 rounded-xl bg-white/10 text-white font-bold border border-white/20">
                     {myReputation?.evaluatedOrders ?? 0} đơn được đánh giá
                   </span>
                 </div>
               </div>
 
-              {/* Operational Metrics Breakdown */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                {/* Non-fulfillment breakdown */}
-                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-700">Tỷ lệ không hoàn thành:</span>
-                    <span className="font-black font-mono text-rose-600">
-                      {myReputation?.nonFulfillmentRate !== null && myReputation?.nonFulfillmentRate !== undefined
-                        ? `${myReputation.nonFulfillmentRate}%`
-                        : '0%'}
-                      <span className="text-slate-400 text-[11px] font-normal ml-1">
-                        ({myReputation?.nonFulfillmentOrders ?? 0}/{myReputation?.evaluatedOrders ?? 0})
-                      </span>
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-slate-500 flex items-center justify-between pt-1 border-t border-slate-200/60">
-                    <span>Hủy do SELLER: <strong className="text-slate-700">{myReputation?.sellerCancellationOrders ?? 0}</strong></span>
-                    <span>Trả hàng lỗi SELLER: <strong className="text-slate-700">{myReputation?.sellerReturnFaultOrders ?? 0}</strong></span>
-                  </div>
-                </div>
-
-                {/* Handover breakdown */}
-                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-700">Bàn giao trễ bưu tá:</span>
-                    <span className="font-black font-mono text-amber-600">
-                      {myReputation?.lateHandoverRate !== null && myReputation?.lateHandoverRate !== undefined
-                        ? `${myReputation.lateHandoverRate}%`
-                        : '0%'}
-                      <span className="text-slate-400 text-[11px] font-normal ml-1">
-                        ({myReputation?.lateHandoverOrders ?? 0}/{myReputation?.handoverEvaluatedOrders ?? 0})
-                      </span>
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-slate-500 flex items-center justify-between pt-1 border-t border-slate-200/60">
-                    <span>Đơn bàn giao trễ: <strong className="text-slate-700">{myReputation?.lateHandoverOrders ?? 0}</strong></span>
-                    <span>Vi phạm xác nhận: <strong className="text-slate-700">{myReputation?.confirmedIncidents ?? 0}</strong></span>
-                  </div>
-                </div>
-              </div>
-
               {/* History Table */}
-              <div className="space-y-2 pt-2">
+              <div className="space-y-2.5 pt-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-800 block uppercase tracking-wider">
+                  <span className="text-xs font-extrabold text-slate-800 block uppercase tracking-wider">
                     {lang === 'vi' ? 'LỊCH SỬ BIẾN ĐỘNG ĐIỂM UY TÍN' : 'REPUTATION AUDIT TRAIL'}
                   </span>
-                  <span className="text-[11px] text-slate-400">
-                    {reputationHistoryItems.length} sự kiện gần nhất
+                  <span className="text-xs text-slate-400 font-medium">
+                    Tổng {reputationHistoryItems.length} sự kiện biến động
                   </span>
                 </div>
 
                 {isLoadingReputationHistory ? (
-                  <div className="py-8 text-center text-slate-400">
-                    <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2 text-[#c34c36]" />
-                    <span className="text-xs">{lang === 'vi' ? 'Đang tải lịch sử...' : 'Loading history...'}</span>
+                  <div className="py-10 text-center text-slate-400">
+                    <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-[#c34c36]" />
+                    <span className="text-xs font-medium">{lang === 'vi' ? 'Đang tải lịch sử...' : 'Loading history...'}</span>
                   </div>
                 ) : reputationHistoryItems.length === 0 ? (
-                  <div className="py-8 text-center border border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
-                    <Award className="w-8 h-8 text-slate-300 mx-auto mb-1.5" />
+                  <div className="py-10 text-center border border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
+                    <Award className="w-9 h-9 text-slate-300 mx-auto mb-2" />
                     <span className="text-xs font-bold text-slate-600 block">
                       {lang === 'vi' ? 'Chưa có biến động điểm nào' : 'No reputation score changes yet'}
                     </span>
@@ -2300,67 +2710,134 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                     </span>
                   </div>
                 ) : (
-                  <div className="max-h-64 overflow-y-auto space-y-2 pr-1 text-xs">
-                    {reputationHistoryItems.map((item) => {
-                      const eventMeta = getReputationEventMeta(item.eventType);
-                      const penaltyIncrease = (item.penaltyAfter || 0) - (item.penaltyBefore || 0);
+                  <>
+                    <div className="space-y-2.5 text-xs">
+                      {paginatedReputationItems.map((item) => {
+                        const eventMeta = getReputationEventMeta(item.eventType);
+                        const penaltyIncrease = (item.penaltyAfter || 0) - (item.penaltyBefore || 0);
 
-                      return (
-                        <div
-                          key={item.id}
-                          className="p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 flex items-start justify-between gap-3 transition"
-                        >
-                          <div className="space-y-1">
-                            <div className="font-bold text-slate-900 flex items-center gap-1.5 flex-wrap">
-                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                eventMeta.type === 'positive'
-                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        return (
+                          <div
+                            key={item.id}
+                            className="p-3.5 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 flex items-start justify-between gap-3 transition shadow-xs"
+                          >
+                            <div className="space-y-1.5 min-w-0">
+                              <div className="font-bold text-slate-900 flex items-center gap-2 flex-wrap">
+                                <span className={`px-2.5 py-0.5 rounded-md text-[11px] font-bold border ${eventMeta.type === 'positive'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                                   : eventMeta.type === 'negative'
-                                  ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                                  : 'bg-slate-100 text-slate-700 border border-slate-200'
-                              }`}>
-                                {eventMeta.label}
-                              </span>
-                              {item.orderId && (
-                                <span className="font-mono text-[10px] text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200">
-                                  Đơn #{item.orderId.substring(0, 8)}
+                                    ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                    : 'bg-slate-100 text-slate-700 border-slate-200'
+                                  }`}>
+                                  {eventMeta.label}
+                                </span>
+                                {item.orderId && (
+                                  <span className="font-mono text-[11px] text-slate-500 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200">
+                                    Đơn #{item.orderId.substring(0, 8)}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-slate-700 leading-relaxed">
+                                {formatReputationReason(item.reason || eventMeta.desc)}
+                              </p>
+                              <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-400 font-medium pt-0.5">
+                                <span>{new Date(item.createdAt).toLocaleString('vi-VN')}</span>
+                                {(item.goodAfter !== undefined || item.badAfter !== undefined) && (
+                                  <span>
+                                    Mẫu giao dịch: <strong className="text-emerald-700 font-semibold">{item.goodAfter ?? 0} thành công</strong> | <strong className="text-rose-700 font-semibold">{item.badAfter ?? 0} lỗi</strong>
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="text-right shrink-0 font-mono space-y-1.5 pl-2">
+                              {item.scoreBefore !== undefined && item.scoreAfter !== undefined && (
+                                <div className="flex items-center gap-1.5 text-xs justify-end font-bold">
+                                  <span className="text-slate-400">{item.scoreBefore ?? '—'}</span>
+                                  <span className="text-slate-400">→</span>
+                                  <span className={(item.scoreAfter || 0) >= (item.scoreBefore || 0) ? 'text-emerald-600' : 'text-rose-600'}>
+                                    {item.scoreAfter ?? '—'}
+                                  </span>
+                                </div>
+                              )}
+                              {penaltyIncrease > 0 && (
+                                <span className="inline-block px-2 py-0.5 rounded-md text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                                  +{penaltyIncrease} phạt
                                 </span>
                               )}
                             </div>
-                            <p className="text-[11px] text-slate-600">
-                              {item.reason || eventMeta.desc}
-                            </p>
-                            <div className="flex items-center gap-3 text-[10px] text-slate-400 font-medium">
-                              <span>{new Date(item.createdAt).toLocaleString('vi-VN')}</span>
-                              {(item.goodAfter !== undefined || item.badAfter !== undefined) && (
-                                <span>Mẫu: G:{item.goodAfter ?? 0} | B:{item.badAfter ?? 0}</span>
-                              )}
-                              {item.formulaVersion && (
-                                <span className="text-[9px] font-mono text-slate-400">v:{item.formulaVersion}</span>
-                              )}
-                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Pagination Controls */}
+                    {totalReputationPages > 1 && (
+                      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-100 text-xs">
+                        <div className="text-slate-500 font-medium">
+                          Trang <span className="font-bold text-slate-800">{safeReputationPage + 1}</span> / <span className="font-bold text-slate-800">{totalReputationPages}</span>
+                          <span className="text-slate-400 ml-1.5">(10 sự kiện / trang)</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setReputationPage((p) => Math.max(0, p - 1))}
+                            disabled={safeReputationPage === 0}
+                            className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-1 font-bold text-slate-700 cursor-pointer text-xs"
+                          >
+                            <ChevronLeft className="w-3.5 h-3.5" />
+                            <span>Trước</span>
+                          </button>
+
+                          <div className="flex items-center gap-1">
+                            {Array.from({ length: totalReputationPages }, (_, i) => i).map((pageNum) => {
+                              if (
+                                pageNum === 0 ||
+                                pageNum === totalReputationPages - 1 ||
+                                Math.abs(pageNum - safeReputationPage) <= 1
+                              ) {
+                                return (
+                                  <button
+                                    key={pageNum}
+                                    type="button"
+                                    onClick={() => setReputationPage(pageNum)}
+                                    className={`w-7 h-7 rounded-lg text-xs font-bold transition cursor-pointer ${
+                                      safeReputationPage === pageNum
+                                        ? 'bg-slate-900 text-white shadow-xs'
+                                        : 'border border-slate-200 bg-white hover:bg-slate-50 text-slate-700'
+                                    }`}
+                                  >
+                                    {pageNum + 1}
+                                  </button>
+                                );
+                              }
+                              if (
+                                (pageNum === 1 && safeReputationPage > 2) ||
+                                (pageNum === totalReputationPages - 2 && safeReputationPage < totalReputationPages - 3)
+                              ) {
+                                return (
+                                  <span key={pageNum} className="px-1 text-slate-400">
+                                    ...
+                                  </span>
+                                );
+                              }
+                              return null;
+                            })}
                           </div>
 
-                          <div className="text-right shrink-0 font-mono space-y-1">
-                            {item.scoreBefore !== undefined && item.scoreAfter !== undefined && (
-                              <div className="flex items-center gap-1 text-xs justify-end font-bold">
-                                <span className="text-slate-400">{item.scoreBefore ?? '—'}</span>
-                                <span className="text-slate-400">→</span>
-                                <span className={(item.scoreAfter || 0) >= (item.scoreBefore || 0) ? 'text-emerald-600' : 'text-rose-600'}>
-                                  {item.scoreAfter ?? '—'}
-                                </span>
-                              </div>
-                            )}
-                            {penaltyIncrease > 0 && (
-                              <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                                +{penaltyIncrease} phạt
-                              </span>
-                            )}
-                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setReputationPage((p) => Math.min(totalReputationPages - 1, p + 1))}
+                            disabled={safeReputationPage >= totalReputationPages - 1}
+                            className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-1 font-bold text-slate-700 cursor-pointer text-xs"
+                          >
+                            <span>Sau</span>
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
                         </div>
-                      );
-                    })}
-                  </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -2425,11 +2902,10 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                   key={tab.id}
                   type="button"
                   onClick={() => handleFilterVerificationStatus(tab.id)}
-                  className={`px-3 py-1.5 rounded-xl transition cursor-pointer shrink-0 ${
-                    verificationFilterStatus === tab.id
-                      ? 'bg-[#24263e] text-white shadow-xs'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
+                  className={`px-3 py-1.5 rounded-xl transition cursor-pointer shrink-0 ${verificationFilterStatus === tab.id
+                    ? 'bg-[#24263e] text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
                 >
                   {tab.label}
                 </button>
@@ -2494,8 +2970,8 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                           {item.submittedAt
                             ? new Date(item.submittedAt).toLocaleString('vi-VN')
                             : item.reviewedAt
-                            ? new Date(item.reviewedAt).toLocaleString('vi-VN')
-                            : ''}
+                              ? new Date(item.reviewedAt).toLocaleString('vi-VN')
+                              : ''}
                         </div>
                       </div>
 
@@ -2631,17 +3107,49 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       {/* Floating Modern Toast Notification (Positioned at top-right below navbar) */}
       {toastNotice && (
         <div className="fixed top-24 sm:top-28 right-4 sm:right-6 lg:right-8 z-50 animate-in fade-in slide-in-from-top-3">
-          <div className={`px-4 py-3 rounded-2xl shadow-xl flex items-center gap-2.5 text-xs font-bold border ${
-            toastNotice.type === 'success'
-              ? 'bg-emerald-600 text-white border-emerald-500 shadow-emerald-200/50'
-              : 'bg-rose-600 text-white border-rose-500 shadow-rose-200/50'
-          }`}>
+          <div className={`px-4 py-3 rounded-2xl shadow-xl flex items-center gap-2.5 text-xs font-bold border ${toastNotice.type === 'success'
+            ? 'bg-emerald-600 text-white border-emerald-500 shadow-emerald-200/50'
+            : 'bg-rose-600 text-white border-rose-500 shadow-rose-200/50'
+            }`}>
             {toastNotice.type === 'success' ? (
               <CheckCircle2 className="w-4 h-4 text-white shrink-0" />
             ) : (
               <AlertTriangle className="w-4 h-4 text-white shrink-0" />
             )}
             <span>{translateSystemNotification(toastNotice.message)}</span>
+          </div>
+        </div>
+      )}
+
+      {resultListing && resultInspection && hasPreListingInspectionResult(resultInspection) && (
+        <DigitalInspectionCertificateModal
+          key={`${resultInspection.id}-${resultInspection.status}`}
+          order={{ id: resultInspection.id, listing: resultListing, sellerName: currentUser?.name }}
+          initialDto={resultInspection}
+          lang={lang}
+          onClose={() => setResultListing(null)}
+        />
+      )}
+
+      {/* Modal Tiếp tục Kiểm định bắt buộc trước khi đăng (Pre-Listing Workflow) */}
+      {preListingPost && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-fadeIn">
+          <div className="w-full max-w-2xl max-h-[90vh] flex flex-col">
+            <PreListingInspectionWorkflow
+              postId={preListingPost.id}
+              postTitle={preListingPost.title}
+              postPrice={preListingPost.priceVnd}
+              initialInspectionOrderId={getItemInspectionOrder(preListingPost)?.id || inspectionByPost?.get(preListingPost.id)?.id}
+              onClose={() => {
+                setPreListingPost(null);
+                setInspectionRefresh((previous) => previous + 1);
+              }}
+              onPostActivated={() => {
+                fetchSellerData();
+                setInspectionRefresh((previous) => previous + 1);
+              }}
+              lang={lang}
+            />
           </div>
         </div>
       )}

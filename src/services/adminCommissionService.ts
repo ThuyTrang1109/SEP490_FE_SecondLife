@@ -22,11 +22,23 @@ export interface CommissionRuleRequest {
   reason: string;
 }
 
+export interface CommissionAuditSnapshot {
+  name?: string | null;
+  rate?: number | null;
+  minCommission?: number | null;
+  maxCommission?: number | null;
+  active?: boolean | null;
+  revision?: number | null;
+}
+
 export interface CommissionAuditResponse {
   id: string;
   ruleId: string;
   actorId?: string;
+  actorName?: string | null;
   action: string;
+  before?: CommissionAuditSnapshot | null;
+  after?: CommissionAuditSnapshot | null;
   oldValue?: string | null;
   newValue?: string | null;
   reason?: string;
@@ -118,10 +130,11 @@ export const adminCommissionService = {
    * Xem lịch sử sửa đổi chính sách hoa hồng
    * GET /api/v1/admin/commission-rules/{id}/history
    */
-  async getCommissionRuleHistory(id: string, page = 0, size = 10): Promise<PageResponse<CommissionAuditResponse>> {
+  async getCommissionRuleHistory(id: string, page = 0, size = 10, signal?: AbortSignal): Promise<PageResponse<CommissionAuditResponse>> {
     const res = await request<any>(`/v1/admin/commission-rules/${id}/history?page=${page}&size=${size}`, {
       method: 'GET',
       requiresAuth: true,
+      signal,
     });
     const d = (res as any)?.data || res;
     return {

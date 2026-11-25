@@ -36,7 +36,7 @@ export const formatLalamoveVehicle = (serviceType?: string): { name: string; ico
   }
   if (code === 'PICK_UP_TRUCK' || code === 'PICKUP_TRUCK' || code.includes('PICK_UP') || code.includes('PICKUP')) {
     return {
-      name: 'Xe bán tải (Pick-up)',
+      name: 'Xe bán tải',
       icon: '🛻',
       desc: 'Chở hàng cồng kềnh, kiện hàng lớn hoặc vận chuyển đường dài',
       standard: 'Cân nặng ≤ 500kg • Thùng 140x150x50cm',
@@ -107,9 +107,33 @@ export const formatLalamoveVehicle = (serviceType?: string): { name: string; ico
     };
   }
   return {
-    name: serviceType,
+    name: 'Phương tiện vận chuyển',
     icon: '🚚',
     desc: 'Phương tiện Lalamove do hệ thống tự động báo giá',
     standard: 'Tiêu chuẩn phương tiện Lalamove',
   };
+};
+
+/**
+ * Định dạng tên chặng vận chuyển sang tiếng Việt chuẩn
+ */
+export const formatShippingLeg = (leg?: string | null): string => {
+  if (!leg) return 'Người bán → Người mua';
+  switch (leg.trim().toUpperCase()) {
+    case 'SELLER_TO_BUYER':
+      return 'Người bán → Người mua';
+    case 'SELLER_TO_CENTER':
+    case 'SELLER_TO_HUB':
+      return 'Người bán → Trung tâm kiểm định';
+    case 'CENTER_TO_BUYER':
+    case 'HUB_TO_BUYER':
+      return 'Trung tâm kiểm định → Người mua';
+    case 'CENTER_TO_SELLER':
+    case 'HUB_TO_SELLER':
+      return 'Trung tâm kiểm định → Người bán';
+    case 'BUYER_TO_SELLER':
+      return 'Người mua → Người bán';
+    default:
+      return leg.replace(/_/g, ' ');
+  }
 };

@@ -1,4 +1,4 @@
-import { getAccessToken, clearAuthTokens, resolveApiUrl, refreshAccessToken, isUserIdle, isTokenExpired, notifySessionExpired } from './apiClient';
+import { ApiError, getAccessToken, clearAuthTokens, resolveApiUrl, refreshAccessToken, isUserIdle, isTokenExpired, notifySessionExpired } from './apiClient';
 
 export interface CloudinaryUploadResponseDto {
   url: string;
@@ -21,6 +21,14 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
     throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tải ảnh lên.');
   }
   return { Authorization: `Bearer ${token}` };
+}
+
+async function readImageUploadError(response: Response): Promise<ApiError> {
+  const body = await response.json().catch(() => null);
+  const message = typeof body?.message === 'string' && body.message.trim()
+    ? body.message
+    : `Tải ảnh thất bại (HTTP ${response.status})`;
+  return new ApiError(message, response.status, Array.isArray(body?.errors) ? body.errors : undefined, body?.path);
 }
 
 export const mediaService = {
@@ -57,20 +65,14 @@ export const mediaService = {
         }
       }
 
-      if (!response.ok) {
-        let errMsg = `Tải ảnh thất bại (HTTP ${response.status})`;
-        try {
-          const errData = await response.json();
-          errMsg = errData?.message || errMsg;
-        } catch {}
-        throw new Error(errMsg);
-      }
+      if (!response.ok) throw await readImageUploadError(response);
 
       const resData = await response.json();
       return resData?.data ?? resData;
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Backend media upload error:', err);
-      throw new Error(err.message || 'Không thể tải ảnh lên máy chủ. Vui lòng kiểm tra kết nối mạng và thử lại.');
+      if (err instanceof Error && err.message) throw err;
+      throw new Error('Không thể tải ảnh lên máy chủ. Vui lòng kiểm tra kết nối mạng và thử lại.');
     }
   },
 
@@ -109,20 +111,14 @@ export const mediaService = {
         }
       }
 
-      if (!response.ok) {
-        let errMsg = `Tải ảnh thất bại (HTTP ${response.status})`;
-        try {
-          const errData = await response.json();
-          errMsg = errData?.message || errMsg;
-        } catch {}
-        throw new Error(errMsg);
-      }
+      if (!response.ok) throw await readImageUploadError(response);
 
       const resData = await response.json();
       return resData?.data ?? resData ?? [];
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Backend multiple media upload error:', err);
-      throw new Error(err.message || 'Không thể tải danh sách ảnh lên máy chủ. Vui lòng kiểm tra kết nối mạng và thử lại.');
+      if (err instanceof Error && err.message) throw err;
+      throw new Error('Không thể tải danh sách ảnh lên máy chủ. Vui lòng kiểm tra kết nối mạng và thử lại.');
     }
   },
 

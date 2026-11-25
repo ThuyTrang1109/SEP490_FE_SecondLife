@@ -9,6 +9,7 @@ interface Props {
   search: string;
   searching: boolean;
   seller: boolean;
+  showPreListing: boolean;
   loading: boolean;
   onFilter: (filter: OrderFilterTab) => void;
   onSearch: (search: string) => void;
@@ -16,19 +17,19 @@ interface Props {
 }
 
 export function EscrowOrderFilters({
-  lang, active, counts, search, searching, seller, loading, onFilter, onSearch, onRefresh,
+  lang, active, counts, search, searching, seller, showPreListing, loading, onFilter, onSearch, onRefresh,
 }: Props) {
   const vi = lang === 'vi';
   const labels: Record<OrderFilterTab, string> = vi ? {
     all: 'Tất cả', awaiting_pickup: 'Chờ lấy hàng', inspecting: 'Đang xử lý kiểm định',
     shipping: 'Đang giao hàng', delivered: seller ? 'Đã giao (48h)' : 'Đã nhận hàng',
-    completed: 'Hoàn thành', cancelled: 'Đã đóng / Hủy', disputed: 'Trả hàng / Tranh chấp',
-    with_inspection: 'Có kiểm định',
+    completed: 'Hoàn thành', cancelled: 'Đã đóng / Hủy', disputed: 'Trả hàng / Tranh chấp / Escrow đóng băng',
+    with_inspection: 'Có kiểm định', pre_listing: 'Kiểm định trước đăng',
   } : {
     all: 'All', awaiting_pickup: 'Awaiting pickup', inspecting: 'Inspection in progress',
     shipping: 'In delivery', delivered: seller ? 'Delivered (48h)' : 'Delivered',
-    completed: 'Completed', cancelled: 'Closed / Cancelled', disputed: 'Returns / Disputes',
-    with_inspection: 'With inspection',
+    completed: 'Completed', cancelled: 'Closed / Cancelled', disputed: 'Returns / Disputes / Frozen Escrow',
+    with_inspection: 'With inspection', pre_listing: 'Pre-listing inspections',
   };
   return (
     <section aria-label={vi ? 'Lọc đơn hàng' : 'Filter orders'} aria-busy={loading || searching}
@@ -62,18 +63,18 @@ export function EscrowOrderFilters({
       </div>
       <div role="group" aria-label={vi ? 'Trạng thái đơn hàng' : 'Order status'}
         className="flex flex-wrap items-center gap-2 border-t border-slate-100 px-4 py-3 sm:px-5">
-        {ORDER_FILTER_TABS.map((tab) => (
+        {ORDER_FILTER_TABS.filter((tab) => showPreListing || tab !== 'pre_listing').map((tab) => (
           <button key={tab} type="button" aria-pressed={active === tab} onClick={() => onFilter(tab)}
             className={`inline-flex min-h-9 cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ad432f] sm:px-3 sm:text-sm ${
               active === tab ? 'border-[#ad432f]/25 bg-[#ad432f]/10 text-[#963a29]'
                 : 'border-transparent bg-slate-50 text-slate-700 hover:border-slate-200 hover:bg-slate-100'
             }`}>
-            {tab === 'with_inspection' && <ShieldCheck aria-hidden="true" className="size-4" />}
+            {(tab === 'with_inspection' || tab === 'pre_listing') && <ShieldCheck aria-hidden="true" className="size-4" />}
             {labels[tab]}
             {counts && (
               <span className={`min-w-5 rounded-full px-1.5 py-0.5 text-center text-[11px] tabular-nums ${
                 active === tab ? 'bg-white text-[#963a29]' : 'bg-white text-slate-500'
-              }`}>{counts[tab]}</span>
+              }`}>{counts[tab] ?? 0}</span>
             )}
           </button>
         ))}
@@ -82,15 +83,15 @@ export function EscrowOrderFilters({
   );
 }
 
-export function EscrowOrderPagination({ lang, page, size, totalPages, total, onPage }: {
-  lang: Language; page: number; size: number; totalPages: number; total: number; onPage: (page: number) => void;
+export function EscrowOrderPagination({ lang, page, size, totalPages, total, preListing, onPage }: {
+  lang: Language; page: number; size: number; totalPages: number; total: number; preListing?: boolean; onPage: (page: number) => void;
 }) {
   const vi = lang === 'vi';
   const range = `${page * size + 1}–${Math.min((page + 1) * size, total)} / ${total}`;
   return (
     <nav aria-label={vi ? 'Phân trang đơn hàng' : 'Order pagination'}
       className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-      <span className="tabular-nums">{range} {vi ? 'đơn' : 'orders'}</span>
+      <span className="tabular-nums">{range} {preListing ? (vi ? 'yêu cầu' : 'requests') : (vi ? 'đơn' : 'orders')}</span>
       <div className="flex items-center gap-2">
         <button type="button" onClick={() => onPage(page - 1)} disabled={page === 0}
           aria-label={vi ? 'Trang trước' : 'Previous page'}

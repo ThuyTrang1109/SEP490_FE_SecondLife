@@ -23,9 +23,9 @@ import {
   adminCommissionService,
   CommissionRuleResponse,
   CommissionRuleRequest,
-  CommissionAuditResponse
 } from '../../services/adminCommissionService';
 import { formatVND } from '../../utils/translations';
+import { CommissionHistorySection } from './CommissionHistorySection';
 
 export const CommissionRulesTab: React.FC = () => {
   const [rules, setRules] = useState<CommissionRuleResponse[]>([]);
@@ -47,16 +47,16 @@ export const CommissionRulesTab: React.FC = () => {
   const [formActive, setFormActive] = useState(true);
   const [formReason, setFormReason] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formModalError, setFormModalError] = useState<string | null>(null);
 
   // Modal: Deactivate Rule
   const [deactivatingRule, setDeactivatingRule] = useState<CommissionRuleResponse | null>(null);
   const [deactivateReason, setDeactivateReason] = useState('');
   const [isDeactivating, setIsDeactivating] = useState(false);
+  const [deactivateError, setDeactivateError] = useState<string | null>(null);
 
   // Modal: Audit History
   const [historyRule, setHistoryRule] = useState<CommissionRuleResponse | null>(null);
-  const [auditList, setAuditList] = useState<CommissionAuditResponse[]>([]);
-  const [isLoadingAudit, setIsLoadingAudit] = useState(false);
 
   // Modal: View Rule Detail by ID (GET /api/v1/admin/commission-rules/{id})
   const [detailRule, setDetailRule] = useState<CommissionRuleResponse | null>(null);
@@ -68,25 +68,27 @@ export const CommissionRulesTab: React.FC = () => {
   const [snapshotReason, setSnapshotReason] = useState('Bổ sung snapshot lưu vết kế toán cho đơn hàng cũ');
   const [isCapturingSnapshot, setIsCapturingSnapshot] = useState(false);
   const [snapshotResult, setSnapshotResult] = useState<any>(null);
+  const [snapshotError, setSnapshotError] = useState<string | null>(null);
 
   const handleCaptureSnapshot = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSnapshotError(null);
     if (!snapshotOrderId.trim()) {
-      setErrorMessage('Vui lòng nhập Order ID cần chốt snapshot hoa hồng.');
+      setSnapshotError('Vui lòng nhập mã đơn hàng (Order ID) cần chốt snapshot hoa hồng.');
       return;
     }
     setIsCapturingSnapshot(true);
-    setErrorMessage(null);
     try {
       const res = await adminCommissionService.captureCommissionSnapshot(
         snapshotOrderId.trim(),
         snapshotReason.trim() || 'Bổ sung snapshot lưu vết kế toán'
       );
       setSnapshotResult(res);
+      setSnapshotError(null);
       setSuccessMessage(`Đã chụp snapshot hoa hồng cho đơn #${snapshotOrderId.trim()} thành công!`);
     } catch (err: any) {
       console.error('Error capturing commission snapshot:', err);
-      setErrorMessage(err?.response?.data?.message || err?.message || 'Lỗi chụp snapshot hoa hồng cho đơn hàng.');
+      setSnapshotError(err?.response?.data?.message || err?.message || 'Lỗi chụp snapshot hoa hồng cho đơn hàng.');
     } finally {
       setIsCapturingSnapshot(false);
     }
@@ -133,6 +135,18 @@ export const CommissionRulesTab: React.FC = () => {
     fetchRules(currentPage);
   }, [fetchRules, currentPage]);
 
+  // Tự động chọn chính sách đang kích hoạt để hiển thị lịch sử bên dưới
+  useEffect(() => {
+    if (rules.length > 0) {
+      setHistoryRule((prev) => {
+        if (prev && rules.some((r) => r.id === prev.id)) {
+          return rules.find((r) => r.id === prev.id) || prev;
+        }
+        return rules.find((r) => r.active) || rules[0];
+      });
+    }
+  }, [rules]);
+
   const handleOpenCreateModal = () => {
     setEditingRule(null);
     setFormName('Chính Sách Hoa Hồng Tiêu Chuẩn');
@@ -141,6 +155,7 @@ export const CommissionRulesTab: React.FC = () => {
     setFormMaxCommission('500000');
     setFormActive(true);
     setFormReason('Khởi tạo chính sách chiết khấu sàn SecondLife');
+    setFormModalError(null);
     setIsFormModalOpen(true);
   };
 
@@ -152,34 +167,35 @@ export const CommissionRulesTab: React.FC = () => {
     setFormMaxCommission(rule.maxCommission !== null && rule.maxCommission !== undefined ? String(rule.maxCommission) : '');
     setFormActive(rule.active);
     setFormReason(`Cập nhật phiên bản chính sách #${rule.revision + 1}`);
+    setFormModalError(null);
     setIsFormModalOpen(true);
   };
 
   const handleSaveRule = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormModalError(null);
     const rateVal = parseFloat(formRatePercent) / 100;
     const minVal = parseFloat(formMinCommission);
     const maxVal = formMaxCommission.trim() !== '' ? parseFloat(formMaxCommission) : null;
 
     if (isNaN(rateVal) || rateVal < 0 || rateVal > 1) {
-      setErrorMessage('Tỷ lệ hoa hồng không hợp lệ (phải từ 0% đến 100%).');
+      setFormModalError('Tỷ lệ hoa hồng không hợp lệ (phải từ 0% đến 100%).');
       return;
     }
     if (isNaN(minVal) || minVal < 0) {
-      setErrorMessage('Mức hoa hồng tối thiểu không hợp lệ.');
+      setFormModalError('Mức hoa hồng tối thiểu không hợp lệ.');
       return;
     }
     if (maxVal !== null && maxVal < minVal) {
-      setErrorMessage('Trần hoa hồng tối đa phải lớn hơn hoặc bằng mức tối thiểu.');
+      setFormModalError('Trần hoa hồng tối đa phải lớn hơn hoặc bằng mức tối thiểu.');
       return;
     }
     if (!formReason.trim()) {
-      setErrorMessage('Vui lòng nhập lý do thay đổi quy tắc theo quy chuẩn kiểm toán.');
+      setFormModalError('Vui lòng nhập lý do thay đổi quy tắc theo quy chuẩn kiểm toán.');
       return;
     }
 
     setIsSubmitting(true);
-    setErrorMessage(null);
     try {
       const payload: CommissionRuleRequest = {
         name: formName.trim(),
@@ -205,11 +221,12 @@ export const CommissionRulesTab: React.FC = () => {
       }
 
       setIsFormModalOpen(false);
+      setFormModalError(null);
       fetchRules(0);
       setTimeout(() => setSuccessMessage(null), 5000);
     } catch (err: any) {
       console.error('Error saving commission rule:', err);
-      setErrorMessage(err?.response?.data?.message || err?.message || 'Lỗi khi lưu quy tắc hoa hồng.');
+      setFormModalError(err?.response?.data?.message || err?.message || 'Lỗi khi lưu quy tắc hoa hồng.');
     } finally {
       setIsSubmitting(false);
     }
@@ -218,36 +235,24 @@ export const CommissionRulesTab: React.FC = () => {
   const handleConfirmDeactivate = async () => {
     if (!deactivatingRule) return;
     if (!deactivateReason.trim()) {
-      setErrorMessage('Vui lòng nhập lý do tắt chính sách.');
+      setDeactivateError('Vui lòng nhập lý do tắt chính sách.');
       return;
     }
     setIsDeactivating(true);
+    setDeactivateError(null);
     try {
       await adminCommissionService.deactivateCommissionRule(deactivatingRule.id, deactivateReason.trim());
       setSuccessMessage(`Đã ngưng kích hoạt chính sách "${deactivatingRule.name}".`);
       setDeactivatingRule(null);
       setDeactivateReason('');
+      setDeactivateError(null);
       fetchRules(currentPage);
       setTimeout(() => setSuccessMessage(null), 5000);
     } catch (err: any) {
       console.error('Error deactivating rule:', err);
-      setErrorMessage(err?.response?.data?.message || err?.message || 'Không thể tắt chính sách.');
+      setDeactivateError(err?.response?.data?.message || err?.message || 'Không thể tắt chính sách.');
     } finally {
       setIsDeactivating(false);
-    }
-  };
-
-  const handleOpenAuditHistory = async (rule: CommissionRuleResponse) => {
-    setHistoryRule(rule);
-    setIsLoadingAudit(true);
-    try {
-      const data = await adminCommissionService.getCommissionRuleHistory(rule.id, 0, 50);
-      setAuditList(data.items);
-    } catch (err: any) {
-      console.error('Error loading audit history:', err);
-      setAuditList([]);
-    } finally {
-      setIsLoadingAudit(false);
     }
   };
 
@@ -281,17 +286,7 @@ export const CommissionRulesTab: React.FC = () => {
             <span>Làm mới</span>
           </button>
 
-          <button
-            onClick={() => {
-              setIsSnapshotModalOpen(true);
-              setSnapshotResult(null);
-            }}
-            className="px-3.5 py-2 text-xs font-bold bg-white text-indigo-700 border border-indigo-200 hover:bg-indigo-50 rounded-xl transition flex items-center gap-1.5 cursor-pointer"
-            title="Chốt snapshot hoa hồng lưu vết kế toán cho đơn hàng cũ"
-          >
-            <ShieldCheck className="w-4 h-4 text-indigo-600" />
-            <span>Snapshot Đơn Cũ</span>
-          </button>
+          
 
           <button
             onClick={handleOpenCreateModal}
@@ -504,6 +499,7 @@ export const CommissionRulesTab: React.FC = () => {
                               onClick={() => {
                                 setDeactivatingRule(rule);
                                 setDeactivateReason('');
+                                setDeactivateError(null);
                               }}
                               className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
                               title="Tắt chính sách"
@@ -513,11 +509,21 @@ export const CommissionRulesTab: React.FC = () => {
                           )}
 
                           <button
-                            onClick={() => handleOpenAuditHistory(rule)}
-                            className="p-1.5 text-slate-600 hover:bg-slate-100 rounded-lg transition cursor-pointer"
-                            title="Xem lịch sử kiểm toán"
+                            type="button"
+                            onClick={() => {
+                              setHistoryRule(rule);
+                              document.getElementById('commission-history-section')?.scrollIntoView({ behavior: 'smooth' });
+                            }}
+                            className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold transition cursor-pointer ${
+                              historyRule?.id === rule.id
+                                ? 'bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs'
+                                : 'text-slate-700 hover:bg-slate-100 border border-slate-200'
+                            }`}
+                            aria-label={`Xem lịch sử ${rule.name}`}
+                            title="Xem lịch sử thay đổi của chính sách này bên dưới"
                           >
-                            <History className="w-4 h-4" />
+                            <History aria-hidden="true" className="w-3.5 h-3.5 text-amber-600" />
+                            <span>Lịch sử</span>
                           </button>
                         </div>
                       </td>
@@ -555,6 +561,16 @@ export const CommissionRulesTab: React.FC = () => {
         )}
       </div>
 
+      {/* 5. Lịch sử thay đổi quy tắc hoa hồng (Hiển thị bên dưới) */}
+      {historyRule && (
+        <CommissionHistorySection
+          key={historyRule.id}
+          rule={historyRule}
+          allRules={rules}
+          onSelectRule={(selected) => setHistoryRule(selected)}
+        />
+      )}
+
       {/* 5. MODAL: Create / Edit Rule */}
       {isFormModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 animate-in fade-in">
@@ -573,6 +589,13 @@ export const CommissionRulesTab: React.FC = () => {
                 ✕
               </button>
             </div>
+
+            {formModalError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                <span>{formModalError}</span>
+              </div>
+            )}
 
             <form onSubmit={handleSaveRule} noValidate className="space-y-3.5 text-xs">
               <div>
@@ -704,14 +727,21 @@ export const CommissionRulesTab: React.FC = () => {
 
       {/* 6. MODAL: Deactivate Rule */}
       {deactivatingRule && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 animate-in fade-in">
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 animate-in fade-in backdrop-blur-xs">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200">
             <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
               <PowerOff className="w-5 h-5 text-rose-600" />
               <h3 className="font-bold text-sm text-slate-900">
-                Xác Nhận Tắt Chính Sách Hoa Hồng
+                Xác nhận tắt chính sách hoa hồng
               </h3>
             </div>
+
+            {deactivateError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                <span>{deactivateError}</span>
+              </div>
+            )}
 
             <p className="text-xs text-slate-600">
               Bạn có chắc chắn muốn ngừng áp dụng chính sách <strong className="text-slate-900">"{deactivatingRule.name}"</strong>? Lịch sử tài chính các đơn hàng cũ vẫn được giữ nguyên.
@@ -719,22 +749,39 @@ export const CommissionRulesTab: React.FC = () => {
 
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                Lý Do Ngừng Kích Hoạt <span className="text-rose-500">*</span>
+                Lý do ngừng kích hoạt <span className="text-rose-500">*</span>
               </label>
               <textarea
                 required
                 rows={2}
                 value={deactivateReason}
-                onChange={(e) => setDeactivateReason(e.target.value)}
+                onChange={(e) => {
+                  setDeactivateReason(e.target.value);
+                  if (deactivateError) setDeactivateError(null);
+                }}
                 placeholder="Nhập lý do tắt chính sách..."
-                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:border-rose-500"
+                className={`w-full text-xs px-3 py-2 border rounded-xl focus:outline-none transition ${
+                  deactivateError
+                    ? 'border-rose-500 bg-rose-50/20 focus:border-rose-600 ring-1 ring-rose-200'
+                    : 'border-slate-300 focus:border-rose-500'
+                }`}
               />
+              {deactivateError && (
+                <p className="text-[11px] text-rose-600 mt-1 font-semibold flex items-center gap-1">
+                  <span>⚠</span>
+                  <span>{deactivateError}</span>
+                </p>
+              )}
             </div>
 
             <div className="pt-2 flex items-center justify-end gap-2 text-xs">
               <button
                 type="button"
-                onClick={() => setDeactivatingRule(null)}
+                onClick={() => {
+                  setDeactivatingRule(null);
+                  setDeactivateError(null);
+                  setDeactivateReason('');
+                }}
                 className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 cursor-pointer font-bold"
               >
                 Hủy
@@ -746,127 +793,14 @@ export const CommissionRulesTab: React.FC = () => {
                 className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-black cursor-pointer shadow-xs disabled:opacity-60 flex items-center gap-1.5"
               >
                 {isDeactivating && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
-                <span>Xác Nhận Tắt</span>
+                <span>Xác nhận tắt</span>
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* 7. MODAL: Audit History */}
-      {historyRule && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-2xl border border-slate-200 max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 shrink-0">
-              <div className="flex items-center gap-2">
-                <History className="w-5 h-5 text-blue-600" />
-                <h3 className="font-bold text-sm text-slate-900">
-                  Lịch Sử Kiểm Toán: {historyRule.name}
-                </h3>
-              </div>
-              <button
-                onClick={() => setHistoryRule(null)}
-                className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
 
-            <div className="flex-1 overflow-y-auto space-y-3 pr-1 text-xs">
-              {isLoadingAudit ? (
-                <div className="py-8 text-center text-slate-400">
-                  <RefreshCw className="w-5 h-5 animate-spin mx-auto text-blue-600 mb-2" />
-                  <span>Đang tải lịch sử thay đổi...</span>
-                </div>
-              ) : auditList.length === 0 ? (
-                <div className="py-8 text-center text-slate-400">
-                  <Info className="w-6 h-6 mx-auto mb-1 text-slate-300" />
-                  <span>Chưa ghi nhận bản ghi kiểm toán nào cho quy tắc này.</span>
-                </div>
-              ) : (
-                auditList.map((audit) => {
-                  let parsedNew: any = null;
-                  let parsedOld: any = null;
-                  try {
-                    if (audit.newValue) parsedNew = JSON.parse(audit.newValue);
-                  } catch {
-                    // silent fallback
-                  }
-                  try {
-                    if (audit.oldValue) parsedOld = JSON.parse(audit.oldValue);
-                  } catch {
-                    // silent fallback
-                  }
-
-                  const rateVal = parsedNew?.rate ?? audit.rate;
-                  const revisionVal = parsedNew?.revision ?? audit.revision;
-                  const dateStr = audit.changedAt || audit.createdAt;
-                  const actor = audit.actorId || audit.changedBy;
-
-                  return (
-                    <div key={audit.id} className="p-3.5 rounded-xl border border-slate-100 bg-slate-50/70 space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <span className="font-black text-slate-800 uppercase text-[10px] bg-white px-2 py-0.5 rounded border border-slate-200">
-                          {audit.action}
-                        </span>
-                        <span className="text-[10px] text-slate-400">
-                          {dateStr ? new Date(dateStr).toLocaleString('vi-VN') : '—'}
-                        </span>
-                      </div>
-
-                      <div className="text-slate-700">
-                        <strong>Lý do:</strong> {audit.reason || 'Không ghi nhận lý do'}
-                      </div>
-
-                      {actor && (
-                        <div className="text-[11px] text-slate-500">
-                          <span>Thực hiện bởi: </span>
-                          <span className="font-mono text-[10px] bg-slate-200/60 px-1.5 py-0.5 rounded text-slate-700">
-                            {actor}
-                          </span>
-                        </div>
-                      )}
-
-                      <div className="grid grid-cols-2 gap-2 text-[11px] pt-1 border-t border-slate-200/60 mt-1">
-                        <div>
-                          <span className="text-slate-400">Tỷ lệ:</span>{' '}
-                          <strong className="text-emerald-700">
-                            {rateVal !== undefined ? `${(Number(rateVal) * 100).toFixed(2)}%` : '—'}
-                          </strong>
-                        </div>
-                        <div>
-                          <span className="text-slate-400">Revision:</span>{' '}
-                          <span className="font-mono font-bold">
-                            {revisionVal !== undefined ? `r${revisionVal}` : '—'}
-                          </span>
-                        </div>
-                      </div>
-
-                      {parsedOld && (
-                        <div className="text-[10px] text-slate-400 pt-1 border-t border-dashed border-slate-200">
-                          <span>Trước đó: </span>
-                          <span className="line-through text-slate-500">
-                            {(Number(parsedOld.rate) * 100).toFixed(2)}% (r{parsedOld.revision})
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })
-              )}
-            </div>
-
-            <div className="pt-2 border-t border-slate-100 flex justify-end shrink-0">
-              <button
-                onClick={() => setHistoryRule(null)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold cursor-pointer text-xs"
-              >
-                Đóng
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* 8. MODAL: XEM CHI TIẾT QUY TẮC HOA HỒNG (GET /commission-rules/{id}) */}
       {(detailRule || isLoadingDetail) && (
@@ -1002,12 +936,22 @@ export const CommissionRulesTab: React.FC = () => {
               </div>
               <button
                 type="button"
-                onClick={() => setIsSnapshotModalOpen(false)}
+                onClick={() => {
+                  setIsSnapshotModalOpen(false);
+                  setSnapshotError(null);
+                }}
                 className="p-1 rounded-full text-slate-400 hover:text-slate-600 cursor-pointer"
               >
                 ✕
               </button>
             </div>
+
+            {snapshotError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                <span>{snapshotError}</span>
+              </div>
+            )}
 
             <form onSubmit={handleCaptureSnapshot} className="space-y-3.5 text-xs">
               <div className="space-y-1">

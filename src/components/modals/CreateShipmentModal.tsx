@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { EscrowOrder, Language, ShipmentBackend } from '../../types';
-import { formatVND } from '../../utils/translations';
+import { formatConditionGrade, formatVND } from '../../utils/translations';
 import {
   Truck,
   Package,
@@ -23,6 +23,7 @@ import { translateApiError } from '../../services/apiClient';
 import { translateSystemNotification } from '../../utils/systemNotificationTranslator';
 import { resolveOrderListing } from '../../utils/catalogCache';
 import { resolveInspectionCenter } from '../../utils/orderUtils';
+import { upsertShipment } from '../../utils/lalamoveTracking';
 import {
   getOrderSellerAddress,
   getOrderSellerName,
@@ -249,14 +250,14 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
     const candidate =
       parsedBuyerDelivery?.address ||
       parsedBuyerDelivery?.fullAddress ||
-      extractAddressText(inspectionOrderInfo?.buyerAddress) ||
-      extractAddressText(inspectionOrderInfo?.buyerDeliveryAddressJson) ||
       extractAddressText((order as any).deliveryAddress) ||
       extractAddressText((order as any).buyerDeliveryAddressJson) ||
+      getOrderBuyerAddress(order) ||
+      extractAddressText(inspectionOrderInfo?.buyerAddress) ||
+      extractAddressText(inspectionOrderInfo?.buyerDeliveryAddressJson) ||
       extractAddressText((order as any).buyerAddress) ||
       extractAddressText((order as any).buyerContact?.address) ||
-      extractAddressText(inspectionOrderInfo?.deliveryAddress) ||
-      getOrderBuyerAddress(order);
+      extractAddressText(inspectionOrderInfo?.deliveryAddress);
 
     if (candidate && candidate !== 'Địa chỉ nhận hàng của người mua') {
       return candidate;
@@ -402,7 +403,9 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
           if (existingRaw) {
             try { existingList = JSON.parse(existingRaw); } catch { }
           }
-          const updatedShipments = [shipment, ...existingList.filter((s) => s.shipmentId !== shipment.shipmentId)];
+          const updatedShipments = isHubInspection || isAtHome
+            ? [shipment, ...existingList.filter((s) => s.shipmentId !== shipment.shipmentId)]
+            : upsertShipment(existingList, shipment);
           localStorage.setItem(shipmentsKey, JSON.stringify(updatedShipments));
           localStorage.setItem(`order_shipments_${oid}`, JSON.stringify(updatedShipments));
         }
@@ -521,7 +524,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
                   {resolveOrderListing(order.listing).brand}
                 </span>
                 <span className="text-[10px] bg-slate-200 text-slate-700 font-bold px-1.5 py-0.2 rounded">
-                  {order.listing?.conditionGrade || 'Đã qua sử dụng'}
+                  {formatConditionGrade(order.listing?.conditionGrade, 'vi') || 'Đã qua sử dụng'}
                 </span>
               </div>
               <h4 className="font-bold text-slate-900 text-xs sm:text-sm truncate mt-0.5">
@@ -604,7 +607,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
                     ? 'bg-blue-100 text-blue-800 border-blue-200'
                     : 'bg-emerald-100 text-emerald-800 border-emerald-200'
                     }`}>
-                    {isHubInspection ? 'Trạm ISO/IEC 17025' : 'GPS Người Nhận'}
+                    {isHubInspection ? '' : 'GPS Người Nhận'}
                   </span>
                 </div>
                 {!isHubInspection && (
@@ -698,18 +701,13 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
                 <div className="flex items-start gap-2 bg-white/90 p-2 sm:p-2.5 rounded-xl border border-amber-200 shadow-2xs text-[11px] text-amber-900">
                   <span className="font-bold shrink-0">📦 Bàn giao tài xế:</span>
                   <span className="leading-snug">
-                    Vui lòng bàn giao kiện hàng nguyên vẹn tem niêm phong cho tài xế Lalamove để giao thẳng tới địa chỉ người mua: <strong>{buyerFullAddress}</strong>.
+                    Vui lòng bàn giao kiện hàng nguyên vẹn cho tài xế Lalamove để giao thẳng tới địa chỉ người mua: <strong>{buyerFullAddress}</strong>.
                   </span>
                 </div>
               </div>
             </div>
           ) : (
-            <div className="bg-slate-50 p-3 rounded-2xl border border-gray-200 space-y-1 text-xs text-slate-600 shadow-2xs">
-              <span className="font-bold text-slate-900 text-xs block">Cam kết giao hàng Lalamove On-Demand</span>
-              <p className="leading-relaxed text-[11px]">
-                Tài xế Lalamove sẽ đến lấy kiện hàng trực tiếp tại kho của bạn và giao thẳng tới người mua: <strong>{buyerContactName}</strong> ({buyerContactPhone}).
-              </p>
-            </div>
+            <span></span>
           )}
 
 

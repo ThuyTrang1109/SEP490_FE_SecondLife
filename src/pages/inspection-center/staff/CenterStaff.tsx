@@ -67,7 +67,7 @@ export function CenterStaff({ setActiveTab, staffWorkloadMap, staff }: Props) {
         <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
         <div className="space-y-0.5">
           <div className="font-bold text-blue-950">
-            Phạm vi quản lý nhân sự ({staffList.length} KTV trực thuộc Trung tâm)
+            Phạm vi quản lý nhân sự ({staffList.length} kỹ thuật viên trực thuộc Trung tâm)
           </div>
           <p className="text-[11px] text-blue-800 leading-relaxed">
             Hệ thống phân quyền hiển thị các Kỹ thuật viên do chính Trung tâm của bạn quản lý. Để thêm kỹ thuật viên mới cho trạm, vui lòng bấm nút <strong>"+ Cấp Tài Khoản KTV Mới"</strong> bên trên.

@@ -39,7 +39,7 @@ test('resolveReturnReserveStatusLabel maps all expected reserve statuses and fal
   assert.equal(resolveReturnReserveStatusLabel('AWAITING_RETURN_SHIPMENT'), 'Chờ tạo chuyến hoàn');
   assert.equal(resolveReturnReserveStatusLabel('RETURN_IN_PROGRESS'), 'Đang trả hàng');
   assert.equal(resolveReturnReserveStatusLabel('AWAITING_ACTUAL_FEE'), 'Chờ cước thực tế');
-  assert.equal(resolveReturnReserveStatusLabel('AWAITING_CASH_CONFIRMATION'), 'Đã giao về seller · Chờ xác nhận chi cước');
+  assert.equal(resolveReturnReserveStatusLabel('AWAITING_CASH_CONFIRMATION'), 'Đã giao về người bán · Chờ xác nhận chi cước');
   assert.equal(resolveReturnReserveStatusLabel('AWAITING_RECONCILIATION'), 'Chờ đối soát cước');
   assert.equal(resolveReturnReserveStatusLabel('EXCEEDS_RESERVE'), 'Cước thực tế vượt dự phòng');
   assert.equal(resolveReturnReserveStatusLabel('SETTLED'), 'Đã quyết toán cước hoàn');
@@ -167,7 +167,7 @@ test('Kịch bản 2: Hub đã nhận 50.000 ₫, chuyến hoàn đã giao: gi�
   const reserveBadge = resolveReturnReserveStatusLabel(scenario2.returnReserve?.status);
   const shipmentBadge = resolveShipmentStatusLabel(scenario2.shipments?.[0]?.status);
 
-  assert.equal(reserveBadge, 'Đã giao về seller · Chờ xác nhận chi cước');
+  assert.equal(reserveBadge, 'Đã giao về người bán · Chờ xác nhận chi cước');
   assert.equal(shipmentBadge, 'Đã giao hàng');
   assert.notEqual(reserveBadge, shipmentBadge);
 });
@@ -301,7 +301,7 @@ test('AdminInspectionFundsView renders Scenario 2 correctly (Hub nhận 50k, gi�
     funds: scenario2,
   }));
 
-  assert.match(html, /Đã giao về seller · Chờ xác nhận chi cước/);
+  assert.match(html, /Đã giao về người bán · Chờ xác nhận chi cước/);
   assert.match(html, /Đã giao hàng/);
 });
 
@@ -382,8 +382,8 @@ test('AdminInspectionFundsTab renders dedicated tab with KPI cards and inspectio
   assert.match(html, /Đơn Đang Giữ Tiền/);
   assert.match(html, /Quỹ Cước Hoàn Đang Giữ/);
   assert.match(html, /Chờ Quyết Toán Hub/);
-  assert.match(html, /Đối Soát Tiền/);
-  assert.match(html, /17e67687/);
+  assert.match(html, /Danh Sách Đơn Kiểm Định Đang Quản Lý Dòng Tiền/);
+  assert.match(html, /Tìm mã đơn, tên máy, người/);
 });
 
 test('resolveFeeSplitPlan correctly handles explicit split and infers ratio from amounts', () => {
@@ -648,8 +648,8 @@ test('AdminInspectionFundsView renders full Return Reserve details (actual fee, 
   }));
 
   // Verify all 4 requirements are present in HTML output:
-  // 1. Tiền vận chuyển thực tế từ trung tâm về seller
-  assert.match(html, /Cước hoàn thực tế \(Hub → Seller\)/);
+  // 1. Tiền vận chuyển thực tế từ trung tâm về người bán
+  assert.match(html, /Cước hoàn thực tế \(Hub → Người bán\)/);
   assert.match(html, /46\.200/);
   assert.match(html, /LLM-RET-001/);
 
@@ -669,4 +669,41 @@ test('AdminInspectionFundsView renders full Return Reserve details (actual fee, 
   // 4. Trạng thái đã hoàn
   assert.match(html, /Trạng thái hoàn trả tiền dư:/);
   assert.match(html, /Đang chuyển hoàn · Chờ quyết toán/);
+});
+
+test('resolveReturnReserveDetails handles interrupted/failed return shipment without deducting fee', () => {
+  const funds: AdminInspectionOrderFundsDTO = {
+    inspectionOrderId: '4ccca250-cb81-48b8-b7cb-57da72b06d2f',
+    totalCollected: 738_260,
+    unsettledCollectedAmount: 129_960,
+    collectionStatus: 'PAID',
+    returnReserve: {
+      plannedAmount: 129_960,
+      heldAmount: 129_960,
+      status: 'WAITING_FOR_RETURN_TRIP',
+    },
+    shipments: [
+      {
+        leg: 'CENTER_TO_SELLER',
+        actualFee: 111_500,
+        orderCode: '3633153980051981357',
+        status: 'FAILED',
+      },
+    ],
+  };
+
+  const details = resolveReturnReserveDetails(funds);
+  assert.equal(details.isInterruptedReturn, true);
+  assert.equal(details.surplusAmount, 129_960);
+  assert.equal(details.refundStatus, 'PENDING');
+  assert.match(details.refundStatusLabel, /Vận đơn hoàn đã hủy\/thất bại/);
+  assert.match(details.refundDescription, /chưa được tính \/ chưa bị trừ/);
+
+  const html = renderToStaticMarkup(createElement(AdminInspectionFundsView, {
+    inspectionOrderId: funds.inspectionOrderId,
+    funds,
+  }));
+  assert.match(html, /111\.500.*Tạm tính/);
+  assert.match(html, /Vận đơn thất bại \(Chưa trừ\)/);
+  assert.match(html, /Chưa trừ \(Vận đơn hủy\)/);
 });

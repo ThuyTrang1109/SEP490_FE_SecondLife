@@ -152,6 +152,7 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
   const [supportedCities, setSupportedCities] = useState(ALLOWED_CITIES);
 
   useEffect(() => {
+    if (hideCityPresets || readOnly) return;
     let active = true;
     shippingService.getCities().then((res: any) => {
       if (!active || !res) return;
@@ -174,7 +175,7 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
       console.warn('Cannot fetch dynamic /shipping/cities:', err);
     });
     return () => { active = false; };
-  }, []);
+  }, [hideCityPresets, readOnly]);
 
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const leafletMapRef = useRef<any>(null);

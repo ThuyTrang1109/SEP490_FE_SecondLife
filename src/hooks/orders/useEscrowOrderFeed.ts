@@ -60,6 +60,17 @@ export function useEscrowOrderFeed(enabled: boolean, scope: string, query: Order
   }, [enabled, countKey, queryKey, revision, filter, perspective, q, page, orderId]);
 
   const current = result?.key === queryKey ? result : undefined;
+  const hasActiveReturn = current?.data
+    ? [...current.data.items, current.data.detail].some((row) => row?.orderReturn && !row.orderReturn.refundedAt)
+    : false;
+
+  useEffect(() => {
+    if (!enabled || !hasActiveReturn) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible' && pending.current === null) refresh();
+    }, 15000);
+    return () => window.clearInterval(timer);
+  }, [enabled, hasActiveReturn, refresh]);
   return {
     data: enabled ? current?.data : undefined,
     counts: enabled && counts?.key === countKey ? counts.value : undefined,

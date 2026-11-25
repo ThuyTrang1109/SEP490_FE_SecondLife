@@ -6,7 +6,7 @@ import { formatInspectionDeadline } from '../../../utils/inspectionPaymentDeadli
 import { formatVND, translations } from '../../../utils/translations';
 import { getCancellationReasonDisplay } from '../../../utils/orders/orderCancellation';
 import { getCashInspectionFeeShares, isInspectionCashShipment } from '../../../utils/inspectionCashShipping';
-import { getInspectionPurchaseDecision, isExpiredInspectionPurchase } from '../../../utils/inspectionPurchase';
+import { getInspectionPurchaseDecision, isExpiredInspectionPurchase, formatOrderCancellationReason } from '../../../utils/inspectionPurchase';
 
 interface Props {
   order: EscrowOrder;
@@ -226,10 +226,10 @@ export function OrderFeeBreakdown({
                 <span>{t.shippingFee} (Vận chuyển Lalamove):</span>
                 <span className="font-semibold text-[#24263e]">{formatVND(detailModalOrder.shippingFeeVnd)}</span>
               </div>
-              <div className="flex justify-between text-[#24263e]/70">
-                <span>{t.platformFee}:</span>
+              {/* <div className="flex justify-between text-[#24263e]/70">
+                <span>{t.platformFee}</span>
                 <span className="font-semibold text-[#24263e]">{formatVND(detailModalOrder.platformFeeVnd)}</span>
-              </div>
+              </div> */}
               <div className="pt-2 border-t border-gray-200 flex justify-between font-bold text-sm text-[#24263e]">
                 <span>{t.totalEscrow}:</span>
                 <span className="font-extrabold text-[#24263e]">
@@ -249,8 +249,8 @@ export function OrderFeeBreakdown({
               </div>
               <span className="px-2 py-0.5 rounded text-[10px] font-black bg-blue-100 text-blue-800">
                 {isAtHome
-                  ? (lang === 'vi' ? 'Kiểm định tại nhà (AT_HOME)' : 'At-Home Inspection')
-                  : (lang === 'vi' ? 'Kiểm định tại Hub (AT_CENTER)' : 'Hub Inspection')}
+                  ? (lang === 'vi' ? 'Kiểm định tại nhà' : 'At-Home Inspection')
+                  : (lang === 'vi' ? 'Kiểm định tại Hub' : 'Hub Inspection')}
               </span>
             </div>
 
@@ -261,7 +261,7 @@ export function OrderFeeBreakdown({
                     {lang === 'vi' ? 'Giá sản phẩm · Chưa thanh toán' : 'Product Price · Unpaid'}:
                   </span>
                   <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">
-                    {lang === 'vi' ? 'Chưa thanh toán (GĐ 2)' : 'Phase 2 Unpaid'}
+                    {lang === 'vi' ? 'Chưa thanh toán (Giai đoạn 2)' : 'Phase 2 Unpaid'}
                   </span>
                 </div>
                 <span className="font-semibold text-slate-700">
@@ -280,7 +280,7 @@ export function OrderFeeBreakdown({
             {isAtCenter && (
               <>
                 <div className="flex justify-between items-center text-[#24263e]/70">
-                  <span>{lang === 'vi' ? 'Cước Seller → Hub (Lalamove):' : 'Seller → Hub Shipping (Lalamove):'}</span>
+                  <span>{lang === 'vi' ? 'Cước người bán → Hub:' : 'Người bán → Hub Shipping (Lalamove):'}</span>
                   <div className="text-right">
                     <span className="font-semibold text-[#24263e]">{formatVND(shippingFeeToHub)}</span>
                     {isCashShipping && feePayerSplit === 'SELLER_100' ? (
@@ -297,7 +297,7 @@ export function OrderFeeBreakdown({
 
                 {returnReserveFee > 0 && (
                   <div className="flex justify-between items-center text-[#24263e]/70">
-                    <span>{lang === 'vi' ? 'Dự phòng cước hoàn (Hub → Seller):' : 'Return Shipping Reserve (Hub → Seller):'}</span>
+                    <span>{lang === 'vi' ? 'Dự phòng cước hoàn (Hub → Người bán):' : 'Return Shipping Reserve (Hub → Seller):'}</span>
                     <div className="text-right">
                       <span className="font-semibold text-[#24263e]">{formatVND(returnReserveFee)}</span>
                       {isInspectionFailed || isInspectionRejected || isInspectionCancelled ? (
@@ -459,10 +459,10 @@ export function OrderFeeBreakdown({
               <div className="flex justify-between items-center font-bold text-sm text-[#24263e]">
                 <span>
                   {isPhase2Paid
-                    ? (lang === 'vi' ? 'Tổng tiền phong tỏa Escrow:' : 'Total Escrow Held:')
+                    ? (lang === 'vi' ? 'Tổng tiền:' : 'Total Escrow Held:')
                     : !isBothUpfrontPaid
-                      ? (lang === 'vi' ? 'Tổng cần nộp trước (GĐ 1):' : 'Total Upfront Required (Phase 1):')
-                      : (lang === 'vi' ? 'Tổng đã nộp trước (GĐ 1):' : 'Total Upfront Paid (Phase 1):')}
+                      ? (lang === 'vi' ? 'Tổng cần nộp trước (Giai đoạn 1):' : 'Total Upfront Required (Phase 1):')
+                      : (lang === 'vi' ? 'Tổng đã nộp trước (Giai đoạn 1):' : 'Total Upfront Paid (Phase 1):')}
                 </span>
                 <span className="font-extrabold text-[#24263e]">
                   {formatVND(
@@ -513,7 +513,7 @@ export function OrderFeeBreakdown({
                   ) : (
                     <span className="text-emerald-700 font-semibold flex items-center justify-end gap-1">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>{lang === 'vi' ? 'Đã nộp đủ phí kiểm định GĐ 1' : 'Phase 1 inspection fee paid in full'}</span>
+                      <span>{lang === 'vi' ? 'Đã nộp đủ phí kiểm định giai đoạn 1' : 'Phase 1 inspection fee paid in full'}</span>
                     </span>
                   )}
                 </div>
@@ -546,7 +546,7 @@ export function OrderFeeBreakdown({
                   </div>
                 )}
                 <div className="pt-1.5 border-t border-blue-200/80 flex justify-between font-bold text-xs text-blue-950">
-                  <span>{lang === 'vi' ? 'Tổng thanh toán mua hàng GĐ 2:' : 'Total Phase 2 Payment Due:'}</span>
+                  <span>{lang === 'vi' ? 'Tổng thanh toán mua hàng giai đoạn 2:' : 'Total Phase 2 Payment Due:'}</span>
                   <span className="font-black text-blue-900">
                     {formatVND((detailModalOrder.itemPriceVnd || detailInspectionDto?.postPrice || 0) + hubToBuyerShippingFee - buyerCommitmentDeposit)}
                   </span>
@@ -591,7 +591,7 @@ export function OrderFeeBreakdown({
                           : 'Device did not meet technical inspection standards. Purchase cancelled and item is scheduled for return to Seller.')
                         : isInspectionRejected
                           ? (lang === 'vi'
-                            ? `Người mua đã từ chối tiếp tục mua sau khi xem biên bản kiểm định.${orderNote ? ` (${orderNote})` : ''} Thiết bị được chuyển hoàn về cho Người bán.`
+                            ? `Người mua đã từ chối tiếp tục mua sau khi xem biên bản kiểm định.${orderNote ? ` (${formatOrderCancellationReason(orderNote, lang)})` : ''} Thiết bị được chuyển hoàn về cho Người bán.`
                             : 'Buyer declined purchase after inspection report. Item is scheduled for return to Seller.')
                           : isPurchaseExpired
                             ? (lang === 'vi'

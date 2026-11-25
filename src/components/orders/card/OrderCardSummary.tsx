@@ -1,13 +1,15 @@
-import { CheckCircle2, Clock, ShieldCheck, Store, Truck, User } from 'lucide-react';
+import { CheckCircle2, Clock, ShieldCheck, Store, Truck, User, XCircle } from 'lucide-react';
 import { buyerFeePercentFor, feePercentLabel } from '../../../utils/inspectionFeePercent';
 import type { EscrowOrder, Language } from '../../../types';
 import type { OrderAppointment } from '../../../utils/orders/orderAppointments';
 import type { OrderCheck } from '../../../types/orders/orderTypes';
 import type { ReactNode } from 'react';
-import { formatVND } from '../../../utils/translations';
+import { formatConditionGrade, formatVND } from '../../../utils/translations';
 import { getSortableOrderTimestamp } from '../../../utils/orderUtils';
 import { resolveListingCategory } from '../../../utils/catalogCache';
 import { formatOrderCancellationReason } from '../../../utils/inspectionPurchase';
+import { getOrderAllShipments } from '../../../utils/orders/shipmentCache';
+import { getDirectShipmentInterruptionLabel, getLatestDirectShipment } from '../../../utils/lalamoveTracking';
 
 interface Props {
   orderIsSeller: boolean;
@@ -104,7 +106,9 @@ export function OrderCardSummary({
               <span>•</span>
               <span>
                 {lang === 'vi' ? 'Tình trạng:' : 'Condition:'}{' '}
-                <strong className="text-slate-800">{ord.listing.conditionGrade}</strong>
+                <strong className="text-slate-800">
+                  {formatConditionGrade(ord.listing.conditionGrade || (ord.listing as any).itemCondition, lang)}
+                </strong>
               </span>
               <span>•</span>
               <span>{lang === 'vi' ? 'Số lượng: 1' : 'Qty: 1'}</span>
@@ -139,19 +143,54 @@ export function OrderCardSummary({
                   <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
                     <span className="inline-flex items-center gap-1 text-slate-600">
                       <Truck className="w-3.5 h-3.5 text-slate-400" />
-                      <span>{lang === 'vi' ? 'Tài xế: Lalamove (Lấy tại kho Seller)' : 'Courier: Lalamove (Pickup at Seller)'}</span>
+                      <span>{lang === 'vi' ? 'Tài xế: Lalamove (Lấy tại kho người bán)' : 'Courier: Lalamove (Pickup at Seller)'}</span>
                     </span>
-                    {ord.sellerConfirmedAt ? (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                        <span>{lang === 'vi' ? 'Đã xác nhận đơn' : 'Confirmed'}</span>
-                      </span>
-                    ) : ord.confirmationDeadline ? (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
-                        <Clock className="w-3 h-3 text-amber-600" />
-                        <span>{lang === 'vi' ? 'Hạn xác nhận: ' : 'Confirm before: '}{new Date(ord.confirmationDeadline).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}</span>
-                      </span>
-                    ) : null}
+                    {(() => {
+                      const latestDirectShip = getLatestDirectShipment(ord.shipments ?? getOrderAllShipments(ord.id, ord.linkedOrderId));
+                      const interruptionLabel = getDirectShipmentInterruptionLabel(latestDirectShip, lang);
+
+                      if (interruptionLabel) {
+                        return (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200">
+                            <XCircle className="w-3 h-3 text-rose-600" />
+                            <span>{interruptionLabel}</span>
+                          </span>
+                        );
+                      }
+                      if (latestDirectShip && (latestDirectShip.status === 'READY_TO_PICK' || latestDirectShip.status === 'PENDING' || latestDirectShip.providerStatus === 'ASSIGNING_DRIVER')) {
+                        return (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                            <Clock className="w-3 h-3 text-amber-600" />
+                            <span>{lang === 'vi' ? 'Chờ tài xế lấy hàng' : 'Awaiting Driver'}</span>
+                          </span>
+                        );
+                      }
+                      if (latestDirectShip && (latestDirectShip.status === 'IN_TRANSIT' || latestDirectShip.status === 'DELIVERING' || latestDirectShip.status === 'SHIPPED' || latestDirectShip.providerStatus === 'ON_GOING' || latestDirectShip.providerStatus === 'PICKED_UP')) {
+                        return (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">
+                            <Truck className="w-3 h-3 text-blue-600" />
+                            <span>{lang === 'vi' ? 'Đang giao hàng' : 'Delivering'}</span>
+                          </span>
+                        );
+                      }
+                      if (ord.sellerConfirmedAt) {
+                        return (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                            <span>{lang === 'vi' ? 'Đã xác nhận đơn' : 'Confirmed'}</span>
+                          </span>
+                        );
+                      }
+                      if (ord.confirmationDeadline) {
+                        return (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                            <Clock className="w-3 h-3 text-amber-600" />
+                            <span>{lang === 'vi' ? 'Hạn xác nhận: ' : 'Confirm before: '}{new Date(ord.confirmationDeadline).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}</span>
+                          </span>
+                        );
+                      }
+                      return null;
+                    })()}
                   </div>
                 );
               }

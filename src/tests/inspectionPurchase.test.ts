@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buyerInspectionStageLabel, extractInspectionRejectionDetails, formatOrderCancellationReason, getBuyerInspectionStage, getCustomerInspectionStatus, getInspectionPurchaseDecision, inspectionPurchaseDecisionLabel, shouldReadSellerHubReturn } from '../utils/inspectionPurchase';
+import { buyerInspectionStageLabel, extractInspectionRejectionDetails, formatInspectionFailureReason, formatOrderCancellationReason, getBuyerInspectionStage, getCustomerInspectionStatus, getInspectionPurchaseDecision, inspectionPurchaseDecisionLabel, isExpiredInspectionPurchase, parseInspectorVerdictNote, shouldReadSellerHubReturn } from '../utils/inspectionPurchase';
 
 test('the buyer only sees inspection status while the item is on its way to the hub or being inspected', () => {
   const order = { inspectionStatus: 'SHIPPING_TO_CENTER', shippingDeliveredAt: '2026-11-09T08:00:00Z' };
@@ -115,6 +115,23 @@ test('formatOrderCancellationReason cleans composite notes for outer order cards
 
   const standardRejection = 'Người mua từ chối mua tiếp sau kiểm định. Lý do: Tìm được máy khác giá tốt hơn';
   assert.equal(formatOrderCancellationReason(standardRejection, 'vi'), 'Tìm được máy khác giá tốt hơn');
+
+  // 6-hour timeout note prefixed with inspector's verdict note
+  const timeoutWithVerdictNote = 'cc | Người mua không thanh toán tiền hàng trong vòng 6 giờ sau khi kiểm định đạt chuẩn.';
+  assert.equal(
+    formatOrderCancellationReason(timeoutWithVerdictNote, 'vi'),
+    'Người mua không thanh toán tiền hàng trong vòng 6 giờ sau khi kiểm định đạt chuẩn.'
+  );
+
+  const timeoutDetails = extractInspectionRejectionDetails(timeoutWithVerdictNote);
+  assert.equal(timeoutDetails.isBuyerPurchaseExpired, true);
+  assert.equal(timeoutDetails.inspectorNote, 'cc');
+  assert.equal(
+    timeoutDetails.buyerRejectReason,
+    'Người mua không thanh toán tiền hàng trong vòng 6 giờ sau khi kiểm định đạt chuẩn.'
+  );
+
+  assert.equal(isExpiredInspectionPurchase('CANCELLED', timeoutWithVerdictNote), true);
 });
 
 test('buyer-rejected inspection order continues tracking return shipment from Hub', () => {
@@ -129,4 +146,37 @@ test('buyer-rejected inspection order continues tracking return shipment from Hu
   };
 
   assert.equal(getInspectionPurchaseDecision(rejectedOrder), 'rejected');
+});
+
+test('parseInspectorVerdictNote removes Tem tag and cleans up verdict note', () => {
+  const rawNote = '[Tem: SL-SEAL-1333420][Grade: Good][Điểm: 100/100][Bao bì: Rách nặng / Móp méo] [Phụ kiện: OK] SẢN PHẨM ĐẠT CHUẨN';
+  const parsed = parseInspectorVerdictNote(rawNote);
+
+  assert.equal(parsed.cleanText, 'SẢN PHẨM ĐẠT CHUẨN');
+  assert.equal(parsed.packaging, 'Rách nặng / Móp méo');
+  assert.equal(parsed.accessories, 'OK');
+  assert.equal(parsed.grade, 'Good');
+  assert.equal(parsed.score, '100/100');
+
+  // Verify empty fallback
+  assert.equal(parseInspectorVerdictNote('').cleanText, '');
+  assert.equal(parseInspectorVerdictNote(null).cleanText, '');
+
+  // Verify timeout suffix is stripped
+  assert.equal(
+    parseInspectorVerdictNote('cc | Người mua không thanh toán tiền hàng trong vòng 6 giờ sau khi kiểm định đạt chuẩn.').cleanText,
+    'cc'
+  );
+});
+
+test('pre-listing failure reason shows findings and omits photo URLs and report metadata', () => {
+  const photos = ['https://example.com/proof/[front].jpg', 'https://example.com/proof/back.jpg'];
+  const report = `[Tem: SL-SEAL-2649345][Grade: Fair][Điểm: 70/100][Bao bì: Rách nặng / Móp méo] [Phụ kiện: ok] [Photos: ${JSON.stringify(photos)}]`;
+  assert.equal(formatInspectionFailureReason(report), 'Bao bì: Rách nặng / Móp méo · Phụ kiện: ok');
+  assert.equal(
+    formatInspectionFailureReason(`Kiểm định chất lượng đầu vào không đạt: ${report} Máy hút yếu.`),
+    'Máy hút yếu. · Bao bì: Rách nặng / Móp méo · Phụ kiện: ok',
+  );
+  assert.equal(formatInspectionFailureReason('Thiếu thông tin bảo hành'), 'Thiếu thông tin bảo hành');
+  assert.equal(formatInspectionFailureReason(`[Photos: ${JSON.stringify(photos)}]`), '');
 });

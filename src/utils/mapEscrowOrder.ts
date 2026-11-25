@@ -59,7 +59,7 @@ export function mapEscrowOrder(bOrd: any, {
           cachedListing = mapBackendPostToListing(matchedFromSellerCache);
         }
       }
-    } catch {}
+    } catch { }
   }
 
   const directMatched = currentListings.find(l => l.id === bOrd.postId ||
@@ -121,8 +121,8 @@ export function mapEscrowOrder(bOrd: any, {
       sellerAddress: resolvedSellerAddr,
       sellerId: bOrd.sellerId,
       sellerName: (bOrd as any).sellerName || 'Người Bán SecondLife',
-      sellerRating: 4.9,
-      sellerCompletedOrders: 10,
+      sellerRating: Number((bOrd as any).sellerRating ?? 0),
+      sellerCompletedOrders: Number((bOrd as any).sellerCompletedOrders ?? 0),
       sellerVerified: true,
       status: 'sold',
       createdAt: bOrd.createdAt,
@@ -200,7 +200,7 @@ export function mapEscrowOrder(bOrd: any, {
     try {
       localStorage.removeItem(`order_cancellation_info_${bOrd.id}`);
       localStorage.removeItem(`order_cancelled_${bOrd.id}`);
-    } catch {}
+    } catch { }
   }
 
   const isLocalCancelled = !authoritative && !isActivelyProcessingInspection && typeof window !== 'undefined' && (
@@ -224,7 +224,11 @@ export function mapEscrowOrder(bOrd: any, {
     mappedEscrowStatus = 'COMPLETED_RELEASED';
   } else if (isCancelledOrRefund) {
     mappedEscrowStatus = 'REFUNDED_TO_BUYER';
-  } else if (authoritative && bOrd.escrowStatus === 'FROZEN') {
+  } else if (
+    bOrd.escrowStatus === 'DISPUTED' ||
+    bOrd.status === 'DISPUTED' ||
+    (bOrd as any).backendStatus === 'DISPUTED'
+  ) {
     mappedEscrowStatus = 'DISPUTED';
   } else if (isInspectionOrder && (!authoritative || !bOrd.linkedOrderId)) {
     const localSavedStatus = !authoritative && typeof window !== 'undefined' ? localStorage.getItem(`inspection_status_${bOrd.id}`) : null;
@@ -238,6 +242,8 @@ export function mapEscrowOrder(bOrd: any, {
       mappedEscrowStatus = 'INSPECTION_IN_PROGRESS';
     } else if (s === 'DELIVERING_TO_BUYER') {
       mappedEscrowStatus = 'SHIPPED_TO_BUYER';
+    } else if (s === 'DELIVERED' || Boolean(bOrd.shippingDeliveredAt)) {
+      mappedEscrowStatus = 'DELIVERED_INSPECTION_WINDOW';
     } else if (s === 'COMPLETED') {
       mappedEscrowStatus = 'COMPLETED_RELEASED';
     } else if (s === 'DISPUTED') {
@@ -306,7 +312,7 @@ export function mapEscrowOrder(bOrd: any, {
       const rawUser = localStorage.getItem(`buyer_info_${bOrd.buyerId}`);
       if (rawUser) cachedBuyer = JSON.parse(rawUser);
     }
-  } catch {}
+  } catch { }
 
   const resolvedBuyerName = (
     (authoritative && bOrd.buyerName) ||
@@ -368,19 +374,53 @@ export function mapEscrowOrder(bOrd: any, {
     (!isBadSellerAddr((bOrd as any).sellerPickupAddress) ? (bOrd as any).sellerPickupAddress : undefined) ||
     (!isBadSellerAddr((bOrd as any).sellerPickupAddressJson) ? (bOrd as any).sellerPickupAddressJson : undefined) ||
     (!isBadSellerAddr((bOrd as any).sellerContact?.address) ? (bOrd as any).sellerContact?.address : undefined) ||
-    (!isBadSellerAddr(currentUser && currentUser.id === bOrd.sellerId ? currentUser.pickupAddress : undefined) ? currentUser?.pickupAddress : undefined) ||
+    (!isBadSellerAddr(currentUser && currentUser.id === bOrd.sellerId ? (currentUser.pickupAddress || currentUser.address) : undefined) ? (currentUser?.pickupAddress || currentUser?.address) : undefined) ||
     (!isBadSellerAddr(bOrd.sellerAddress) ? bOrd.sellerAddress : undefined) ||
+    (!isBadSellerAddr(bOrd.shippingLegs?.[0]?.origin) ? bOrd.shippingLegs[0].origin : undefined) ||
     (!isBadSellerAddr(matchedListing.sellerAddress) ? matchedListing.sellerAddress : undefined) ||
     (isTrangSeller ? 'Student Station Coffee, Đường Quảng Trường Sáng Tạo, Phường Đông Hòa, Thành phố Dĩ An, BI 00084, Việt Nam' : undefined) ||
     (!isBadSellerAddr(matchedListing.location && matchedListing.location !== 'Đà Nẵng, Việt Nam' ? matchedListing.location : undefined) ? matchedListing.location : undefined);
 
-  const buyerAddr = (currentUser && currentUser.id === bOrd.buyerId && (currentUser.address || currentUser.pickupAddress))
-    ? (currentUser.address || currentUser.pickupAddress || '')
-    : typeof bOrd.deliveryAddress === 'string'
-      ? (parsedAddressObj?.address || bOrd.deliveryAddress)
-      : bOrd.deliveryAddress?.detailAddress
-        ? `${bOrd.deliveryAddress.detailAddress}, ${bOrd.deliveryAddress.wardName || ''}, ${bOrd.deliveryAddress.provinceName || ''}`
-        : (cachedBuyer?.buyerAddress || bOrd.buyerAddress || (currentUser && currentUser.id === bOrd.buyerId ? currentUser.address : undefined) || (isInspectionOrder && bOrd.orderType !== 'AT_HOME' ? 'Trạm Kiểm Định SecondLife Hub' : 'Địa chỉ nhận hàng của người mua'));
+  const extractDeliveryText = (src: any): string | undefined => {
+    if (!src) return undefined;
+    if (typeof src === 'string') {
+      const trimmed = src.trim();
+      if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          return parsed.address || parsed.fullAddress || parsed.detailAddress || parsed.streetAddress || parsed.line || undefined;
+        } catch { }
+      }
+      return trimmed;
+    }
+    if (typeof src === 'object') {
+      if (src.detailAddress) {
+        const parts = [src.detailAddress, src.wardName, src.districtName, src.provinceName].filter(Boolean);
+        return parts.join(', ');
+      }
+      return src.address || src.fullAddress || src.streetAddress || src.line || undefined;
+    }
+    return undefined;
+  };
+
+  const deliveryDestinationFromLegs = bOrd.shippingLegs && Array.isArray(bOrd.shippingLegs)
+    ? (bOrd.shippingLegs.find((l: any) => l.legType === 'SELLER_TO_BUYER' || l.legType === 'CENTER_TO_BUYER' || l.legType === 'DELIVERY')?.destination ||
+      bOrd.shippingLegs[bOrd.shippingLegs.length - 1]?.destination)
+    : undefined;
+
+  const rawDeliveryAddr =
+    extractDeliveryText(parsedAddressObj) ||
+    extractDeliveryText(bOrd.deliveryAddress) ||
+    extractDeliveryText((bOrd as any).buyerDeliveryAddress) ||
+    extractDeliveryText((bOrd as any).buyerDeliveryAddressJson) ||
+    extractDeliveryText((bOrd as any).shippingAddress) ||
+    deliveryDestinationFromLegs;
+
+  const buyerAddr = rawDeliveryAddr ||
+    cachedBuyer?.buyerAddress ||
+    bOrd.buyerAddress ||
+    (currentUser && currentUser.id === bOrd.buyerId ? (currentUser.address || currentUser.pickupAddress) : undefined) ||
+    (isInspectionOrder && bOrd.orderType !== 'AT_HOME' ? 'Trạm Kiểm Định SecondLife Hub' : 'Địa chỉ nhận hàng của người mua');
 
   const itemPrice = Number(bOrd.itemPriceVnd || bOrd.finalItemPrice || bOrd.postPrice || bOrd.finalPrice || bOrd.price || bOrd.listing?.priceVnd || matchedListing?.priceVnd || 0);
   const shipFee = Number(bOrd.shippingFeeVnd || bOrd.shippingFee || bOrd.finalShippingFee || 0);
@@ -399,7 +439,7 @@ export function mapEscrowOrder(bOrd: any, {
       resolvedInspectorEmail = assignData.inspectorEmail || resolvedInspectorEmail;
       resolvedInspectorPhone = assignData.inspectorPhone || resolvedInspectorPhone;
     }
-  } catch {}
+  } catch { }
 
   const rawInspOrder = (bOrd as any).inspectionOrder || {};
   const resolvedFeePayer = bOrd.feePayer || (bOrd as any).counterFeePayer || rawInspOrder.feePayer || undefined;
@@ -407,10 +447,10 @@ export function mapEscrowOrder(bOrd: any, {
     bOrd.inspectionFeeSplit ||
     rawInspOrder.inspectionFeeSplit ||
     (resolvedFeePayer === 'SELLER_PAYS' ? 'SELLER_100' :
-     resolvedFeePayer === 'SPLIT_50_50' ? 'SPLIT_50_50' :
-     resolvedFeePayer === 'BUYER_PAYS' ? 'BUYER_100' :
-     (bOrd.sellerFeeShare && Number(bOrd.sellerFeeShare) > 0 && bOrd.buyerFeeShare && Number(bOrd.buyerFeeShare) > 0) ? 'SPLIT_50_50' :
-     (bOrd.sellerFeeShare && Number(bOrd.sellerFeeShare) > 0) ? 'SELLER_100' : 'BUYER_100');
+      resolvedFeePayer === 'SPLIT_50_50' ? 'SPLIT_50_50' :
+        resolvedFeePayer === 'BUYER_PAYS' ? 'BUYER_100' :
+          (bOrd.sellerFeeShare && Number(bOrd.sellerFeeShare) > 0 && bOrd.buyerFeeShare && Number(bOrd.buyerFeeShare) > 0) ? 'SPLIT_50_50' :
+            (bOrd.sellerFeeShare && Number(bOrd.sellerFeeShare) > 0) ? 'SELLER_100' : 'BUYER_100');
 
   const resolvedSellerFeeShare = bOrd.sellerFeeShare !== undefined && bOrd.sellerFeeShare !== null
     ? Number(bOrd.sellerFeeShare)
@@ -437,7 +477,7 @@ export function mapEscrowOrder(bOrd: any, {
     buyerId: bOrd.buyerId,
     buyerName: resolvedBuyerName,
     buyerPhone: bOrd.buyerPhone || (bOrd as any).buyerContact?.phone || resolvedBuyerPhone,
-    buyerAddress: bOrd.buyerAddress || (bOrd as any).buyerContact?.address || buyerAddr,
+    buyerAddress: buyerAddr || (bOrd as any).buyerContact?.address || bOrd.buyerAddress || 'Địa chỉ nhận hàng của người mua',
     sellerId: bOrd.sellerId,
     sellerName: resolvedSellerName,
     sellerPhone: bOrd.sellerPhone || (bOrd as any).sellerContact?.phone || undefined,
@@ -454,14 +494,15 @@ export function mapEscrowOrder(bOrd: any, {
     escrowStatus: isCompletedOrReleased ? 'COMPLETED_RELEASED' : (isCancelledOrRefund ? 'REFUNDED_TO_BUYER' : mappedEscrowStatus),
     backendEscrowStatus: ['PENDING', 'HELD', 'FROZEN', 'RELEASED', 'REFUNDED'].includes(bOrd.escrowStatus)
       ? bOrd.escrowStatus : undefined,
-    backendStatus: isCompletedOrReleased ? 'COMPLETED' : (isCancelledOrRefund ? 'CANCELLED' : ((mappedEscrowStatus === 'INSPECTION_PASSED' ? 'PASSED' : mappedEscrowStatus === 'INSPECTION_FAILED' ? 'FAILED' : bOrd.backendStatus || bOrd.status || (isInspectionOrder ? 'WAITING_SELLER_APPROVAL' : 'PROCESSING')) as any)),
-    status: isCompletedOrReleased ? 'COMPLETED' : (isCancelledOrRefund ? 'CANCELLED' : (mappedEscrowStatus === 'INSPECTION_PASSED' ? 'PASSED' : mappedEscrowStatus === 'INSPECTION_FAILED' ? 'FAILED' : (bOrd.status || bOrd.backendStatus || 'INSPECTING'))),
+    backendStatus: isCompletedOrReleased ? 'COMPLETED' : (isCancelledOrRefund ? 'CANCELLED' : (mappedEscrowStatus === 'DISPUTED' ? 'DISPUTED' : ((mappedEscrowStatus === 'INSPECTION_PASSED' ? 'PASSED' : mappedEscrowStatus === 'INSPECTION_FAILED' ? 'FAILED' : (mappedEscrowStatus === 'DELIVERED_INSPECTION_WINDOW' || bOrd.shippingDeliveredAt ? 'DELIVERED' : (bOrd.backendStatus || bOrd.status || (isInspectionOrder ? 'WAITING_SELLER_APPROVAL' : 'PROCESSING')))) as any))),
+    status: isCompletedOrReleased ? 'COMPLETED' : (isCancelledOrRefund ? 'CANCELLED' : (mappedEscrowStatus === 'DISPUTED' ? 'DISPUTED' : (mappedEscrowStatus === 'INSPECTION_PASSED' ? 'PASSED' : mappedEscrowStatus === 'INSPECTION_FAILED' ? 'FAILED' : (bOrd.status || bOrd.backendStatus || 'INSPECTING')))),
     inspectorId: resolvedInspectorId || undefined,
     inspectorName: resolvedInspectorName || undefined,
     inspectorEmail: resolvedInspectorEmail || undefined,
     inspectorPhone: resolvedInspectorPhone || undefined,
     shippingQuoteId: bOrd.shippingQuoteId,
     shippingDeliveredAt: bOrd.shippingDeliveredAt,
+    orderReturn: bOrd.orderReturn ?? null,
     deliveryAddress: bOrd.deliveryAddress,
     sellerConfirmedAt: (() => {
       const inspStatusUpper = String(bOrd.status || (bOrd as any).backendStatus || '').toUpperCase();
@@ -501,14 +542,14 @@ export function mapEscrowOrder(bOrd: any, {
       try {
         const rawCancel = localStorage.getItem(`order_cancellation_info_${bOrd.id}`);
         if (rawCancel) return JSON.parse(rawCancel).reasonCode;
-      } catch {}
+      } catch { }
       return null;
     })()),
     cancellationReason: isCompletedOrReleased ? null : ((bOrd as any).cancellationReason || (bOrd as any).cancelReason || (() => {
       try {
         const rawCancel = localStorage.getItem(`order_cancellation_info_${bOrd.id}`);
         if (rawCancel) return JSON.parse(rawCancel).reason;
-      } catch {}
+      } catch { }
       return null;
     })()),
     cancelledBy: isCompletedOrReleased ? null : (bOrd.cancelledBy || null),
@@ -540,49 +581,49 @@ export function mapEscrowOrder(bOrd: any, {
     homeCheckedInAt: bOrd.homeCheckedInAt,
     inspectionMethod: isInspectionOrder
       ? ((
-          String(bOrd.orderType || (bOrd as any).order_type || bOrd.inspectionMethod || '').toUpperCase() === 'AT_HOME' ||
-          (rawInspOrder && String(rawInspOrder.orderType || rawInspOrder.order_type || '').toUpperCase() === 'AT_HOME')
-        ) ? 'AT_HOME' : 'AT_CENTER')
+        String(bOrd.orderType || (bOrd as any).order_type || bOrd.inspectionMethod || '').toUpperCase() === 'AT_HOME' ||
+        (rawInspOrder && String(rawInspOrder.orderType || rawInspOrder.order_type || '').toUpperCase() === 'AT_HOME')
+      ) ? 'AT_HOME' : 'AT_CENTER')
       : undefined,
     shippingLegs: (isInspectionOrder && String(bOrd.orderType || (bOrd as any).order_type || bOrd.inspectionMethod || (rawInspOrder && (rawInspOrder.orderType || rawInspOrder.order_type)) || '').toUpperCase() !== 'AT_HOME')
       ? [
-          {
-            id: 'LEG-1',
-            legType: 'SELLER_TO_CENTER',
-            carrier: 'Lalamove',
-            trackingNumber: (bOrd as any).shipmentOrderCode || (bOrd as any).trackingNumber || '',
-            status: bOrd.status === 'DELIVERED' ? 'DELIVERED' : (bOrd.status === 'SHIPPED' ? 'IN_TRANSIT' : 'PENDING'),
-            origin: (bOrd as any).sellerAddress || matchedListing.sellerAddress || (matchedListing.location && matchedListing.location !== 'Đà Nẵng, Việt Nam' ? matchedListing.location : null) || 'Địa chỉ kho người bán',
-            destination: (bOrd as any).inspectionCenterAddress || resolveInspectionCenter(bOrd).address || 'Giảng đường Phượng Vỹ, Đường số 8, Phường Linh Xuân, Thành phố Hồ Chí Minh',
-            estimatedDelivery: 'Trong ngày',
-            timeline: [
-              {
-                timestamp: bOrd.createdAt ? new Date(bOrd.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '--:--',
-                description: 'Khởi tạo đơn hàng kiểm định Hub. Chờ bưu tá Lalamove chuyển kiện hàng đến Hub.',
-                location: 'Hệ thống SecondLife Hub'
-              }
-            ]
-          },
-          {
-            id: 'LEG-2',
-            legType: 'CENTER_TO_BUYER',
-            carrier: 'Lalamove',
-            trackingNumber: '',
-            status: 'PENDING',
-            origin: (bOrd as any).inspectionCenterAddress || resolveInspectionCenter(bOrd).address || 'Giảng đường Phượng Vỹ, Đường số 8, Phường Linh Xuân, Thành phố Hồ Chí Minh',
-            destination: buyerAddr,
-            estimatedDelivery: 'Giao nhanh trong ngày sau kiểm định',
-            timeline: [
-              {
-                timestamp: '--:--',
-                description: 'Chờ hoàn tất kiểm định tại Hub và niêm phong giao đến người mua.',
-                location: buyerAddr
-              }
-            ]
-          }
-        ]
+        {
+          id: 'LEG-1',
+          legType: 'SELLER_TO_CENTER',
+          carrier: 'Lalamove',
+          trackingNumber: (bOrd as any).shipmentOrderCode || (bOrd as any).trackingNumber || '',
+          status: bOrd.status === 'DELIVERED' ? 'DELIVERED' : (bOrd.status === 'SHIPPED' ? 'IN_TRANSIT' : 'PENDING'),
+          origin: (bOrd as any).sellerAddress || matchedListing.sellerAddress || (matchedListing.location && matchedListing.location !== 'Đà Nẵng, Việt Nam' ? matchedListing.location : null) || 'Địa chỉ kho người bán',
+          destination: (bOrd as any).inspectionCenterAddress || resolveInspectionCenter(bOrd).address || 'Giảng đường Phượng Vỹ, Đường số 8, Phường Linh Xuân, Thành phố Hồ Chí Minh',
+          estimatedDelivery: 'Trong ngày',
+          timeline: [
+            {
+              timestamp: bOrd.createdAt ? new Date(bOrd.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '--:--',
+              description: '',
+              location: 'Hệ thống SecondLife Hub'
+            }
+          ]
+        },
+        {
+          id: 'LEG-2',
+          legType: 'CENTER_TO_BUYER',
+          carrier: 'Lalamove',
+          trackingNumber: '',
+          status: 'PENDING',
+          origin: (bOrd as any).inspectionCenterAddress || resolveInspectionCenter(bOrd).address || 'Giảng đường Phượng Vỹ, Đường số 8, Phường Linh Xuân, Thành phố Hồ Chí Minh',
+          destination: buyerAddr,
+          estimatedDelivery: 'Giao nhanh trong ngày sau kiểm định',
+          timeline: [
+            {
+              timestamp: '--:--',
+              description: '',
+              location: buyerAddr
+            }
+          ]
+        }
+      ]
       : (isInspectionOrder && bOrd.orderType === 'AT_HOME')
-      ? [
+        ? [
           {
             id: 'LEG-1',
             legType: 'SELLER_TO_BUYER',
@@ -618,7 +659,7 @@ export function mapEscrowOrder(bOrd: any, {
             ]
           }
         ]
-      : [
+        : [
           {
             id: 'LEG-1',
             legType: 'SELLER_TO_BUYER',
@@ -631,7 +672,7 @@ export function mapEscrowOrder(bOrd: any, {
             timeline: [
               {
                 timestamp: bOrd.createdAt ? new Date(bOrd.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '--:--',
-                description: `Khởi tạo đơn hàng giao trực tiếp. Trạng thái: ${bOrd.status || 'PROCESSING'}.`,
+                description: 'Khởi tạo đơn hàng giao trực tiếp.',
                 location: 'Hệ thống Vận chuyển Lalamove'
               }
             ]
@@ -661,7 +702,7 @@ export function mapEscrowOrder(bOrd: any, {
     try {
       localStorage.setItem(`order_receipt_confirmed_${bOrd.id}`, 'true');
       localStorage.removeItem(`order_cancellation_info_${bOrd.id}`);
-    } catch {}
+    } catch { }
   }
   return mappedOrder;
 }

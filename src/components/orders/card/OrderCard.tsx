@@ -10,7 +10,7 @@ import { OrderCardCancellation } from './OrderCardCancellation';
 import { OrderCardInspection } from './OrderCardInspection';
 import { OrderCardSummary } from './OrderCardSummary';
 import { OrderReturnPanel } from '../OrderReturnPanel';
-import { getOrderEscrowHoldNotice } from '../../../utils/orders/orderDispute';
+import { getOrderEscrowHoldNotice, isOrderEscrowOnHold } from '../../../utils/orders/orderDispute';
 
 interface Props {
   order: EscrowOrder;
@@ -155,7 +155,16 @@ export function OrderCard({
         }
 
         {/* 48h Auto-release notice banner on the order card */ }
-        if (!buyerInspectionStage && ord.shippingDeliveredAt && !isOrderReceiptConfirmed(ord) && ord.escrowStatus !== 'COMPLETED_RELEASED' && (ord.escrowStatus as any) !== 'RELEASED' && (ord as any).backendStatus !== 'COMPLETED') {
+        if (
+          !buyerInspectionStage &&
+          ord.shippingDeliveredAt &&
+          !isOrderReceiptConfirmed(ord) &&
+          !isOrderEscrowOnHold(ord) &&
+          !isOrderCancelledOrRefunded(ord) &&
+          ord.escrowStatus !== 'COMPLETED_RELEASED' &&
+          (ord.escrowStatus as any) !== 'RELEASED' &&
+          (ord as any).backendStatus !== 'COMPLETED'
+        ) {
           return (
             <div className="mt-3 mx-4 sm:mx-6 mb-3 p-3 rounded-xl bg-amber-50/90 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5">
               <Clock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
@@ -164,7 +173,15 @@ export function OrderCard({
                   Đã giao thành công lúc {new Date(ord.shippingDeliveredAt).toLocaleString('vi-VN')}
                 </span>
                 <p className="text-[11px] text-amber-800 mt-0.5">
-                  Người mua có <strong>48 giờ để gửi khiếu nại</strong> kể từ lúc giao thành công, khi tiền còn trong Escrow. Nhấn <strong>"Đã nhận hàng"</strong> để xác nhận và giải ngân.
+                  {orderIsSeller ? (
+                    <>
+                      Người mua có <strong>48 giờ để gửi khiếu nại</strong> kể từ lúc giao thành công, trước khi hệ thống tự động giải ngân.
+                    </>
+                  ) : (
+                    <>
+                      Người mua có <strong>48 giờ để gửi khiếu nại</strong> kể từ lúc giao thành công, khi tiền còn trong Escrow. Nhấn <strong>"Đã nhận hàng"</strong> để xác nhận và giải ngân.
+                    </>
+                  )}
                 </p>
               </div>
             </div>

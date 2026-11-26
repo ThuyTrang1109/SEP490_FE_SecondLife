@@ -1,4 +1,5 @@
 import { request, RequestOptions } from './apiClient';
+import type { BuyerDeliveryAddress } from '../utils/buyerAddressStorage';
 import {
   ShippingQuoteRequestDto,
   ShippingQuoteResponseDto,
@@ -22,6 +23,20 @@ interface InspectionReturnContact {
   address: string;
 }
 
+export interface InspectionReturnFeeShare {
+  percent: number;
+  collected: number;
+  outstanding: number;
+}
+
+export interface InspectionReturnFee {
+  reserveFee: number | null;
+  quotedFee: number | null;
+  actualFee: number | null;
+  buyer: InspectionReturnFeeShare;
+  seller: InspectionReturnFeeShare;
+}
+
 export interface InspectionReturnQuote {
   from: InspectionReturnContact;
   to: InspectionReturnContact;
@@ -30,6 +45,8 @@ export interface InspectionReturnQuote {
   carrier: string;
   serviceType: string | null;
   expiresAt: string | null;
+  adjustment?: InspectionReturnFee | null;
+  canBookOverReserve?: boolean;
 }
 
 export interface VehicleLimit {
@@ -193,7 +210,7 @@ export interface SellerOnboardingRequestDto {
   shopName: string;
   email: string;
   phone: string;
-  pickupAddress: SellerPickupAddressRequestDto;
+  pickupAddress?: SellerPickupAddressRequestDto;
 }
 
 
@@ -683,6 +700,113 @@ export const shippingService = {
       requiresAuth: true,
     });
     return ((res as any)?.data ?? res) as ShippingAddressDto;
+  },
+
+  /**
+   * Lấy danh bạ địa chỉ nhận hàng của người mua từ Backend
+   * GET /api/v1/shipping/delivery-addresses
+   */
+  async getDeliveryAddresses(): Promise<BuyerDeliveryAddress[]> {
+    try {
+      const res = await request<BuyerDeliveryAddress[]>('/shipping/delivery-addresses', {
+        method: 'GET',
+        requiresAuth: true,
+      });
+      const data = ((res as any)?.data ?? res);
+      return Array.isArray(data) ? data : [];
+    } catch (err) {
+      console.warn('Backend getDeliveryAddresses notice:', err);
+      return [];
+    }
+  },
+
+  /**
+   * Thêm địa chỉ nhận hàng mới lên Backend
+   * POST /api/v1/shipping/delivery-addresses
+   */
+  async addDeliveryAddress(address: Partial<BuyerDeliveryAddress>): Promise<BuyerDeliveryAddress | null> {
+    try {
+      const res = await request<BuyerDeliveryAddress>('/shipping/delivery-addresses', {
+        method: 'POST',
+        body: JSON.stringify(address),
+        requiresAuth: true,
+      });
+      return ((res as any)?.data ?? res) as BuyerDeliveryAddress;
+    } catch (err) {
+      console.warn('Backend addDeliveryAddress notice:', err);
+      return null;
+    }
+  },
+
+  /**
+   * Cập nhật địa chỉ nhận hàng trên Backend
+   * PUT /api/v1/shipping/delivery-addresses/{id}
+   */
+  async updateDeliveryAddress(id: string, address: Partial<BuyerDeliveryAddress>): Promise<BuyerDeliveryAddress | null> {
+    try {
+      const res = await request<BuyerDeliveryAddress>(`/shipping/delivery-addresses/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(address),
+        requiresAuth: true,
+      });
+      return ((res as any)?.data ?? res) as BuyerDeliveryAddress;
+    } catch (err) {
+      console.warn('Backend updateDeliveryAddress notice:', err);
+      return null;
+    }
+  },
+
+  /**
+   * Xóa địa chỉ nhận hàng trên Backend
+   * DELETE /api/v1/shipping/delivery-addresses/{id}
+   */
+  async deleteDeliveryAddress(id: string): Promise<boolean> {
+    try {
+      await request<void>(`/shipping/delivery-addresses/${id}`, {
+        method: 'DELETE',
+        requiresAuth: true,
+      });
+      return true;
+    } catch (err) {
+      console.warn('Backend deleteDeliveryAddress notice:', err);
+      return false;
+    }
+  },
+
+  /**
+   * Đặt làm địa chỉ nhận hàng mặc định trên Backend
+   * PUT /api/v1/shipping/delivery-addresses/{id}/default
+   */
+  async setDefaultDeliveryAddress(id: string): Promise<BuyerDeliveryAddress | null> {
+    try {
+      const res = await request<BuyerDeliveryAddress>(`/shipping/delivery-addresses/${id}/default`, {
+        method: 'PUT',
+        requiresAuth: true,
+      });
+      return ((res as any)?.data ?? res) as BuyerDeliveryAddress;
+    } catch (err) {
+      console.warn('Backend setDefaultDeliveryAddress notice:', err);
+      return null;
+    }
+  },
+
+  /**
+   * Đồng bộ toàn bộ danh bạ địa chỉ lên Backend
+   * PUT /api/v1/shipping/delivery-addresses/sync
+   */
+  async syncDeliveryAddresses(addresses: BuyerDeliveryAddress[]): Promise<BuyerDeliveryAddress[]> {
+    try {
+      const res = await request<BuyerDeliveryAddress[]>('/shipping/delivery-addresses/sync', {
+        method: 'PUT',
+        body: JSON.stringify(addresses),
+        requiresAuth: true,
+      });
+      const data = ((res as any)?.data ?? res);
+      return Array.isArray(data) ? data : [];
+    } catch (err) {
+      console.warn('Backend syncDeliveryAddresses notice:', err);
+      return [];
+    }
   },
 
   /**

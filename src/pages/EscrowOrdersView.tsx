@@ -105,6 +105,7 @@ export function getInitialOrderFilterTab(): OrderFilterTab {
 }
 
 export { getSortableOrderTimestamp } from '../utils/orderUtils';
+import { isOrderBelongingToSeller, isOrderBelongingToBuyer } from '../utils/orderUtils';
 
 export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   orders,
@@ -128,36 +129,10 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   onNavigateToDisputes,
   isLoading = false,
 }) => {
+  const orderPerspective = filterQuery?.perspective || 'all';
 
   const isOrderSeller = (ord: EscrowOrder) => {
-    if (orderPerspective === 'seller') return true;
-    if (orderPerspective === 'buyer') return false;
-
-    if (currentUser?.id) {
-      if (ord.sellerId && String(ord.sellerId) === String(currentUser.id)) return true;
-      if (ord.listing?.sellerId && String(ord.listing.sellerId) === String(currentUser.id)) return true;
-      if ((ord.listing as any)?.userId && String((ord.listing as any).userId) === String(currentUser.id)) return true;
-      if ((ord.listing as any)?.user?.id && String((ord.listing as any).user.id) === String(currentUser.id)) return true;
-      if (ord.buyerId && String(ord.buyerId) === String(currentUser.id)) return false;
-    }
-    const activeUserName = ((currentUser as any)?.fullName || currentUser?.name || '').trim().toLowerCase();
-    const activeEmail = (currentUser?.email || '').trim().toLowerCase();
-    const ordSellerName = (ord.sellerName || ord.listing?.sellerName || '').trim().toLowerCase();
-    const ordBuyerName = (ord.buyerName || '').trim().toLowerCase();
-    const ordSellerEmail = ((ord as any).sellerEmail || (ord.listing as any)?.sellerEmail || '').trim().toLowerCase();
-    const ordBuyerEmail = ((ord as any).buyerEmail || '').trim().toLowerCase();
-
-    if (activeUserName && ordSellerName && ordSellerName === activeUserName) return true;
-    if (activeEmail && ordSellerEmail && ordSellerEmail === activeEmail) return true;
-    if (activeUserName && ordBuyerName && ordBuyerName === activeUserName) return false;
-    if (activeEmail && ordBuyerEmail && ordBuyerEmail === activeEmail) return false;
-
-    const hasExplicitSeller = Boolean(ord.sellerId || ord.listing?.sellerId || (ord.listing as any)?.userId);
-    if (!hasExplicitSeller && userRole === 'seller' && (!ord.buyerId || String(ord.buyerId) !== String(currentUser?.id))) {
-      return true;
-    }
-
-    return false;
+    return isOrderBelongingToSeller(ord, currentUser?.id, (currentUser as any)?.fullName || currentUser?.name, currentUser?.email);
   };
 
   const resolvedOrders = useMemo(() => {
@@ -280,29 +255,17 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       if (userRole === 'admin' || currentUser.role === 'admin' || currentUser.role === 'inspector' || currentUser.role === 'inspection_center') {
         return true;
       }
-      const activeUserName = ((currentUser as any)?.fullName || currentUser?.name || '').trim().toLowerCase();
-      const activeEmail = (currentUser.email || '').trim().toLowerCase();
-      const ordBuyerName = (ord.buyerName || '').trim().toLowerCase();
-      const ordSellerName = (ord.sellerName || ord.listing?.sellerName || '').trim().toLowerCase();
-      const ordSellerEmail = ((ord as any).sellerEmail || (ord.listing as any)?.sellerEmail || '').trim().toLowerCase();
-      const ordBuyerEmail = ((ord as any).buyerEmail || '').trim().toLowerCase();
-
-      const isBuyer = (ord.buyerId && String(ord.buyerId) === String(currentUser.id)) ||
-        (ord.buyerId === 'buyer-current') ||
-        (activeUserName && ordBuyerName === activeUserName) ||
-        (activeEmail && ordBuyerEmail && ordBuyerEmail === activeEmail);
-      const isSeller = (ord.sellerId && String(ord.sellerId) === String(currentUser.id)) ||
-        (ord.listing?.sellerId && String(ord.listing.sellerId) === String(currentUser.id)) ||
-        ((ord.listing as any)?.userId && String((ord.listing as any).userId) === String(currentUser.id)) ||
-        ((ord.listing as any)?.user?.id && String((ord.listing as any).user.id) === String(currentUser.id)) ||
-        (activeUserName && ordSellerName === activeUserName) ||
-        (activeEmail && ordSellerEmail && ordSellerEmail === activeEmail) ||
-        (userRole === 'seller' && !isBuyer && !ord.sellerId && !ord.listing?.sellerId);
+      const isBuyer = isOrderBelongingToBuyer(ord, currentUser.id, (currentUser as any)?.fullName || currentUser.name, currentUser.email);
+      const isSeller = isOrderBelongingToSeller(ord, currentUser.id, (currentUser as any)?.fullName || currentUser.name, currentUser.email);
+      if (userRole === 'seller' || orderPerspective === 'seller') {
+        return isSeller;
+      }
+      if (userRole === 'buyer' || orderPerspective === 'buyer') {
+        return isBuyer;
+      }
       return isBuyer || isSeller;
     });
-  }, [resolvedOrders, currentUser, userRole]);
-
-  const orderPerspective = filterQuery.perspective;
+  }, [resolvedOrders, currentUser, userRole, orderPerspective]);
   const authoritativeOrders = useMemo(() => new Set([
     ...orders.map(({ id }) => id),
     ...(routeOrder ? [routeOrder.id] : []),
@@ -1312,7 +1275,8 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     // 3. Fallback từ giá trị sản phẩm trừ phí sàn
     const price = Number(ord.itemPriceVnd || (ord as any).finalPrice || ord.listing?.priceVnd || (ord.listing as any)?.price || 0);
     if (price > 0) {
-      const fee = Number(ord.platformFeeVnd ?? (price * 0.05));
+      const commPercent = Number((ord as any).platformFeePercent ?? 5);
+      const fee = Number((ord as any).platformFeeVnd ?? Math.round(price * (commPercent / 100)));
       return Math.max(0, price - fee);
     }
     return 0;

@@ -111,9 +111,9 @@ test('4. formatWalletMoney - formats numbers, zero, negative, decimals, and null
   const formattedNegative = formatWalletMoney(-50000);
   assert.ok(formattedNegative.includes('-50.000') && formattedNegative.includes('đ'));
 
-  // Decimal amounts
+  // Decimal amounts - round to integer VND, no fraction digits after comma
   const formattedDecimal = formatWalletMoney(1000.05);
-  assert.ok(formattedDecimal.includes('1.000,05') || formattedDecimal.includes('1.000.05'));
+  assert.ok(formattedDecimal.includes('1.000') && !formattedDecimal.includes(','), 'Should not display decimals after comma');
 
   // Null / undefined amounts -> returns "Chưa được ghi nhận"
   assert.equal(formatWalletMoney(null), 'Chưa được ghi nhận');

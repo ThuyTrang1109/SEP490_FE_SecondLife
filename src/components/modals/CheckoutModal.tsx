@@ -338,6 +338,37 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     return savedAddresses.find((a) => a.isDefault)?.id || savedAddresses[0]?.id || null;
   });
 
+  // Fetch latest addresses from backend so other devices sync seamlessly
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    shippingService.getDeliveryAddresses().then((backendList) => {
+      if (Array.isArray(backendList) && backendList.length > 0) {
+        const mappedList: BuyerDeliveryAddress[] = backendList.map((addr) => ({
+          id: addr.id,
+          name: addr.name,
+          phone: addr.phone,
+          email: addr.email,
+          streetAddress: addr.streetAddress,
+          city: addr.city || sellerCityInfo.name,
+          latitude: typeof addr.latitude === 'number' ? addr.latitude : sellerCityInfo.lat,
+          longitude: typeof addr.longitude === 'number' ? addr.longitude : sellerCityInfo.lng,
+          addressType: addr.addressType === 'office' ? 'office' : 'home',
+          isDefault: Boolean(addr.isDefault),
+        }));
+        setSavedAddresses(mappedList);
+        try {
+          localStorage.setItem(addressStorageKey, JSON.stringify(mappedList));
+        } catch { }
+        if (!selectedAddressId || !mappedList.some((a) => a.id === selectedAddressId)) {
+          const def = mappedList.find((a) => a.isDefault) || mappedList[0];
+          setSelectedAddressId(def?.id || null);
+        }
+      } else if (Array.isArray(backendList) && backendList.length === 0 && savedAddresses.length > 0) {
+        shippingService.syncDeliveryAddresses(savedAddresses).catch(() => {});
+      }
+    }).catch(() => {});
+  }, [currentUser?.id]);
+
   const activeAddress = useMemo(() => {
     return savedAddresses.find((a) => a.id === selectedAddressId) || savedAddresses[0] || null;
   }, [savedAddresses, selectedAddressId]);
@@ -487,6 +518,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       localStorage.setItem(addressStorageKey, JSON.stringify(updatedList));
     } catch { }
 
+    shippingService.syncDeliveryAddresses(updatedList).catch(() => {});
+
     setIsAddressFormOpen(false);
     setIsAddressModalOpen(false);
     setFormErrorMsg(null);
@@ -502,6 +535,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     try {
       localStorage.setItem(addressStorageKey, JSON.stringify(remaining));
     } catch { }
+    shippingService.syncDeliveryAddresses(remaining).catch(() => {});
     if (selectedAddressId === idToDelete) {
       setSelectedAddressId(remaining[0].id);
     }
@@ -1633,6 +1667,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             buyerDeliveryAddress: {
               name: (buyerName || currentUser?.name || 'Khách Hàng').trim().slice(0, 100),
               phone: validPhone,
+              address: (activeAddress?.streetAddress || streetAddress || '').trim(),
               latitude: buyerLat,
               longitude: buyerLng,
             },
@@ -3039,7 +3074,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
                           <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px]">
                             <span className="flex items-center gap-1 text-[10px] text-blue-700 font-bold">
-                              <span>🏷️ {lang === 'vi' ? 'Đã bao gồm cước 2 chiều Lalamove' : 'Includes 2-way shipping'}</span>
+                              <span>🏷️ {lang === 'vi' ? 'Đã bao gồm cước vận chuyển 2 chiều' : 'Includes 2-way shipping'}</span>
                             </span>
                             {inspectionMethod === 'AT_CENTER' && (
                               <span className="inline-flex items-center gap-1 text-[10px] font-black text-blue-700 bg-blue-100/90 px-2 py-0.5 rounded-full border border-blue-300">
@@ -4315,7 +4350,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       {/* Shopee-Style Modal: "Thêm / Cập Nhật Địa Chỉ" (Add/Edit Address Form Modal) */}
       {isAddressFormOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
-          <div className="bg-white rounded-3xl max-w-xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
+          <div className="bg-white rounded-3xl max-w-2xl sm:max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
             {/* Modal Header */}
             <div className="px-6 py-4.5 border-b border-slate-100 flex items-center justify-between">
               <h3 className="font-extrabold text-base text-slate-900">
@@ -4377,20 +4412,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 </div>
               </div>
 
-              {/* Email */}
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  {lang === 'vi' ? 'Email nhận thông báo Escrow & Hóa đơn (tùy chọn)' : 'Email for Notifications (optional)'}
-                </label>
-                <input
-                  type="email"
-                  value={formEmail}
-                  onChange={(e) => setFormEmail(e.target.value)}
-                  placeholder="email@domain.com"
-                  className="w-full px-3 py-2 bg-[#faf8f5] border border-slate-200 rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none focus:border-[#c34c36] transition"
-                />
-              </div>
-
               {/* Lalamove Address & Map Picker */}
               <div>
                 <label className="block text-[11px] font-bold text-slate-700 mb-1">
@@ -4404,6 +4425,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   initialAddress={formStreet}
                   sellerCity={sellerCityInfo.name}
                   sellerLocation={listing.sellerAddress || listing.location}
+                  onNameChange={(val) => {
+                    setFormName(val);
+                    if (formErrorMsg) setFormErrorMsg(null);
+                  }}
+                  onPhoneChange={(val) => {
+                    setFormPhone(val);
+                    if (formErrorMsg) setFormErrorMsg(null);
+                  }}
                   onAddressConfirmed={(data) => {
                     setFormLat(data.latitude);
                     setFormLng(data.longitude);

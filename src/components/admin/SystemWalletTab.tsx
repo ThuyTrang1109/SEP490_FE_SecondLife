@@ -262,7 +262,7 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
       const isPaid = Boolean(ord.sellerPaidAt || ord.buyerPaidAt);
       const reserve = Number(ord.returnShippingReserveFee || 0);
       const shipping = Number(ord.shippingFee || 0);
-      const fee = Number(ord.inspectionFee || 200000);
+      const fee = Number(ord.inspectionFee || (ord as any).inspectionFeeVnd || 0);
       const deposit = Number(ord.buyerCommitmentDeposit || 0);
 
       const collected =
@@ -293,39 +293,29 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
     };
   }, [inspectionOrders]);
 
-  // Grand Total of all managed funds
-  const grandTotalHeld = useMemo(() => {
-    const escrowHeld = (wallet?.heldBalance ?? 0) + (wallet?.shippingBalance ?? 0);
-    const inspectionHeld = inspectionMetrics.totalInspectionHeld;
-    return escrowHeld + inspectionHeld;
-  }, [wallet, inspectionMetrics]);
+  // 0. Ví tổng hệ thống (Total System Balance) - lấy trực tiếp từ Database
+  const totalSystemBalance = Number(wallet?.totalBalance ?? 0);
 
-  // 1. Tổng tiền hàng đang giữ (Product Escrow)
-  const totalProductHeld = wallet?.heldBalance ?? 0;
+  // Grand Total of all managed funds - lấy trực tiếp từ Database
+  const grandTotalHeld =
+    Number(wallet?.heldBalance ?? 0) +
+    Number(wallet?.shippingBalance ?? 0) +
+    Number(wallet?.inspectionHeldBalance ?? 0);
 
-  // 2. Tổng tiền ship đã thu của người dùng (All User Shipping Held)
-  const totalUserShippingHeld = useMemo(() => {
-    const escrowShipping = wallet?.shippingBalance ?? 0;
-    const inspectionShipping = inspectionMetrics.inspectionShippingHeld + inspectionMetrics.heldReserveTotal;
-    return escrowShipping + inspectionShipping;
-  }, [wallet, inspectionMetrics]);
+  // 1. Tổng tiền hàng đang giữ (Product Escrow) - lấy trực tiếp từ Database
+  const totalProductHeld = Number(wallet?.heldBalance ?? 0);
 
-  // 3. Tổng tiền đã thanh toán cho bên Hub (All Hub Payouts)
-  const totalHubPaid = useMemo(() => {
-    if (wallet?.totalHubPaid !== undefined && wallet?.totalHubPaid !== null) {
-      return Number(wallet.totalHubPaid);
-    }
-    let sum = 0;
-    inspectionOrders.forEach((ord) => {
-      if (ord.feeSettledAt) {
-        sum += Number(ord.inspectionFee || 200000);
-      }
-    });
-    return sum;
-  }, [wallet, inspectionOrders]);
+  // 2. Tổng tiền kiểm định đang giữ (Inspection Escrow) - lấy trực tiếp từ Database
+  const totalInspectionHeld = Number(wallet?.inspectionHeldBalance ?? 0);
 
-  // 4. Tổng tiền hoa hồng sàn (All Revenue Balance)
-  const totalRevenue = wallet?.revenueBalance ?? 0;
+  // 3. Tổng tiền ship đã thu của người dùng (All User Shipping Held) - lấy trực tiếp từ Database
+  const totalUserShippingHeld = Number(wallet?.shippingBalance ?? 0);
+
+  // 4. Tổng tiền đã thanh toán cho bên Hub (All Hub Payouts) - lấy trực tiếp từ Database
+  const totalHubPaid = Number(wallet?.totalHubPaid ?? 0);
+
+  // 5. Tổng tiền hoa hồng sàn (All Revenue Balance) - lấy trực tiếp từ Database
+  const totalRevenue = Number(wallet?.revenueBalance ?? 0);
 
   const getTransactionBadgeClass = (type: string, category: SystemWalletFundCategory) => {
     if (category === 'COMMISSION') return 'bg-emerald-100 text-emerald-800 border-emerald-300';
@@ -655,9 +645,39 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
         </div>
       )}
 
-      {/* 2. Wallet summary cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 shrink-0">
-        {/* 1. Tổng tiền hàng đang giữ (heldBalance) */}
+      {/* 2. Wallet summary cards - 6 Balanced System Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2 shrink-0">
+        {/* 1. Ví tổng hệ thống (Total System Balance) */}
+        <div
+          onClick={() => {
+            setActiveViewMode('ALL_UNIFIED');
+            handleFilterChange('ALL');
+          }}
+          className={`flex min-h-32 flex-col gap-2.5 rounded-xl border px-3.5 py-4 shadow-2xs transition cursor-pointer ${activeFilter === 'ALL'
+            ? 'border-indigo-500 ring-2 ring-indigo-400 bg-indigo-50/25'
+            : 'border-slate-200 hover:border-indigo-300 bg-white'
+            }`}
+          title="Bấm để xem tất cả giao dịch trong ví hệ thống"
+        >
+          <div className="flex items-center justify-between text-[11px] text-slate-600 font-bold">
+            <span className="flex items-center gap-1">
+              <Wallet className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Ví tổng hệ thống</span>
+              <span className="px-1 py-0.2 rounded text-[8px] font-extrabold bg-indigo-100 text-indigo-800">
+                Toàn sàn
+              </span>
+            </span>
+          </div>
+          <div className="text-base sm:text-lg font-black text-indigo-950 font-mono">
+            {formatVND(totalSystemBalance)}
+          </div>
+          <div className="mt-auto flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1 text-[10px] leading-4 text-slate-500">
+            <span>Tổng dòng tiền đang lưu ký &amp; vận hành</span>
+            <span className="text-indigo-700 font-bold">{activeFilter === 'ALL' ? '✓ Đang xem' : 'Xem ví tổng →'}</span>
+          </div>
+        </div>
+
+        {/* 2. Tổng tiền hàng đang giữ (Product Escrow - heldBalance) */}
         <div
           onClick={() => {
             setActiveViewMode('ALL_UNIFIED');
@@ -674,7 +694,7 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
               <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
               <span>Tiền hàng đang giữ</span>
               <span className="px-1 py-0.2 rounded text-[8px] font-extrabold bg-blue-100 text-blue-800">
-                Ký quỹ
+                Ký quỹ sàn
               </span>
             </span>
           </div>
@@ -687,7 +707,37 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
           </div>
         </div>
 
-        {/* 2. Tiền ship đã thu của người dùng (shippingBalance) */}
+        {/* 3. Tiền kiểm định đang giữ (Inspection Escrow) */}
+        <div
+          onClick={() => {
+            setActiveViewMode('ALL_UNIFIED');
+            handleFilterChange(activeFilter === 'INSPECTION_HOLD' ? 'ALL' : 'INSPECTION_HOLD');
+          }}
+          className={`flex min-h-32 flex-col gap-2.5 rounded-xl border px-3.5 py-4 shadow-2xs transition cursor-pointer ${activeFilter === 'INSPECTION_HOLD'
+            ? 'border-cyan-500 ring-2 ring-cyan-400 bg-cyan-50/25'
+            : 'border-slate-200 hover:border-cyan-300 bg-white'
+            }`}
+          title="Bấm để lọc các khoản thu phí kiểm định đang giữ ký quỹ cho Hub"
+        >
+          <div className="flex items-center justify-between text-[11px] text-slate-600 font-bold">
+            <span className="flex items-center gap-1">
+              <Layers className="w-3.5 h-3.5 text-cyan-600" />
+              <span>Tiền kiểm định đang giữ</span>
+              <span className="px-1 py-0.2 rounded text-[8px] font-extrabold bg-cyan-100 text-cyan-800">
+                Ký quỹ Hub
+              </span>
+            </span>
+          </div>
+          <div className="text-base sm:text-lg font-black text-cyan-950 font-mono">
+            {formatVND(totalInspectionHeld)}
+          </div>
+          <div className="mt-auto flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1 text-[10px] leading-4 text-slate-500">
+            <span>Phí kiểm định đang giữ bảo chứng cho Hub</span>
+            <span className="text-cyan-700 font-bold">{activeFilter === 'INSPECTION_HOLD' ? '✓ Đang lọc' : 'Lọc phí KĐ →'}</span>
+          </div>
+        </div>
+
+        {/* 4. Tiền ship đã thu của người dùng (shippingBalance) */}
         <div
           onClick={() => {
             setActiveViewMode('ALL_UNIFIED');
@@ -717,7 +767,7 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
           </div>
         </div>
 
-        {/* 3. Tổng tiền đã thanh toán cho bên Hub */}
+        {/* 5. Tổng tiền đã thanh toán cho bên Hub */}
         <div
           onClick={() => {
             setActiveViewMode('ALL_UNIFIED');
@@ -747,7 +797,7 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
           </div>
         </div>
 
-        {/* 4. Tổng tiền hoa hồng sàn (revenueBalance) */}
+        {/* 6. Tổng tiền hoa hồng sàn (revenueBalance) */}
         <div
           onClick={() => {
             setActiveViewMode('ALL_UNIFIED');
@@ -1323,7 +1373,7 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
                       const isPaid = Boolean(ord.sellerPaidAt || ord.buyerPaidAt);
                       const reserve = Number(ord.returnShippingReserveFee || 0);
                       const shipping = Number(ord.shippingFee || 0);
-                      const inspFee = Number(ord.inspectionFee || 200000);
+                      const inspFee = Number(ord.inspectionFee || (ord as any).inspectionFeeVnd || 0);
                       const collected =
                         (ord.sellerPaidAt ? (ord.sellerFeeShare || 0) : 0) +
                         (ord.buyerPaidAt ? (ord.buyerFeeShare || 0) : 0) +

@@ -103,6 +103,14 @@ export function mapEscrowOrder(bOrd: any, {
     );
     const resolvedSellerAddr = (bOrd as any).sellerAddress || (bOrd as any).pickupAddress || '';
     const resolvedLoc = resolvedSellerAddr ? extractWardAndCity(resolvedSellerAddr) : 'Hà Nội';
+    const resolvedCondition = (
+      bOrd.itemCondition ||
+      (bOrd as any).condition ||
+      (bOrd as any).postCondition ||
+      bOrd.conditionGrade ||
+      (bOrd as any).declaredConditionText ||
+      'USED_GOOD'
+    );
     return {
       id: bOrd.postId,
       title: resolvedPostTitle,
@@ -114,8 +122,8 @@ export function mapEscrowOrder(bOrd: any, {
       model: 'Verified Model',
       purchaseYear: 2024,
       priceVnd: Number(bOrd.itemPriceVnd || bOrd.finalItemPrice || bOrd.postPrice || bOrd.finalPrice || bOrd.price || 0),
-      conditionGrade: 'Good',
-      declaredConditionText: 'Sản phẩm đã qua kiểm định cơ bản',
+      conditionGrade: (bOrd.conditionGrade || bOrd.itemCondition || (bOrd as any).condition || 'Good') as any,
+      declaredConditionText: resolvedCondition,
       description: 'Giao dịch bảo lãnh qua Quỹ Escrow SecondLife.',
       location: resolvedLoc,
       sellerAddress: resolvedSellerAddr,
@@ -503,6 +511,7 @@ export function mapEscrowOrder(bOrd: any, {
     shippingQuoteId: bOrd.shippingQuoteId,
     shippingDeliveredAt: bOrd.shippingDeliveredAt,
     orderReturn: bOrd.orderReturn ?? null,
+    hasActiveDispute: (bOrd as any).hasActiveDispute !== undefined ? Boolean((bOrd as any).hasActiveDispute) : undefined,
     deliveryAddress: bOrd.deliveryAddress,
     sellerConfirmedAt: (() => {
       const inspStatusUpper = String(bOrd.status || (bOrd as any).backendStatus || '').toUpperCase();

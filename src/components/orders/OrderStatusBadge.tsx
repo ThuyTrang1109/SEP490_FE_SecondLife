@@ -14,6 +14,7 @@ import { getOrderAppointmentRejection, type OrderAppointment } from '../../utils
 import type { OrderCheck } from '../../types/orders/orderTypes';
 import { getOrderAllShipments, isHubInboundInProgress } from '../../utils/orders/shipmentCache';
 import { getAtHomeDeliveryStage, isOrderDeliveredToBuyer } from '../../utils/orders/orderReceipt';
+import { isMissedHomeInspectionAppointment } from '../../utils/inspectionAppointmentTime';
 
 export interface OrderStatusBadgeOptions {
   lang: Language;
@@ -487,7 +488,7 @@ export function OrderStatusBadge({
           <Clock className="w-3.5 h-3.5 text-amber-600" />
           <span>
             {lang === 'vi'
-              ? isSellerForThisOrder ? 'Yêu Cầu Kiểm Định Mới • Chờ Bạn Xác Nhận' : 'Đã Gửi Yêu Cầu • Chờ Người Bán Xác Nhận'
+              ? isSellerForThisOrder ? 'Yêu Cầu Kiểm Định Mới' : 'Đã Gửi Yêu Cầu • Chờ Người Bán Xác Nhận'
               : isSellerForThisOrder ? 'New Inspection Request • Awaiting Your Approval' : 'Inspection Requested • Awaiting Seller Approval'}
           </span>
         </span>
@@ -546,11 +547,21 @@ export function OrderStatusBadge({
           if (raw && JSON.parse(raw).inspectorName) hasInsp = true;
         } catch { }
       }
+      const missedAppointment = isMissedHomeInspectionAppointment(orderItem);
+      if (missedAppointment) {
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-800 border border-rose-300">
+            <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
+            <span>{lang === 'vi' ? 'Quá hạn check-in · Chờ hẹn lại' : 'Check-in Expired · Awaiting Reschedule'}</span>
+          </span>
+        );
+      }
+
       if (hasInsp && !isRejected) {
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
             <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
-            <span>{lang === 'vi' ? 'Đã Phân Công KTV • Chờ Khảo Sát' : 'Inspector Assigned • Pending Survey'}</span>
+            <span>{lang === 'vi' ? 'Đã phân công kỹ thuật viên • Chờ Khảo Sát' : 'Inspector Assigned • Pending Survey'}</span>
           </span>
         );
       }
@@ -786,11 +797,21 @@ export function OrderStatusBadge({
             if (raw && JSON.parse(raw).inspectorName) hasInsp = true;
           } catch { }
         }
-        if (hasInsp && !isRejected) {
+        const missedAppointment = isMissedHomeInspectionAppointment(orderItem);
+      if (missedAppointment) {
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-800 border border-rose-300">
+            <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
+            <span>{lang === 'vi' ? 'Quá hạn check-in · Chờ hẹn lại' : 'Check-in Expired · Awaiting Reschedule'}</span>
+          </span>
+        );
+      }
+
+      if (hasInsp && !isRejected) {
           return (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
               <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
-              <span>{lang === 'vi' ? 'Đã Phân Công KTV • Chờ Khảo Sát' : 'Inspector Assigned • Pending Survey'}</span>
+              <span>{lang === 'vi' ? 'Đã phân công kỹ thuật viên • Chờ Khảo Sát' : 'Inspector Assigned • Pending Survey'}</span>
             </span>
           );
         }

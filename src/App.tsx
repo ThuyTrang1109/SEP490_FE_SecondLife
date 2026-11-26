@@ -6,7 +6,8 @@ import React, { useState, lazy, Suspense, useRef, useCallback, useEffect } from 
 import { UserRole, Language, Listing, EscrowOrder, DisputeCase, UserProfile, UserCredit, ItemCategory, ConditionGrade, EscrowStatus, InspectionReport, InspectionProposalPrefillData, SellerPostDetailDto } from './types';
 import { formatVND } from './utils/translations';
 import { extractWardAndCity, getSavedSellerAddress, saveSellerAddress, cleanFullAddress, formatCombinedAddress } from './utils/addressUtils';
-import { getSortableOrderTimestamp, getBoughtListingIds, markListingAsBought, markListingAsAvailable, reconcileBoughtListingIds, isOrderCancelledOrRefunded, isPostUnderInspectionOrReturning, getPostReturnStatus, getResolvedPostParcel, extractListingIdFromOrder } from './utils/orderUtils';
+import { isPostRequiringInspection, setSystemHighValueThreshold } from './utils/listingInspection';
+import { getSortableOrderTimestamp, getBoughtListingIds, markListingAsBought, markListingAsAvailable, reconcileBoughtListingIds, isOrderCancelledOrRefunded, isPostUnderInspectionOrReturning, getPostReturnStatus, getResolvedPostParcel, extractListingIdFromOrder, isOrderBelongingToSeller, isOrderBelongingToBuyer } from './utils/orderUtils';
 import { getBuyerInspectionStage } from './utils/inspectionPurchase';
 import { resolveCategoryAndItem, initCatalogCache, resolveOrderListing, resolveListingCategory, extractSellerOriginalPrice } from './utils/catalogCache';
 import { translateSystemNotification } from './utils/systemNotificationTranslator';
@@ -583,6 +584,10 @@ export default function App() {
 
   // Helper to recover locally placed or cached orders from localStorage (strictly scoped to user)
   const getLocalStoredOrders = React.useCallback((targetUser?: UserProfile | null): EscrowOrder[] => {
+    // If authenticated user, server database is authoritative; do not load mock local orders
+    if (getAccessToken()) {
+      return [];
+    }
     const userToUse = targetUser || currentUser || (typeof getStoredUser === 'function' ? getStoredUser() : null);
     const activeUserId = userToUse?.id || (typeof window !== 'undefined' ? localStorage.getItem('user_id') : '') || '';
     if (!activeUserId && !userToUse?.name && !userToUse?.email) return [];
@@ -645,8 +650,7 @@ export default function App() {
               (activeUserName && o.sellerName && o.sellerName.trim().toLowerCase() === activeUserName) ||
               (activeUserName && o.listing?.sellerName && o.listing.sellerName.trim().toLowerCase() === activeUserName) ||
               (activeUserEmail && (o as any).sellerEmail && String((o as any).sellerEmail).trim().toLowerCase() === activeUserEmail) ||
-              (activeUserEmail && (o.listing as any)?.sellerEmail && String((o.listing as any).sellerEmail).trim().toLowerCase() === activeUserEmail) ||
-              (activeRole === 'seller' && !isBuyer)
+              (activeUserEmail && (o.listing as any)?.sellerEmail && String((o.listing as any).sellerEmail).trim().toLowerCase() === activeUserEmail) 
             );
             const isInspectionOrder = Boolean(
               o.hasInspectionService ||
@@ -734,6 +738,31 @@ export default function App() {
     }
   }, [currentUser?.id, getLocalStoredOrders]);
 
+  // Clean up stale mock orders from localStorage for authenticated users to avoid ghost badges
+  React.useEffect(() => {
+    if (getAccessToken() && typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('recent_placed_orders');
+        localStorage.removeItem('my_seller_inspection_orders');
+        localStorage.removeItem('all_orders_cache');
+      } catch { }
+    }
+  }, [currentUser?.id]);
+
+  // Load high-value inspection policy threshold from backend (chỉ áp dụng cho seller/admin/staff)
+  React.useEffect(() => {
+    if (!currentUser) return;
+    const roles = getUserRoles(currentUser);
+    if (!roles.includes('seller') && !roles.includes('admin') && !roles.includes('staff')) return;
+    inspectorService.getHighValueInspectionPolicy()
+      .then((p) => {
+        if (p?.thresholdPrice && Number(p.thresholdPrice) > 0) {
+          setSystemHighValueThreshold(Number(p.thresholdPrice));
+        }
+      })
+      .catch(() => { });
+  }, [currentUser]);
+
   // Modals
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
   const initialSellerDetail = useRef<SellerPostDetailDto | null>(null);
@@ -769,12 +798,29 @@ export default function App() {
         getRefreshToken() ||
         getStoredUser()
       );
-      console.log('[App] Received unauthorized_session event! hadUser:', hadUser, 'reason:', customEvt?.detail?.reason);
+      const isSellerUpgrade = (() => {
+        try { return sessionStorage.getItem('seller_upgrade_relogin') === '1'; } catch { return false; }
+      })();
+      console.log('[App] Received unauthorized_session event! hadUser:', hadUser, 'isSellerUpgrade:', isSellerUpgrade, 'reason:', customEvt?.detail?.reason);
       clearAuthTokens();
       resetActivityTimer();
       setCurrentUser(null);
       setCurrentRole('buyer');
       hadSessionRef.current = false;
+
+      if (isSellerUpgrade) {
+        try { sessionStorage.removeItem('seller_upgrade_relogin'); } catch { }
+        setIsSellerRegistrationModalOpen(false);
+        setIsSessionExpiredOpen(false);
+        navigatePath(paths.home);
+        showToast(
+          lang === 'vi'
+            ? '🎉 Chúc mừng bạn đã đăng ký Người Bán thành công! Vui lòng đăng nhập lại để kích hoạt quyền Người Bán.'
+            : '🎉 Congratulations! Your Seller registration is complete. Please log in again to activate Seller access.'
+        );
+        openAuth('login');
+        return;
+      }
 
       // Hiển thị modal và thông báo hết hạn phiên nếu trước đó người dùng có phiên đăng nhập
       if (hadUser) {
@@ -950,9 +996,17 @@ export default function App() {
       try {
         const profile = await userService.getMyProfile();
         verifiedUser = { ...verifiedUser, roles: profile.roles, permissions: profile.permissions };
-      } catch { navigatePath(paths.unauthorized); return; }
+      } catch (err: any) {
+        const status = err?.status || err?.response?.status;
+        if (status === 401 || !getAccessToken()) {
+          return;
+        }
+        navigatePath(paths.unauthorized);
+        return;
+      }
     }
     if (!getUserRoles(verifiedUser).includes(newRole)) { navigatePath(paths.unauthorized); return; }
+    try { sessionStorage.removeItem('seller_upgrade_relogin'); } catch { }
     const updated = { ...verifiedUser, role: newRole, roles: verifiedUser.roles || [verifiedUser.role] };
     setCurrentRole(newRole);
     setCurrentUser(updated);
@@ -1196,7 +1250,7 @@ export default function App() {
       rejectionReason: post.rejectionReason,
       createdAt: post.publishedAt || post.createdAt || new Date().toISOString(),
       isInspectionGuaranteed: true,
-      requiresInspection: price > 5000000,
+      requiresInspection: isPostRequiringInspection(post),
       isInspected: post.isInspected === true,
       inspectionMethod: post.inspectionMethod || post.orderType || undefined,
       photos: {
@@ -1588,35 +1642,37 @@ export default function App() {
         }
       });
 
-      // Nạp thêm các đơn kiểm định cục bộ từ my_seller_inspection_orders và recent_placed_orders
-      try {
-        const rawLocalSellerInsp = localStorage.getItem('my_seller_inspection_orders');
-        if (rawLocalSellerInsp) {
-          const list = JSON.parse(rawLocalSellerInsp);
-          if (Array.isArray(list)) {
-            list.forEach((item: any) => {
-              if (item?.id && item.inspectionScope !== 'PRE_LISTING' &&
-                  inspById.get(item.id)?.inspectionScope !== 'PRE_LISTING' && !orderMap.has(item.id)) {
-                orderMap.set(item.id, { ...item, __isInspection: true });
-              }
-            });
+      // Nạp thêm các đơn kiểm định cục bộ từ my_seller_inspection_orders và recent_placed_orders (CHỈ KHI CHƯA ĐĂNG NHẬP)
+      if (!getAccessToken()) {
+        try {
+          const rawLocalSellerInsp = localStorage.getItem('my_seller_inspection_orders');
+          if (rawLocalSellerInsp) {
+            const list = JSON.parse(rawLocalSellerInsp);
+            if (Array.isArray(list)) {
+              list.forEach((item: any) => {
+                if (item?.id && item.inspectionScope !== 'PRE_LISTING' &&
+                    inspById.get(item.id)?.inspectionScope !== 'PRE_LISTING' && !orderMap.has(item.id)) {
+                  orderMap.set(item.id, { ...item, __isInspection: true });
+                }
+              });
+            }
           }
-        }
-      } catch { }
+        } catch { }
 
-      try {
-        const rawRecent = localStorage.getItem('recent_placed_orders');
-        if (rawRecent) {
-          const list = JSON.parse(rawRecent);
-          if (Array.isArray(list)) {
-            list.forEach((item: any) => {
-              if (item?.id && !orderMap.has(item.id)) {
-                orderMap.set(item.id, { ...item, __isInspection: Boolean(item.hasInspectionService || item.inspectionFeeVnd) });
-              }
-            });
+        try {
+          const rawRecent = localStorage.getItem('recent_placed_orders');
+          if (rawRecent) {
+            const list = JSON.parse(rawRecent);
+            if (Array.isArray(list)) {
+              list.forEach((item: any) => {
+                if (item?.id && !orderMap.has(item.id)) {
+                  orderMap.set(item.id, { ...item, __isInspection: Boolean(item.hasInspectionService || item.inspectionFeeVnd) });
+                }
+              });
+            }
           }
-        }
-      } catch { }
+        } catch { }
+      }
 
       const items = Array.from(orderMap.values());
       if (items && items.length > 0) {
@@ -1626,8 +1682,8 @@ export default function App() {
           postCacheMap, postTitleCacheMap, buyerNameMap, buyerPhoneMap, sellerNameMap, postImageMap, postTitleMap,
         }));
 
-        // Merge with recent locally placed orders so newly placed orders are never lost
-        const localRecentOrders = getLocalStoredOrders(currentUser);
+        // Merge with recent locally placed orders so newly placed orders are never lost (only if not authenticated)
+        const localRecentOrders = getAccessToken() ? [] : getLocalStoredOrders(currentUser);
         const combined = [...mappedOrders];
 
         const cancelledListingKeys = new Set<string>();
@@ -1730,8 +1786,7 @@ export default function App() {
             (currentUserName && locOrd.sellerName && locOrd.sellerName.trim().toLowerCase() === currentUserName) ||
             (currentUserName && locOrd.listing?.sellerName && locOrd.listing.sellerName.trim().toLowerCase() === currentUserName) ||
             (currentUser?.email && (locOrd as any).sellerEmail && String((locOrd as any).sellerEmail).trim().toLowerCase() === currentUser.email.trim().toLowerCase()) ||
-            (currentUser?.email && (locOrd.listing as any)?.sellerEmail && String((locOrd.listing as any).sellerEmail).trim().toLowerCase() === currentUser.email.trim().toLowerCase()) ||
-            (currentRole === 'seller' && !isBuyer && !locOrd.sellerId && !locOrd.listing?.sellerId)
+            (currentUser?.email && (locOrd.listing as any)?.sellerEmail && String((locOrd.listing as any).sellerEmail).trim().toLowerCase() === currentUser.email.trim().toLowerCase()) 
           );
           const isInspectionRole = Boolean(
             currentUser?.role === 'inspector' ||
@@ -1807,30 +1862,41 @@ export default function App() {
 
         setOrders(deduplicatedCombined);
       } else {
-        // Even if server returns 0, retain all local recent orders belonging to currentUser
+        // If user is authenticated, server is authoritative; if 0 orders returned, orders list is empty
+        if (getAccessToken()) {
+          try {
+            localStorage.setItem('all_orders_cache', JSON.stringify([]));
+          } catch { }
+          setOrders([]);
+        } else {
+          const localRecentOrders = getLocalStoredOrders(currentUser);
+          localRecentOrders.sort((a, b) => {
+            const timeA = getSortableOrderTimestamp(a);
+            const timeB = getSortableOrderTimestamp(b);
+            if (timeB !== timeA) return timeB - timeA;
+            return String(b.id || '').localeCompare(String(a.id || ''));
+          });
+          try {
+            localStorage.setItem('all_orders_cache', JSON.stringify(localRecentOrders));
+          } catch { }
+          reconcileBoughtListingIds(localRecentOrders);
+          setOrders(localRecentOrders);
+        }
+      }
+      lastOrdersFetchRef.current = Date.now();
+    } catch (err) {
+      if (ordersScopeRef.current !== scope) return;
+      console.warn('Could not load orders from backend:', err);
+      if (getAccessToken()) {
+        setOrders([]);
+      } else {
         const localRecentOrders = getLocalStoredOrders(currentUser);
-        localRecentOrders.sort((a, b) => {
-          const timeA = getSortableOrderTimestamp(a);
-          const timeB = getSortableOrderTimestamp(b);
-          if (timeB !== timeA) return timeB - timeA;
-          return String(b.id || '').localeCompare(String(a.id || ''));
-        });
         try {
           localStorage.setItem('all_orders_cache', JSON.stringify(localRecentOrders));
         } catch { }
         reconcileBoughtListingIds(localRecentOrders);
         setOrders(localRecentOrders);
       }
-      lastOrdersFetchRef.current = Date.now();
-    } catch (err) {
-      if (ordersScopeRef.current !== scope) return;
-      console.warn('Could not load orders from backend:', err);
-      const localRecentOrders = getLocalStoredOrders(currentUser);
-      try {
-        localStorage.setItem('all_orders_cache', JSON.stringify(localRecentOrders));
-      } catch { }
-      reconcileBoughtListingIds(localRecentOrders);
-      setOrders(localRecentOrders);
     } finally {
       if (pendingOrdersRef.current === pending) {
         pendingOrdersRef.current = null;
@@ -2744,7 +2810,22 @@ export default function App() {
               }
               handleTabChange(tab);
             }}
-            activeOrdersCount={orders.filter((o) => o.escrowStatus !== 'COMPLETED_RELEASED').length}
+            activeOrdersCount={(() => {
+              if (activeTab === 'orders' && orderFeed.counts) {
+                const c = orderFeed.counts;
+                return (c.awaiting_pickup || 0) + (c.inspecting || 0) + (c.shipping || 0) + (c.delivered || 0) + (c.disputed || 0);
+              }
+              return orders.filter((o) => {
+                if (o.escrowStatus === 'COMPLETED_RELEASED' || o.escrowStatus === 'REFUNDED_TO_BUYER' || (o as any).status === 'CANCELLED') return false;
+                if (currentRole === 'seller') {
+                  return isOrderBelongingToSeller(o, currentUser?.id, currentUser?.name, currentUser?.email);
+                }
+                if (currentRole === 'buyer') {
+                  return isOrderBelongingToBuyer(o, currentUser?.id, currentUser?.name, currentUser?.email);
+                }
+                return true;
+              }).length;
+            })()}
             unreadChatsCount={unreadChatsCount}
             currentUser={currentUser}
             onOpenAuth={openAuth}

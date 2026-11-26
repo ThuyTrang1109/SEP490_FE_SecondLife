@@ -76,8 +76,10 @@ export function resolveReturnReserveStatusLabel(status?: AdminReturnReserveStatu
       return 'Chờ đối soát cước';
     case 'EXCEEDS_RESERVE':
       return 'Cước thực tế vượt dự phòng';
+    case 'SETTLED_OUTSTANDING':
+      return 'Đã chốt cước thực tế · Còn khoản phải thu';
     case 'SETTLED':
-      return 'Đã quyết toán cước hoàn';
+      return 'Đã chốt cước thực tế · Đã quyết toán';
     default:
       return 'Chưa xác định';
   }
@@ -102,6 +104,7 @@ export function getReturnReserveBadgeStyle(status?: AdminReturnReserveStatus | n
     case 'AWAITING_CASH_CONFIRMATION':
       return { bg: 'bg-orange-50', text: 'text-orange-800', border: 'border-orange-300' };
     case 'EXCEEDS_RESERVE':
+    case 'SETTLED_OUTSTANDING':
       return { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200' };
     case 'NOT_REQUIRED':
     case 'NOT_COLLECTED':
@@ -383,7 +386,8 @@ export function resolveReturnReserveDetails(funds?: AdminInspectionOrderFundsDTO
     splitInspectionFee(surplusAmount, splitPlan.buyerPercent);
 
   // Determine refund status and explanation
-  const isSettled = status === 'SETTLED' || Boolean(funds?.settlement?.returnShippingSettledAt);
+  const isSettled = status === 'SETTLED' || status === 'SETTLED_OUTSTANDING' || Boolean(funds?.settlement?.returnShippingSettledAt);
+  const totalReturnOutstanding = (funds?.returnFee?.buyer?.outstanding ?? 0) + (funds?.returnFee?.seller?.outstanding ?? 0);
   const settlement = funds?.settlement;
   const refundAmountsRecorded = isSettled &&
     ['FAILED_INSPECTION', 'PASSED_BUYER_DEFAULTED'].includes(settlement?.outcome || '') &&
@@ -417,15 +421,21 @@ export function resolveReturnReserveDetails(funds?: AdminInspectionOrderFundsDTO
   let refundDescription = '';
 
   if (isSettled) {
-    refundStatus = 'SETTLED';
-    refundStatusLabel = refundAmountsRecorded && buyerSurplusShare + sellerSurplusShare > 0
-      ? 'Đã hoàn tất quyết toán & hoàn ví' : 'Đã quyết toán cước hoàn';
-    refundStatusBadge = { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' };
+    refundStatus = totalReturnOutstanding > 0 ? 'EXCEEDS_RESERVE' : 'SETTLED';
+    refundStatusLabel = totalReturnOutstanding > 0
+      ? 'Đã chốt cước thực tế · Còn khoản phải thu'
+      : refundAmountsRecorded && buyerSurplusShare + sellerSurplusShare > 0
+        ? 'Đã hoàn tất quyết toán & hoàn ví' : 'Đã quyết toán cước hoàn';
+    refundStatusBadge = totalReturnOutstanding > 0
+      ? { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200' }
+      : { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' };
     const returnSettledAt = funds?.settlement?.returnShippingSettledAt;
     const settledTimeStr = returnSettledAt ? ` vào lúc ${formatAuditDateTime(returnSettledAt)}` : '';
-    refundDescription = refundAmountsRecorded
-      ? `Đã đối soát xong cước hoàn${settledTimeStr}. Tiền dư của từng bên đã được tự động hoàn vào ví theo kết quả hạch toán.`
-      : `Đã đối soát xong cước hoàn${settledTimeStr}. Phân bổ tiền dư cho Người mua và Người bán được tính theo tỷ lệ đã chốt. Chưa có dữ liệu hạch toán khoản hoàn để xác nhận tiền vào ví.`;
+    refundDescription = totalReturnOutstanding > 0
+      ? `Đã chốt cước hoàn thực tế${settledTimeStr}, nhưng vẫn còn công nợ phải thu (${formatVND(totalReturnOutstanding)}) từ Buyer/Seller.`
+      : refundAmountsRecorded
+        ? `Đã đối soát xong cước hoàn${settledTimeStr}. Tiền dư của từng bên đã được tự động hoàn vào ví theo kết quả hạch toán.`
+        : `Đã đối soát xong cước hoàn${settledTimeStr}. Phân bổ tiền dư cho Người mua và Người bán được tính theo tỷ lệ đã chốt. Chưa có dữ liệu hạch toán khoản hoàn để xác nhận tiền vào ví.`;
     if (refundAmountsRecorded && isLegacySellerSettlement) {
       refundDescription += ` Đơn này đã quyết toán theo quy tắc cũ: Người mua được hoàn ${formatVND(Number(settlement.buyerRefundAmount))} trước khi đối soát cước hoàn, phần dư được xử lý cho Người bán.`;
     }

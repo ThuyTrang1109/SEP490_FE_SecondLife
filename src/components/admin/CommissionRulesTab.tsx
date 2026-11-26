@@ -24,6 +24,7 @@ import {
   CommissionRuleResponse,
   CommissionRuleRequest,
 } from '../../services/adminCommissionService';
+import { translateApiError } from '../../services/apiClient';
 import { formatVND } from '../../utils/translations';
 import { CommissionHistorySection } from './CommissionHistorySection';
 
@@ -125,7 +126,8 @@ export const CommissionRulesTab: React.FC = () => {
       setTotalElements(data.totalElements || data.items.length);
     } catch (err: any) {
       console.error('Error fetching commission rules:', err);
-      setErrorMessage(err?.response?.data?.message || err?.message || 'Không thể tải danh sách chính sách hoa hồng.');
+      const rawMsg = err?.response?.data?.message || err?.message || 'Không thể tải danh sách chính sách hoa hồng.';
+      setErrorMessage(translateApiError(rawMsg));
     } finally {
       setIsLoading(false);
     }
@@ -226,7 +228,8 @@ export const CommissionRulesTab: React.FC = () => {
       setTimeout(() => setSuccessMessage(null), 5000);
     } catch (err: any) {
       console.error('Error saving commission rule:', err);
-      setFormModalError(err?.response?.data?.message || err?.message || 'Lỗi khi lưu quy tắc hoa hồng.');
+      const rawMsg = err?.response?.data?.message || err?.message || 'Lỗi khi lưu quy tắc hoa hồng.';
+      setFormModalError(translateApiError(rawMsg));
     } finally {
       setIsSubmitting(false);
     }
@@ -250,7 +253,8 @@ export const CommissionRulesTab: React.FC = () => {
       setTimeout(() => setSuccessMessage(null), 5000);
     } catch (err: any) {
       console.error('Error deactivating rule:', err);
-      setDeactivateError(err?.response?.data?.message || err?.message || 'Không thể tắt chính sách.');
+      const rawMsg = err?.response?.data?.message || err?.message || 'Không thể tắt chính sách.';
+      setDeactivateError(translateApiError(rawMsg));
     } finally {
       setIsDeactivating(false);
     }

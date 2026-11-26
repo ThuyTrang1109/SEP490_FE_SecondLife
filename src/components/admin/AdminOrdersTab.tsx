@@ -24,6 +24,7 @@ import {
   MapPin,
   BadgeAlert
 } from 'lucide-react';
+import { adminCommissionService } from '../../services/adminCommissionService';
 import { adminOrderService, AdminOrderResponse, AdminOrderStatsResponse } from '../../services/adminOrderService';
 import { formatVND } from '../../utils/translations';
 import { Language, UserProfile } from '../../types';
@@ -69,6 +70,16 @@ export const AdminOrdersTab: React.FC<AdminOrdersTabProps> = ({
 
   // Modals & Detail
   const [selectedOrder, setSelectedOrder] = useState<AdminOrderResponse | null>(null);
+  const [activeCommissionRate, setActiveCommissionRate] = useState<number>(0.05);
+
+  useEffect(() => {
+    adminCommissionService.getCommissionRules(0, 10).then((res) => {
+      const active = res.items?.find((r) => r.active);
+      if (active && active.rate != null) {
+        setActiveCommissionRate(active.rate);
+      }
+    }).catch(() => { });
+  }, []);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState<boolean>(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -312,472 +323,472 @@ export const AdminOrdersTab: React.FC<AdminOrdersTabProps> = ({
       </div>
 
       {/* KHUNG ĐẦU: 6 Thẻ Thống Kê Chuẩn 100% Theo Cơ Sở Dữ Liệu */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
-            {/* Card 1: Tổng đơn */}
-            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs hover:border-slate-300 transition">
-              <div className="flex items-center justify-between text-slate-500 mb-2">
-                <span className="text-[11px] font-bold uppercase tracking-wider">Tổng Đơn Hàng</span>
-                <span className="p-1.5 bg-slate-100 rounded-lg text-slate-700">
-                  <Package className="w-4 h-4" />
-                </span>
-              </div>
-              <div className="text-2xl font-black text-slate-900 font-mono">
-                {totalCount}
-              </div>
-              <div className="text-[11px] text-slate-500 mt-1 truncate">
-                Doanh số GMV: <strong className="text-slate-700">{formatVND(stats?.totalGmv || 26995000)}</strong>
-              </div>
-            </div>
-
-            {/* Card 2: Đã xác nhận / Chờ giao */}
-            <div className="bg-white p-4 rounded-xl border border-sky-200 shadow-xs hover:border-sky-300 transition bg-linear-to-br from-sky-50/40 to-white">
-              <div className="flex items-center justify-between text-sky-700 mb-2">
-                <span className="text-[11px] font-bold uppercase tracking-wider">Đã Xác Nhận</span>
-                <span className="p-1.5 bg-sky-100 rounded-lg text-sky-800">
-                  <Check className="w-4 h-4" />
-                </span>
-              </div>
-              <div className="text-2xl font-black text-sky-800 font-mono">
-                {confirmedCount}
-              </div>
-              <div className="text-[11px] text-sky-600 mt-1">
-                Người bán đã duyệt đơn
-              </div>
-            </div>
-
-            {/* Card 3: Đang vận chuyển */}
-            <div className="bg-white p-4 rounded-xl border border-blue-200 shadow-xs hover:border-blue-300 transition bg-linear-to-br from-blue-50/40 to-white">
-              <div className="flex items-center justify-between text-blue-700 mb-2">
-                <span className="text-[11px] font-bold uppercase tracking-wider">Đang Vận Chuyển</span>
-                <span className="p-1.5 bg-blue-100 rounded-lg text-blue-800">
-                  <Truck className="w-4 h-4" />
-                </span>
-              </div>
-              <div className="text-2xl font-black text-blue-800 font-mono">
-                {shippingCount}
-              </div>
-              <div className="text-[11px] text-blue-600 mt-1">
-                Bưu tá đang giao hàng
-              </div>
-            </div>
-
-            {/* Card 4: Hoàn thành & Đã giải ngân */}
-            <div className="bg-white p-4 rounded-xl border border-emerald-200 shadow-xs hover:border-emerald-300 transition bg-linear-to-br from-emerald-50/40 to-white">
-              <div className="flex items-center justify-between text-emerald-700 mb-2">
-                <span className="text-[11px] font-bold uppercase tracking-wider">Hoàn Thành</span>
-                <span className="p-1.5 bg-emerald-100 rounded-lg text-emerald-800">
-                  <CheckCircle2 className="w-4 h-4" />
-                </span>
-              </div>
-              <div className="text-2xl font-black text-emerald-800 font-mono">
-                {completedCount}
-              </div>
-              <div className="text-[11px] text-emerald-600 mt-1">
-                Đã giải ngân cho Seller
-              </div>
-            </div>
-
-            {/* Card 5: Đã hủy đơn */}
-            <div className="bg-white p-4 rounded-xl border border-rose-200 shadow-xs hover:border-rose-300 transition bg-linear-to-br from-rose-50/40 to-white">
-              <div className="flex items-center justify-between text-rose-700 mb-2">
-                <span className="text-[11px] font-bold uppercase tracking-wider">Đã Hủy Đơn</span>
-                <span className="p-1.5 bg-rose-100 rounded-lg text-rose-800">
-                  <X className="w-4 h-4" />
-                </span>
-              </div>
-              <div className="text-2xl font-black text-rose-800 font-mono">
-                {cancelledCount}
-              </div>
-              <div className="text-[11px] text-rose-600 mt-1">
-                Đã hoàn tiền cho Buyer
-              </div>
-            </div>
-
-            {/* Card 6: Escrow đang giữ bảo đảm */}
-            <div className="bg-white p-4 rounded-xl border border-indigo-200 shadow-xs hover:border-indigo-300 transition bg-linear-to-br from-indigo-50/40 to-white">
-              <div className="flex items-center justify-between text-indigo-700 mb-2">
-                <span className="text-[11px] font-bold uppercase tracking-wider">Escrow Đang Giữ</span>
-                <span className="p-1.5 bg-indigo-100 rounded-lg text-indigo-800">
-                  <DollarSign className="w-4 h-4" />
-                </span>
-              </div>
-              <div className="text-xl font-black text-indigo-900 truncate">
-                {formatVND(stats?.heldEscrowAmount || 7170000)}
-              </div>
-              <div className="text-[11px] text-indigo-600 mt-1 truncate">
-                Đang giữ bảo đảm giao dịch
-              </div>
-            </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
+        {/* Card 1: Tổng đơn */}
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs hover:border-slate-300 transition">
+          <div className="flex items-center justify-between text-slate-500 mb-2">
+            <span className="text-[11px] font-bold uppercase tracking-wider">Tổng Đơn Hàng</span>
+            <span className="p-1.5 bg-slate-100 rounded-lg text-slate-700">
+              <Package className="w-4 h-4" />
+            </span>
           </div>
-
-          {/* KHUNG SAU: Bố Cục Lại Đẹp Mắt, Gọn Gàng, Chuẩn UI Bảng Điều Khiển Hiện Đại */}
-          <div className="bg-white rounded-xl shadow-xs border border-slate-200 p-4 space-y-3">
-            {/* Hàng 1: Ô Tìm Kiếm Rộng Rãi + Các Nút Thao Tác (Xuất CSV, Làm Mới) */}
-            <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-              {/* Ô Tìm Kiếm */}
-              <div className="relative flex-1">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  placeholder={lang === 'vi' ? 'Tìm theo mã đơn (ID), tên sản phẩm, email người mua / người bán...' : 'Search by order ID, title, buyer, seller...'}
-                  value={searchQuery}
-                  onChange={(e) => {
-                    setSearchQuery(e.target.value);
-                    setCurrentPage(0);
-                  }}
-                  className="w-full pl-10 pr-9 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-hidden focus:border-[#24263e] focus:bg-white transition"
-                />
-                {searchQuery && (
-                  <button
-                    onClick={() => {
-                      setSearchQuery('');
-                      setCurrentPage(0);
-                    }}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
-                    title="Xóa tìm kiếm"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-
-              {/* Nút Xuất CSV & Nút Làm Mới */}
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  onClick={handleExportCSV}
-                  disabled={orders.length === 0}
-                  className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-[#24263e] hover:bg-[#1a1c2d] text-white text-xs font-bold transition shadow-xs disabled:opacity-50"
-                  title="Xuất danh sách ra tệp CSV"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Xuất CSV</span>
-                </button>
-                <button
-                  onClick={() => {
-                    loadOrders();
-                    loadStats();
-                  }}
-                  disabled={loading}
-                  className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-semibold transition"
-                  title="Làm mới dữ liệu từ Database"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-[#24263e]' : ''}`} />
-                  <span className="hidden sm:inline">Làm mới</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Hàng 2: Bộ Lọc Phân Loại & Đếm Kết Quả */}
-            <div className="flex flex-wrap items-center justify-between gap-2.5 pt-2 border-t border-slate-100">
-              <div className="flex flex-wrap items-center gap-2 text-xs">
-                {/* Lọc Trạng thái */}
-                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">
-                  <Filter className="w-3.5 h-3.5 text-slate-400" />
-                  <span className="text-slate-500 text-[11px] font-medium">Trạng thái:</span>
-                  <select
-                    value={statusFilter}
-                    onChange={(e) => {
-                      setStatusFilter(e.target.value);
-                      setCurrentPage(0);
-                    }}
-                    className="bg-transparent text-slate-800 font-bold focus:outline-hidden text-xs cursor-pointer"
-                  >
-                    <option value="ALL">Tất cả trạng thái</option>
-                    <option value="CONFIRMED">Seller đã xác nhận ({confirmedCount})</option>
-                    <option value="SHIPPED">Đang giao hàng ({shippingCount})</option>
-                    <option value="DELIVERED">Đã nhận hàng (2)</option>
-                    <option value="COMPLETED">Hoàn tất & Giải ngân ({completedCount})</option>
-                    <option value="CANCELLED">Đã hủy đơn ({cancelledCount})</option>
-                    <option value="PENDING_PAYMENT">Chờ thanh toán</option>
-                  </select>
-                </div>
-
-                {/* Lọc Escrow */}
-                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">
-                  <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />
-                  <span className="text-slate-500 text-[11px] font-medium">Ký quỹ Escrow:</span>
-                  <select
-                    value={escrowFilter}
-                    onChange={(e) => {
-                      setEscrowFilter(e.target.value);
-                      setCurrentPage(0);
-                    }}
-                    className="bg-transparent text-slate-800 font-bold focus:outline-hidden text-xs cursor-pointer"
-                  >
-                    <option value="ALL">Tất cả loại ký quỹ</option>
-                    <option value="HELD">Đang giữ tiền (HELD)</option>
-                    <option value="RELEASED">Đã giải ngân (RELEASED)</option>
-                    <option value="REFUNDED">Đã hoàn tiền (REFUNDED)</option>
-                    <option value="FROZEN">Đóng băng tranh chấp (FROZEN)</option>
-                  </select>
-                </div>
-
-                {/* Lọc Dịch vụ */}
-                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">
-                  <Building2 className="w-3.5 h-3.5 text-slate-400" />
-                  <span className="text-slate-500 text-[11px] font-medium">Dịch vụ:</span>
-                  <select
-                    value={inspectionFilter}
-                    onChange={(e) => {
-                      setInspectionFilter(e.target.value as any);
-                      setCurrentPage(0);
-                    }}
-                    className="bg-transparent text-slate-800 font-bold focus:outline-hidden text-xs cursor-pointer"
-                  >
-                    <option value="ALL">Tất cả hình thức</option>
-                    <option value="INSPECTION_ONLY">Qua Hub kiểm định</option>
-                    <option value="DIRECT_ONLY">Giao dịch trực tiếp</option>
-                  </select>
-                </div>
-
-                {/* Nút Đặt Lại Bộ Lọc */}
-                {(statusFilter !== 'ALL' || escrowFilter !== 'ALL' || inspectionFilter !== 'ALL' || searchQuery) && (
-                  <button
-                    onClick={() => {
-                      setStatusFilter('ALL');
-                      setEscrowFilter('ALL');
-                      setInspectionFilter('ALL');
-                      setSearchQuery('');
-                      setCurrentPage(0);
-                    }}
-                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-rose-600 hover:text-rose-700 hover:bg-rose-50 border border-rose-200 transition font-bold text-[11px]"
-                  >
-                    <X className="w-3 h-3" />
-                    <span>Đặt lại</span>
-                  </button>
-                )}
-              </div>
-
-              {/* Huy hiệu tổng kết số đơn phù hợp */}
-              <div className="text-[11px] text-slate-500 font-medium self-center">
-                Tìm thấy <strong className="text-slate-900 font-mono font-bold">{totalElements}</strong> đơn hàng phù hợp
-              </div>
-            </div>
+          <div className="text-2xl font-black text-slate-900 font-mono">
+            {totalCount}
           </div>
+          <div className="text-[11px] text-slate-500 mt-1 truncate">
+            Doanh số GMV: <strong className="text-slate-700">{formatVND(stats?.totalGmv || 26995000)}</strong>
+          </div>
+        </div>
 
-          {/* Thông báo lỗi nếu truy vấn DB gặp sự cố */}
-          {error && (
-            <div className="bg-rose-50 border border-rose-200 text-rose-800 p-4 rounded-xl flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
-                <span className="text-xs font-semibold">{error}</span>
-              </div>
+        {/* Card 2: Đã xác nhận / Chờ giao */}
+        <div className="bg-white p-4 rounded-xl border border-sky-200 shadow-xs hover:border-sky-300 transition bg-linear-to-br from-sky-50/40 to-white">
+          <div className="flex items-center justify-between text-sky-700 mb-2">
+            <span className="text-[11px] font-bold uppercase tracking-wider">Đã Xác Nhận</span>
+            <span className="p-1.5 bg-sky-100 rounded-lg text-sky-800">
+              <Check className="w-4 h-4" />
+            </span>
+          </div>
+          <div className="text-2xl font-black text-sky-800 font-mono">
+            {confirmedCount}
+          </div>
+          <div className="text-[11px] text-sky-600 mt-1">
+            Người bán đã duyệt đơn
+          </div>
+        </div>
+
+        {/* Card 3: Đang vận chuyển */}
+        <div className="bg-white p-4 rounded-xl border border-blue-200 shadow-xs hover:border-blue-300 transition bg-linear-to-br from-blue-50/40 to-white">
+          <div className="flex items-center justify-between text-blue-700 mb-2">
+            <span className="text-[11px] font-bold uppercase tracking-wider">Đang Vận Chuyển</span>
+            <span className="p-1.5 bg-blue-100 rounded-lg text-blue-800">
+              <Truck className="w-4 h-4" />
+            </span>
+          </div>
+          <div className="text-2xl font-black text-blue-800 font-mono">
+            {shippingCount}
+          </div>
+          <div className="text-[11px] text-blue-600 mt-1">
+            Bưu tá đang giao hàng
+          </div>
+        </div>
+
+        {/* Card 4: Hoàn thành & Đã giải ngân */}
+        <div className="bg-white p-4 rounded-xl border border-emerald-200 shadow-xs hover:border-emerald-300 transition bg-linear-to-br from-emerald-50/40 to-white">
+          <div className="flex items-center justify-between text-emerald-700 mb-2">
+            <span className="text-[11px] font-bold uppercase tracking-wider">Hoàn Thành</span>
+            <span className="p-1.5 bg-emerald-100 rounded-lg text-emerald-800">
+              <CheckCircle2 className="w-4 h-4" />
+            </span>
+          </div>
+          <div className="text-2xl font-black text-emerald-800 font-mono">
+            {completedCount}
+          </div>
+          <div className="text-[11px] text-emerald-600 mt-1">
+            Đã giải ngân cho Seller
+          </div>
+        </div>
+
+        {/* Card 5: Đã hủy đơn */}
+        <div className="bg-white p-4 rounded-xl border border-rose-200 shadow-xs hover:border-rose-300 transition bg-linear-to-br from-rose-50/40 to-white">
+          <div className="flex items-center justify-between text-rose-700 mb-2">
+            <span className="text-[11px] font-bold uppercase tracking-wider">Đã Hủy Đơn</span>
+            <span className="p-1.5 bg-rose-100 rounded-lg text-rose-800">
+              <X className="w-4 h-4" />
+            </span>
+          </div>
+          <div className="text-2xl font-black text-rose-800 font-mono">
+            {cancelledCount}
+          </div>
+          <div className="text-[11px] text-rose-600 mt-1">
+            Đã hoàn tiền cho Buyer
+          </div>
+        </div>
+
+        {/* Card 6: Escrow đang giữ bảo đảm */}
+        <div className="bg-white p-4 rounded-xl border border-indigo-200 shadow-xs hover:border-indigo-300 transition bg-linear-to-br from-indigo-50/40 to-white">
+          <div className="flex items-center justify-between text-indigo-700 mb-2">
+            <span className="text-[11px] font-bold uppercase tracking-wider">Escrow Đang Giữ</span>
+            <span className="p-1.5 bg-indigo-100 rounded-lg text-indigo-800">
+              <DollarSign className="w-4 h-4" />
+            </span>
+          </div>
+          <div className="text-xl font-black text-indigo-900 truncate">
+            {formatVND(stats?.heldEscrowAmount)}
+          </div>
+          <div className="text-[11px] text-indigo-600 mt-1 truncate">
+            Đang giữ bảo đảm giao dịch
+          </div>
+        </div>
+      </div>
+
+      {/* KHUNG SAU: Bố Cục Lại Đẹp Mắt, Gọn Gàng, Chuẩn UI Bảng Điều Khiển Hiện Đại */}
+      <div className="bg-white rounded-xl shadow-xs border border-slate-200 p-4 space-y-3">
+        {/* Hàng 1: Ô Tìm Kiếm Rộng Rãi + Các Nút Thao Tác (Xuất CSV, Làm Mới) */}
+        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+          {/* Ô Tìm Kiếm */}
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder={lang === 'vi' ? 'Tìm theo mã đơn (ID), tên sản phẩm, email người mua / người bán...' : 'Search by order ID, title, buyer, seller...'}
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(0);
+              }}
+              className="w-full pl-10 pr-9 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-hidden focus:border-[#24263e] focus:bg-white transition"
+            />
+            {searchQuery && (
               <button
                 onClick={() => {
-                  loadOrders();
-                  loadStats();
+                  setSearchQuery('');
+                  setCurrentPage(0);
                 }}
-                className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg transition"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                title="Xóa tìm kiếm"
               >
-                Thử lại
+                <X className="w-3.5 h-3.5" />
               </button>
-            </div>
-          )}
+            )}
+          </div>
 
-          {/* Bảng Dữ Liệu Đơn Hàng từ PostgreSQL Database */}
-          <div className="bg-white rounded-xl shadow-xs border border-slate-200/80 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-slate-50/80 text-slate-500 font-bold border-b border-slate-200/80 uppercase text-[10px] tracking-wider">
-                    <th className="py-3 px-4">Mã Đơn & Thời Gian</th>
-                    <th className="py-3 px-4">Sản Phẩm (DB)</th>
-                    <th className="py-3 px-4">Người Mua</th>
-                    <th className="py-3 px-4">Người Bán</th>
-                    <th className="py-3 px-4 text-right">Tổng Tiền</th>
-                    <th className="py-3 px-4">Dịch Vụ Hub</th>
-                    <th className="py-3 px-4">Trạng Thái Đơn</th>
-                    <th className="py-3 px-4">Ký Quỹ Escrow</th>
-                    <th className="py-3 px-4 text-center">Thao Tác</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 text-slate-700">
-                  {loading && orders.length === 0 ? (
-                    <tr>
-                      <td colSpan={9} className="py-12 text-center text-slate-400">
-                        <RefreshCw className="w-6 h-6 animate-spin mx-auto text-[#24263e] mb-2" />
-                        <span>Đang truy vấn dữ liệu đơn hàng từ cơ sở dữ liệu...</span>
-                      </td>
-                    </tr>
-                  ) : orders.length === 0 ? (
-                    <tr>
-                      <td colSpan={9} className="py-12 text-center text-slate-400">
-                        <Package className="w-8 h-8 mx-auto text-slate-300 mb-2" />
-                        <span className="font-semibold text-slate-600 block">Không tìm thấy đơn hàng nào trong DB</span>
-                        <span className="text-[11px] text-slate-400">Hãy thử đổi tiêu chí tìm kiếm hoặc bộ lọc</span>
-                      </td>
-                    </tr>
-                  ) : (
-                    orders.map((ord) => (
-                      <tr
-                        key={ord.id}
-                        className="hover:bg-slate-50/80 transition cursor-pointer"
+          {/* Nút Xuất CSV & Nút Làm Mới */}
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={handleExportCSV}
+              disabled={orders.length === 0}
+              className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-[#24263e] hover:bg-[#1a1c2d] text-white text-xs font-bold transition shadow-xs disabled:opacity-50"
+              title="Xuất danh sách ra tệp CSV"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Xuất CSV</span>
+            </button>
+            <button
+              onClick={() => {
+                loadOrders();
+                loadStats();
+              }}
+              disabled={loading}
+              className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-semibold transition"
+              title="Làm mới dữ liệu từ Database"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-[#24263e]' : ''}`} />
+              <span className="hidden sm:inline">Làm mới</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Hàng 2: Bộ Lọc Phân Loại & Đếm Kết Quả */}
+        <div className="flex flex-wrap items-center justify-between gap-2.5 pt-2 border-t border-slate-100">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            {/* Lọc Trạng thái */}
+            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">
+              <Filter className="w-3.5 h-3.5 text-slate-400" />
+              <span className="text-slate-500 text-[11px] font-medium">Trạng thái:</span>
+              <select
+                value={statusFilter}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value);
+                  setCurrentPage(0);
+                }}
+                className="bg-transparent text-slate-800 font-bold focus:outline-hidden text-xs cursor-pointer"
+              >
+                <option value="ALL">Tất cả trạng thái</option>
+                <option value="CONFIRMED">Seller đã xác nhận ({confirmedCount})</option>
+                <option value="SHIPPED">Đang giao hàng ({shippingCount})</option>
+                <option value="DELIVERED">Đã nhận hàng (2)</option>
+                <option value="COMPLETED">Hoàn tất & Giải ngân ({completedCount})</option>
+                <option value="CANCELLED">Đã hủy đơn ({cancelledCount})</option>
+                <option value="PENDING_PAYMENT">Chờ thanh toán</option>
+              </select>
+            </div>
+
+            {/* Lọc Escrow */}
+            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />
+              <span className="text-slate-500 text-[11px] font-medium">Ký quỹ Escrow:</span>
+              <select
+                value={escrowFilter}
+                onChange={(e) => {
+                  setEscrowFilter(e.target.value);
+                  setCurrentPage(0);
+                }}
+                className="bg-transparent text-slate-800 font-bold focus:outline-hidden text-xs cursor-pointer"
+              >
+                <option value="ALL">Tất cả loại ký quỹ</option>
+                <option value="HELD">Đang giữ tiền (HELD)</option>
+                <option value="RELEASED">Đã giải ngân (RELEASED)</option>
+                <option value="REFUNDED">Đã hoàn tiền (REFUNDED)</option>
+                <option value="FROZEN">Đóng băng tranh chấp (FROZEN)</option>
+              </select>
+            </div>
+
+            {/* Lọc Dịch vụ */}
+            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">
+              <Building2 className="w-3.5 h-3.5 text-slate-400" />
+              <span className="text-slate-500 text-[11px] font-medium">Dịch vụ:</span>
+              <select
+                value={inspectionFilter}
+                onChange={(e) => {
+                  setInspectionFilter(e.target.value as any);
+                  setCurrentPage(0);
+                }}
+                className="bg-transparent text-slate-800 font-bold focus:outline-hidden text-xs cursor-pointer"
+              >
+                <option value="ALL">Tất cả hình thức</option>
+                <option value="INSPECTION_ONLY">Qua Hub kiểm định</option>
+                <option value="DIRECT_ONLY">Giao dịch trực tiếp</option>
+              </select>
+            </div>
+
+            {/* Nút Đặt Lại Bộ Lọc */}
+            {(statusFilter !== 'ALL' || escrowFilter !== 'ALL' || inspectionFilter !== 'ALL' || searchQuery) && (
+              <button
+                onClick={() => {
+                  setStatusFilter('ALL');
+                  setEscrowFilter('ALL');
+                  setInspectionFilter('ALL');
+                  setSearchQuery('');
+                  setCurrentPage(0);
+                }}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-rose-600 hover:text-rose-700 hover:bg-rose-50 border border-rose-200 transition font-bold text-[11px]"
+              >
+                <X className="w-3 h-3" />
+                <span>Đặt lại</span>
+              </button>
+            )}
+          </div>
+
+          {/* Huy hiệu tổng kết số đơn phù hợp */}
+          <div className="text-[11px] text-slate-500 font-medium self-center">
+            Tìm thấy <strong className="text-slate-900 font-mono font-bold">{totalElements}</strong> đơn hàng phù hợp
+          </div>
+        </div>
+      </div>
+
+      {/* Thông báo lỗi nếu truy vấn DB gặp sự cố */}
+      {error && (
+        <div className="bg-rose-50 border border-rose-200 text-rose-800 p-4 rounded-xl flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+            <span className="text-xs font-semibold">{error}</span>
+          </div>
+          <button
+            onClick={() => {
+              loadOrders();
+              loadStats();
+            }}
+            className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg transition"
+          >
+            Thử lại
+          </button>
+        </div>
+      )}
+
+      {/* Bảng Dữ Liệu Đơn Hàng từ PostgreSQL Database */}
+      <div className="bg-white rounded-xl shadow-xs border border-slate-200/80 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr className="bg-slate-50/80 text-slate-500 font-bold border-b border-slate-200/80 uppercase text-[10px] tracking-wider">
+                <th className="py-3 px-4">Mã Đơn & Thời Gian</th>
+                <th className="py-3 px-4">Sản Phẩm (DB)</th>
+                <th className="py-3 px-4">Người Mua</th>
+                <th className="py-3 px-4">Người Bán</th>
+                <th className="py-3 px-4 text-right">Tổng Tiền</th>
+                <th className="py-3 px-4">Dịch Vụ Hub</th>
+                <th className="py-3 px-4">Trạng Thái Đơn</th>
+                <th className="py-3 px-4">Ký Quỹ Escrow</th>
+                <th className="py-3 px-4 text-center">Thao Tác</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 text-slate-700">
+              {loading && orders.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="py-12 text-center text-slate-400">
+                    <RefreshCw className="w-6 h-6 animate-spin mx-auto text-[#24263e] mb-2" />
+                    <span>Đang truy vấn dữ liệu đơn hàng từ cơ sở dữ liệu...</span>
+                  </td>
+                </tr>
+              ) : orders.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="py-12 text-center text-slate-400">
+                    <Package className="w-8 h-8 mx-auto text-slate-300 mb-2" />
+                    <span className="font-semibold text-slate-600 block">Không tìm thấy đơn hàng nào trong DB</span>
+                    <span className="text-[11px] text-slate-400">Hãy thử đổi tiêu chí tìm kiếm hoặc bộ lọc</span>
+                  </td>
+                </tr>
+              ) : (
+                orders.map((ord) => (
+                  <tr
+                    key={ord.id}
+                    className="hover:bg-slate-50/80 transition cursor-pointer"
+                    onClick={() => {
+                      setSelectedOrder(ord);
+                      setIsDetailModalOpen(true);
+                    }}
+                  >
+                    {/* 1. Mã đơn & Thời gian */}
+                    <td className="py-3.5 px-4">
+                      <div className="flex items-center gap-1.5 font-mono font-bold text-slate-900">
+                        <span>#{ord.id.slice(0, 8)}</span>
+                        <button
+                          onClick={(e) => handleCopyId(ord.id, e)}
+                          className="text-slate-400 hover:text-slate-700 transition"
+                          title="Sao chép toàn bộ ID"
+                        >
+                          {copiedId === ord.id ? (
+                            <Check className="w-3.5 h-3.5 text-emerald-600" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </div>
+                      <div className="text-[11px] text-slate-400 mt-0.5">
+                        {new Date(ord.createdAt).toLocaleDateString('vi-VN', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </div>
+                    </td>
+
+                    {/* 2. Sản phẩm */}
+                    <td className="py-3.5 px-4 max-w-xs">
+                      <div className="flex items-center gap-2.5">
+                        <img
+                          src={ord.postImageUrl || 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=800'}
+                          alt={ord.postTitle}
+                          className="w-10 h-10 object-cover rounded-lg border border-slate-200 shrink-0"
+                        />
+                        <div className="min-w-0">
+                          <p className="font-bold text-slate-900 truncate" title={ord.postTitle}>
+                            {ord.postTitle}
+                          </p>
+                          <span className="text-[11px] text-slate-500 font-mono font-semibold">
+                            {formatVND(ord.finalPrice)}
+                          </span>
+                        </div>
+                      </div>
+                    </td>
+
+                    {/* 3. Người mua */}
+                    <td className="py-3.5 px-4">
+                      <div className="font-semibold text-slate-900 truncate max-w-[130px]" title={ord.buyerName}>
+                        {ord.buyerName}
+                      </div>
+                      <div className="text-[11px] text-slate-400 truncate max-w-[130px]" title={ord.buyerEmail || ord.buyerPhone}>
+                        {ord.buyerPhone || ord.buyerEmail || '—'}
+                      </div>
+                    </td>
+
+                    {/* 4. Người bán */}
+                    <td className="py-3.5 px-4">
+                      <div className="font-semibold text-slate-900 truncate max-w-[130px]" title={ord.sellerName}>
+                        {ord.sellerName}
+                      </div>
+                      <div className="text-[11px] text-slate-400 truncate max-w-[130px]" title={ord.sellerEmail || ord.sellerPhone}>
+                        {ord.sellerPhone || ord.sellerEmail || '—'}
+                      </div>
+                    </td>
+
+                    {/* 5. Tổng tiền */}
+                    <td className="py-3.5 px-4 text-right">
+                      <div className="font-mono font-bold text-slate-900 text-sm">
+                        {formatVND(ord.totalAmount)}
+                      </div>
+                      {ord.shippingFee > 0 && (
+                        <div className="text-[10px] text-slate-400">
+                          Ship: {formatVND(ord.shippingFee)}
+                        </div>
+                      )}
+                    </td>
+
+                    {/* 6. Dịch vụ Hub */}
+                    <td className="py-3.5 px-4">
+                      {ord.hasInspection ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                          <Building2 className="w-3 h-3 text-indigo-600" /> Hub kiểm định
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600">
+                          Trực tiếp
+                        </span>
+                      )}
+                    </td>
+
+                    {/* 7. Trạng thái đơn */}
+                    <td className="py-3.5 px-4">
+                      {renderStatusBadge(ord.status)}
+                    </td>
+
+                    {/* 8. Ký quỹ Escrow */}
+                    <td className="py-3.5 px-4">
+                      {renderEscrowBadge(ord.escrowStatus)}
+                    </td>
+
+                    {/* 9. Thao tác */}
+                    <td className="py-3.5 px-4 text-center" onClick={(e) => e.stopPropagation()}>
+                      <button
                         onClick={() => {
                           setSelectedOrder(ord);
                           setIsDetailModalOpen(true);
                         }}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-[#24263e] hover:text-white text-slate-700 text-xs font-bold transition"
                       >
-                        {/* 1. Mã đơn & Thời gian */}
-                        <td className="py-3.5 px-4">
-                          <div className="flex items-center gap-1.5 font-mono font-bold text-slate-900">
-                            <span>#{ord.id.slice(0, 8)}</span>
-                            <button
-                              onClick={(e) => handleCopyId(ord.id, e)}
-                              className="text-slate-400 hover:text-slate-700 transition"
-                              title="Sao chép toàn bộ ID"
-                            >
-                              {copiedId === ord.id ? (
-                                <Check className="w-3.5 h-3.5 text-emerald-600" />
-                              ) : (
-                                <Copy className="w-3.5 h-3.5" />
-                              )}
-                            </button>
-                          </div>
-                          <div className="text-[11px] text-slate-400 mt-0.5">
-                            {new Date(ord.createdAt).toLocaleDateString('vi-VN', {
-                              day: '2-digit',
-                              month: '2-digit',
-                              year: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })}
-                          </div>
-                        </td>
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>Chi tiết</span>
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
 
-                        {/* 2. Sản phẩm */}
-                        <td className="py-3.5 px-4 max-w-xs">
-                          <div className="flex items-center gap-2.5">
-                            <img
-                              src={ord.postImageUrl || 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=800'}
-                              alt={ord.postTitle}
-                              className="w-10 h-10 object-cover rounded-lg border border-slate-200 shrink-0"
-                            />
-                            <div className="min-w-0">
-                              <p className="font-bold text-slate-900 truncate" title={ord.postTitle}>
-                                {ord.postTitle}
-                              </p>
-                              <span className="text-[11px] text-slate-500 font-mono font-semibold">
-                                {formatVND(ord.finalPrice)}
-                              </span>
-                            </div>
-                          </div>
-                        </td>
-
-                        {/* 3. Người mua */}
-                        <td className="py-3.5 px-4">
-                          <div className="font-semibold text-slate-900 truncate max-w-[130px]" title={ord.buyerName}>
-                            {ord.buyerName}
-                          </div>
-                          <div className="text-[11px] text-slate-400 truncate max-w-[130px]" title={ord.buyerEmail || ord.buyerPhone}>
-                            {ord.buyerPhone || ord.buyerEmail || '—'}
-                          </div>
-                        </td>
-
-                        {/* 4. Người bán */}
-                        <td className="py-3.5 px-4">
-                          <div className="font-semibold text-slate-900 truncate max-w-[130px]" title={ord.sellerName}>
-                            {ord.sellerName}
-                          </div>
-                          <div className="text-[11px] text-slate-400 truncate max-w-[130px]" title={ord.sellerEmail || ord.sellerPhone}>
-                            {ord.sellerPhone || ord.sellerEmail || '—'}
-                          </div>
-                        </td>
-
-                        {/* 5. Tổng tiền */}
-                        <td className="py-3.5 px-4 text-right">
-                          <div className="font-mono font-bold text-slate-900 text-sm">
-                            {formatVND(ord.totalAmount)}
-                          </div>
-                          {ord.shippingFee > 0 && (
-                            <div className="text-[10px] text-slate-400">
-                              Ship: {formatVND(ord.shippingFee)}
-                            </div>
-                          )}
-                        </td>
-
-                        {/* 6. Dịch vụ Hub */}
-                        <td className="py-3.5 px-4">
-                          {ord.hasInspection ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                              <Building2 className="w-3 h-3 text-indigo-600" /> Hub kiểm định
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600">
-                              Trực tiếp
-                            </span>
-                          )}
-                        </td>
-
-                        {/* 7. Trạng thái đơn */}
-                        <td className="py-3.5 px-4">
-                          {renderStatusBadge(ord.status)}
-                        </td>
-
-                        {/* 8. Ký quỹ Escrow */}
-                        <td className="py-3.5 px-4">
-                          {renderEscrowBadge(ord.escrowStatus)}
-                        </td>
-
-                        {/* 9. Thao tác */}
-                        <td className="py-3.5 px-4 text-center" onClick={(e) => e.stopPropagation()}>
-                          <button
-                            onClick={() => {
-                              setSelectedOrder(ord);
-                              setIsDetailModalOpen(true);
-                            }}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-[#24263e] hover:text-white text-slate-700 text-xs font-bold transition"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                            <span>Chi tiết</span>
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Pagination footer */}
-            <div className="flex flex-col sm:flex-row items-center justify-between p-4 border-t border-slate-200/80 gap-3 text-xs text-slate-500">
-              <div className="flex items-center gap-2">
-                <span>Hiển thị</span>
-                <select
-                  value={pageSize}
-                  onChange={(e) => {
-                    setPageSize(Number(e.target.value));
-                    setCurrentPage(0);
-                  }}
-                  className="bg-slate-100 font-bold text-slate-800 rounded px-2 py-1 border border-slate-200 focus:outline-hidden"
-                >
-                  <option value={10}>10 đơn/trang</option>
-                  <option value={20}>20 đơn/trang</option>
-                  <option value={50}>50 đơn/trang</option>
-                </select>
-                <span>trong tổng số <strong className="text-slate-800 font-mono">{totalElements}</strong> đơn</span>
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
-                  disabled={currentPage === 0 || loading}
-                  className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-                <span className="px-3 py-1 font-mono font-bold text-slate-800">
-                  {currentPage + 1} / {Math.max(1, totalPages)}
-                </span>
-                <button
-                  onClick={() => setCurrentPage((p) => Math.min(totalPages - 1, p + 1))}
-                  disabled={currentPage >= totalPages - 1 || loading}
-                  className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
+        {/* Pagination footer */}
+        <div className="flex flex-col sm:flex-row items-center justify-between p-4 border-t border-slate-200/80 gap-3 text-xs text-slate-500">
+          <div className="flex items-center gap-2">
+            <span>Hiển thị</span>
+            <select
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(Number(e.target.value));
+                setCurrentPage(0);
+              }}
+              className="bg-slate-100 font-bold text-slate-800 rounded px-2 py-1 border border-slate-200 focus:outline-hidden"
+            >
+              <option value={10}>10 đơn/trang</option>
+              <option value={20}>20 đơn/trang</option>
+              <option value={50}>50 đơn/trang</option>
+            </select>
+            <span>trong tổng số <strong className="text-slate-800 font-mono">{totalElements}</strong> đơn</span>
           </div>
+
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
+              disabled={currentPage === 0 || loading}
+              className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="px-3 py-1 font-mono font-bold text-slate-800">
+              {currentPage + 1} / {Math.max(1, totalPages)}
+            </span>
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(totalPages - 1, p + 1))}
+              disabled={currentPage >= totalPages - 1 || loading}
+              className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </div>
 
       {/* 4. Modal Chi Tiết Đơn Hàng (Order Detail Modal) */}
       {isDetailModalOpen && selectedOrder && (
@@ -847,11 +858,10 @@ export const AdminOrdersTab: React.FC<AdminOrdersTabProps> = ({
                   {/* Step 2: Escrow Paid */}
                   <div className="flex flex-col items-center">
                     <span
-                      className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs mb-1 ${
-                        selectedOrder.paidAt || selectedOrder.escrowStatus !== 'HELD'
+                      className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs mb-1 ${selectedOrder.paidAt || selectedOrder.escrowStatus !== 'HELD'
                           ? 'bg-emerald-500 text-white'
                           : 'bg-slate-200 text-slate-600'
-                      }`}
+                        }`}
                     >
                       {selectedOrder.paidAt ? '✓' : '2'}
                     </span>
@@ -866,13 +876,12 @@ export const AdminOrdersTab: React.FC<AdminOrdersTabProps> = ({
                   {/* Step 3: Seller Confirmed */}
                   <div className="flex flex-col items-center">
                     <span
-                      className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs mb-1 ${
-                        selectedOrder.sellerConfirmedAt
+                      className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs mb-1 ${selectedOrder.sellerConfirmedAt
                           ? 'bg-emerald-500 text-white'
                           : selectedOrder.status === 'SHIPPED' || selectedOrder.status === 'DELIVERED' || selectedOrder.status === 'COMPLETED' || selectedOrder.status === 'CONFIRMED'
-                          ? 'bg-emerald-500 text-white'
-                          : 'bg-slate-200 text-slate-600'
-                      }`}
+                            ? 'bg-emerald-500 text-white'
+                            : 'bg-slate-200 text-slate-600'
+                        }`}
                     >
                       {selectedOrder.sellerConfirmedAt || selectedOrder.status === 'CONFIRMED' ? '✓' : '3'}
                     </span>
@@ -887,11 +896,10 @@ export const AdminOrdersTab: React.FC<AdminOrdersTabProps> = ({
                   {/* Step 4: Shipping */}
                   <div className="flex flex-col items-center">
                     <span
-                      className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs mb-1 ${
-                        selectedOrder.status === 'SHIPPED' || selectedOrder.status === 'DELIVERED' || selectedOrder.status === 'COMPLETED'
+                      className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs mb-1 ${selectedOrder.status === 'SHIPPED' || selectedOrder.status === 'DELIVERED' || selectedOrder.status === 'COMPLETED'
                           ? 'bg-emerald-500 text-white'
                           : 'bg-slate-200 text-slate-600'
-                      }`}
+                        }`}
                     >
                       {selectedOrder.status === 'SHIPPED' || selectedOrder.status === 'DELIVERED' || selectedOrder.status === 'COMPLETED' ? '✓' : '4'}
                     </span>
@@ -904,13 +912,12 @@ export const AdminOrdersTab: React.FC<AdminOrdersTabProps> = ({
                   {/* Step 5: Completed */}
                   <div className="flex flex-col items-center">
                     <span
-                      className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs mb-1 ${
-                        selectedOrder.status === 'COMPLETED' || selectedOrder.escrowStatus === 'RELEASED'
+                      className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs mb-1 ${selectedOrder.status === 'COMPLETED' || selectedOrder.escrowStatus === 'RELEASED'
                           ? 'bg-emerald-500 text-white'
                           : selectedOrder.status === 'CANCELLED'
-                          ? 'bg-rose-500 text-white'
-                          : 'bg-slate-200 text-slate-600'
-                      }`}
+                            ? 'bg-rose-500 text-white'
+                            : 'bg-slate-200 text-slate-600'
+                        }`}
                     >
                       {selectedOrder.status === 'COMPLETED' ? '✓' : selectedOrder.status === 'CANCELLED' ? '✕' : '5'}
                     </span>
@@ -921,8 +928,8 @@ export const AdminOrdersTab: React.FC<AdminOrdersTabProps> = ({
                       {selectedOrder.escrowStatus === 'RELEASED'
                         ? 'Đã chuyển tiền'
                         : selectedOrder.escrowStatus === 'REFUNDED'
-                        ? 'Đã hoàn tiền'
-                        : 'Chờ buyer xác nhận'}
+                          ? 'Đã hoàn tiền'
+                          : 'Chờ buyer xác nhận'}
                     </span>
                   </div>
                 </div>
@@ -1034,14 +1041,29 @@ export const AdminOrdersTab: React.FC<AdminOrdersTabProps> = ({
                     <span className="text-slate-900">Tổng tiền Buyer đã trả:</span>
                     <span className="font-mono text-[#e07a5f]">{formatVND(selectedOrder.totalAmount)}</span>
                   </div>
-                  <div className="flex justify-between py-2 text-slate-500">
-                    <span>Hoa hồng sàn ước tính (5%):</span>
-                    <span className="font-mono">-{formatVND(Math.round(selectedOrder.finalPrice * 0.05))}</span>
-                  </div>
-                  <div className="flex justify-between py-2 font-bold text-emerald-800">
-                    <span>Thực nhận người bán sau giải ngân:</span>
-                    <span className="font-mono">+{formatVND(Math.round(selectedOrder.finalPrice * 0.95))}</span>
-                  </div>
+                  {(() => {
+                    const commRate = (selectedOrder as any)?.commissionRate ?? (selectedOrder as any)?.platformFeePercent ?? activeCommissionRate;
+                    const commPercent = Math.round(commRate <= 1 ? commRate * 100 : commRate);
+                    const commAmount = (selectedOrder as any)?.platformFeeVnd != null
+                      ? Number((selectedOrder as any).platformFeeVnd)
+                      : Math.round(selectedOrder.finalPrice * (commPercent / 100));
+                    const sellerPayout = (selectedOrder as any)?.sellerPayout != null
+                      ? Number((selectedOrder as any).sellerPayout)
+                      : Math.max(0, selectedOrder.finalPrice - commAmount);
+
+                    return (
+                      <>
+                        <div className="flex justify-between py-2 text-slate-500">
+                          <span>Hoa hồng sàn ước tính ({commPercent}%):</span>
+                          <span className="font-mono">-{formatVND(commAmount)}</span>
+                        </div>
+                        <div className="flex justify-between py-2 font-bold text-emerald-800">
+                          <span>Thực nhận người bán sau giải ngân:</span>
+                          <span className="font-mono">+{formatVND(sellerPayout)}</span>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
 

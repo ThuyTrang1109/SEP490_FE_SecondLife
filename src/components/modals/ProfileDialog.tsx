@@ -168,6 +168,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   if (!isOpen || !currentUser) return null;
 
   const isSeller = currentUser.role === 'seller' || currentRole === 'seller';
+  const isCurrentSeller = currentRole === 'seller';
 
   const [activeTab, setActiveTab] = useState<ProfileTab>(
     (initialTab === 'settings' || initialTab === 'reputation') && !isSeller
@@ -436,6 +437,8 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   const [pickupLongitude, setPickupLongitude] = useState<number | null>(
     currentUser.longitude ?? null
   );
+  const [isWarehouseConfirmed, setIsWarehouseConfirmed] = useState(false);
+  useEffect(() => setIsWarehouseConfirmed(false), [isOpen, currentUser.id]);
   const [idCardNumber, setIdCardNumber] = useState(currentUser.idCardNumber || '');
   const [sellerBankName, setSellerBankName] = useState(
     currentUser.bankAccount?.bankName || ''
@@ -897,18 +900,20 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
         const fullAddr = rawPickup.address.trim();
         setPickupAddress(fullAddr);
         setStreetAddress(fullAddr);
-        setUserStreetAddress(fullAddr);
-        setAddress(fullAddr);
+        if (isSeller) {
+          setUserStreetAddress(fullAddr);
+          setAddress(fullAddr);
+        }
 
         if (rawPickup.latitude != null) {
           const lat = Number(rawPickup.latitude);
           setPickupLatitude(lat);
-          setUserLatitude(lat);
+          if (isSeller) setUserLatitude(lat);
         }
         if (rawPickup.longitude != null) {
           const lng = Number(rawPickup.longitude);
           setPickupLongitude(lng);
-          setUserLongitude(lng);
+          if (isSeller) setUserLongitude(lng);
         }
 
         if (rawPickup.name) {
@@ -918,7 +923,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
           setSellerPhone(rawPickup.phone);
         }
 
-        const extracted = extractWardAndCity(fullAddr);
+        const extracted = isSeller ? extractWardAndCity(fullAddr) : '';
         if (extracted) {
           const [w, c] = extracted.split(',').map((s) => s.trim());
           if (w) setSelectedWardName(w);
@@ -1262,30 +1267,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
         shopName: cleanShop,
         email: targetEmail,
         phone: cleanPhone,
-        pickupAddress: {
-          name: cleanShop,
-          phone: cleanPhone,
-          address: streetAddress.trim() || pickupAddress.trim() || 'Hà Nội',
-          latitude: pickupLatitude || 21.028510,
-          longitude: pickupLongitude || 105.854167,
-          provinceId: Number(selectedProvinceId) || 1000001,
-          wardId: Number(selectedWardId) || 1003646,
-        },
       });
-
-      if (pickupLatitude && pickupLongitude) {
-        try {
-          await shippingService.savePickupAddress({
-            name: cleanShop,
-            phone: cleanPhone,
-            latitude: pickupLatitude,
-            longitude: pickupLongitude,
-          });
-        } catch (_) { }
-      }
-
-      const selProv = provinces.find((p) => String(p._id) === String(selectedProvinceId) || String((p as any).id) === String(selectedProvinceId));
-      const selWard = wards.find((w) => String(w._id) === String(selectedWardId) || String((w as any).id) === String(selectedWardId));
 
       await shippingService.sendSellerOnboardingEmailCode();
       setHasSentShopOtp(true);
@@ -1323,6 +1305,30 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       setShopOtpError(err.message || (lang === 'vi' ? 'Mã OTP không đúng hoặc đã hết hạn.' : 'Invalid or expired OTP.'));
     } finally {
       setIsVerifyingShopOtp(false);
+    }
+  };
+
+  const saveConfirmedWarehouse = () => {
+    if ((!isApprovedSeller && !isWarehouseConfirmed) || !pickupLatitude || !pickupLongitude || !pickupAddress.trim()) {
+      throw new Error(lang === 'vi' ? 'Vui lòng xác nhận vị trí kho trên bản đồ.' : 'Confirm the pickup location on the map.');
+    }
+    const name = shopName.trim().slice(0, 30);
+    const phone = sellerPhone.replace(/\s+/g, '').trim();
+    return shippingService.saveSellerOnboarding({
+      shopName: name,
+      email: (shopEmail || currentUser.email).trim(),
+      phone,
+      pickupAddress: { name, phone, address: pickupAddress.trim(), latitude: pickupLatitude, longitude: pickupLongitude },
+    });
+  };
+
+  const openSellerFaceScanner = async () => {
+    try {
+      const onboarding = await saveConfirmedWarehouse();
+      if (!onboarding.canStartEkyc) throw new Error(lang === 'vi' ? 'Vui lòng xác thực OTP email gian hàng.' : 'Verify the shop email first.');
+      setIsFaceScannerOpen(true);
+    } catch (error) {
+      setSellerFormError(error instanceof Error ? error.message : 'Không thể lưu địa chỉ kho.');
     }
   };
 
@@ -1390,24 +1396,8 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
           }
         }
 
-        // 2. Cập nhật thông tin gian hàng vào onboarding
-        try {
-          await shippingService.saveSellerOnboarding({
-            shopName: cleanShop,
-            email: (shopEmail || currentUser?.email || email || 'seller@secondlife.vn').trim(),
-            phone: cleanPhone,
-            pickupAddress: {
-              name: cleanShop,
-              phone: cleanPhone,
-              address: streetAddress.trim() || pickupAddress.trim(),
-              latitude: pickupLatitude || 21.028510,
-              longitude: pickupLongitude || 105.854167,
-              provinceId: Number(selectedProvinceId) || 1000001,
-              wardId: Number(selectedWardId) || 1003646,
-            },
-          });
-        } catch (onboardingErr: any) {
-          console.warn('saveSellerOnboarding warning:', onboardingErr);
+        if (pickupLatitude && pickupLongitude) {
+          try { await saveConfirmedWarehouse(); } catch (_) { }
         }
 
         // 3. Cập nhật thông tin profile cá nhân
@@ -1491,40 +1481,8 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
     setIsSubmittingSeller(true);
     try {
-      // 1. Nếu chưa lưu onboarding thì lưu (đã lưu ở bước gửi OTP)
-      if (!isShopEmailVerified) {
-        try {
-          const cleanPhone = (sellerPhone || '').replace(/\s+/g, '').trim();
-          const cleanShop = (shopName || '').trim().slice(0, 30);
-          await shippingService.saveSellerOnboarding({
-            shopName: cleanShop,
-            email: (shopEmail || currentUser?.email || email || 'seller@secondlife.vn').trim(),
-            phone: cleanPhone,
-            pickupAddress: {
-              name: cleanShop,
-              phone: cleanPhone,
-              address: streetAddress.trim() || pickupAddress.trim(),
-              latitude: pickupLatitude || 21.028510,
-              longitude: pickupLongitude || 105.854167,
-              provinceId: Number(selectedProvinceId) || 1000001,
-              wardId: Number(selectedWardId) || 1003646,
-            },
-          });
-
-          if (pickupLatitude && pickupLongitude) {
-            try {
-              await shippingService.savePickupAddress({
-                name: cleanShop,
-                phone: cleanPhone,
-                latitude: pickupLatitude,
-                longitude: pickupLongitude,
-              });
-            } catch (_) { }
-          }
-        } catch (onboardingErr) {
-          console.warn('Backend saveSellerOnboarding notification:', onboardingErr);
-        }
-      }
+      const onboarding = await saveConfirmedWarehouse();
+      if (!onboarding.canStartEkyc) throw new Error('Vui lòng xác thực OTP email gian hàng và xác nhận địa chỉ kho.');
 
       // 2. Submit or resubmit eKYC verification
       let verificationResponse;
@@ -1711,6 +1669,8 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
     const fullAddr = cleanFullAddress(rawFull);
     const cleanedPickup = cleanFullAddress(pickupAddress || fullAddr);
     const cleanedStreet = cleanFullAddress(userStreetAddress.trim() || fullAddr);
+    const finalLat = (isCurrentSeller ? pickupLatitude ?? userLatitude : userLatitude) ?? currentUser.latitude ?? null;
+    const finalLng = (isCurrentSeller ? pickupLongitude ?? userLongitude : userLongitude) ?? currentUser.longitude ?? null;
 
     // Tự động suy luận Ward & Province từ fullAddr nếu dropdown chưa chọn
     let effectiveWard = selectedWardName.trim() || currentUser?.wardName || currentUser?.ward || '';
@@ -1736,9 +1696,9 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       ward: effectiveWard || undefined,
       wardName: effectiveWard || undefined,
       streetAddress: cleanedStreet || fullAddr || undefined,
-      latitude: userLatitude ?? pickupLatitude ?? currentUser?.latitude,
-      longitude: userLongitude ?? pickupLongitude ?? currentUser?.longitude,
-      pickupAddress: cleanedPickup || fullAddr,
+      latitude: finalLat ?? undefined,
+      longitude: finalLng ?? undefined,
+      pickupAddress: isCurrentSeller ? cleanedPickup || fullAddr : currentUser.pickupAddress,
       avatar: avatarUrl || currentUser.avatar,
       gender: gender || undefined,
       birthday,
@@ -1750,9 +1710,6 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
     };
 
     try {
-      const finalLat = pickupLatitude ?? userLatitude ?? currentUser?.latitude ?? null;
-      const finalLng = pickupLongitude ?? userLongitude ?? currentUser?.longitude ?? null;
-
       await userService.updateMyProfile({
         fullName: name.trim(),
         phone: phone.trim() || undefined,
@@ -1766,7 +1723,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
         longitude: finalLng,
       });
 
-      if (finalLat != null && finalLng != null) {
+      if (isCurrentSeller && finalLat != null && finalLng != null) {
         try {
           await shippingService.savePickupAddress({
             name: shopName || name.trim() || currentUser?.name || 'Gian Hàng',
@@ -1777,26 +1734,9 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
         } catch (_) { }
       }
 
-      // Luôn cập nhật thông tin địa chỉ kho bưu tá lấy hàng lên Backend Onboarding
-      try {
-        const cleanShop = (shopName || name.trim() || currentUser?.name || 'Gian Hàng').trim().slice(0, 30);
-        const cleanPhone = (sellerPhone || phone.trim() || currentUser?.phone || '0900000000').replace(/\s+/g, '').trim();
-        await shippingService.saveSellerOnboarding({
-          shopName: cleanShop,
-          email: (shopEmail || currentUser?.email || email || 'seller@secondlife.vn').trim(),
-          phone: cleanPhone,
-          pickupAddress: {
-            name: cleanShop,
-            phone: cleanPhone,
-            address: fullAddr,
-            latitude: userLatitude ?? pickupLatitude ?? 10.84362,
-            longitude: userLongitude ?? pickupLongitude ?? 106.76575,
-            provinceId: Number(selectedProvinceId) || 1000001,
-            wardId: Number(selectedWardId) || 1003646,
-          },
-        });
-      } catch (onboardingErr) {
-        console.warn('saveSellerOnboarding in handleSave warning:', onboardingErr);
+      // Chỉ cập nhật thông tin địa chỉ kho bưu tá lấy hàng lên Backend Onboarding khi role là Seller
+      if (isCurrentSeller && pickupLatitude && pickupLongitude) {
+        try { await saveConfirmedWarehouse(); } catch (_) { }
       }
 
       setPickupAddress(fullAddr);
@@ -2160,8 +2100,8 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
           {activeTab === 'info' && (
             <form onSubmit={handleSave} className="space-y-6">
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                {/* Left Column: Personal Information & Bank Card Preview (lg:col-span-5) */}
-                <div className="lg:col-span-5 space-y-4">
+                {/* Column 1: Personal Information (lg:col-span-5 when Seller, lg:col-span-7 when Buyer) */}
+                <div className={`${isCurrentSeller ? 'lg:col-span-5' : 'lg:col-span-7'} space-y-4`}>
                   <div className="bg-slate-50/70 p-4 sm:p-5 rounded-2xl border border-slate-200/90 space-y-4 shadow-2xs">
                     <div className="border-b border-slate-200/80 pb-2">
                       <h3 className="font-extrabold text-[#24263e] text-sm flex items-center gap-2">
@@ -2366,36 +2306,38 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     </div>
                   </div>
 
-                  {/* Quick Card: Bank & Wallet Status Summary */}
-                  <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-50/70 to-orange-50/50 border border-amber-200/80 flex items-center justify-between gap-3 shadow-2xs">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-orange-100 text-[#c34c36] flex items-center justify-center font-bold shrink-0">
-                        <Wallet className="w-5 h-5" />
+                  {/* Quick Card: Bank & Wallet Status Summary (Shown in Column 1 for Seller) */}
+                  {isCurrentSeller && (
+                    <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-50/70 to-orange-50/50 border border-amber-200/80 flex items-center justify-between gap-3 shadow-2xs">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-orange-100 text-[#c34c36] flex items-center justify-center font-bold shrink-0">
+                          <Wallet className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <span className="text-xs font-bold text-slate-800 block">
+                            {lang === 'vi' ? 'Ví & tài khoản ngân hàng' : 'Wallet & Bank Account'}
+                          </span>
+                          <span className="text-[11px] text-slate-500">
+                            {bankName && accountNumber
+                              ? `${bankName} •••• ${accountNumber.slice(-4)}`
+                              : (lang === 'vi' ? 'Chưa liên kết tài khoản nhận tiền' : 'No payout account linked')}
+                          </span>
+                        </div>
                       </div>
-                      <div>
-                        <span className="text-xs font-bold text-slate-800 block">
-                          {lang === 'vi' ? 'Ví & tài khoản ngân hàng' : 'Wallet & Bank Account'}
-                        </span>
-                        <span className="text-[11px] text-slate-500">
-                          {bankName && accountNumber
-                            ? `${bankName} •••• ${accountNumber.slice(-4)}`
-                            : (lang === 'vi' ? 'Chưa liên kết tài khoản nhận tiền' : 'No payout account linked')}
-                        </span>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('wallet')}
+                        className="px-3 py-1.5 rounded-xl bg-white hover:bg-orange-50 text-[#c34c36] border border-orange-200 font-bold text-xs shadow-2xs transition cursor-pointer shrink-0"
+                      >
+                        {lang === 'vi' ? 'Chi tiết ví →' : 'View wallet →'}
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('wallet')}
-                      className="px-3 py-1.5 rounded-xl bg-white hover:bg-orange-50 text-[#c34c36] border border-orange-200 font-bold text-xs shadow-2xs transition cursor-pointer shrink-0"
-                    >
-                      {lang === 'vi' ? 'Chi tiết ví →' : 'View wallet →'}
-                    </button>
-                  </div>
+                  )}
                 </div>
 
-                {/* Right Column: Lalamove Leaflet Map Address Picker (lg:col-span-7) */}
-                <div className="lg:col-span-7 space-y-4">
-                  {/* Địa chỉ hồ sơ cá nhân: Cố định, không được chỉnh sửa */}
+                {/* Column 2: (lg:col-span-7 when Seller, lg:col-span-5 when Buyer) */}
+                <div className={`${isCurrentSeller ? 'lg:col-span-7' : 'lg:col-span-5'} space-y-4`}>
+                  {/* Địa chỉ hồ sơ cá nhân: Cố định, không được chỉnh sửa (Hiển thị nếu có) */}
                   {Boolean(currentUser?.streetAddress || currentUser?.address) && (
                     <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs space-y-1">
                       <div className="flex items-center gap-1.5 font-bold text-slate-700">
@@ -2408,7 +2350,8 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     </div>
                   )}
 
-                  {currentRole !== 'admin' && (
+                  {/* SELLER ONLY: Lalamove Leaflet Map Warehouse Address Picker */}
+                  {isCurrentSeller && (
                     <div className="space-y-2">
                       <LalamoveAddressPicker
                         readOnly={!isEditing}
@@ -2466,13 +2409,81 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                           if (data.phone && !phone) setPhone(data.phone);
                         }}
                         lang={lang}
-                        title={lang === 'vi'
-                          ? (isApprovedSeller ? 'Địa chỉ kho bưu tá lấy hàng ' : 'Địa chỉ kho / nhận hàng vận chuyển')
-                          : (isApprovedSeller ? 'Warehouse Pickup Address' : 'Shipping / Delivery Address')}
+                        title={lang === 'vi' ? 'Địa chỉ kho bưu tá lấy hàng' : 'Warehouse Pickup Address'}
                         description={lang === 'vi'
                           ? 'Địa chỉ kho nơi bưu tá và kỹ thuật viên đến nhận máy / kiểm định. Hệ thống sử dụng địa chỉ này để tính phí vận chuyển và điều phối bưu tá (không dùng địa chỉ hồ sơ cá nhân).'
                           : 'Pickup warehouse location for courier and technician visits. Used exclusively for shipping quotes and dispatch.'}
                       />
+                    </div>
+                  )}
+
+                  {/* BUYER ONLY: Escrow Wallet Summary & Verified Buyer Protection Cards */}
+                  {!isCurrentSeller && (
+                    <div className="space-y-4">
+                      {/* Wallet Card for Buyer */}
+                      <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-amber-50/70 to-orange-50/50 border border-amber-200/80 space-y-3 shadow-2xs">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-9 h-9 rounded-xl bg-orange-100 text-[#c34c36] flex items-center justify-center font-bold shrink-0">
+                              <Wallet className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <span className="text-xs font-black text-slate-900 block">
+                                {lang === 'vi' ? 'Ví Ký Quỹ Escrow' : 'Escrow Wallet'}
+                              </span>
+                              <span className="text-[11px] text-slate-500">
+                                {bankName && accountNumber
+                                  ? `${bankName} •••• ${accountNumber.slice(-4)}`
+                                  : (lang === 'vi' ? 'Chưa liên kết tài khoản ngân hàng' : 'No payout bank linked')}
+                              </span>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setActiveTab('wallet')}
+                            className="px-3 py-1.5 rounded-xl bg-white hover:bg-orange-50 text-[#c34c36] border border-orange-200 font-bold text-xs shadow-2xs transition cursor-pointer shrink-0"
+                          >
+                            {lang === 'vi' ? 'Chi tiết ví →' : 'View wallet →'}
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 pt-1 border-t border-amber-200/50">
+                          <div className="bg-white/80 p-2.5 rounded-xl border border-amber-100">
+                            <span className="text-[10px] text-slate-500 block font-medium">{lang === 'vi' ? 'Số dư khả dụng' : 'Available balance'}</span>
+                            <span className="text-xs font-black text-emerald-700 font-mono">
+                              {(walletBalance || 0).toLocaleString('vi-VN')} ₫
+                            </span>
+                          </div>
+                          <div className="bg-white/80 p-2.5 rounded-xl border border-amber-100">
+                            <span className="text-[10px] text-slate-500 block font-medium">{lang === 'vi' ? 'Đang tạm giữ Escrow' : 'Locked in Escrow'}</span>
+                            <span className="text-xs font-black text-amber-700 font-mono">
+                              {(escrowLockedBalance || 0).toLocaleString('vi-VN')} ₫
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Verified Buyer Protection Card */}
+                      <div className="p-4 rounded-2xl bg-gradient-to-br from-blue-50/60 to-indigo-50/50 border border-blue-200/80 space-y-2.5 shadow-2xs">
+                        <div className="flex items-center gap-2 text-blue-900 font-extrabold text-xs">
+                          <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0" />
+                          <span>{lang === 'vi' ? 'Quyền Lợi Người Mua Xác Thực' : 'Verified Buyer Protection'}</span>
+                        </div>
+                        <ul className="text-[11px] text-slate-600 space-y-2 pl-1">
+                          <li className="flex items-start gap-1.5">
+                            <span className="text-emerald-500 font-bold">✓</span>
+                            <span>{lang === 'vi' ? '100% thanh toán được bảo lưu an toàn trong ví Escrow đến khi bạn xác nhận hài lòng.' : '100% payments held safely in Escrow until approved.'}</span>
+                          </li>
+                          <li className="flex items-start gap-1.5">
+                            <span className="text-blue-500 font-bold">✓</span>
+                            <span>{lang === 'vi' ? 'Địa chỉ nhận hàng được cấu hình linh hoạt từng đơn khi đặt mua sản phẩm.' : 'Delivery address configured per order at checkout.'}</span>
+                          </li>
+                          <li className="flex items-start gap-1.5">
+                            <span className="text-purple-500 font-bold">✓</span>
+                            <span>{lang === 'vi' ? 'Hỗ trợ kiểm định 48 bước & chính sách bảo vệ hoàn tiền khi có khiếu nại.' : '48-step inspection & transparent refund policies.'}</span>
+                          </li>
+                        </ul>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -3829,7 +3840,9 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                               ? pickupAddress
                               : (userStreetAddress || currentUser?.streetAddress || address || '')
                           }
+                          onAddressUnconfirmed={() => setIsWarehouseConfirmed(false)}
                           onAddressConfirmed={(data) => {
+                            setIsWarehouseConfirmed(true);
                             setPickupLatitude(data.latitude);
                             setPickupLongitude(data.longitude);
                             setPickupAddress(data.address);
@@ -4007,7 +4020,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                                   <div className="flex items-center justify-center px-0.5 text-[10px]">
                                     <button
                                       type="button"
-                                      onClick={() => setIsFaceScannerOpen(true)}
+                                      onClick={() => void openSellerFaceScanner()}
                                       className="text-[#c34c36] font-bold hover:underline cursor-pointer flex items-center gap-1"
                                     >
                                       <Camera className="w-3 h-3" />
@@ -4019,7 +4032,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                                 <div className="flex flex-col items-center justify-center h-full space-y-2">
                                   <button
                                     type="button"
-                                    onClick={() => setIsFaceScannerOpen(true)}
+                                    onClick={() => void openSellerFaceScanner()}
                                     className="w-full py-2 px-2 bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-slate-900 rounded-xl text-[10px] font-bold shadow-xs hover:opacity-95 transition flex items-center justify-center gap-1 cursor-pointer"
                                   >
                                     <Camera className="w-3.5 h-3.5 text-slate-900 shrink-0" />

@@ -42,6 +42,7 @@ import {
   walletService,
   sellerCreditService,
   adminCreditPricingService,
+  getStoredUser,
 } from '../../services';
 import { notificationWsClient } from '../../services/notificationWsClient';
 import logoImg from '../../assets/logo.png';
@@ -592,10 +593,11 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
     setPackagesLoading(true);
     setPackagesError(null);
     try {
+      const isAdmin = currentUser?.role === 'admin' || currentRole === 'admin' || getStoredUser()?.role === 'admin';
       const [pkgsRes, myCreditObj, pricingRules, sellerPricing] = await Promise.all([
         topupService.getTopupPackages(),
         topupService.getMyCredit().catch(() => null),
-        adminCreditPricingService.getCreditPrices().catch(() => null),
+        isAdmin ? adminCreditPricingService.getCreditPrices().catch(() => null) : Promise.resolve(null),
         sellerCreditService.getPricing().catch(() => null),
       ]);
 
@@ -1845,7 +1847,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                               <span className="font-bold block">💡 Hướng dẫn dành cho Quản trị viên (Admin):</span>
                               <span>
                                 Backend yêu cầu phải có đơn giá chuẩn đang hoạt động cho 3 loại credit (ĐĂNG TIN, KIỂM ĐỊNH, CHAT AI).
-                                Vui lòng mở menu <strong>BẢNG GIÁ & CHIẾT KHẤU</strong> trên trang Quản trị để cấu hình đơn giá chuẩn.
+                                Vui lòng mở menu <strong>BẢNG GIÁ GÓI NẠP</strong> trên trang Quản trị để cấu hình đơn giá chuẩn.
                               </span>
                             </div>
                           ) : (
@@ -1865,7 +1867,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                               className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition shadow-xs cursor-pointer inline-flex items-center gap-1.5"
                             >
                               <Tag className="w-3.5 h-3.5" />
-                              <span>Mở Bảng Giá & Chiết Khấu Admin</span>
+                              <span>MỞ BẢNG GIÁ GÓI NẠP ADMIN</span>
                             </button>
                           )}
                           <button
@@ -2524,6 +2526,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                 lang={lang}
                 refreshKey={historyRefreshKey}
                 purchases={purchases}
+                canLoadPurchases={!isBuyerRole}
                 onRefresh={handleRefreshTopBar}
               />
             </div>

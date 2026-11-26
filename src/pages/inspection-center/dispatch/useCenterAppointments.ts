@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { paths } from '../../../app/router/paths';
 import { inspectorService, InspectionOrderDto } from '../../../services';
 import { ApiError } from '../../../services/apiClient';
-import { INSPECTION_SHIFT_HOURS, isInspectionTimeInShift, type InspectionShift } from '../../../utils/inspectionAppointmentTime';
+import { INSPECTION_SHIFT_HOURS, isInspectionTimeInShift, isMissedHomeInspectionAppointment, type InspectionShift } from '../../../utils/inspectionAppointmentTime';
 import { hasCenterCounterProposal } from '../../../utils/inspectionCenterData';
 import { saveScopedLocalNotification } from '../../../utils/notificationStorage';
 import type { useCenterOrders } from '../orders/useCenterOrders';
@@ -55,6 +55,15 @@ export function useCenterAppointments({ applyCounterResponse, handleOpenAssign, 
 
     const pad = (n: number) => String(n).padStart(2, '0');
     const tomorrowStr = getMinCounterDate();
+    if (isMissedHomeInspectionAppointment(order)) {
+      setReviewApptOrder(order);
+      setReviewMode('COUNTER');
+      setCounterDate(tomorrowStr);
+      setCounterShift('AFTERNOON');
+      setCounterTime('14:00');
+      setCounterNote('Kỹ thuật viên chưa check-in trong thời gian cho phép của lịch cũ.');
+      return;
+    }
 
     let initialDate = tomorrowStr;
     let initialShift: InspectionShift = 'AFTERNOON';
@@ -389,10 +398,11 @@ export function useCenterAppointments({ applyCounterResponse, handleOpenAssign, 
   const handleConfirmSendCounter = async () => {
     if (!reviewApptOrder || isSubmittingCounter) return;
 
+    const missedAppointment = isMissedHomeInspectionAppointment(reviewApptOrder);
     let existingCounter = reviewApptOrder.counterScheduledAt;
     try {
       const checkIds = [reviewApptOrder.id, reviewApptOrder.linkedOrderId, (reviewApptOrder as any).orderId].filter(Boolean);
-      for (const tid of checkIds) {
+      for (const tid of missedAppointment ? [] : checkIds) {
         const raw = localStorage.getItem(`order_appointment_${tid}`);
         if (raw) {
           const parsed = JSON.parse(raw);
@@ -475,6 +485,13 @@ export function useCenterAppointments({ applyCounterResponse, handleOpenAssign, 
         try {
           localStorage.setItem(`order_appointment_${id}`, JSON.stringify(counterRecord));
           localStorage.removeItem(`order_appointment_rejection_${id}`);
+          if (missedAppointment) {
+            localStorage.removeItem(`order_assigned_inspector_${id}`);
+            localStorage.removeItem(`order_confirmed_by_inspector_${id}`);
+            localStorage.removeItem(`at_home_inspector_arrived_${id}`);
+            localStorage.removeItem(`order_inspecting_${id}`);
+            localStorage.removeItem(`inspection_status_${id}`);
+          }
         } catch { }
       });
 

@@ -536,7 +536,7 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
                 )}
                 <div className="flex flex-wrap items-center gap-1.5 pl-4 pt-0.5 text-[9px] text-slate-500">
                   <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded font-bold">
-                    🔬 Trạm thẩm định chuẩn ISO/IEC 17025
+                    🔬 Trạm thẩm định chuẩn đạt chuẩn của SecondLife
                   </span>
                   {Boolean((selectedCenter as any).activeInspectors) && (
                     <span className="bg-slate-100 px-1.5 py-0.5 rounded font-medium text-slate-700">

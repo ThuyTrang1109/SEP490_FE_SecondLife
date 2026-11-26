@@ -14,7 +14,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { formatVND } from '../../../utils/translations';
-import { INSPECTION_SHIFT_HOURS, isInspectionTimeInShift, type InspectionShift } from '../../../utils/inspectionAppointmentTime';
+import { INSPECTION_SHIFT_HOURS, isInspectionTimeInShift, isMissedHomeInspectionAppointment, type InspectionShift } from '../../../utils/inspectionAppointmentTime';
 import type { useCenterAppointments } from './useCenterAppointments';
 import { hasCenterCounterProposal } from '../../../utils/inspectionCenterData';
 
@@ -89,6 +89,7 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
   let counterReason = reviewApptOrder.counterNote;
   let apptStatus = reviewApptOrder.appointmentStatus;
   const hasCurrentCounter = hasCenterCounterProposal(reviewApptOrder);
+  const missedAppointment = isMissedHomeInspectionAppointment(reviewApptOrder);
 
   const possibleIds = [
     reviewApptOrder.id,
@@ -98,7 +99,7 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
   ].filter(Boolean) as string[];
   const idSet = new Set(possibleIds);
 
-  for (const pid of hasCurrentCounter ? [] : possibleIds) {
+  for (const pid of hasCurrentCounter || missedAppointment ? [] : possibleIds) {
     try {
       const raw = localStorage.getItem(`order_appointment_${pid}`);
       if (raw) {
@@ -185,7 +186,7 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
             </div>
             <div>
               <h3 className="text-sm sm:text-base font-black text-slate-900">
-                Duyệt Lịch Hẹn Kiểm Định Tại Nhà
+                {missedAppointment ? 'Hẹn lại lịch kiểm định tại nhà' : 'Duyệt Lịch Hẹn Kiểm Định Tại Nhà'}
               </h3>
               <p className="text-[11px] text-slate-500 font-medium">
                 Đơn hàng #{reviewApptOrder.id.slice(0, 8)} • Thương lượng thời gian kiểm định với người bán
@@ -260,8 +261,14 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
                   </div>
                 )}
 
+                {missedAppointment && (
+                  <p className="rounded-xl border border-rose-200 bg-rose-50 p-2.5 text-xs font-semibold text-rose-800">
+                    Lịch cũ đã quá hạn check-in. Hãy gửi lịch mới để người bán xác nhận.
+                  </p>
+                )}
+
                 {/* Khi chọn Tab Đề Xuất Lịch Mới: Hiển thị cảnh báo tự động từ chối lịch cũ kèm lý do */}
-                {reviewMode === 'COUNTER' && !isWaitingSellerCounter && (
+                {reviewMode === 'COUNTER' && !isWaitingSellerCounter && !missedAppointment && (
                   <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-[11px] text-rose-900 space-y-1 animate-fadeIn">
                     <div className="flex items-center gap-1.5 font-bold text-rose-800">
                       <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
@@ -293,6 +300,7 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
 
               {/* Chọn hình thức phản hồi */}
               <div className="space-y-3">
+                {!missedAppointment && (
                 <div className="flex items-center gap-2 p-1 bg-slate-100 rounded-xl">
                   <button
                     type="button"
@@ -323,6 +331,7 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
                     <span>{isWaitingSellerCounter ? '2. Đề Xuất Lịch (Đã Gửi)' : '2. Đề Xuất Lịch Mới'}</span>
                   </button>
                 </div>
+                )}
 
                 {/* MODE 1: CHẤP NHẬN LỊCH HẸN */}
                 {reviewMode === 'VIEW' && (
@@ -344,7 +353,7 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
                           <span>Đồng ý với lịch người bán đã chọn</span>
                         </div>
                         <p className="text-[11px] text-emerald-800 leading-relaxed">
-                          Khi bấm xác nhận, hệ thống sẽ chốt lịch hẹn này, gửi thông báo cho Người bán và chuyển sang bước <strong>Giao task cho Kỹ thuật viên</strong>. Kỹ thuật viên chỉ được phép ấn xác nhận đơn / check-in trước giờ hẹn tối đa 30 phút.
+                          Khi bấm xác nhận, hệ thống sẽ chốt lịch hẹn này, gửi thông báo cho Người bán và chuyển sang bước <strong>Giao task cho Kỹ thuật viên</strong>. Kỹ thuật viên có thể check-in từ 30 phút trước đến 30 phút sau giờ hẹn.
                         </p>
                       </div>
 
@@ -595,6 +604,7 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
         {/* Footer: Nút Từ Chối & Nút Đóng */}
         <div className="flex items-center justify-between pt-3 border-t border-gray-100 gap-2">
           <div className="flex items-center gap-2">
+            {!missedAppointment && (
             <button
               type="button"
               disabled={isWaitingSellerCounter}
@@ -620,6 +630,7 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
               <XCircle className={`w-4 h-4 ${isWaitingSellerCounter ? 'text-slate-400' : 'text-rose-500'}`} />
               <span>Từ Chối Lịch Hẹn</span>
             </button>
+            )}
             {isWaitingSellerCounter && (
               <span className="text-[11px] text-amber-700 font-medium hidden sm:inline">
                 (Đã gửi đề xuất dời lịch, đang chờ người bán phản hồi)

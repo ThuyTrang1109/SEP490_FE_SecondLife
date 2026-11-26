@@ -33,3 +33,40 @@ export function isOfficialAcceptedNegotiation(
   return true;
 }
 
+/**
+ * Tính bước giá trả giá linh động dựa trên giá niêm yết của sản phẩm.
+ * - Dưới 100k: bước giá 5.000 ₫
+ * - Từ 100k - 500k: bước giá 10.000 ₫
+ * - Từ 500k - 2tr: bước giá 20.000 ₫
+ * - Trên 2tr: bước giá 50.000 ₫
+ */
+export function getNegotiationStep(listingPrice: number, maxRejectedPrice = 0): number {
+  const price = Number(listingPrice || 0);
+  const remainingGap = price > maxRejectedPrice ? price - maxRejectedPrice : price;
+  
+  let baseStep = 50000;
+  if (price <= 100000) baseStep = 5000;
+  else if (price <= 500000) baseStep = 10000;
+  else if (price <= 2000000) baseStep = 20000;
+
+  if (remainingGap > 0 && remainingGap <= baseStep) {
+    return Math.max(1000, Math.floor(remainingGap / 2));
+  }
+  return baseStep;
+}
+
+export function calculateSuggestedNextOffer(
+  listingPrice: number,
+  lastPrice: number,
+  maxRejectedPrice = 0
+): number {
+  const step = getNegotiationStep(listingPrice, maxRejectedPrice);
+  const minAllowed = Math.max(lastPrice, maxRejectedPrice) + step;
+  if (minAllowed >= listingPrice) {
+    return Math.max(lastPrice + 1000, Math.floor((listingPrice + Math.max(lastPrice, maxRejectedPrice)) / 2));
+  }
+  const midPoint = Math.round((listingPrice + Math.max(lastPrice, maxRejectedPrice)) / 2 / step) * step;
+  return Math.min(listingPrice - step, Math.max(minAllowed, midPoint));
+}
+
+

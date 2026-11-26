@@ -176,6 +176,7 @@ export interface CreateInspectionRequest {
   buyerDeliveryAddress?: {
     name: string;
     phone: string;
+    address?: string;
     latitude: number;
     longitude: number;
   } | string;
@@ -707,6 +708,7 @@ export const inspectorService = {
       ? {
         name: (data.buyerDeliveryAddress.name || 'Khách Hàng').trim().slice(0, 100),
         phone: cleanedPhone,
+        address: typeof (data.buyerDeliveryAddress as any).address === 'string' ? (data.buyerDeliveryAddress as any).address.trim() : undefined,
         latitude: buyerLat,
         longitude: buyerLng,
       }
@@ -798,9 +800,20 @@ export const inspectorService = {
     return (res as any)?.data || res;
   },
 
+  async updatePurchaseDeliveryAddress(orderId: string, address: {
+    name: string; phone: string; address: string; latitude: number; longitude: number;
+  }): Promise<InspectionOrderDto> {
+    const response = await request<InspectionOrderDto>(`/inspection/orders/${orderId}/delivery-address`, {
+      method: 'PUT',
+      body: JSON.stringify(address),
+      requiresAuth: true,
+    });
+    this.invalidateOrderCache(orderId);
+    return (response as any)?.data ?? response;
+  },
+
   /**
-   * Lấy chi tiết đơn kiểm định
-   * Tích hợp deduplication & in-flight cache để tránh gọi lặp / cancel request
+   * Lấy chi tiết đơn kiểm định với cache và gộp các yêu cầu trùng.
    */
   async getOrder(orderId: string, options?: Pick<RequestOptions, 'isBackground' | 'signal'> & { bypassCache?: boolean }): Promise<InspectionOrderDto> {
     if (!orderId) throw new Error('Order ID is required');
@@ -908,6 +921,41 @@ export const inspectorService = {
       requiresAuth: true,
     });
     return (res as any)?.data || res;
+  },
+
+  /**
+   * Xem chi tiết đối soát và công nợ bù cước hoàn từ Hub về người bán
+   */
+  async getInspectionReturnFee(orderId: string, options?: { signal?: AbortSignal; isBackground?: boolean }): Promise<import('./shippingService').InspectionReturnFee | null> {
+    const res = await requestGet<import('./shippingService').InspectionReturnFee | null>(
+      `/inspection/orders/${orderId}/return-fee`,
+      { requiresAuth: true, ...options }
+    );
+    if (!res || typeof res !== 'object') return null;
+    const payload = 'data' in res ? (res as any).data : res;
+    if (!payload || typeof payload !== 'object' || !payload.buyer || !payload.seller) {
+      return null;
+    }
+    return payload as import('./shippingService').InspectionReturnFee;
+  },
+
+  /**
+   * Người mua hoặc người bán nộp bổ sung công nợ cước hoàn từ ví
+   */
+  async payInspectionReturnFee(orderId: string, maxAmount: number): Promise<import('./shippingService').InspectionReturnFee> {
+    const res = await request<import('./shippingService').InspectionReturnFee>(
+      `/inspection/orders/${orderId}/return-fee/pay`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ maxAmount }),
+        requiresAuth: true,
+      }
+    );
+    const payload = (res && typeof res === 'object' && 'data' in res ? (res as any).data : res) as import('./shippingService').InspectionReturnFee | null;
+    if (!payload || !payload.buyer || !payload.seller) {
+      throw new Error('Dữ liệu đối soát cước hoàn không hợp lệ.');
+    }
+    return payload;
   },
 
   /**
@@ -1035,20 +1083,11 @@ export const inspectorService = {
         requiresAuth: true,
       });
       return (res as any)?.data || res;
-    } catch {
-      // 2. Nếu là AT_HOME và BE chưa có confirm-task: thử xác nhận lịch hẹn
-      if (isAtHome) {
-        try {
-          const res = await request<InspectionOrderDto>(`/inspector/orders/${orderId}/appointment/confirm`, {
-            method: 'POST',
-            requiresAuth: true,
-          });
-          return (res as any)?.data || res;
-        } catch {
-          // fallback xuống start bên dưới
-        }
-      }
-      // 3. Fallback: gọi startInspection
+    } catch (error) {
+      if (isAtHome) throw error;
+
+      // Legacy fallback for inspections at the center.
+
       const res = await request<InspectionOrderDto>(`/inspector/orders/${orderId}/start`, {
         method: 'POST',
         body: JSON.stringify({
@@ -1569,7 +1608,7 @@ export const inspectorService = {
   async getAdminChecklistProposals(
     paramsOrStatus?: string | InspectionChecklistSearchParams,
     page = 0,
-    size = 20
+    size = 10
   ): Promise<any> {
     const params = new URLSearchParams();
 
@@ -1595,7 +1634,7 @@ export const inspectorService = {
       if (p.inspectionCenterId) params.append('inspectionCenterId', p.inspectionCenterId);
       if (p.active !== undefined) params.append('active', String(p.active));
       params.append('page', (p.page ?? page ?? 0).toString());
-      params.append('size', (p.size ?? size ?? 20).toString());
+      params.append('size', (p.size ?? size ?? 10).toString());
       params.append('sort', p.sort || 'createdAt,desc');
     } else {
       params.append('page', page.toString());
@@ -1646,8 +1685,9 @@ export const inspectorService = {
   /**
    * Admin xem danh sách các đề xuất biểu phí (có lọc status & phân trang)
    */
-  async getAdminFeeProposals(status?: string, page: number = 0, size: number = 10): Promise<PaginatedProposalResponse> {
+  async getAdminFeeProposals(status?: string, page = 0, size = 10, travelOnly = false): Promise<PaginatedProposalResponse> {
     const params = new URLSearchParams();
+    if (travelOnly) params.set('travelOnly', 'true');
     if (status && status !== 'ALL') {
       const normalizedStatus = status === 'PENDING' ? 'PENDING_APPROVAL' : status;
       params.append('status', normalizedStatus);

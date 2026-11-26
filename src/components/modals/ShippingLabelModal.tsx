@@ -19,6 +19,14 @@ import {
 import { shippingService } from '../../services/shippingService';
 import { inspectorService } from '../../services/inspectorService';
 import { resolveInspectionCenter, getResolvedPostParcel } from '../../utils/orderUtils';
+import {
+  getOrderSellerAddress,
+  getOrderSellerPhone,
+  getOrderSellerName,
+  getOrderBuyerAddress,
+  getOrderBuyerName,
+  getOrderBuyerPhone,
+} from '../../pages/inspection-center/dispatch/orderContacts';
 
 interface ShippingLabelModalProps {
   order: EscrowOrder;
@@ -266,12 +274,12 @@ export const ShippingLabelModal: React.FC<ShippingLabelModalProps> = ({
     // Default SELLER_TO_CENTER or SELLER_TO_BUYER
     return {
       roleLabel: 'NGƯỜI GỬI (KHO TÀI XẾ LALAMOVE LẤY HÀNG)',
-      name: order.listing?.seller?.name || order.sellerName || 'Người bán',
-      phone: order.listing?.seller?.phone || (order as any).sellerPhone || '0912345678',
-      address: order.listing?.location || (order as any).sellerAddress || 'Kho đăng ký của người bán',
+      name: shipment.senderName || getOrderSellerName(order) || order.listing?.seller?.name || order.sellerName || 'Người bán',
+      phone: shipment.senderPhone || getOrderSellerPhone(order) || order.listing?.seller?.phone || (order as any).sellerPhone || '',
+      address: shipment.senderAddress || getOrderSellerAddress(order) || (order as any).sellerAddress || order.listing?.location || 'Kho đăng ký của người bán',
       isHub: false,
     };
-  }, [isCenterToBuyer, isCenterToSeller, isBuyerToSeller, hubCenter, order]);
+  }, [isCenterToBuyer, isCenterToSeller, isBuyerToSeller, hubCenter, order, shipment]);
 
   // Thông tin người nhận (Destination)
   const receiverInfo = useMemo(() => {
@@ -287,21 +295,21 @@ export const ShippingLabelModal: React.FC<ShippingLabelModalProps> = ({
     if (isCenterToSeller || isBuyerToSeller) {
       return {
         roleLabel: 'NGƯỜI NHẬN HOÀN TRẢ (KHO NGƯỜI BÁN)',
-        name: order.listing?.seller?.name || order.sellerName || 'Người bán',
-        phone: order.listing?.seller?.phone || (order as any).sellerPhone || '0912345678',
-        address: order.listing?.location || (order as any).sellerAddress || 'Kho của người bán',
+        name: shipment.receiverName || getOrderSellerName(order) || order.listing?.seller?.name || order.sellerName || 'Người bán',
+        phone: shipment.receiverPhone || getOrderSellerPhone(order) || order.listing?.seller?.phone || (order as any).sellerPhone || '',
+        address: shipment.receiverAddress || getOrderSellerAddress(order) || (order as any).sellerAddress || order.listing?.location || 'Kho của người bán',
         isHub: false,
       };
     }
     // Default SELLER_TO_BUYER or CENTER_TO_BUYER
     return {
       roleLabel: 'NGƯỜI NHẬN (ĐIỂM GIAO HÀNG TẬN NƠI)',
-      name: order.buyerName || 'Người mua',
-      phone: order.buyerPhone || (order as any).userPhone,
-      address: order.buyerAddress || 'Địa chỉ nhận hàng đã xác nhận',
+      name: shipment.receiverName || getOrderBuyerName(order) || order.buyerName || 'Người mua',
+      phone: shipment.receiverPhone || getOrderBuyerPhone(order) || order.buyerPhone || (order as any).userPhone || '',
+      address: shipment.receiverAddress || getOrderBuyerAddress(order) || order.buyerAddress || 'Địa chỉ nhận hàng đã xác nhận',
       isHub: false,
     };
-  }, [isSellerToCenter, isCenterToSeller, isBuyerToSeller, hubCenter, order]);
+  }, [isSellerToCenter, isCenterToSeller, isBuyerToSeller, hubCenter, order, shipment]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-fadeIn overflow-y-auto">

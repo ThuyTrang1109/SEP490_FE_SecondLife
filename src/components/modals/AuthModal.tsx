@@ -333,9 +333,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       soundFx.playCancel();
       setErrorMsg(
         err.message ||
-          (lang === 'vi'
-            ? 'Đăng nhập Google thất bại trên máy chủ Backend. Vui lòng thử lại.'
-            : 'Google login failed on backend server.')
+        (lang === 'vi'
+          ? 'Đăng nhập Google thất bại trên máy chủ Backend. Vui lòng thử lại.'
+          : 'Google login failed on backend server.')
       );
     } finally {
       setIsLoading(false);
@@ -792,11 +792,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     setTouched({});
                     setMode('login');
                   }}
-                  className={`py-2 rounded-xl transition-all cursor-pointer text-center font-bold ${
-                    mode === 'login'
+                  className={`py-2 rounded-xl transition-all cursor-pointer text-center font-bold ${mode === 'login'
                       ? 'bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white shadow-sm font-extrabold'
                       : 'text-[#24263e]/70 hover:text-[#24263e]'
-                  }`}
+                    }`}
                 >
                   {lang === 'vi' ? 'Đăng Nhập' : 'Log In'}
                 </button>
@@ -809,11 +808,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     setTouched({});
                     setMode('register');
                   }}
-                  className={`py-2 rounded-xl transition-all cursor-pointer text-center font-bold ${
-                    mode === 'register'
+                  className={`py-2 rounded-xl transition-all cursor-pointer text-center font-bold ${mode === 'register'
                       ? 'bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white shadow-sm font-extrabold'
                       : 'text-[#24263e]/70 hover:text-[#24263e]'
-                  }`}
+                    }`}
                 >
                   {lang === 'vi' ? 'Đăng Ký' : 'Register'}
                 </button>
@@ -877,26 +875,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     <span>{lang === 'vi' ? 'Địa chỉ Email' : 'Email Address'} <strong className="text-rose-500">*</strong></span>
                   </label>
                   <div className="relative">
-                    <Mail className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ${
-                      (touched.emailOrPhone || submitted) && getLoginEmailError()
+                    <Mail className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ${(touched.emailOrPhone || submitted) && getLoginEmailError()
                         ? 'text-rose-500'
                         : emailOrPhone && !getLoginEmailError()
-                        ? 'text-emerald-500'
-                        : 'text-gray-400'
-                    }`} />
+                          ? 'text-emerald-500'
+                          : 'text-gray-400'
+                      }`} />
                     <input
                       type="email"
                       value={emailOrPhone}
                       onChange={(e) => setEmailOrPhone(e.target.value)}
                       onBlur={() => markTouched('emailOrPhone')}
                       placeholder="user@secondlife.vn"
-                      className={`w-full pl-10 pr-3 py-2.5 rounded-xl border text-xs sm:text-sm font-medium transition ${
-                        (touched.emailOrPhone || submitted) && getLoginEmailError()
+                      className={`w-full pl-10 pr-3 py-2.5 rounded-xl border text-xs sm:text-sm font-medium transition ${(touched.emailOrPhone || submitted) && getLoginEmailError()
                           ? 'bg-rose-50/40 border-rose-500 text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-500'
                           : touched.emailOrPhone && !getLoginEmailError()
-                          ? 'bg-[#FFFFFF] border-emerald-500/70 focus:outline-none focus:border-emerald-600'
-                          : 'bg-[#faf8f5] border-gray-200 text-[#24263e] focus:outline-none focus:border-[#c34c36]'
-                      }`}
+                            ? 'bg-[#FFFFFF] border-emerald-500/70 focus:outline-none focus:border-emerald-600'
+                            : 'bg-[#faf8f5] border-gray-200 text-[#24263e] focus:outline-none focus:border-[#c34c36]'
+                        }`}
                     />
                     {touched.emailOrPhone && !getLoginEmailError() && (
                       <Check className="w-4 h-4 text-emerald-500 absolute right-3.5 top-1/2 -translate-y-1/2" />
@@ -933,22 +929,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     </button>
                   </div>
                   <div className="relative">
-                    <Lock className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ${
-                      (touched.password || submitted) && getLoginPasswordError() ? 'text-rose-500' : 'text-gray-400'
-                    }`} />
+                    <Lock className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ${(touched.password || submitted) && getLoginPasswordError() ? 'text-rose-500' : 'text-gray-400'
+                      }`} />
                     <input
                       type={showPassword ? 'text' : 'password'}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       onBlur={() => markTouched('password')}
                       placeholder="••••••••"
-                      className={`w-full pl-10 pr-10 py-2.5 rounded-xl border text-xs sm:text-sm font-medium transition ${
-                        (touched.password || submitted) && getLoginPasswordError()
+                      className={`w-full pl-10 pr-10 py-2.5 rounded-xl border text-xs sm:text-sm font-medium transition ${(touched.password || submitted) && getLoginPasswordError()
                           ? 'bg-rose-50/40 border-rose-500 text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-500'
                           : touched.password && !getLoginPasswordError()
-                          ? 'bg-[#FFFFFF] border-emerald-500/70 focus:outline-none focus:border-emerald-600'
-                          : 'bg-[#faf8f5] border-gray-200 text-[#24263e] focus:outline-none focus:border-[#c34c36]'
-                      }`}
+                            ? 'bg-[#FFFFFF] border-emerald-500/70 focus:outline-none focus:border-emerald-600'
+                            : 'bg-[#faf8f5] border-gray-200 text-[#24263e] focus:outline-none focus:border-[#c34c36]'
+                        }`}
                     />
                     <button
                       type="button"
@@ -974,7 +968,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <span>
                     {isLoading
                       ? (lang === 'vi' ? 'Đang xác thực...' : 'Logging in...')
-                      : (lang === 'vi' ? 'Đăng Nhập Tài Khoản' : 'Log In Account')}
+                      : (lang === 'vi' ? 'Đăng nhập' : 'Log In')}
                   </span>
                   {!isLoading && <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />}
                 </button>
@@ -1016,22 +1010,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     {lang === 'vi' ? 'Họ và tên của bạn' : 'Full Name'} <strong className="text-rose-500">*</strong>
                   </label>
                   <div className="relative">
-                    <User className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ${
-                      (touched.fullName || submitted) && getRegisterFullNameError() ? 'text-rose-500' : 'text-gray-400'
-                    }`} />
+                    <User className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ${(touched.fullName || submitted) && getRegisterFullNameError() ? 'text-rose-500' : 'text-gray-400'
+                      }`} />
                     <input
                       type="text"
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
                       onBlur={() => markTouched('fullName')}
                       placeholder="Nguyễn Văn An"
-                      className={`w-full pl-10 pr-3 py-2 rounded-xl border text-xs sm:text-sm font-medium transition ${
-                        (touched.fullName || submitted) && getRegisterFullNameError()
+                      className={`w-full pl-10 pr-3 py-2 rounded-xl border text-xs sm:text-sm font-medium transition ${(touched.fullName || submitted) && getRegisterFullNameError()
                           ? 'bg-rose-50/40 border-rose-500 text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-500'
                           : touched.fullName && !getRegisterFullNameError()
-                          ? 'bg-[#FFFFFF] border-emerald-500/70 focus:outline-none focus:border-emerald-600'
-                          : 'bg-[#faf8f5] border-gray-200 text-[#24263e] focus:outline-none focus:border-[#c34c36]'
-                      }`}
+                            ? 'bg-[#FFFFFF] border-emerald-500/70 focus:outline-none focus:border-emerald-600'
+                            : 'bg-[#faf8f5] border-gray-200 text-[#24263e] focus:outline-none focus:border-[#c34c36]'
+                        }`}
                     />
                     {touched.fullName && !getRegisterFullNameError() && (
                       <Check className="w-4 h-4 text-emerald-500 absolute right-3.5 top-1/2 -translate-y-1/2" />
@@ -1050,22 +1042,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <div className="space-y-1">
                     <label className="text-xs font-bold text-[#24263e]">Email <strong className="text-rose-500">*</strong></label>
                     <div className="relative">
-                      <Mail className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ${
-                        (touched.registerEmail || submitted) && getRegisterEmailError() ? 'text-rose-500' : 'text-gray-400'
-                      }`} />
+                      <Mail className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ${(touched.registerEmail || submitted) && getRegisterEmailError() ? 'text-rose-500' : 'text-gray-400'
+                        }`} />
                       <input
                         type="email"
                         value={registerEmail}
                         onChange={(e) => setRegisterEmail(e.target.value)}
                         onBlur={() => markTouched('registerEmail')}
                         placeholder="ban@gmail.com"
-                        className={`w-full pl-10 pr-3 py-2 rounded-xl border text-xs sm:text-sm font-medium transition ${
-                          (touched.registerEmail || submitted) && getRegisterEmailError()
+                        className={`w-full pl-10 pr-3 py-2 rounded-xl border text-xs sm:text-sm font-medium transition ${(touched.registerEmail || submitted) && getRegisterEmailError()
                             ? 'bg-rose-50/40 border-rose-500 text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-500'
                             : touched.registerEmail && !getRegisterEmailError()
-                            ? 'bg-[#FFFFFF] border-emerald-500/70 focus:outline-none focus:border-emerald-600'
-                            : 'bg-[#faf8f5] border-gray-200 text-[#24263e] focus:outline-none focus:border-[#c34c36]'
-                        }`}
+                              ? 'bg-[#FFFFFF] border-emerald-500/70 focus:outline-none focus:border-emerald-600'
+                              : 'bg-[#faf8f5] border-gray-200 text-[#24263e] focus:outline-none focus:border-[#c34c36]'
+                          }`}
                       />
                     </div>
                     {(touched.registerEmail || submitted) && getRegisterEmailError() && (
@@ -1081,22 +1071,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       {lang === 'vi' ? 'Số điện thoại' : 'Phone'} <strong className="text-rose-500">*</strong>
                     </label>
                     <div className="relative">
-                      <Phone className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ${
-                        (touched.phoneNumber || submitted) && getRegisterPhoneError() ? 'text-rose-500' : 'text-gray-400'
-                      }`} />
+                      <Phone className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ${(touched.phoneNumber || submitted) && getRegisterPhoneError() ? 'text-rose-500' : 'text-gray-400'
+                        }`} />
                       <input
                         type="tel"
                         value={phoneNumber}
                         onChange={(e) => setPhoneNumber(e.target.value)}
                         onBlur={() => markTouched('phoneNumber')}
                         placeholder="0912345678"
-                        className={`w-full pl-10 pr-3 py-2 rounded-xl border text-xs sm:text-sm font-medium transition ${
-                          (touched.phoneNumber || submitted) && getRegisterPhoneError()
+                        className={`w-full pl-10 pr-3 py-2 rounded-xl border text-xs sm:text-sm font-medium transition ${(touched.phoneNumber || submitted) && getRegisterPhoneError()
                             ? 'bg-rose-50/40 border-rose-500 text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-500'
                             : touched.phoneNumber && !getRegisterPhoneError()
-                            ? 'bg-[#FFFFFF] border-emerald-500/70 focus:outline-none focus:border-emerald-600'
-                            : 'bg-[#faf8f5] border-gray-200 text-[#24263e] focus:outline-none focus:border-[#c34c36]'
-                        }`}
+                              ? 'bg-[#FFFFFF] border-emerald-500/70 focus:outline-none focus:border-emerald-600'
+                              : 'bg-[#faf8f5] border-gray-200 text-[#24263e] focus:outline-none focus:border-[#c34c36]'
+                          }`}
                       />
                     </div>
                     {(touched.phoneNumber || submitted) && getRegisterPhoneError() && (
@@ -1128,11 +1116,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           key={item.value}
                           type="button"
                           onClick={() => setRegisterGender(isSelected ? '' : item.value)}
-                          className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                            isSelected
+                          className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center gap-1.5 ${isSelected
                               ? 'bg-[#c34c36]/10 border-[#c34c36] text-[#c34c36] shadow-2xs font-black'
                               : 'bg-[#faf8f5] border-gray-200 text-slate-600 hover:border-gray-300 hover:bg-white'
-                          }`}
+                            }`}
                         >
                           <span className={`w-2 h-2 rounded-full ${isSelected ? 'bg-[#c34c36]' : 'bg-slate-300'}`} />
                           <span>{lang === 'vi' ? item.vi : item.en}</span>
@@ -1149,22 +1136,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       {lang === 'vi' ? 'Mật khẩu' : 'Password'} <strong className="text-rose-500">*</strong>
                     </label>
                     <div className="relative">
-                      <Lock className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ${
-                        (touched.registerPassword || submitted) && getRegisterPasswordError() ? 'text-rose-500' : 'text-gray-400'
-                      }`} />
+                      <Lock className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ${(touched.registerPassword || submitted) && getRegisterPasswordError() ? 'text-rose-500' : 'text-gray-400'
+                        }`} />
                       <input
                         type={showRegisterPassword ? 'text' : 'password'}
                         value={registerPassword}
                         onChange={(e) => setRegisterPassword(e.target.value)}
                         onBlur={() => markTouched('registerPassword')}
                         placeholder={lang === 'vi' ? 'Tối thiểu 8 ký tự' : 'At least 8 chars'}
-                        className={`w-full pl-10 pr-10 py-2 rounded-xl border text-xs sm:text-sm font-medium transition ${
-                          (touched.registerPassword || submitted) && getRegisterPasswordError()
+                        className={`w-full pl-10 pr-10 py-2 rounded-xl border text-xs sm:text-sm font-medium transition ${(touched.registerPassword || submitted) && getRegisterPasswordError()
                             ? 'bg-rose-50/40 border-rose-500 text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-500'
                             : touched.registerPassword && !getRegisterPasswordError()
-                            ? 'bg-[#FFFFFF] border-emerald-500/70 focus:outline-none focus:border-emerald-600'
-                            : 'bg-[#faf8f5] border-gray-200 text-[#24263e] focus:outline-none focus:border-[#c34c36]'
-                        }`}
+                              ? 'bg-[#FFFFFF] border-emerald-500/70 focus:outline-none focus:border-emerald-600'
+                              : 'bg-[#faf8f5] border-gray-200 text-[#24263e] focus:outline-none focus:border-[#c34c36]'
+                          }`}
                       />
                       <button
                         type="button"
@@ -1194,22 +1179,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       {lang === 'vi' ? 'Xác nhận mật khẩu' : 'Confirm Password'} <strong className="text-rose-500">*</strong>
                     </label>
                     <div className="relative">
-                      <Lock className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ${
-                        (touched.confirmPassword || submitted) && getConfirmPasswordError() ? 'text-rose-500' : 'text-gray-400'
-                      }`} />
+                      <Lock className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ${(touched.confirmPassword || submitted) && getConfirmPasswordError() ? 'text-rose-500' : 'text-gray-400'
+                        }`} />
                       <input
                         type={showConfirmPassword ? 'text' : 'password'}
                         value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}
                         onBlur={() => markTouched('confirmPassword')}
                         placeholder={lang === 'vi' ? 'Nhập lại mật khẩu' : 'Re-enter password'}
-                        className={`w-full pl-10 pr-10 py-2 rounded-xl border text-xs sm:text-sm font-medium transition ${
-                          (touched.confirmPassword || submitted) && getConfirmPasswordError()
+                        className={`w-full pl-10 pr-10 py-2 rounded-xl border text-xs sm:text-sm font-medium transition ${(touched.confirmPassword || submitted) && getConfirmPasswordError()
                             ? 'bg-rose-50/40 border-rose-500 text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-500'
                             : touched.confirmPassword && !getConfirmPasswordError()
-                            ? 'bg-[#FFFFFF] border-emerald-500/70 focus:outline-none focus:border-emerald-600'
-                            : 'bg-[#faf8f5] border-gray-200 text-[#24263e] focus:outline-none focus:border-[#c34c36]'
-                        }`}
+                              ? 'bg-[#FFFFFF] border-emerald-500/70 focus:outline-none focus:border-emerald-600'
+                              : 'bg-[#faf8f5] border-gray-200 text-[#24263e] focus:outline-none focus:border-[#c34c36]'
+                          }`}
                       />
                       <button
                         type="button"
@@ -1378,13 +1361,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           const nextFocusIndex = Math.min(pasteData.length, 5);
                           verifyOtpInputRefs.current[nextFocusIndex]?.focus();
                         }}
-                        className={`w-11 h-13 sm:w-12 sm:h-14 text-center text-xl sm:text-2xl font-mono font-black rounded-xl border-2 transition-all outline-none shadow-xs ${
-                          (touched.verifyOtp || submitted) && getVerifyOtpError()
+                        className={`w-11 h-13 sm:w-12 sm:h-14 text-center text-xl sm:text-2xl font-mono font-black rounded-xl border-2 transition-all outline-none shadow-xs ${(touched.verifyOtp || submitted) && getVerifyOtpError()
                             ? 'border-rose-400 bg-rose-50/50 text-rose-900 focus:border-rose-600 focus:ring-2 focus:ring-rose-200'
                             : digit
-                            ? 'border-[#c34c36] bg-white text-[#24263e] shadow-md shadow-pink-500/10'
-                            : 'border-gray-200 bg-gray-50/80 text-[#24263e] hover:border-gray-300 focus:border-[#c34c36] focus:bg-white focus:ring-2 focus:ring-pink-200'
-                        }`}
+                              ? 'border-[#c34c36] bg-white text-[#24263e] shadow-md shadow-pink-500/10'
+                              : 'border-gray-200 bg-gray-50/80 text-[#24263e] hover:border-gray-300 focus:border-[#c34c36] focus:bg-white focus:ring-2 focus:ring-pink-200'
+                          }`}
                       />
                     ))}
                   </div>
@@ -1443,22 +1425,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   </label>
                   <div className="flex gap-2">
                     <div className="relative flex-1">
-                      <Mail className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ${
-                        (touched.resetEmail || submitted) && getResetEmailError() ? 'text-rose-500' : 'text-gray-400'
-                      }`} />
+                      <Mail className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ${(touched.resetEmail || submitted) && getResetEmailError() ? 'text-rose-500' : 'text-gray-400'
+                        }`} />
                       <input
                         type="email"
                         value={resetEmail}
                         onChange={(e) => setResetEmail(e.target.value)}
                         onBlur={() => markTouched('resetEmail')}
                         placeholder="khang.buyer@secondlife.vn"
-                        className={`w-full pl-10 pr-3 py-2.5 rounded-xl border text-xs sm:text-sm font-medium transition ${
-                          (touched.resetEmail || submitted) && getResetEmailError()
+                        className={`w-full pl-10 pr-3 py-2.5 rounded-xl border text-xs sm:text-sm font-medium transition ${(touched.resetEmail || submitted) && getResetEmailError()
                             ? 'bg-rose-50/40 border-rose-500 text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-500'
                             : touched.resetEmail && !getResetEmailError()
-                            ? 'bg-[#FFFFFF] border-emerald-500/70 focus:outline-none focus:border-emerald-600'
-                            : 'bg-[#faf8f5] border-gray-200 text-[#24263e] focus:outline-none focus:border-[#c34c36]'
-                        }`}
+                              ? 'bg-[#FFFFFF] border-emerald-500/70 focus:outline-none focus:border-emerald-600'
+                              : 'bg-[#faf8f5] border-gray-200 text-[#24263e] focus:outline-none focus:border-[#c34c36]'
+                          }`}
                       />
                     </div>
                     <button
@@ -1489,9 +1469,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     </label>
                   </div>
                   <div className="relative">
-                    <KeyRound className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ${
-                      (touched.otpCode || submitted) && getOtpCodeError() ? 'text-rose-500' : 'text-gray-400'
-                    }`} />
+                    <KeyRound className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ${(touched.otpCode || submitted) && getOtpCodeError() ? 'text-rose-500' : 'text-gray-400'
+                      }`} />
                     <input
                       type="text"
                       maxLength={6}
@@ -1499,13 +1478,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
                       onBlur={() => markTouched('otpCode')}
                       placeholder={lang === 'vi' ? 'Nhập mã 6 chữ số' : 'Enter 6 digits'}
-                      className={`w-full pl-10 pr-3 py-2 rounded-xl border text-xs sm:text-sm font-mono font-bold tracking-widest transition ${
-                        (touched.otpCode || submitted) && getOtpCodeError()
+                      className={`w-full pl-10 pr-3 py-2 rounded-xl border text-xs sm:text-sm font-mono font-bold tracking-widest transition ${(touched.otpCode || submitted) && getOtpCodeError()
                           ? 'bg-rose-50/40 border-rose-500 text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-500'
                           : touched.otpCode && !getOtpCodeError()
-                          ? 'bg-[#FFFFFF] border-emerald-500/70 focus:outline-none focus:border-emerald-600'
-                          : 'bg-[#faf8f5] border-gray-200 text-[#24263e] focus:outline-none focus:border-[#c34c36]'
-                      }`}
+                            ? 'bg-[#FFFFFF] border-emerald-500/70 focus:outline-none focus:border-emerald-600'
+                            : 'bg-[#faf8f5] border-gray-200 text-[#24263e] focus:outline-none focus:border-[#c34c36]'
+                        }`}
                     />
                     {touched.otpCode && !getOtpCodeError() && (
                       <Check className="w-4 h-4 text-emerald-500 absolute right-3.5 top-1/2 -translate-y-1/2" />
@@ -1526,22 +1504,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       {lang === 'vi' ? 'Mật khẩu mới' : 'New Password'} <strong className="text-rose-500">*</strong>
                     </label>
                     <div className="relative">
-                      <Lock className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ${
-                        (touched.newPassword || submitted) && getNewPasswordError() ? 'text-rose-500' : 'text-gray-400'
-                      }`} />
+                      <Lock className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ${(touched.newPassword || submitted) && getNewPasswordError() ? 'text-rose-500' : 'text-gray-400'
+                        }`} />
                       <input
                         type={showNewPassword ? 'text' : 'password'}
                         value={newPassword}
                         onChange={(e) => setNewPassword(e.target.value)}
                         onBlur={() => markTouched('newPassword')}
                         placeholder={lang === 'vi' ? 'Tối thiểu 8 ký tự' : 'At least 8 chars'}
-                        className={`w-full pl-10 pr-10 py-2 rounded-xl border text-xs sm:text-sm font-medium transition ${
-                          (touched.newPassword || submitted) && getNewPasswordError()
+                        className={`w-full pl-10 pr-10 py-2 rounded-xl border text-xs sm:text-sm font-medium transition ${(touched.newPassword || submitted) && getNewPasswordError()
                             ? 'bg-rose-50/40 border-rose-500 text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-500'
                             : touched.newPassword && !getNewPasswordError()
-                            ? 'bg-[#FFFFFF] border-emerald-500/70 focus:outline-none focus:border-emerald-600'
-                            : 'bg-[#faf8f5] border-gray-200 text-[#24263e] focus:outline-none focus:border-[#c34c36]'
-                        }`}
+                              ? 'bg-[#FFFFFF] border-emerald-500/70 focus:outline-none focus:border-emerald-600'
+                              : 'bg-[#faf8f5] border-gray-200 text-[#24263e] focus:outline-none focus:border-[#c34c36]'
+                          }`}
                       />
                       <button
                         type="button"
@@ -1571,22 +1547,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       {lang === 'vi' ? 'Nhập lại mật khẩu mới' : 'Confirm New Password'} <strong className="text-rose-500">*</strong>
                     </label>
                     <div className="relative">
-                      <Lock className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ${
-                        (touched.confirmNewPassword || submitted) && getConfirmNewPasswordError() ? 'text-rose-500' : 'text-gray-400'
-                      }`} />
+                      <Lock className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ${(touched.confirmNewPassword || submitted) && getConfirmNewPasswordError() ? 'text-rose-500' : 'text-gray-400'
+                        }`} />
                       <input
                         type={showConfirmNewPassword ? 'text' : 'password'}
                         value={confirmNewPassword}
                         onChange={(e) => setConfirmNewPassword(e.target.value)}
                         onBlur={() => markTouched('confirmNewPassword')}
                         placeholder={lang === 'vi' ? 'Nhập lại mật khẩu' : 'Re-enter password'}
-                        className={`w-full pl-10 pr-10 py-2 rounded-xl border text-xs sm:text-sm font-medium transition ${
-                          (touched.confirmNewPassword || submitted) && getConfirmNewPasswordError()
+                        className={`w-full pl-10 pr-10 py-2 rounded-xl border text-xs sm:text-sm font-medium transition ${(touched.confirmNewPassword || submitted) && getConfirmNewPasswordError()
                             ? 'bg-rose-50/40 border-rose-500 text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-500'
                             : touched.confirmNewPassword && !getConfirmNewPasswordError()
-                            ? 'bg-[#FFFFFF] border-emerald-500/70 focus:outline-none focus:border-emerald-600'
-                            : 'bg-[#faf8f5] border-gray-200 text-[#24263e] focus:outline-none focus:border-[#c34c36]'
-                        }`}
+                              ? 'bg-[#FFFFFF] border-emerald-500/70 focus:outline-none focus:border-emerald-600'
+                              : 'bg-[#faf8f5] border-gray-200 text-[#24263e] focus:outline-none focus:border-[#c34c36]'
+                          }`}
                       />
                       <button
                         type="button"

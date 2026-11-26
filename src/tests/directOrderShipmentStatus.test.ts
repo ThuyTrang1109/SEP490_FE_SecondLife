@@ -107,7 +107,12 @@ test('seller can rebook a cancelled direct shipment and tracks an existing retur
   assert.doesNotMatch(renderActions({ ...retryable, hasActiveDispute: true }), /Tạo lại vận đơn/);
   for (const orderIsSeller of [true, false]) {
     assert.doesNotMatch(renderCard(retryable, orderIsSeller), /Quỹ Escrow đang tạm đóng băng|Vận chuyển cần xử lý/);
-    assert.match(renderCard({ ...retryable, hasActiveDispute: true }, orderIsSeller), /do khiếu nại \/ tranh chấp/);
+    const disputedCard = renderCard({
+      ...retryable,
+      hasActiveDispute: true,
+      shippingDeliveredAt: '2026-11-26T13:17:16Z',
+    }, orderIsSeller);
+    assert.doesNotMatch(disputedCard, /do khiếu nại \/ tranh chấp|48 giờ để gửi khiếu nại|Nhấn "Đã nhận hàng"/);
   }
 
   const replacement = { ...cancelled, shipmentId: 'replacement', status: 'READY_TO_PICK', providerStatus: 'ASSIGNING_DRIVER' };
@@ -167,7 +172,7 @@ test('a purchase with frozen escrow shows its carrier status unless the order ha
     assert.match(renderBadge(delivered, isSeller), /Đã giao/);
     const disputed = { ...delivered, hasActiveDispute: true };
     assert.match(renderBadge(disputed, isSeller), /Đang Tranh Chấp/);
-    assert.match(getOrderEscrowHoldNotice(disputed, 'vi')?.title ?? '', /do khiếu nại/);
+    assert.equal(getOrderEscrowHoldNotice(disputed, 'vi'), null);
   }
 
   const rejected = { ...order, shipments: [{ ...shipment, status: 'FAILED', providerStatus: 'REJECTED' }] };

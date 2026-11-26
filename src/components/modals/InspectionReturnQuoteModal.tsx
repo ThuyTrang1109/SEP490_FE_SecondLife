@@ -51,10 +51,12 @@ export function InspectionReturnQuoteModal({ orderId, title, booking, cashShippi
   };
 
   const overReserve = Boolean(quote && quote.shippingFee > quote.reserveFee);
+  const canBook = Boolean(quote && (!overReserve || quote.canBookOverReserve));
+  const adjustment = quote?.adjustment ?? null;
   const serviceType = quote?.serviceType?.trim();
   const vehicleName = serviceType ? formatLalamoveVehicle(serviceType).name : null;
   const confirm = async () => {
-    if (!quote || overReserve || booking || loading) return;
+    if (!quote || !canBook || booking || loading) return;
     if (quote.expiresAt && Date.parse(quote.expiresAt) <= Date.now()) {
       setQuote(null);
       setError('Báo giá đã hết hạn. Vui lòng lấy lại cước trước khi đặt chuyến.');
@@ -119,8 +121,34 @@ export function InspectionReturnQuoteModal({ orderId, title, booking, cashShippi
               {overReserve && (
                 <div className="flex flex-wrap justify-between gap-2"><dt>Cước vượt dự phòng</dt><dd className="font-bold text-rose-700">{formatVND(quote.shippingFee - quote.reserveFee)}</dd></div>
               )}
+              {adjustment && (
+                <div className="mt-2 space-y-1.5 border-t border-slate-200 pt-2 text-xs">
+                  <div className="font-bold text-slate-700">Phân bổ bù cước dự kiến theo tỷ lệ đơn:</div>
+                  <div className="flex flex-wrap justify-between gap-2 text-slate-700">
+                    <span>Người mua ({adjustment.buyer.percent}%):</span>
+                    <span className="font-semibold">
+                      Thu thêm <strong className="text-slate-900">{formatVND(adjustment.buyer.outstanding)}</strong>
+                      {adjustment.buyer.collected > 0 ? ` (đã thu ${formatVND(adjustment.buyer.collected)})` : ''}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap justify-between gap-2 text-slate-700">
+                    <span>Người bán ({adjustment.seller.percent}%):</span>
+                    <span className="font-semibold">
+                      Thu thêm <strong className="text-slate-900">{formatVND(adjustment.seller.outstanding)}</strong>
+                      {adjustment.seller.collected > 0 ? ` (đã thu ${formatVND(adjustment.seller.collected)})` : ''}
+                    </span>
+                  </div>
+                </div>
+              )}
             </dl>
-            {overReserve && <p role="alert" className="text-sm text-rose-800">Cần xử lý phần cước chênh lệch trước khi đặt chuyến.</p>}
+            {overReserve && quote.canBookOverReserve && (
+              <p role="status" className="rounded-lg bg-amber-50 p-3 text-xs text-amber-900">
+                Báo giá vượt khoản dự phòng nhưng đơn đủ điều kiện tự thu bù. Khi hãng xác nhận chuyến, hệ thống sẽ tự động trừ ví Buyer và Seller theo tỷ lệ trên (ví thiếu sẽ ghi nhận công nợ).
+              </p>
+            )}
+            {overReserve && !quote.canBookOverReserve && (
+              <p role="alert" className="text-sm text-rose-800">Cần xử lý phần cước chênh lệch trước khi đặt chuyến.</p>
+            )}
           </>
         )}
       </div>
@@ -130,7 +158,7 @@ export function InspectionReturnQuoteModal({ orderId, title, booking, cashShippi
         <button type="button" onClick={refresh} disabled={loading || booking} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50">
           <RefreshCw aria-hidden="true" className="size-3.5" /> Lấy lại báo giá
         </button>
-        <button type="button" onClick={() => void confirm()} disabled={!quote || overReserve || loading || booking} className="rounded-lg bg-orange-700 px-3 py-2 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-50">
+        <button type="button" onClick={() => void confirm()} disabled={!canBook || loading || booking} className="rounded-lg bg-orange-700 px-3 py-2 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-50">
           {booking ? 'Đang đặt chuyến…' : 'Xác nhận tạo vận đơn'}
         </button>
       </footer>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { isPostRequiringInspection } from '../utils/listingInspection';
 import {
   Sparkles,
   Camera,
@@ -3123,8 +3124,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       backendStatus: effectiveSubmitRes?.status || 'PENDING',
       rejectionReason: effectiveSubmitRes?.reviewReason || effectiveSubmitRes?.message,
       createdAt: new Date().toISOString(),
-      isInspectionGuaranteed: finalPriceVnd > 5000000,
-      requiresInspection: finalPriceVnd > 5000000,
+      isInspectionGuaranteed: isPostRequiringInspection({ price: finalPriceVnd }, highValueThreshold),
+      requiresInspection: isPostRequiringInspection({ price: finalPriceVnd }, highValueThreshold),
       photos: {
         front: photoPreviews[0] || '',
         back: photoPreviews[1] || '',

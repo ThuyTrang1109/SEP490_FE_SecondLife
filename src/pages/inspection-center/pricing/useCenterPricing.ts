@@ -61,6 +61,7 @@ export function useCenterPricing({ categories, loadCategoriesAndItems, showNotic
 
   // Pricing & Travel Tiers State
   const [travelTiers, setTravelTiers] = useState<InspectionTravelTierDto[]>([]);
+  const [centerApprovedTravelProposal, setCenterApprovedTravelProposal] = useState<InspectionFeeProposalResponse | null>(null);
   const [tierProposals, setTierProposals] = useState<InspectionFeeProposalResponse[]>([]);
   const [pricingProposalFilter, setPricingProposalFilter] = useState<'ALL' | InspectionFeeProposalStatus>('ALL');
   const [pricingProposalPage, setPricingProposalPage] = useState<number>(0);
@@ -92,7 +93,7 @@ export function useCenterPricing({ categories, loadCategoriesAndItems, showNotic
       }
       if (propsRes.status === 'fulfilled') {
         const props = propsRes.value as any;
-        const list = Array.isArray(props?.items)
+        const list: InspectionFeeProposalResponse[] = Array.isArray(props?.items)
           ? props.items
           : Array.isArray(props?.content)
             ? props.content
@@ -103,6 +104,28 @@ export function useCenterPricing({ categories, loadCategoriesAndItems, showNotic
         setPricingProposalTotalPages(props.totalPages || 1);
         setPricingProposalTotalElements(props.totalElements ?? list.length);
         setPricingProposalPage(props.page || 0);
+
+        // Luôn tìm hoặc giữ lại đề xuất cước di chuyển đã duyệt của chính trung tâm này
+        let approvedTravel = list.find(
+          (p) => (p.tiers?.length ?? 0) > 0 && String(p.status || '').toUpperCase() === 'APPROVED'
+        );
+        if (!approvedTravel && includeSummary) {
+          try {
+            const approvedRes = await inspectorService.getTierProposals('APPROVED', 0, 10);
+            const approvedItems: InspectionFeeProposalResponse[] = approvedRes?.items || [];
+            approvedTravel = approvedItems.find(
+              (p) => (p.tiers?.length ?? 0) > 0 && String(p.status || '').toUpperCase() === 'APPROVED'
+            );
+          } catch {
+            // fallback
+          }
+        }
+        if (approvedTravel) {
+          setCenterApprovedTravelProposal(approvedTravel);
+          if (approvedTravel.tiers && approvedTravel.tiers.length > 0) {
+            setTravelTiers(approvedTravel.tiers);
+          }
+        }
       }
       if (currentFeesRes.status === 'fulfilled' && currentFeesRes.value !== null) {
         const cFees = currentFeesRes.value;
@@ -173,8 +196,14 @@ export function useCenterPricing({ categories, loadCategoriesAndItems, showNotic
     setProposeCategoryId('');
     setProposeBaseFee(250000);
     setProposeValidationError(null);
-    if (travelTiers && travelTiers.length > 0) {
-      setProposeTiers(JSON.parse(JSON.stringify(travelTiers)));
+    const baseProposal = centerApprovedTravelProposal || tierProposals.find(
+      (p) => p.tiers && p.tiers.length > 0 && String(p.status || '').toUpperCase() === 'APPROVED'
+    );
+    const baseTiers = (baseProposal?.tiers && baseProposal.tiers.length > 0)
+      ? baseProposal.tiers
+      : travelTiers;
+    if (baseTiers && baseTiers.length > 0) {
+      setProposeTiers(JSON.parse(JSON.stringify(baseTiers)));
     } else {
       setProposeTiers([
         { tierNumber: 1, name: 'Bậc 1: Cự ly gần (0 - 5 km)', fromKm: 0, toKm: 5, pricePerKm: 20000, status: 'ACTIVE' },
@@ -260,7 +289,7 @@ export function useCenterPricing({ categories, loadCategoriesAndItems, showNotic
       });
       showNotice('Đã gửi đề xuất biểu phí lên Admin sàn thành công! Đề xuất đang chờ xét duyệt.');
       setIsProposeModalOpen(false);
-      loadPricing(0, pricingProposalFilter, false);
+      loadPricing(0, pricingProposalFilter, true);
     } catch (err: any) {
       dialogService.error(err?.message || 'Gửi đề xuất giá thất bại');
     } finally {
@@ -303,6 +332,7 @@ export function useCenterPricing({ categories, loadCategoriesAndItems, showNotic
     setProposingLevelFeeAmount,
     setProposingLevelFeeError,
     setSelectedProposalDetail,
+    centerApprovedTravelProposal,
     tierProposals,
     travelTiers,
   };

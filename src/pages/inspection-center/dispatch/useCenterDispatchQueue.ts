@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { isMissedHomeInspectionAppointment } from '../../../utils/inspectionAppointmentTime';
 import { getCenterDispatchStage } from '../../../utils/inspectionCenterData';
 import type { CenterTab, DispatchFilter } from '../types';
 import type { useCenterOrders } from '../orders/useCenterOrders';
@@ -18,11 +19,22 @@ export function useCenterDispatchQueue({ inboundShipments, isOrderReceivedAtHub,
   const [dispatchFilter, setDispatchFilter] = useState<DispatchFilter>('ALL');
   const [orderMethodFilter, setOrderMethodFilter] = useState<'ALL' | 'AT_CENTER' | 'AT_HOME'>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
+  const [now, setNow] = useState(Date.now);
 
-  const dispatchOrders = useMemo(() => orders.flatMap((order) => {
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 15_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const baseDispatchOrders = useMemo(() => orders.flatMap((order) => {
     const stage = getCenterDispatchStage(order, isOrderReceivedAtHub(order));
     return stage ? [{ order, stage }] : [];
   }), [orders, inboundShipments]);
+  const dispatchOrders = useMemo(() => baseDispatchOrders.map((item) =>
+    isMissedHomeInspectionAppointment(item.order, now)
+      ? { ...item, stage: 'WAITING_CENTER_APPROVAL' as const }
+      : item
+  ), [baseDispatchOrders, now]);
   const urgentDispatchOrders = useMemo(() => dispatchOrders
     .filter(({ stage }) => stage === 'READY_TO_ASSIGN' || stage === 'WAITING_CENTER_APPROVAL')
     .map(({ order }) => order), [dispatchOrders]);

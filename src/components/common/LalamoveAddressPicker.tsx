@@ -161,12 +161,12 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
         const parsed = rawList.map((c: any) => {
           const rawName = typeof c === 'string' ? c : (c.name || c.cityName || c.label || String(c));
           const coordFallback = getCityCoordinates(rawName);
-          const lat = (typeof c === 'object' && typeof c.lat === 'number') ? c.lat 
-            : (typeof c === 'object' && typeof c.latitude === 'number') ? c.latitude 
-            : coordFallback.lat;
-          const lng = (typeof c === 'object' && typeof c.lng === 'number') ? c.lng 
-            : (typeof c === 'object' && typeof c.longitude === 'number') ? c.longitude 
-            : coordFallback.lng;
+          const lat = (typeof c === 'object' && typeof c.lat === 'number') ? c.lat
+            : (typeof c === 'object' && typeof c.latitude === 'number') ? c.latitude
+              : coordFallback.lat;
+          const lng = (typeof c === 'object' && typeof c.lng === 'number') ? c.lng
+            : (typeof c === 'object' && typeof c.longitude === 'number') ? c.longitude
+              : coordFallback.lng;
           return { name: rawName, lat, lng, label: getShortCityName(rawName) };
         });
         setSupportedCities(parsed.filter(city => normalizeCityKey(city.name) !== 'OTHER'));
@@ -225,9 +225,21 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
   useEffect(() => {
     if (initialAddress && initialAddress.trim() && initialAddress !== resolvedAddress) {
       setResolvedAddress(initialAddress);
-      setIsLocationResolved(true);
+      setIsLocationResolved(Number.isFinite(initialLatitude) && Number.isFinite(initialLongitude));
     }
-  }, [initialAddress]);
+  }, [initialAddress, initialLatitude, initialLongitude]);
+
+  useEffect(() => {
+    if (initialName && initialName !== contactName) {
+      setContactName(initialName);
+    }
+  }, [initialName]);
+
+  useEffect(() => {
+    if (initialPhone && initialPhone !== contactPhone) {
+      setContactPhone(initialPhone);
+    }
+  }, [initialPhone]);
 
   // Address search with coordinate validation state
   const [searchAddressText, setSearchAddressText] = useState('');
@@ -458,7 +470,7 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
       if (leafletMapRef.current) {
         try {
           leafletMapRef.current.remove();
-        } catch (_) {}
+        } catch (_) { }
         leafletMapRef.current = null;
         leafletMarkerRef.current = null;
       }
@@ -609,7 +621,7 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-1.5 text-[11px] font-bold text-orange-950">
               <Building2 className="w-3.5 h-3.5 text-orange-600 shrink-0" />
-              <span>{lang === 'vi' ? 'Khu vực phục vụ Lalamove:' : 'Supported Lalamove regions:'}</span>
+              <span>{lang === 'vi' ? 'Khu vực' : 'Supported Lalamove regions:'}</span>
             </div>
             <div className="flex items-center gap-2">
               {ALLOWED_CITIES.map((c) => {
@@ -619,11 +631,10 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
                     key={c.name}
                     type="button"
                     onClick={() => handleSelectCityPreset(c)}
-                    className={`px-3 py-1 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer border shadow-2xs ${
-                      isSelected
-                        ? 'bg-orange-600 text-white border-orange-600 ring-2 ring-orange-200'
-                        : 'bg-white text-slate-700 border-gray-200 hover:border-orange-400 hover:text-orange-600'
-                    }`}
+                    className={`px-3 py-1 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer border shadow-2xs ${isSelected
+                      ? 'bg-orange-600 text-white border-orange-600 ring-2 ring-orange-200'
+                      : 'bg-white text-slate-700 border-gray-200 hover:border-orange-400 hover:text-orange-600'
+                      }`}
                     title={c.label}
                   >
                     <span>{c.name}</span>
@@ -632,11 +643,11 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
               })}
             </div>
           </div>
-          <p className="text-[10px] text-orange-800/80 italic font-medium">
+          {/* <p className="text-[10px] text-orange-800/80 italic font-medium">
             {lang === 'vi'
               ? '✓ Hà Nội & lân cận (Bắc Ninh, Hải Phòng, Hưng Yên, Ninh Bình) | ✓ TP. Hồ Chí Minh & lân cận (Đồng Nai, Bình Dương, Vũng Tàu)'
               : '✓ Hanoi & nearby (Bac Ninh, Hai Phong, Hung Yen, Ninh Binh) | ✓ Ho Chi Minh City & nearby (Dong Nai, Binh Duong, Vung Tau)'}
-          </p>
+          </p> */}
         </div>
       )}
 
@@ -722,9 +733,8 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
                     }
                   }}
                   placeholder={lang === 'vi' ? 'Nhập số nhà, tên đường, phường, quận, tỉnh/thành...' : 'Enter street address, ward, district, city...'}
-                  className={`w-full h-10 px-3.5 pl-9 bg-slate-50/80 border rounded-xl text-xs font-medium text-slate-800 placeholder:text-slate-400 shadow-2xs focus:outline-none transition ${
-                    searchValidationError ? 'border-rose-400 ring-2 ring-rose-100 bg-white' : 'border-gray-200 focus:border-orange-500 focus:ring-2 focus:ring-orange-100 focus:bg-white'
-                  }`}
+                  className={`w-full h-10 px-3.5 pl-9 bg-slate-50/80 border rounded-xl text-xs font-medium text-slate-800 placeholder:text-slate-400 shadow-2xs focus:outline-none transition ${searchValidationError ? 'border-rose-400 ring-2 ring-rose-100 bg-white' : 'border-gray-200 focus:border-orange-500 focus:ring-2 focus:ring-orange-100 focus:bg-white'
+                    }`}
                 />
                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3 pointer-events-none" />
                 {searchAddressText && (
@@ -864,11 +874,10 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
             type="button"
             onClick={handleConfirmLocation}
             disabled={isLookingUp || isSearchingAddress || isLocatingDevice || !isLocationResolved || !resolvedAddress.trim()}
-            className={`px-4 py-2 rounded-xl font-bold text-xs transition flex items-center gap-1.5 cursor-pointer shadow-xs ${
-              isConfirmed
-                ? 'bg-emerald-600 text-white hover:bg-emerald-700'
-                : 'bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed'
-            }`}
+            className={`px-4 py-2 rounded-xl font-bold text-xs transition flex items-center gap-1.5 cursor-pointer shadow-xs ${isConfirmed
+              ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+              : 'bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed'
+              }`}
           >
             <CheckCircle2 className="w-4 h-4" />
             <span>{isConfirmed ? (lang === 'vi' ? 'Đã chọn vị trí này' : 'Location Confirmed') : (lang === 'vi' ? 'Xác nhận vị trí này' : 'Confirm Location')}</span>

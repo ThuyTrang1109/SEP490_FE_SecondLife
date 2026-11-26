@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { Barcode, Copy, Check, CheckCircle2, ShieldCheck, QrCode } from 'lucide-react';
+import { Barcode, Copy, Check, CheckCircle2, ShieldCheck, QrCode, AlertCircle, Clock } from 'lucide-react';
 import { ScannableQRCode } from '../common/ScannableQRCode';
+import { canInspectorCheckIn } from '../../utils/inspectionAppointmentTime';
 
 export function getAtHomeIntakeCode(orderId: string): string {
   if (!orderId) return 'SL-ATHOME-00000000';
@@ -21,6 +22,7 @@ export function generateBarcodeBars(code: string): number[] {
 interface AtHomeIntakeBarcodeProps {
   orderId: string;
   isArrived?: boolean;
+  isExpired?: boolean;
   lang?: 'vi' | 'en';
   compact?: boolean;
   appointmentTime?: string;
@@ -31,6 +33,7 @@ interface AtHomeIntakeBarcodeProps {
 export const AtHomeIntakeBarcode: React.FC<AtHomeIntakeBarcodeProps> = ({
   orderId,
   isArrived = false,
+  isExpired = false,
   lang = 'vi',
   compact = false,
   appointmentTime,
@@ -42,6 +45,13 @@ export const AtHomeIntakeBarcode: React.FC<AtHomeIntakeBarcodeProps> = ({
   const bars = useMemo(() => format === 'barcode' ? generateBarcodeBars(intakeCode) : [], [format, intakeCode]);
   const isQr = format === 'qr';
 
+  const isTimeExpired = useMemo(() => {
+    if (isArrived) return false;
+    if (isExpired) return true;
+    if (!appointmentTime) return false;
+    return canInspectorCheckIn(appointmentTime).expired === true;
+  }, [isArrived, isExpired, appointmentTime]);
+
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (navigator?.clipboard?.writeText) {
@@ -50,6 +60,19 @@ export const AtHomeIntakeBarcode: React.FC<AtHomeIntakeBarcodeProps> = ({
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
   };
+
+  if (isTimeExpired) {
+    return (
+      <div className={`rounded-xl border bg-amber-50/80 border-amber-200 text-xs text-amber-900 flex items-start gap-2 shadow-2xs ${compact ? 'p-2.5' : 'p-3'}`}>
+        <Clock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+        <p className="text-[11px] text-amber-900 leading-relaxed">
+          {lang === 'vi'
+            ? 'Kỹ thuật viên chưa đến check-in đúng hẹn. Mã tiếp nhận tạm ẩn, Trung tâm SecondLife Hub sẽ sớm liên hệ gửi lịch mới cho bạn.'
+            : 'Technician did not check in on time. Intake code is temporarily hidden; Hub will reschedule with you soon.'}
+        </p>
+      </div>
+    );
+  }
 
   if (isArrived) {
     return (

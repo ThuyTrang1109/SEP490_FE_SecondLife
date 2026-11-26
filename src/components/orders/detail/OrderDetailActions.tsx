@@ -9,9 +9,10 @@ import { formatVND, translations } from '../../../utils/translations';
 import { getInboundShipmentProgress } from '../../../utils/inspectionCenterData';
 import { getInspectionPurchaseDecision } from '../../../utils/inspectionPurchase';
 import { hasInspectionResult } from '../../../utils/inspectionTaskStatus';
-import { canOpenOrderDispute, getOrderEscrowHoldNotice, isOrderEscrowOnHold } from '../../../utils/orders/orderDispute';
+import { canOpenOrderDispute, getOrderEscrowHoldNotice, isOrderDisputed, isOrderEscrowOnHold } from '../../../utils/orders/orderDispute';
 import { isOrderDeliveredToBuyer } from '../../../utils/orders/orderReceipt';
-import { getLatestDirectShipment } from '../../../utils/lalamoveTracking';
+import { getLalamoveInterruption, getLatestDirectShipment } from '../../../utils/lalamoveTracking';
+import { getOrderAllShipments } from '../../../utils/orders/shipmentCache';
 
 interface Props {
   order: EscrowOrder;
@@ -515,6 +516,33 @@ export function OrderDetailActions({
 
                                 {/* Nút Xem / In Mã QR Dán Sản Phẩm trong Modal Chi Tiết */}
                               </div>
+                            )}
+
+                          {/* Nút Tạo lại vận đơn Lalamove khi đơn kiểm định tại nhà (AT_HOME) bị hủy/từ chối */}
+                          {detailIsAtHome &&
+                            detailIsPurchaseAccepted &&
+                            isOrderSeller(detailModalOrder) &&
+                            !isOrderCancelledOrRefunded(detailModalOrder) &&
+                            !isOrderReceiptConfirmed(detailModalOrder) &&
+                            !isOrderDisputed(detailModalOrder) &&
+                            !detailModalOrder.shippingDeliveredAt &&
+                            (() => {
+                              const atHomeShipments = detailModalOrder.shipments ?? getOrderAllShipments(detailModalOrder.id, (detailModalOrder as any).linkedOrderId);
+                              const latestAtHomeShip = getLatestDirectShipment(atHomeShipments);
+                              return Boolean(
+                                latestAtHomeShip &&
+                                (latestAtHomeShip.canRebook || Boolean(getLalamoveInterruption(latestAtHomeShip))) &&
+                                !latestAtHomeShip.deliveredAt
+                              );
+                            })() && (
+                              <button
+                                type="button"
+                                onClick={() => setCreateShipmentOrder(detailModalOrder)}
+                                className="flex-1 py-2.5 px-4 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:opacity-90 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
+                              >
+                                <Truck className="w-4 h-4" />
+                                <span>{lang === 'vi' ? 'Tạo lại vận đơn' : 'Rebook shipment'}</span>
+                              </button>
                             )}
 
                           {/* GIAI ĐOẠN 3: Đã đóng gói • Chờ Shipper đến lấy (Kiểm định tại Hub) */}

@@ -102,8 +102,8 @@ export const LiveFaceScannerModal: React.FC<LiveFaceScannerModalProps> = ({
           raw: result,
         };
 
-        // Gửi kết quả về modal cha ngay lập tức (không cần upload trước, tránh lỗi phiên / mạng)
-        onFaceCaptured(base64, faceFile, base64, vnptData);
+        // Chỉ truyền base64 vào previewUrl để modal cha thực hiện upload faceFile lấy URL thật
+        onFaceCaptured('', faceFile, base64, vnptData);
         onClose();
       } catch (err: any) {
         console.error('Lỗi xử lý kết quả VNPT SDK:', err);

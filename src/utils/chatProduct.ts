@@ -1,5 +1,6 @@
 import type { Listing } from '../types';
 import type { ChatRoomDto } from '../services/chatService';
+import { isPostRequiringInspection } from './listingInspection';
 
 export type ChatProductListing = Omit<Listing, 'priceVnd'> & {
   priceVnd: number | null;
@@ -114,7 +115,7 @@ export function buildChatProductListing(room: ChatRoomDto, existing?: Listing): 
     photoGallery: room.postImageUrl ? [image] : [],
     createdAt: existing?.createdAt || room.updatedAt || '',
     isInspectionGuaranteed: existing?.isInspectionGuaranteed ?? false,
-    requiresInspection: existing?.requiresInspection ?? (price != null && price > 5000000),
+    requiresInspection: existing?.requiresInspection ?? isPostRequiringInspection({ price }),
   };
 }
 

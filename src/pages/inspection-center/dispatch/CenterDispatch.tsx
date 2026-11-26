@@ -15,6 +15,7 @@ import {
 import React, { type ReactNode, useState, useEffect } from 'react';
 import { InspectionOrderDto } from '../../../services';
 import { formatVND } from '../../../utils/translations';
+import { isMissedHomeInspectionAppointment } from '../../../utils/inspectionAppointmentTime';
 import { isInspectorAssignmentLocked } from '../../../utils/inspectionCenterData';
 import type { DispatchFilter } from '../types';
 import type { useCenterAppointments } from './useCenterAppointments';
@@ -196,7 +197,8 @@ export function CenterDispatch({
               const assigned = Boolean(order.inspectorId);
               const inspectorName = order.inspectorName && order.inspectorName !== 'Chưa phân công'
                 ? order.inspectorName : 'Kỹ thuật viên';
-              const isInspectorLocked = assigned && (
+              const missedAppointment = isMissedHomeInspectionAppointment(order);
+              const isInspectorLocked = !missedAppointment && assigned && (
                 Boolean(order.inspectorConfirmed) ||
                 isInspectorAssignmentLocked(order) ||
                 ['INSPECTING', 'INSPECTION_IN_PROGRESS', 'PASSED', 'FAILED', 'COMPLETED', 'DELIVERING_TO_BUYER'].includes(order.status || '') ||
@@ -219,7 +221,7 @@ export function CenterDispatch({
                 : waitingSellerAppt
                   ? 'Chờ hẹn lịch'
                   : waitingCenterApproval
-                    ? 'Duyệt lịch hẹn'
+                    ? (missedAppointment ? 'Hẹn lại với người bán' : 'Duyệt lịch hẹn')
                     : waitingSellerCounter
                       ? 'Xem phản hồi'
                       : isInspectorLocked
@@ -313,7 +315,11 @@ export function CenterDispatch({
                     )}
                   </td>
                   <td role="cell" className="min-w-0 @[56rem]:px-4 @[56rem]:py-3 [&_span]:whitespace-normal">
-                    {renderStatusBadge(order)}
+                    {missedAppointment ? (
+                      <span className="inline-block rounded-full border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-bold text-rose-700">
+                        Quá hạn check-in
+                      </span>
+                    ) : renderStatusBadge(order)}
                   </td>
                   <td role="cell" className="min-w-0 text-right @[56rem]:px-4 @[56rem]:py-3 @[56rem]:text-center">
                     <button
@@ -345,7 +351,7 @@ export function CenterDispatch({
                           : isInspectorLocked
                             ? 'Kỹ thuật viên đã xác nhận đơn hoặc đang đo kiểm thiết bị. Quyền đổi KTV đã được khóa để tránh không nhất quán dữ liệu.'
                             : waitingCenterApproval
-                              ? 'Người bán đã đề xuất lịch hẹn. Bấm để duyệt, gửi lại lịch hoặc từ chối.'
+                              ? (missedAppointment ? 'Gửi lịch kiểm định mới cho người bán.' : 'Người bán đã đề xuất lịch hẹn. Bấm để duyệt, gửi lại lịch hoặc từ chối.')
                               : waitingSellerCounter
                                 ? 'Trung tâm đã gửi đề xuất lịch mới. Bấm để xem lại hoặc điều chỉnh.'
                                 : undefined

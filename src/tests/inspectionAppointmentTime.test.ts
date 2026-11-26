@@ -1,10 +1,14 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import {
   isInspectionTimeInShift,
   canInspectorCheckIn,
+  isMissedHomeInspectionAppointment,
   CHECKIN_ADVANCE_WINDOW_MINUTES
 } from '../utils/inspectionAppointmentTime';
+import { AtHomeIntakeBarcode } from '../components/inspection/AtHomeIntakeBarcode';
 
 describe('inspection appointment time for the selected shift', () => {
   test('accepts the start, last minute and custom minutes within each shift', () => {
@@ -77,7 +81,7 @@ describe('Inspector Check-in 30-minute Advance Rule', () => {
     assert.equal(result.minutesUntilCheckIn, 0);
   });
 
-  test('Check-in is allowed at the scheduled appointment time or later', () => {
+  test('Check-in is allowed at the scheduled appointment time and through the 30-minute grace period', () => {
     const onTime = new Date(scheduledDate.getTime());
     assert.equal(canInspectorCheckIn(scheduledTime, onTime).allowed, true);
 
@@ -85,10 +89,71 @@ describe('Inspector Check-in 30-minute Advance Rule', () => {
     assert.equal(canInspectorCheckIn(scheduledTime, afterTime).allowed, true);
   });
 
+  test('The end of the 30-minute grace period is inclusive', () => {
+    const end = scheduledDate.getTime() + 30 * 60 * 1000;
+    assert.equal(canInspectorCheckIn(scheduledTime, end).allowed, true);
+    const expired = canInspectorCheckIn(scheduledTime, end + 1);
+    assert.equal(expired.allowed, false);
+    assert.equal(expired.expired, true);
+    assert.ok(expired.reason?.includes('hẹn lại với người bán'));
+  });
+
+  test('The center only reschedules confirmed at-home appointments missed by the inspector', () => {
+    const order = {
+      orderType: 'AT_HOME',
+      status: 'DISPATCHED',
+      appointmentScheduledAt: scheduledTime,
+      appointmentStatus: 'CONFIRMED',
+    };
+    const deadline = scheduledDate.getTime() + 30 * 60 * 1000;
+    assert.equal(isMissedHomeInspectionAppointment(order, deadline), false);
+    assert.equal(isMissedHomeInspectionAppointment(order, deadline + 1), true);
+    assert.equal(isMissedHomeInspectionAppointment({ ...order, homeCheckedInAt: scheduledTime }, deadline + 1), false);
+    assert.equal(isMissedHomeInspectionAppointment({ ...order, appointmentStatus: 'COUNTERED_BY_CENTER' }, deadline + 1), false);
+    assert.equal(isMissedHomeInspectionAppointment({ ...order, status: 'INSPECTING' }, deadline + 1), false);
+    assert.equal(isMissedHomeInspectionAppointment({ ...order, orderType: 'AT_CENTER' }, deadline + 1), false);
+  });
+
   test('Check-in is rejected when appointment is missing or invalid', () => {
     assert.equal(canInspectorCheckIn(null).allowed, false);
     assert.equal(canInspectorCheckIn(undefined).allowed, false);
     assert.equal(canInspectorCheckIn('').allowed, false);
     assert.equal(canInspectorCheckIn('not-a-date').allowed, false);
+  });
+
+  test('isMissedHomeInspectionAppointment supports inspectionMethod and savedAppointment', () => {
+    const escrowOrder = {
+      id: 'bb228078-e5c8-41c7-b0bb-34c8e891861f',
+      inspectionMethod: 'AT_HOME',
+      status: 'AWAITING_INSPECTION',
+      savedAppointment: {
+        scheduledAt: scheduledTime,
+        status: 'CONFIRMED',
+      },
+    };
+    const deadline = scheduledDate.getTime() + 30 * 60 * 1000;
+    assert.equal(isMissedHomeInspectionAppointment(escrowOrder as any, deadline), false);
+    assert.equal(isMissedHomeInspectionAppointment(escrowOrder as any, deadline + 1), true);
+  });
+
+  test('AtHomeIntakeBarcode hides barcode and shows temporary hidden notice when expired', () => {
+    const activeTime = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    const activeHtml = renderToStaticMarkup(createElement(AtHomeIntakeBarcode, {
+      orderId: 'bb228078-e5c8-41c7-b0bb-34c8e891861f',
+      appointmentTime: activeTime,
+      lang: 'vi',
+    }));
+    assert.match(activeHtml, /SL-ATHOME-BB228078/);
+    assert.match(activeHtml, /MÃ VẠCH TIẾP NHẬN/i);
+
+    const expiredTime = new Date(Date.now() - 35 * 60 * 1000).toISOString();
+    const expiredHtml = renderToStaticMarkup(createElement(AtHomeIntakeBarcode, {
+      orderId: 'bb228078-e5c8-41c7-b0bb-34c8e891861f',
+      appointmentTime: expiredTime,
+      lang: 'vi',
+    }));
+    assert.doesNotMatch(expiredHtml, /SL-ATHOME-BB228078/);
+    assert.match(expiredHtml, /Mã tiếp nhận tạm ẩn/);
+    assert.match(expiredHtml, /Kỹ thuật viên chưa đến check-in đúng hẹn/);
   });
 });

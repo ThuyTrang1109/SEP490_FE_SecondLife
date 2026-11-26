@@ -186,7 +186,7 @@ function InspectionOrderFeeDetails({
   const [isExpanded, setIsExpanded] = useState(true);
 
   const isAtCenter = order.orderType === 'AT_CENTER';
-  const baseFee = Number(order.inspectionFee || feeDetails?.baseFee || 200000);
+  const baseFee = Number(order.inspectionFee || feeDetails?.baseFee || 0);
   const shippingFee = Number(order.shippingFee || (feeDetails as any)?.shippingToCenter || (isAtCenter ? 35000 : 0));
   const returnReserve = Number(order.returnShippingReserveFee || (feeDetails as any)?.returnReserve || (isAtCenter ? 35000 : 0));
   const travelFee = Number(order.travelFeeRoundTrip || order.travelFee || (feeDetails as any)?.travelFee || (!isAtCenter ? 50000 : 0));

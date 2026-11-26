@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { isPostRequiringInspection } from '../utils/listingInspection';
 import {
   ShieldCheck,
   PlusCircle,
@@ -619,7 +620,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             rejectionReason: p.rejectionReason,
             createdAt: p.createdAt || p.createdDate || p.created_at || p.publishedAt || p.updatedAt || new Date().toISOString(),
             isInspectionGuaranteed: true,
-            requiresInspection: Number(p.price || 0) > 5000000,
+            requiresInspection: isPostRequiringInspection(p),
             isInspected: typeof p.isInspected === 'boolean' ? p.isInspected : undefined,
             inspectionMethod: p.inspectionMethod || p.orderType || undefined,
             photos: {

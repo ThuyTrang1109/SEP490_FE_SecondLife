@@ -1,5 +1,6 @@
 import { AlertCircle, Calendar, CalendarCheck, CalendarSync, Check, CheckCircle2, Clock, Truck, UserCheck, XCircle } from 'lucide-react';
 import { AtHomeIntakeBarcode } from '../../inspection/AtHomeIntakeBarcode';
+import { canInspectorCheckIn, isMissedHomeInspectionAppointment } from '../../../utils/inspectionAppointmentTime';
 import type { EscrowOrder, Language, ShipmentBackend } from '../../../types';
 import { getOrderAppointmentRejection } from '../../../utils/orders/orderAppointments';
 import type { OrderAppointment } from '../../../utils/orders/orderAppointments';
@@ -145,15 +146,39 @@ export function OrderCardInspection({
                 return null;
               })();
 
+              const isAtHomeInspection = (
+                ord.inspectionMethod === 'AT_HOME' ||
+                (ord as any).orderType === 'AT_HOME' ||
+                String(ord.inspectionMethod).toUpperCase() === 'AT_HOME' ||
+                String((ord as any).orderType).toUpperCase() === 'AT_HOME' ||
+                String((ord as any).inspectionOrder?.inspectionMethod).toUpperCase() === 'AT_HOME' ||
+                String((ord as any).inspectionOrder?.orderType).toUpperCase() === 'AT_HOME'
+              );
+              const apptScheduledTime = savedAppointment?.scheduledAt || ord.appointmentScheduledAt || (ord as any).scheduledAt || (ord as any).inspectionOrder?.appointmentScheduledAt;
+              const isArrived = isInspectorArrivedForOrder(ord.id, ord) || Boolean(ord.homeCheckedInAt || (ord as any).home_checked_in_at);
+              const missedAppointment = Boolean(
+                isAtHomeInspection &&
+                !isInspPassed &&
+                !isInspFailed &&
+                !isPurchaseRejected &&
+                !isOrderCountered &&
+                !isArrived &&
+                !isOrderCancelledOrRefunded(ord) &&
+                (
+                  isMissedHomeInspectionAppointment(ord) ||
+                  (apptScheduledTime && canInspectorCheckIn(apptScheduledTime).expired === true)
+                )
+              );
+
               return (
                 <div className="bg-gradient-to-r from-amber-50/90 via-orange-50/70 to-amber-50/90 p-3.5 rounded-xl border border-amber-200 text-amber-950 space-y-2">
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center gap-2">
-                      <span className={`px-2.5 py-0.5 rounded-md text-[11px] font-black uppercase tracking-wider flex items-center gap-1 shadow-2xs ${isPurchaseRejected ? 'bg-rose-600 text-white' : isPurchaseAccepted ? 'bg-emerald-700 text-white' : isInspPassed ? 'bg-emerald-600 text-white' : isInspFailed ? 'bg-rose-600 text-white' : isRejected ? 'bg-rose-600 text-white' : isOrderCountered ? 'bg-orange-600 text-white' : isInspectorArrivedForOrder(ord.id, ord) ? 'bg-emerald-600 text-white' : isApptConfirmed ? 'bg-emerald-700 text-white' : 'bg-amber-600 text-white'}`}>
+                      <span className={`px-2.5 py-0.5 rounded-md text-[11px] font-black uppercase tracking-wider flex items-center gap-1 shadow-2xs ${isPurchaseRejected ? 'bg-rose-600 text-white' : isPurchaseAccepted ? 'bg-emerald-700 text-white' : isInspPassed ? 'bg-emerald-600 text-white' : isInspFailed ? 'bg-rose-600 text-white' : isRejected ? 'bg-rose-600 text-white' : isOrderCountered ? 'bg-orange-600 text-white' : isArrived ? 'bg-emerald-600 text-white' : isApptConfirmed ? 'bg-emerald-700 text-white' : 'bg-amber-600 text-white'}`}>
                         {isPurchaseRejected ? <XCircle className="w-3.5 h-3.5" /> : isPurchaseAccepted || isInspPassed ? <CheckCircle2 className="w-3.5 h-3.5" /> : isInspFailed || isRejected ? <AlertCircle className="w-3.5 h-3.5" /> : isOrderCountered ? <CalendarSync className="w-3.5 h-3.5" /> : isApptConfirmed ? <CalendarCheck className="w-3.5 h-3.5" /> : <Calendar className="w-3.5 h-3.5" />}
                         <span>{isPurchaseRejected ? (lang === 'vi' ? 'Kiểm Định Tận Nhà (Người mua từ chối)' : 'At-Home Inspection (Buyer Declined)') : isInspPassed || isPurchaseAccepted ? (lang === 'vi' ? 'Kiểm Định Tận Nhà (Đạt Chuẩn)' : 'At-Home Inspection (Passed)') : isInspFailed ? (lang === 'vi' ? 'Kiểm Định Tận Nhà (Không Đạt)' : 'At-Home Inspection (Failed)') : (lang === 'vi' ? 'Kiểm Định Tận Nhà (KTV Đến Nhà)' : 'At-Home Inspection (Technician Visit)')}</span>
                       </span>
-                      <span className={`text-xs font-bold ${isPurchaseRejected ? 'text-rose-700 font-black' : isPurchaseAccepted || isInspPassed ? 'text-emerald-800 font-black' : isInspFailed ? 'text-rose-700 font-black' : isRejected ? 'text-rose-700' : isOrderCountered ? 'text-orange-800' : isInspectorArrivedForOrder(ord.id, ord) ? 'text-emerald-800 font-black' : isApptConfirmed ? 'text-emerald-800 font-extrabold' : 'text-amber-900'}`}>
+                      <span className={`text-xs font-bold ${isPurchaseRejected ? 'text-rose-700 font-black' : isPurchaseAccepted || isInspPassed ? 'text-emerald-800 font-black' : isInspFailed ? 'text-rose-700 font-black' : isRejected ? 'text-rose-700' : isOrderCountered ? 'text-orange-800' : missedAppointment ? 'text-rose-700 font-black' : isArrived ? 'text-emerald-800 font-black' : isApptConfirmed ? 'text-emerald-800 font-extrabold' : 'text-amber-900'}`}>
                         {isCompletedOrReleased
                           ? (lang === 'vi' ? 'Giao dịch hoàn tất • Tiền đã chuyển về ví' : 'Transaction Completed • Payout Transferred')
                           : isPurchaseRejected
@@ -174,17 +199,19 @@ export function OrderCardInspection({
                                         ? (lang === 'vi' ? 'Chờ hai bên đóng phí kiểm định' : 'Waiting for inspection fee payment')
                                         : isRejected
                                           ? (lang === 'vi' ? 'Lịch hẹn bị từ chối • Vui lòng hẹn lại' : 'Appointment Rejected • Please Reschedule')
-                                          : isInspectorArrivedForOrder(ord.id, ord)
-                                            ? (lang === 'vi' ? 'Kỹ thuật viên đã đến và đang kiểm tra' : 'Technician has arrived and is inspecting')
-                                            : assignedInspector?.inspectorName
-                                              ? (lang === 'vi' ? `Đã phân công KTV ${assignedInspector.inspectorName}` : `KTV ${assignedInspector.inspectorName} Assigned`)
-                                              : isOrderCountered
-                                                ? (lang === 'vi' ? 'Hub từ chối lịch cũ & đề xuất lịch mới • Cần phản hồi' : 'Center Proposed New Schedule • Action Needed')
-                                                : isApptConfirmed
-                                                  ? (lang === 'vi' ? 'Đã chốt lịch • Chờ Trung tâm giao KTV' : 'Appointment Confirmed • Awaiting Dispatch')
-                                                  : savedAppointment?.scheduledAt
-                                                    ? (lang === 'vi' ? 'Đã hẹn lịch • Chờ Admin điều phối KTV' : 'Appointment Scheduled • Awaiting Dispatch')
-                                                    : (lang === 'vi' ? 'Chờ bạn hẹn lịch đón KTV' : 'Awaiting Appointment Schedule')}
+                                          : isOrderCountered
+                                            ? (lang === 'vi' ? 'Hub từ chối lịch cũ & đề xuất lịch mới • Cần phản hồi' : 'Center Proposed New Schedule • Action Needed')
+                                            : missedAppointment
+                                              ? (lang === 'vi' ? 'Quá hạn check-in • Chờ hẹn lại' : 'Check-in Expired • Reschedule Needed')
+                                              : isArrived
+                                                ? (lang === 'vi' ? 'Kỹ thuật viên đã đến và đang kiểm tra' : 'Technician has arrived and is inspecting')
+                                                : assignedInspector?.inspectorName
+                                                  ? (lang === 'vi' ? `Đã phân công KTV ${assignedInspector.inspectorName}` : `KTV ${assignedInspector.inspectorName} Assigned`)
+                                                  : isApptConfirmed
+                                                    ? (lang === 'vi' ? 'Đã chốt lịch • Chờ Trung tâm giao KTV' : 'Appointment Confirmed • Awaiting Dispatch')
+                                                    : savedAppointment?.scheduledAt
+                                                      ? (lang === 'vi' ? 'Đã hẹn lịch • Chờ Admin điều phối KTV' : 'Appointment Scheduled • Awaiting Dispatch')
+                                                      : (lang === 'vi' ? 'Chờ bạn hẹn lịch đón KTV' : 'Awaiting Appointment Schedule')}
                       </span>
                     </div>
                   </div>
@@ -322,11 +349,11 @@ export function OrderCardInspection({
                     </div>
                   ) : (savedAppointment?.scheduledAt && !isPendingApprovalOrFee) ? (
                     <div className="p-2.5 rounded-lg bg-white/90 border border-amber-200/80 text-[11px] text-amber-900 space-y-1">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-bold text-amber-950">
                           📅 {lang === 'vi' ? 'Thời gian KTV đến nhà:' : 'Scheduled Arrival:'}
                         </span>
-                        <span className="font-extrabold text-amber-800 bg-amber-100/70 px-2 py-0.5 rounded">
+                        <span className={`font-extrabold px-2 py-0.5 rounded ${missedAppointment ? 'text-rose-700 bg-rose-50 line-through' : 'text-amber-800 bg-amber-100/70'}`}>
                           {new Date(savedAppointment.scheduledAt).toLocaleString('vi-VN', {
                             hour: '2-digit',
                             minute: '2-digit',
@@ -403,7 +430,7 @@ export function OrderCardInspection({
                               ) : (
                                 <p className="text-[11px] text-emerald-800 font-semibold bg-emerald-100/60 p-2 rounded-lg border border-emerald-200">
                                   🎉 {lang === 'vi'
-                                    ? 'Người mua đã xác nhận mua hàng thành công. Khách mua đã thanh toán đơn hàng. Vui lòng đóng gói cẩn thận (giữ nguyên tem niêm phong) và bấm nút "Đã gói hàng • Tạo đơn vận chuyển" bên dưới để bàn giao cho tài xế.'
+                                    ? 'Người mua đã xác nhận mua hàng thành công. Khách mua đã thanh toán đơn hàng. Vui lòng đóng gói cẩn thận và bấm nút "Đã gói hàng • Tạo đơn vận chuyển" bên dưới để bàn giao cho tài xế.'
                                     : 'Buyer has confirmed the purchase! Order is paid. Please pack carefully (keep the tamper seal intact) and click "Packed • Create Shipping Order" below to hand over to carrier.'}
                                 </p>
                               )
@@ -424,6 +451,15 @@ export function OrderCardInspection({
                           </div>
                           <div className="text-[11px] text-rose-900 leading-relaxed">
                             Thiết bị không đáp ứng tiêu chuẩn SecondLife. Đơn hàng đang được xử lý hoàn tiền cho người mua.
+                          </div>
+                        </div>
+                      ) : missedAppointment ? (
+                        <div className="p-3 rounded-xl bg-amber-50/80 border border-amber-200 text-xs text-amber-900 flex items-start gap-2.5 mt-1.5 animate-fadeIn">
+                          <Clock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                          <div className="text-[11px] text-amber-900 leading-relaxed">
+                            {lang === 'vi'
+                              ? 'Kỹ thuật viên chưa đến check-in đúng hẹn. Mã tiếp nhận tạm ẩn, Trung tâm SecondLife Hub sẽ sớm liên hệ gửi lịch mới cho bạn.'
+                              : 'Technician did not check in on time. Intake code is temporarily hidden; Hub will reschedule with you soon.'}
                           </div>
                         </div>
                       ) : assignedInspector ? (
@@ -575,9 +611,9 @@ export function OrderCardInspection({
                                             ? (lang === 'vi' ? 'Vận đơn Chặng 1 đến Hub thất bại' : 'Leg 1 shipment to Hub failed')
                                             : ordShipment && getInboundShipmentProgress(ordShipment, lang).step !== null && getInboundShipmentProgress(ordShipment, lang).step >= 1
                                               ? (lang === 'vi' ? 'Đang thực hiện Chặng 1 đến Hub' : 'Leg 1 In Progress to Hub')
-                                          : isOrderSellerConfirmed(ord)
-                                            ? (lang === 'vi' ? 'Đã xác nhận • Chờ gửi hàng Chặng 1 đến Hub' : 'Confirmed • Awaiting Leg 1 Dispatch')
-                                            : (lang === 'vi' ? 'Chờ người bán xác nhận gửi hàng Chặng 1' : 'Awaiting Seller Confirmation for Leg 1')}
+                                              : isOrderSellerConfirmed(ord)
+                                                ? (lang === 'vi' ? 'Đã xác nhận • Chờ gửi hàng Chặng 1 đến Hub' : 'Confirmed • Awaiting Leg 1 Dispatch')
+                                                : (lang === 'vi' ? 'Chờ người bán xác nhận gửi hàng Chặng 1' : 'Awaiting Seller Confirmation for Leg 1')}
                       </span>
                     </div>
                   </div>
@@ -617,7 +653,7 @@ export function OrderCardInspection({
                               if (p.step === 2) return lang === 'vi' ? 'Đang giao Hub' : 'In Transit';
                               return lang === 'vi' ? 'Chờ lấy hàng' : 'Pickup Pending';
                             }
-                            if (ord.inspectionStatus === 'INSPECTING') return lang === 'vi' ? 'Đã phân công KTV' : 'Technician assigned';
+                            if (ord.inspectionStatus === 'INSPECTING') return lang === 'vi' ? 'Đã phân công kỹ thuật viên' : 'Technician assigned';
                             if (isRejected || isInspFailed || isInspPassed) return lang === 'vi' ? 'Đã đến Hub' : 'Delivered to Hub';
                             return isOrderSellerConfirmed(ord) ? (lang === 'vi' ? 'Đang chuẩn bị' : 'In Progress') : (lang === 'vi' ? 'Cần xác nhận' : 'Pending');
                           })()}

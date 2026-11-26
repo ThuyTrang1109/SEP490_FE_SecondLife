@@ -1,4 +1,4 @@
-import { isValidUUID, isSellerOfferId, isNegotiationExpired, isOfficialAcceptedNegotiation } from '../../utils/negotiationHelper';
+import { isValidUUID, isSellerOfferId, isNegotiationExpired, isOfficialAcceptedNegotiation, getNegotiationStep, calculateSuggestedNextOffer } from '../../utils/negotiationHelper';
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { ChatMessage, Listing, Language, UserRole, UserCredit, UserProfile } from '../../types';
 import { translations, formatVND } from '../../utils/translations';
@@ -24,6 +24,7 @@ import {
   Building2,
 } from 'lucide-react';
 import { reviewService } from '../../data/mockReviews';
+import { inspectorService } from '../../services/inspectorService';
 import {
   negotiationService,
   chatService,
@@ -199,9 +200,28 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   const [showInspectionForm, setShowInspectionForm] = useState(false);
   const [inspectionMethod, setInspectionMethod] = useState<'AT_CENTER' | 'AT_HOME'>('AT_CENTER');
   const [inspectionFeeSplit, setInspectionFeeSplit] = useState<'BUYER_100' | 'SPLIT_50_50' | 'SELLER_100'>('SPLIT_50_50');
-  const [inspectionFeeAmount, setInspectionFeeAmount] = useState(150000);
+  const [inspectionFeeAmount, setInspectionFeeAmount] = useState<number>(() => {
+    return Number((listing as any)?.inspectionFee || (listing as any)?.baseInspectionFee || 0);
+  });
   const [inspectionLoading, setInspectionLoading] = useState(false);
   const [inspectionNote, setInspectionNote] = useState('');
+
+  useEffect(() => {
+    if (!showInspectionForm || !listing?.id) return;
+    let cancelled = false;
+    inspectorService.getQuote({
+      postId: listing.id,
+      orderType: inspectionMethod
+    }).then((q) => {
+      if (cancelled) return;
+      const fee = inspectionMethod === 'AT_CENTER'
+        ? Number(q.atCenterPackage?.totalFee || q.atCenterTotalFee || q.baseInspectionFee || 0)
+        : Number(q.atHomePackage?.totalFee || q.atHomeTotalFee || q.baseInspectionFee || 0);
+      if (fee > 0) setInspectionFeeAmount(fee);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [showInspectionForm, inspectionMethod, listing?.id]);
+  
 
   // Fetch User Credit (only for sellers/admins, buyers do not use credit system)
   useEffect(() => {
@@ -1501,11 +1521,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                               <>
                                 <button
                                   onClick={() => {
-                                    const minNext = offer.price + 50000;
-                                    const suggestedNext = Math.min(
-                                      listing.priceVnd - 50000,
-                                      Math.max(minNext, Math.round((listing.priceVnd + offer.price) / 2 / 50000) * 50000)
-                                    );
+                                    const suggestedNext = calculateSuggestedNextOffer(listing.priceVnd, offer.price, maxRejectedPrice);
                                     setOfferInput(suggestedNext);
                                     setShowOfferForm(true);
                                     setOfferError(null);
@@ -1989,7 +2005,6 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                       type="button"
                       onClick={() => {
                         setInspectionMethod('AT_CENTER');
-                        setInspectionFeeAmount(150000);
                       }}
                       className={`p-2.5 rounded-xl border text-left cursor-pointer transition ${inspectionMethod === 'AT_CENTER'
                         ? 'bg-blue-50 border-blue-600 text-blue-900 font-bold ring-1 ring-blue-600/30'
@@ -2000,14 +2015,13 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                         <Building2 className="w-4 h-4 text-blue-600" />
                         <span>Tại Hub SecondLife</span>
                       </div>
-                      <div className="text-[10px] text-slate-500 mt-1">Phí chuẩn: 150.000 ₫</div>
+                      <div className="text-[10px] text-slate-500 mt-1">Theo biểu phí kiểm định Hub</div>
                     </button>
 
                     <button
                       type="button"
                       onClick={() => {
                         setInspectionMethod('AT_HOME');
-                        setInspectionFeeAmount(250000);
                       }}
                       className={`p-2.5 rounded-xl border text-left cursor-pointer transition ${inspectionMethod === 'AT_HOME'
                         ? 'bg-blue-50 border-blue-600 text-blue-900 font-bold ring-1 ring-blue-600/30'
@@ -2018,7 +2032,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                         <Home className="w-4 h-4 text-orange-600" />
                         <span>KTV Đến Tận Nhà</span>
                       </div>
-                      <div className="text-[10px] text-slate-500 mt-1">Phí chuẩn: 250.000 ₫</div>
+                      <div className="text-[10px] text-slate-500 mt-1">Theo biểu phí kiểm định Tại nhà</div>
                     </button>
                   </div>
                 </div>
@@ -2094,7 +2108,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                 <button
                   onClick={() => {
                     if (!isSeller && maxRejectedPrice > 0 && offerInput <= maxRejectedPrice) {
-                      setOfferInput(Math.min(listing.priceVnd - 50000, maxRejectedPrice + 50000));
+                      const step = getNegotiationStep(listing.priceVnd, maxRejectedPrice);
+                      setOfferInput(Math.min(listing.priceVnd - step, maxRejectedPrice + step));
                     }
                     setShowOfferForm(!showOfferForm);
                     setShowInspectionForm(false);

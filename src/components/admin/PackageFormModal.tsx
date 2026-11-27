@@ -381,6 +381,10 @@ export const PackageFormModal: React.FC<PackageFormModalProps> = ({
         setError('Giá bán cuối cùng của gói tối thiểu là 1.000 VNĐ.');
         return;
       }
+      if (retailPrice !== null && retailPrice > 0 && numPrice > retailPrice) {
+        setError(`Giá bán gói (${formatVND(numPrice)}) không được vượt quá giá mua riêng theo đơn giá (${formatVND(retailPrice)}). Vui lòng nhập giá ưu đãi.`);
+        return;
+      }
       finalPrice = Math.round(numPrice * 100) / 100;
     } else {
       setError('Vui lòng nhập giá bán thực tế (VNĐ) hoặc % giảm mong muốn.');
@@ -408,12 +412,12 @@ export const PackageFormModal: React.FC<PackageFormModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
-      <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-5 transform transition-all scale-100">
-        {/* Modal Header */}
-        <div className="flex items-center justify-between pb-3.5 border-b border-slate-100">
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
+      <div className="bg-white rounded-3xl max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden transform transition-all scale-100">
+        {/* Modal Header (Cố định ở trên) */}
+        <div className="flex items-center justify-between p-5 sm:p-6 pb-4 border-b border-slate-100 shrink-0 bg-white">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 text-white flex items-center justify-center text-xl shadow-md shadow-emerald-200">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 text-white flex items-center justify-center text-xl shadow-md shadow-emerald-200 shrink-0">
               <UiGift size={16} aria-hidden="true" />
             </div>
             <div>
@@ -431,22 +435,23 @@ export const PackageFormModal: React.FC<PackageFormModalProps> = ({
             type="button"
             onClick={onClose}
             disabled={isSaving}
-            className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition cursor-pointer disabled:opacity-50"
+            className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition cursor-pointer disabled:opacity-50 shrink-0"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Error banner */}
-        {error && (
-          <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-2.5">
-            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
-            <span>{error}</span>
-          </div>
-        )}
-
         {/* Modal Form */}
-        <form onSubmit={handleSubmit} noValidate className="space-y-4 text-xs">
+        <form onSubmit={handleSubmit} noValidate className="flex flex-col flex-1 min-h-0 overflow-hidden">
+          {/* Scrollable Body (Cuộn lên xuống độc lập) */}
+          <div className="p-5 sm:p-6 overflow-y-auto space-y-4 text-xs flex-1 min-h-0">
+            {/* Error banner */}
+            {error && (
+              <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-2.5">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                <span>{error}</span>
+              </div>
+            )}
           <div>
             <label className="block text-slate-700 font-bold mb-1">
               Tên Gói Dịch Vụ <span className="text-rose-500">*</span>
@@ -710,7 +715,11 @@ export const PackageFormModal: React.FC<PackageFormModalProps> = ({
                         <>(Tiết kiệm {formatVND(retailPrice - displayPrice)} · {displayDiscount ? `${displayDiscount}%` : ''})</>
                       ) : displayPrice === retailPrice ? (
                         <>(Đúng giá mua lẻ · 0%)</>
-                      ) : null}
+                      ) : (
+                        <span className="text-rose-600 font-bold">
+                          (Đắt hơn mua lẻ {formatVND(displayPrice - retailPrice)} · Vượt quá giá mua riêng)
+                        </span>
+                      )}
                     </span>
                   )}
                 </div>
@@ -732,20 +741,22 @@ export const PackageFormModal: React.FC<PackageFormModalProps> = ({
             />
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+          </div>
+
+          {/* Action Buttons (Footer - Cố định ở dưới đáy modal) */}
+          <div className="p-4 sm:p-5 border-t border-slate-100 bg-slate-50/80 flex items-center justify-end gap-2.5 shrink-0">
             <button
               type="button"
               onClick={onClose}
               disabled={isSaving}
-              className="px-4 py-2.5 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold transition cursor-pointer disabled:opacity-50"
+              className="px-4 py-2.5 rounded-xl border border-slate-300 hover:bg-white text-slate-700 font-bold transition cursor-pointer disabled:opacity-50 text-xs"
             >
               Hủy
             </button>
             <button
               type="submit"
               disabled={isSaving}
-              className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-bold flex items-center gap-1.5 transition shadow-md shadow-emerald-200 cursor-pointer disabled:opacity-50"
+              className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-bold flex items-center gap-1.5 transition shadow-md shadow-emerald-200 cursor-pointer disabled:opacity-50 text-xs"
             >
               {isSaving ? (
                 <>

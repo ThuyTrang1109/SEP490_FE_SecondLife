@@ -1363,3 +1363,73 @@ export const resolveNearestHubToSeller = <
 };
 
 
+
+
+export function isOrderBelongingToSeller(
+  o: any,
+  currentUserId?: string | null,
+  currentUserName?: string | null,
+  currentUserEmail?: string | null
+): boolean {
+  if (!o) return false;
+  const uid = currentUserId ? String(currentUserId).trim() : '';
+
+  if (uid) {
+    const sellerId = o.sellerId ? String(o.sellerId).trim() : '';
+    const listingSellerId = o.listing?.sellerId ? String(o.listing.sellerId).trim() : '';
+    const listingUserId = o.listing?.userId ? String(o.listing.userId).trim() : '';
+    const listingNestedUserId = o.listing?.user?.id ? String(o.listing.user.id).trim() : '';
+
+    if (sellerId && sellerId === uid) return true;
+    if (listingSellerId && listingSellerId === uid) return true;
+    if (listingUserId && listingUserId === uid) return true;
+    if (listingNestedUserId && listingNestedUserId === uid) return true;
+
+    // If current user is the buyer, they are definitely NOT the seller
+    if (o.buyerId && String(o.buyerId).trim() === uid) return false;
+  }
+
+  const uName = currentUserName ? currentUserName.trim().toLowerCase() : '';
+  if (uName) {
+    const sName = (o.sellerName || o.listing?.sellerName || '').trim().toLowerCase();
+    const bName = (o.buyerName || '').trim().toLowerCase();
+    if (sName && sName === uName) return true;
+    if (bName && bName === uName) return false;
+  }
+
+  const uEmail = currentUserEmail ? currentUserEmail.trim().toLowerCase() : '';
+  if (uEmail) {
+    const sEmail = (o.sellerEmail || o.listing?.sellerEmail || '').trim().toLowerCase();
+    const bEmail = (o.buyerEmail || '').trim().toLowerCase();
+    if (sEmail && sEmail === uEmail) return true;
+    if (bEmail && bEmail === uEmail) return false;
+  }
+
+  return false;
+}
+
+export function isOrderBelongingToBuyer(
+  o: any,
+  currentUserId?: string | null,
+  currentUserName?: string | null,
+  currentUserEmail?: string | null
+): boolean {
+  if (!o) return false;
+  const uid = currentUserId ? String(currentUserId).trim() : '';
+
+  if (uid && o.buyerId && (String(o.buyerId).trim() === uid || o.buyerId === 'buyer-current')) {
+    return true;
+  }
+
+  const uName = currentUserName ? currentUserName.trim().toLowerCase() : '';
+  if (uName && o.buyerName && o.buyerName.trim().toLowerCase() === uName) {
+    return true;
+  }
+
+  const uEmail = currentUserEmail ? currentUserEmail.trim().toLowerCase() : '';
+  if (uEmail && o.buyerEmail && String(o.buyerEmail).trim().toLowerCase() === uEmail) {
+    return true;
+  }
+
+  return false;
+}

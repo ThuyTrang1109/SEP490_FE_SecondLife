@@ -6,6 +6,7 @@ import { LalamoveProgress } from '../components/common/LalamoveProgress';
 import { CenterShipmentModal } from '../pages/inspection-center/orders/CenterShipmentModal';
 import { CenterOrderStatusBadge } from '../pages/inspection-center/orders/CenterOrderStatusBadge';
 import { CenterDispatch } from '../pages/inspection-center/dispatch/CenterDispatch';
+import { useCenterDispatchQueue } from '../pages/inspection-center/dispatch/useCenterDispatchQueue';
 import { useCenterOrders } from '../pages/inspection-center/orders/useCenterOrders';
 import { useCenterShipments } from '../pages/inspection-center/orders/useCenterShipments';
 import type { EscrowOrder, ShipmentBackend, UserProfile } from '../types';
@@ -140,6 +141,31 @@ test('center history and dispatch wait for the inbound delivery before showing H
   assert.doesNotMatch(received.dispatch, /<button[^>]*disabled/);
   assert.equal(hasCenterReceivedInbound(order, shipment('other-leg', 'CENTER_TO_BUYER', 'DELIVERED')), false);
   assert.equal(hasCenterReceivedInbound(order, shipment('cancelled', 'SELLER_TO_CENTER', 'CANCELLED', 'COMPLETED')), false);
+});
+
+test('an overdue home appointment appears as actionable in center dispatch even when the technician has accepted the task', () => {
+  const order = {
+    id: 'home-inspection', postId: 'post', orderType: 'AT_HOME', status: 'DISPATCHED',
+    appointmentStatus: 'CONFIRMED', appointmentScheduledAt: new Date(Date.now() - 31 * 60_000).toISOString(),
+    inspectorId: 'technician-a', inspectorConfirmed: true,
+  };
+
+  function DispatchPreview() {
+    const dispatch = useCenterDispatchQueue({
+      inboundShipments: new Map(), isOrderReceivedAtHub: () => false, orders: [order],
+      apiOrderHistory: null, staffList: [], setActiveTab: () => {},
+    });
+
+    return createElement(CenterDispatch, {
+      dispatch, isLoadingOrders: false, renderStatusBadge: () => null,
+      handleOpenAssign: () => {}, handleOpenReviewAppointment: () => {}, handleReceivePackageAtHub: () => {},
+    });
+  }
+
+  const html = renderToStaticMarkup(createElement(DispatchPreview));
+  assert.match(html, /Quá hạn check-in/);
+  assert.match(html, /Hẹn lại với người bán/);
+  assert.doesNotMatch(html, /<button[^>]*disabled/);
 });
 
 test('a zero reserve still permits the assigned center to start a settled Hub return', () => {

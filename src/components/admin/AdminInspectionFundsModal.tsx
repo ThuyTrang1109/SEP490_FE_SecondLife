@@ -455,6 +455,62 @@ export const AdminInspectionFundsView: React.FC<AdminInspectionFundsViewProps> =
                     </div>
                   )}
 
+                  {/* Bù trừ & Công nợ cước hoàn vượt dự phòng */}
+                  {funds.returnFee && (() => {
+                    const rf = funds.returnFee;
+                    const actualSettled = rf.actualFee != null;
+                    const totalOutstanding = rf.buyer.outstanding + rf.seller.outstanding;
+                    return (
+                      <div className="p-2.5 rounded-lg bg-white border border-amber-200/80 space-y-2 shadow-2xs">
+                        <div className="flex flex-wrap items-center justify-between gap-2 pb-1.5 border-b border-amber-100/70 text-[11px]">
+                          <span className="font-bold text-slate-800">Đối soát bù cước chiều về (Buyer / Seller):</span>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${actualSettled
+                            ? totalOutstanding > 0
+                              ? 'bg-rose-50 text-rose-700 border-rose-200'
+                              : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : 'bg-sky-50 text-sky-700 border-sky-200'
+                            }`}>
+                            {actualSettled
+                              ? totalOutstanding > 0
+                                ? `Đã chốt cước thực tế · Còn phải thu ${formatVND(totalOutstanding)}`
+                                : 'Đã chốt cước thực tế · Đã thu đủ'
+                              : rf.quotedFee != null
+                                ? `Chưa chốt cước thực tế · Tạm tính theo báo giá (${formatVND(rf.quotedFee)})`
+                                : 'Chưa chốt cước thực tế'}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                          <div className="p-2 rounded-md bg-slate-50 border border-slate-100 space-y-0.5">
+                            <div className="font-bold text-slate-800 text-[11px]">Người mua ({rf.buyer.percent}%)</div>
+                            <div className="flex justify-between text-[11px]">
+                              <span className="text-slate-500">Đã thu thêm:</span>
+                              <strong className="font-mono text-emerald-700">{formatVND(rf.buyer.collected)}</strong>
+                            </div>
+                            <div className="flex justify-between text-[11px]">
+                              <span className="text-slate-500">Còn phải thu:</span>
+                              <strong className={`font-mono ${rf.buyer.outstanding > 0 ? 'text-rose-700' : 'text-slate-600'}`}>
+                                {formatVND(rf.buyer.outstanding)}
+                              </strong>
+                            </div>
+                          </div>
+                          <div className="p-2 rounded-md bg-slate-50 border border-slate-100 space-y-0.5">
+                            <div className="font-bold text-slate-800 text-[11px]">Người bán ({rf.seller.percent}%)</div>
+                            <div className="flex justify-between text-[11px]">
+                              <span className="text-slate-500">Đã thu thêm:</span>
+                              <strong className="font-mono text-emerald-700">{formatVND(rf.seller.collected)}</strong>
+                            </div>
+                            <div className="flex justify-between text-[11px]">
+                              <span className="text-slate-500">Còn phải thu:</span>
+                              <strong className={`font-mono ${rf.seller.outstanding > 0 ? 'text-rose-700' : 'text-slate-600'}`}>
+                                {formatVND(rf.seller.outstanding)}
+                              </strong>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   {/* Phân bổ & Trạng thái hoàn trả tiền dư vào ví (Không lặp lại nội dung) */}
                   <div className="p-2.5 rounded-lg bg-white/95 border border-amber-200/80 space-y-2 shadow-2xs">
                     <div className="flex items-center justify-between text-[11px] pb-1.5 border-b border-amber-100/70 flex-wrap gap-1">

@@ -550,6 +550,15 @@ export function translateApiError(msg: string | null | undefined): string {
   if (/sepay transaction requires a positive id and a positive whole vnd amount/i.test(s)) return 'Giao dịch yêu cầu mã hợp lệ và số tiền VNĐ nguyên dương.';
   if (/you cannot view the finances of this order/i.test(s)) return 'Bạn không có quyền xem thông tin tài chính của đơn hàng này.';
   if (/only unsettled orders can capture a commission policy/i.test(s)) return 'Chỉ các đơn hàng chưa quyết toán mới có thể ghi nhận chính sách chiết khấu.';
+  if (/an active default commission policy already exists|active.*commission policy.*already exists|an active commission policy already exists/i.test(s)) {
+    return 'Đã tồn tại một chính sách hoa hồng mặc định đang có hiệu lực. Vui lòng tắt chính sách hiện tại hoặc bỏ chọn "Đang hiệu lực" để lưu quy tắc mới.';
+  }
+  if (/commission policy not found|commission rule not found/i.test(s)) {
+    return 'Không tìm thấy chính sách hoa hồng yêu cầu.';
+  }
+  if (/cannot deactivate the only active commission policy|cannot deactivate active default commission/i.test(s)) {
+    return 'Không thể tắt chính sách hoa hồng mặc định duy nhất đang hoạt động.';
+  }
 
   // 6. Hệ thống & Mạng (Network & Server)
   if (/failed to fetch|network error|networkerror|network request failed/i.test(s)) return 'Không thể kết nối đến máy chủ. Vui lòng kiểm tra đường truyền mạng.';

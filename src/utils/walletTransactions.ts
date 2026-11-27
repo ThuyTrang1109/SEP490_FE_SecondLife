@@ -7,7 +7,7 @@ import {
 } from '../types';
 
 /**
- * Định dạng số tiền ví SecondLife (VND), bảo toàn phần thập phân tối đa 2 chữ số nếu có.
+ * Định dạng số tiền ví SecondLife (VND), không hiển thị phần lẻ thập phân sau dấu phẩy (làm tròn số nguyên VND chuẩn).
  * Nếu số tiền là null/undefined thì trả về nhãn 'Chưa được ghi nhận'.
  */
 export function formatWalletMoney(
@@ -19,9 +19,9 @@ export function formatWalletMoney(
     return emptyFallback;
   }
 
-  const num = Number(amount);
+  const num = Math.round(Number(amount));
   const formatted = new Intl.NumberFormat('vi-VN', {
-    maximumFractionDigits: 2,
+    maximumFractionDigits: 0,
     minimumFractionDigits: 0,
   }).format(num);
 

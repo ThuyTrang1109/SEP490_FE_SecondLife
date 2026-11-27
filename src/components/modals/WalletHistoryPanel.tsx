@@ -33,6 +33,7 @@ import {
 } from '../../types';
 import { walletService } from '../../services/walletService';
 import { topupService } from '../../services/topupService';
+import { getStoredUser } from '../../services/apiClient';
 import {
   formatWalletMoney,
   walletDateRange,
@@ -45,6 +46,7 @@ export interface WalletHistoryPanelProps {
   refreshKey?: number;
   onClose?: () => void;
   purchases?: TopupPackagePurchaseResponse[];
+  canLoadPurchases?: boolean;
   onRefresh?: () => void;
 }
 
@@ -52,6 +54,7 @@ export const WalletHistoryPanel: React.FC<WalletHistoryPanelProps> = ({
   lang = 'vi',
   refreshKey = 0,
   purchases: initialPurchases = [],
+  canLoadPurchases = true,
   onRefresh,
 }) => {
   // Filters & Pagination State
@@ -91,8 +94,13 @@ export const WalletHistoryPanel: React.FC<WalletHistoryPanelProps> = ({
   const abortControllerRef = useRef<AbortController | null>(null);
   const detailAbortRef = useRef<AbortController | null>(null);
 
-  // Sync package purchases
+  // Sync package purchases (chỉ gọi API biên nhận gói Credit khi tài khoản không phải Buyer thuần)
   useEffect(() => {
+    const storedRole = String(getStoredUser()?.role || '').toUpperCase();
+    if (!canLoadPurchases || storedRole === 'BUYER') {
+      setPackagePurchases(initialPurchases || []);
+      return;
+    }
     if (initialPurchases && initialPurchases.length > 0) {
       setPackagePurchases(initialPurchases);
     } else {
@@ -101,7 +109,7 @@ export const WalletHistoryPanel: React.FC<WalletHistoryPanelProps> = ({
         setPackagePurchases(list);
       }).catch(() => {});
     }
-  }, [initialPurchases, refreshKey]);
+  }, [initialPurchases, refreshKey, canLoadPurchases]);
 
   // Load Transactions List
   const loadTransactions = useCallback(

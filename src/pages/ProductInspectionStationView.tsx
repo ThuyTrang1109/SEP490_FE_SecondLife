@@ -213,7 +213,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
   const [barcodeScanInput, setBarcodeScanInput] = useState('');
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [scannerMode, setScannerMode] = useState<'intake' | 'serial' | 'tamper'>('intake');
-  const [atHomeVerifyInput, setAtHomeVerifyInput] = useState('');
+
 
   useEffect(() => {
     if (externalSelectedOrderId) {
@@ -270,7 +270,8 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
     setAtHomeViewMode('INFO');
   }, [activeOrder?.id]);
 
-  const [arrivedSignalTime, setArrivedSignalTime] = useState<string | null>(null);
+  const [checkedInAppointment, setCheckedInAppointment] = useState<{ orderId: string; scheduledAt: string | null } | null>(null);
+  const [checkingInOrderId, setCheckingInOrderId] = useState<string | null>(null);
   const scheduledApptTime = useMemo(() => {
     return getOrderScheduledAppointmentTime(activeOrder);
   }, [activeOrder]);
@@ -281,27 +282,14 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
     return () => clearInterval(timer);
   }, []);
 
-  const checkInEligibility = useMemo(() => {
-    if (!isAtHomeOrder || !scheduledApptTime) {
-      return { allowed: true, earliestCheckInTime: null, minutesUntilCheckIn: 0 };
-    }
-    return canInspectorCheckIn(scheduledApptTime, currentTimeMs);
-  }, [isAtHomeOrder, scheduledApptTime, currentTimeMs]);
-
-  const isCheckInTooEarly = Boolean(isAtHomeOrder && scheduledApptTime && !arrivedSignalTime && !checkInEligibility.allowed);
-
-  const isInspectorArrived = activeOrder ? Boolean(
-    arrivedSignalTime ||
-    (typeof window !== 'undefined' && (
-      localStorage.getItem(`at_home_inspector_arrived_${activeOrder.id}`) ||
-      localStorage.getItem(`order_inspecting_${activeOrder.id}`) === 'true' ||
-      localStorage.getItem(`inspection_status_${activeOrder.id}`) === 'INSPECTING' ||
-      ((activeOrder as any).linkedOrderId && localStorage.getItem(`at_home_inspector_arrived_${(activeOrder as any).linkedOrderId}`))
-    )) ||
+  const checkInEligibility = canInspectorCheckIn(scheduledApptTime, currentTimeMs);
+  const isInspectorArrived = Boolean(activeOrder && (
+    activeOrder.homeCheckedInAt ||
     activeOrder.inspectionStatus === 'INSPECTING' ||
-    (activeOrder as any).status === 'INSPECTING' ||
-    (activeOrder as any).backendStatus === 'INSPECTING'
-  ) : false;
+    activeOrder.status === 'INSPECTING' ||
+    (checkedInAppointment?.orderId === activeOrder.id && checkedInAppointment.scheduledAt === scheduledApptTime)
+  ));
+  const isCheckInBlocked = isAtHomeOrder && !isInspectorArrived && !checkInEligibility.allowed;
   const isCompletedOrder = Boolean(activeOrder && isOrderInspectionCompleted(activeOrder));
 
   // Stepper state - Bắt đầu từ Bước 1: Tiếp nhận (intake)
@@ -461,13 +449,10 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
               }
             } catch { }
           });
-      } else if (isInspectorArrived) {
-        // Luồng tại nhà: chỉ gọi start khi KTV đã quét mã / xác nhận có mặt
-        void inspectorService.startInspection(activeOrder.id, startPayload).catch(() => { });
       }
     }
     return () => { active = false; };
-  }, [activeOrder?.id, isCompletedOrder, isAtCenterOrder, isInspectorArrived, barcodeScanInput]);
+  }, [activeOrder?.id, isCompletedOrder, isAtCenterOrder, barcodeScanInput]);
 
   // Load the saved report or the checklist assigned by the API.
   useEffect(() => {
@@ -812,38 +797,33 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
   };
 
   // Tiếp nhận việc (KTV xác nhận sau khi đã tìm thấy đơn)
-  const handleAcceptTask = (order: EscrowOrder, inputCode?: string) => {
-    const isAtHome = order.inspectionMethod === 'AT_HOME' || (order as any).orderType === 'AT_HOME';
-    const apptTime = getOrderScheduledAppointmentTime(order);
-    if (isAtHome && apptTime) {
-      const eligibility = canInspectorCheckIn(apptTime);
-      if (!eligibility.allowed) {
-        notify(eligibility.reason || 'Kỹ thuật viên chỉ được ấn xác nhận đơn trước giờ hẹn tối đa 30 phút!', true);
-        return;
-      }
+  const handleAcceptTask = async (order: EscrowOrder, inputCode?: string) => {
+    if (checkingInOrderId === order.id) return;
+    const scheduledAt = getOrderScheduledAppointmentTime(order);
+    const eligibility = canInspectorCheckIn(scheduledAt);
+    if (!eligibility.allowed) {
+      notify(eligibility.reason || 'Không thể check-in kiểm định tại nhà.', true);
+      return;
     }
 
-    playScanBeep();
-    markInspectorArrival(order.id, order);
-
-    const startPayload = {
-      barcodeInput: inputCode || order.id,
-      orderCode: order.id,
-      checkInCode: inputCode || order.id,
-    };
-    inspectorService.startInspection(order.id, startPayload)
-      .then(() => {
-        // Tiếp nhận và bắt đầu đo kiểm thành công, giữ KTV tại bàn kiểm tra
-      })
-      .catch((err) => {
-        console.warn('Backend startInspection error:', err);
+    setCheckingInOrderId(order.id);
+    try {
+      const result = await inspectorService.startInspection(order.id, {
+        barcodeInput: inputCode || order.id,
+        orderCode: order.id,
+        checkInCode: inputCode || order.id,
       });
 
-    notify(
-      isAtHome
-        ? `[Xác Nhận Thành Công] Kỹ thuật viên đã tiếp nhận đơn #${order.id.slice(0, 8)}. Hệ thống đã đồng bộ trạng thái bên người bán!`
-        : `[Xác Nhận Thành Công] Đã tiếp nhận đơn kiểm định #${order.id.slice(0, 8)} (${order.listing?.title || 'Thiết bị'})!`
-    );
+      const confirmedScheduledAt = result.appointmentScheduledAt || scheduledAt;
+      setCheckedInAppointment({ orderId: order.id, scheduledAt: confirmedScheduledAt });
+      markInspectorArrival(order.id, order, result.homeCheckedInAt);
+      playScanBeep();
+      notify(`Kỹ thuật viên đã tiếp nhận đơn #${order.id.slice(0, 8)}.`);
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Không thể check-in kiểm định tại nhà.', true);
+    } finally {
+      setCheckingInOrderId((current) => current === order.id ? null : current);
+    }
   };
 
   // Giữ alias cho tương thích ngược
@@ -852,9 +832,8 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
   };
 
   // Đồng bộ trạng thái KTV có mặt và đo kiểm cho tất cả các ID liên quan & đa store
-  const markInspectorArrival = (orderId: string, matchedOrder?: any) => {
-    const arrivedAt = new Date().toISOString();
-    setArrivedSignalTime(arrivedAt);
+  const markInspectorArrival = (orderId: string, matchedOrder: EscrowOrder & { orderId?: string }, checkedInAt?: string | null) => {
+    const arrivedAt = checkedInAt || new Date().toISOString();
     const targetIds = Array.from(new Set([
       orderId,
       matchedOrder?.id,
@@ -936,30 +915,6 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
       }));
     } catch (err) {
       console.warn('Failed to record inspector arrival:', err);
-    }
-  };
-
-  // Xác thực mã tiếp nhận tại nhà từ Người bán đưa cho KTV
-  const handleVerifyAtHomeIntake = (order: EscrowOrder) => {
-    const isAtHome = order.inspectionMethod === 'AT_HOME' || (order as any).orderType === 'AT_HOME';
-    const apptTime = getOrderScheduledAppointmentTime(order);
-    if (isAtHome && apptTime) {
-      const eligibility = canInspectorCheckIn(apptTime);
-      if (!eligibility.allowed) {
-        notify(eligibility.reason || 'Kỹ thuật viên chỉ được ấn xác nhận đơn trước giờ hẹn tối đa 30 phút!', true);
-        return;
-      }
-    }
-
-    const entered = (atHomeVerifyInput || '').trim().toLowerCase();
-    const expectedIntake = getAtHomeIntakeCode(order.id).toLowerCase();
-    const shortId = order.id.slice(0, 8).toLowerCase();
-
-    if (!entered || entered === expectedIntake || entered.includes(shortId) || expectedIntake.includes(entered) || order.id.toLowerCase().includes(entered)) {
-      handleAcceptTask(order, atHomeVerifyInput || order.id);
-      setAtHomeVerifyInput('');
-    } else {
-      notify(`Mã tiếp nhận "${atHomeVerifyInput}" không khớp với đơn hàng #${order.id.slice(0, 8)}. Vui lòng kiểm tra lại.`, true);
     }
   };
 
@@ -1157,14 +1112,13 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
     submittingResult.current = true;
     setIsSubmitting(true);
     try {
-      // 1. Đảm bảo đơn đã chuyển sang trạng thái INSPECTING trên backend trước khi submit
-      try {
+      if (!isAtHomeOrder) {
         await inspectorService.startInspection(activeOrder.id, {
           orderCode: activeOrder.id,
           barcodeInput: activeOrder.id,
           checkInCode: activeOrder.id,
         }).catch(() => { });
-      } catch { }
+      }
 
       // 2. Nộp kết quả thẩm định lên backend API
       const persistedVideoUrl = isAtHomeOrder ? getInspectionRemoteMediaUrl(videoProofUrl) : undefined;
@@ -1633,17 +1587,16 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {!isInspectorArrived && !isCompletedOrder && !isCheckInTooEarly && (
+                  {!isInspectorArrived && !isCompletedOrder && !isCheckInBlocked && (
                     <button
                       type="button"
-                      onClick={() => {
-                        handleAcceptTask(activeOrder, barcodeScanInput);
-                      }}
+                      disabled={checkingInOrderId === activeOrder.id}
+                      onClick={() => void handleAcceptTask(activeOrder, barcodeScanInput)}
                       className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-black rounded-xl flex items-center gap-1.5 shadow-md transition cursor-pointer active:scale-95"
                       title="Xác nhận tiếp nhận đơn hàng và bắt đầu kiểm định"
                     >
                       <CheckCircle2 className="w-3.5 h-3.5 stroke-[2.5]" />
-                      <span>Xác Nhận Đơn</span>
+                      <span>{checkingInOrderId === activeOrder.id ? 'Đang xác nhận…' : 'Xác Nhận Đơn'}</span>
                     </button>
                   )}
                   {isInspectorArrived && (
@@ -1687,13 +1640,12 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                 </div>
               </div>
 
-              {/* Cảnh báo khi chưa đến giờ check-in (chỉ mở trước giờ hẹn tối đa 30 phút) - Đưa lên trên */}
-              {!isInspectorArrived && !isCompletedOrder && isCheckInTooEarly && (
+              {!isCompletedOrder && isCheckInBlocked && (
                 <div className="p-3.5 bg-amber-100/90 border border-amber-300 rounded-2xl text-xs text-amber-950 flex items-start gap-2.5 shadow-2xs animate-fadeIn">
                   <Clock className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
                   <div className="space-y-0.5">
                     <div className="font-black text-amber-900 flex items-center gap-1.5">
-                      <span>Chưa Đến Giờ Nhận Đơn (Chỉ mở trước giờ hẹn tối đa 30 phút)</span>
+                      <span>{checkInEligibility.expired ? 'Đã quá hạn check-in' : 'Chưa thể check-in'}</span>
                     </div>
                     <p className="text-[11px] text-amber-800 leading-relaxed font-medium">
                       {checkInEligibility.reason}
@@ -1895,11 +1847,16 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                               )}
                             </div>
 
-                            {(activeOrder?.listing?.declaredConditionText || activeOrder?.listing?.conditionGrade || (activeOrder as any)?.condition) && (
+                            {(activeOrder?.listing?.declaredConditionText || activeOrder?.listing?.conditionGrade || (activeOrder as any)?.condition || (activeOrder as any)?.itemCondition || (activeOrder as any)?.listing?.itemCondition) && (
                               <div>
                                 <strong className="text-gray-600">Tình trạng công bố:</strong>{' '}
                                 <span className="font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                                  {formatConditionGrade(activeOrder?.listing?.declaredConditionText || activeOrder?.listing?.conditionGrade || (activeOrder as any)?.condition, 'vi')}
+                                  {formatConditionGrade(
+                                    activeOrder?.listing?.declaredConditionText && activeOrder.listing.declaredConditionText !== 'Sản phẩm đã qua kiểm định cơ bản'
+                                      ? activeOrder.listing.declaredConditionText
+                                      : ((activeOrder?.listing as any)?.itemCondition || (activeOrder as any)?.itemCondition || activeOrder?.listing?.conditionGrade || (activeOrder as any)?.condition || 'USED_GOOD'),
+                                    'vi'
+                                  )}
                                 </span>
                               </div>
                             )}

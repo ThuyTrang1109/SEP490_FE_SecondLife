@@ -805,13 +805,13 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
           ? (isSeller ? (vi ? 'Đã đề xuất lịch • Chờ Hub duyệt' : 'Visit proposed • Awaiting Hub') : (vi ? 'Chờ Hub duyệt lịch' : 'Awaiting Hub approval'))
           : hasApptConfirmed
             ? (hasInsp
-              ? (vi ? (isSeller ? 'Đã phân công KTV' : 'Đã Phân Công KTV • Chờ Khảo Sát') : 'Inspector Assigned')
+              ? (vi ? (isSeller ? 'Đã phân công kỹ thuật viên' : 'Đã phân công kỹ thuật viên • Chờ Khảo Sát') : 'Inspector Assigned')
               : (vi ? 'Đã Chốt Lịch • Chờ Giao KTV' : 'Visit Confirmed • Awaiting Dispatch'))
             : (hasNoAppt
               ? (isSeller ? (vi ? 'Chờ bạn hẹn lịch đón KTV' : 'Awaiting your schedule') : (vi ? 'Chờ người bán hẹn lịch đón KTV' : 'Awaiting seller schedule'))
               : (hasInsp
-                ? (vi ? (isSeller ? 'Đã phân công KTV' : 'Đã Phân Công KTV • Chờ Khảo Sát') : 'Inspector Assigned')
-                : (vi ? 'Đã điều phối KTV' : 'Technician Dispatched'))))
+                ? (vi ? (isSeller ? 'Đã phân công kỹ thuật viên' : 'Đã phân công kỹ thuật viên • Chờ Khảo Sát') : 'Inspector Assigned')
+                : (vi ? 'Đã phân công kỹ thuật viên' : 'Technician Dispatched'))))
       : (vi ? 'Đã thu đủ phí' : 'Fees collected'),
     DISPATCHED: isAtHome
       ? (isApptCountered
@@ -820,22 +820,22 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
           ? (isSeller ? (vi ? 'Đã đề xuất lịch • Chờ Hub duyệt' : 'Visit proposed • Awaiting Hub') : (vi ? 'Chờ Hub duyệt lịch' : 'Awaiting Hub approval'))
           : hasApptConfirmed
             ? (hasInsp
-              ? (vi ? (isSeller ? 'Đã phân công KTV' : 'Đã Phân Công KTV • Chờ Khảo Sát') : 'Inspector Assigned')
-              : (vi ? 'Đã Chốt Lịch • Chờ Giao KTV' : 'Visit Confirmed • Awaiting Dispatch'))
+              ? (vi ? (isSeller ? 'Đã phân công kỹ thuật viên' : 'Đã phân công kỹ thuật viên • Chờ Khảo Sát') : 'Inspector Assigned')
+              : (vi ? 'Đã Chốt Lịch • Chờ giao kỹ thuật viên' : 'Visit Confirmed • Awaiting Dispatch'))
             : (hasNoAppt
               ? (isSeller ? (vi ? 'Chờ bạn hẹn lịch đón KTV' : 'Awaiting your schedule') : (vi ? 'Chờ người bán hẹn lịch đón KTV' : 'Awaiting seller schedule'))
               : (hasInsp
-                ? (vi ? (isSeller ? 'Đã phân công KTV' : 'Đã Phân Công KTV • Chờ Khảo Sát') : 'Inspector Assigned')
+                ? (vi ? (isSeller ? 'Đã phân công kỹ thuật viên' : 'Đã phân công kỹ thuật viên • Chờ Khảo Sát') : 'Inspector Assigned')
                 : (vi ? 'Đã điều phối KTV' : 'Technician Dispatched'))))
       : (vi ? 'Đã điều phối vận chuyển' : 'Dispatched'),
     SCHEDULED: isAtHome
       ? (hasApptConfirmed
         ? (hasInsp
-          ? (vi ? (isSeller ? 'Đã phân công KTV' : 'Đã Phân Công KTV • Chờ Khảo Sát') : 'Inspector Assigned')
+          ? (vi ? (isSeller ? 'Đã phân công kỹ thuật viên' : 'Đã phân công kỹ thuật viên • Chờ Khảo Sát') : 'Inspector Assigned')
           : (vi ? 'Đã chốt lịch kiểm định' : 'Schedule Confirmed'))
         : (vi ? 'Đã xếp lịch kiểm định' : 'Inspection Scheduled'))
       : (vi ? 'Đã xếp lịch kiểm định' : 'Inspection Scheduled'),
-    ASSIGNED: vi ? (isSeller ? 'Đã phân công KTV' : 'Đã Phân Công KTV • Chờ Khảo Sát') : 'Inspector Assigned',
+    ASSIGNED: vi ? (isSeller ? 'Đã phân công kỹ thuật viên' : 'Đã phân công kỹ thuật viên • Chờ Khảo Sát') : 'Inspector Assigned',
     DISPATCHED_TO_CENTER: vi ? 'Đang giao đến Hub' : 'Shipping to Hub',
     WAITING_INSPECTION: vi ? 'Chờ kiểm định' : 'Awaiting Inspection',
     INSPECTION_IN_PROGRESS: vi ? 'Đang kiểm định' : 'Inspection in Progress',
@@ -1582,20 +1582,15 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                   )}
                 </div>
               ) : (
-                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-950 space-y-1.5">
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-950">
                   <div className="font-bold flex items-center gap-1.5 text-emerald-900">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                     <span>
                       {hasInsp
-                        ? (lang === 'vi' ? (isSeller ? 'Đã phân công KTV • KTV sẽ đến kiểm định tận nhà' : 'Đã phân công KTV • Chờ khảo sát') : 'Inspector Assigned')
+                        ? (lang === 'vi' ? (isSeller ? 'Đã phân công kỹ thuật viên • KTV sẽ đến kiểm định tận nhà' : 'Đã phân công kỹ thuật viên • Chờ khảo sát') : 'Inspector Assigned')
                         : (lang === 'vi' ? 'Đã Chốt Lịch • Chờ Giao KTV' : 'Visit Confirmed • Awaiting Dispatch')}
                     </span>
                   </div>
-                  <p className="text-[11px] text-emerald-800 leading-relaxed">
-                    {lang === 'vi'
-                      ? `Kỹ thuật viên sẽ có mặt tại nhà${currentAppt?.scheduledAt || order.appointmentScheduledAt ? ` vào lúc: ${new Date(currentAppt?.scheduledAt || order.appointmentScheduledAt!).toLocaleString('vi-VN')}` : ''}. Vui lòng chuẩn bị sẵn thiết bị để KTV kiểm định.`
-                      : 'Technician visit has been confirmed.'}
-                  </p>
                 </div>
               )}
             </div>
@@ -1795,18 +1790,15 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                 </p>
               </div>
             ) : isPurchaseAccepted ? (
+              !isAtHome && (
               <div className="p-3 bg-emerald-50/80 border border-emerald-200 rounded-xl text-xs text-emerald-950 space-y-1.5 animate-fadeIn">
                 <div className="font-bold flex items-center justify-between">
                   <div className="flex items-center gap-1.5 text-emerald-800">
                     <Truck className="w-4 h-4 text-emerald-600 shrink-0" />
                     <span>
-                      {isAtHome
-                        ? (isSeller
-                          ? (lang === 'vi' ? 'Đã Xác Nhận Mua • Chờ bạn gửi hàng' : 'Purchase Confirmed • Awaiting Your Shipment')
-                          : (lang === 'vi' ? 'Đã Duyệt Mua • Chờ người bán gửi hàng' : 'Purchase Confirmed • Awaiting Seller Shipment'))
-                        : (isSeller
-                          ? (lang === 'vi' ? 'Chặng 2: Hub Giao Người Mua (Đã Duyệt Mua)' : 'Leg 2: Hub to Buyer (Purchase Confirmed)')
-                          : (lang === 'vi' ? 'Chặng 2: Đã Duyệt Mua • Chờ Hub Giao Hàng' : 'Leg 2: Purchase Confirmed • Hub Delivering'))}
+                      {isSeller
+                        ? (lang === 'vi' ? 'Chặng 2: Hub Giao Người Mua (Đã Duyệt Mua)' : 'Leg 2: Hub to Buyer (Purchase Confirmed)')
+                        : (lang === 'vi' ? 'Chặng 2: Đã Duyệt Mua • Chờ Hub Giao Hàng' : 'Leg 2: Purchase Confirmed • Hub Delivering')}
                     </span>
                   </div>
                   {buyerShipment?.orderCode && (
@@ -1816,23 +1808,16 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                   )}
                 </div>
                 <p className="text-[11px] text-emerald-800 leading-relaxed">
-                  {isAtHome
-                    ? (isSeller
-                      ? (lang === 'vi'
-                        ? 'Thiết bị đã kiểm định ĐẠT CHUẨN tại nhà và Người mua đã đồng ý mua tiếp. Vui lòng đóng gói và bấm "Đã gói hàng • Tạo đơn vận chuyển" để bàn giao hàng cho tài xế giao đến người mua.'
-                        : 'Product passed inspection and buyer confirmed purchase. Please pack and create shipment to deliver to buyer.')
-                      : (lang === 'vi'
-                        ? 'Thiết bị đã kiểm định ĐẠT CHUẨN tại nhà và bạn đã xác nhận mua tiếp. Người bán đang chuẩn bị kiện hàng (nguyên vẹn tem niêm phong) để bàn giao cho tài xế giao đến bạn.'
-                        : 'Product passed inspection and you confirmed purchase. Seller is preparing the sealed package for dispatch to your address.'))
-                    : (isSeller
-                      ? (lang === 'vi'
-                        ? 'Thiết bị đã kiểm định ĐẠT CHUẨN và Người mua đã đồng ý mua tiếp. Hub đang xử lý giao hàng đến người mua; tiền hàng sẽ được giải ngân về ví của bạn khi người mua nhận hàng.'
-                        : 'Product passed inspection and buyer confirmed purchase. Hub is dispatching to buyer; funds will be released upon delivery.')
-                      : (lang === 'vi'
-                        ? 'Thiết bị đã kiểm định ĐẠT CHUẨN và bạn đã xác nhận mua tiếp. Hub đang đóng gói và chuẩn bị bàn giao đơn vị vận chuyển phát đến bạn.'
-                        : 'Product passed inspection and you confirmed purchase. Hub is preparing dispatch to your address.'))}
+                  {isSeller
+                    ? (lang === 'vi'
+                      ? 'Thiết bị đã kiểm định ĐẠT CHUẨN và Người mua đã đồng ý mua tiếp. Hub đang xử lý giao hàng đến người mua; tiền hàng sẽ được giải ngân về ví của bạn khi người mua nhận hàng.'
+                      : 'Product passed inspection and buyer confirmed purchase. Hub is dispatching to buyer; funds will be released upon delivery.')
+                    : (lang === 'vi'
+                      ? 'Thiết bị đã kiểm định ĐẠT CHUẨN và bạn đã xác nhận mua tiếp. Hub đang đóng gói và chuẩn bị bàn giao đơn vị vận chuyển phát đến bạn.'
+                      : 'Product passed inspection and you confirmed purchase. Hub is preparing dispatch to your address.')}
                 </p>
               </div>
+              )
             ) : (
               <div className="p-3 bg-amber-50/90 border border-amber-200 rounded-xl text-xs text-amber-950 space-y-1.5 animate-fadeIn">
                 <div className="font-bold flex items-center justify-between">

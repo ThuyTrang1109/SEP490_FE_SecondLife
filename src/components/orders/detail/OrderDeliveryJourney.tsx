@@ -5,6 +5,7 @@ import type { EscrowOrder, Language, ShipmentBackend } from '../../../types';
 import { InspectionCashShipmentStatus } from '../../inspection/InspectionCashShipmentStatus';
 import type { InspectionOrderDto } from '../../../services/inspectorService';
 import { getOrderAppointmentRejection } from '../../../utils/orders/orderAppointments';
+import { isMissedHomeInspectionAppointment } from '../../../utils/inspectionAppointmentTime';
 import type { OrderAppointment } from '../../../utils/orders/orderAppointments';
 import type { OrderCheck } from '../../../types/orders/orderTypes';
 import { getBuyerDeliveryProgress, getHubReturnProgress, getInboundShipmentProgress, getLatestReturnShipment, getLatestBuyerDeliveryShipment } from '../../../utils/inspectionCenterData';
@@ -277,11 +278,7 @@ export function OrderDeliveryJourney({
         const allModalShipments = detailShipments.length > 0
           ? detailShipments
           : getOrderAllShipments(detailModalOrder.id, (detailModalOrder as any).linkedOrderId);
-        const modalDirectShipment =
-          allModalShipments.find((s) => (s.leg === 'SELLER_TO_BUYER' || s.leg === 'DELIVERY') && s.status !== 'CANCELLED') ||
-          allModalShipments.find((s) => s.leg === 'SELLER_TO_BUYER' || s.leg === 'DELIVERY') ||
-          detailShipments.find((s) => (s.leg === 'SELLER_TO_BUYER' || s.leg === 'DELIVERY') && s.status !== 'CANCELLED') ||
-          detailShipments[0];
+        const modalDirectShipment = getLatestDirectShipment(allModalShipments);
         const modalInboundShipment =
           allModalShipments.find((s) => s.leg === 'SELLER_TO_CENTER' && s.status !== 'CANCELLED') ||
           allModalShipments.find((s) => s.leg === 'SELLER_TO_CENTER') ||
@@ -309,44 +306,11 @@ export function OrderDeliveryJourney({
           inspectionCenterAddress: (detailInspectionDto as any)?.inspectionCenterAddress || detailModalOrder.inspectionCenterAddress,
         });
 
-        const isBadSellerAddr = (addr?: string | null) => {
-          if (!addr || typeof addr !== 'string') return true;
-          const l = addr.trim().toLowerCase();
-          return (
-            !l ||
-            l.includes('đang cập nhật') ||
-            l.includes('kho người bán') ||
-            l.includes('địa chỉ kho') ||
-            l.includes('địa chỉ người bán') ||
-            l.includes('địa chỉ nhà') ||
-            l === 'đà nẵng, việt nam' ||
-            l.includes('123 nguyễn văn cừ') ||
-            l.includes('ngã tư công lý') ||
-            l.includes('hội đồng nhân dân') ||
-            l.includes('123 đường cầu giấy') ||
-            l.includes('số 123 đường cầu giấy')
-          );
-        };
-
-        const resolvedOrderSellerAddress = getOrderSellerAddress(detailModalOrder);
-        const isTrangSeller =
-          detailModalOrder.sellerId === '2f271a3c-b77a-4bed-ad75-bc3a35535594' ||
-          (detailInspectionDto as any)?.sellerId === '2f271a3c-b77a-4bed-ad75-bc3a35535594' ||
-          String(detailModalOrder.sellerName || '').toLowerCase().includes('thùy trang') ||
-          String(detailModalOrder.sellerName || '').toLowerCase().includes('thuy trang');
-
-        const trangWarehouse = 'Student Station Coffee, Đường Quảng Trường Sáng Tạo, Phường Đông Hòa, Thành phố Dĩ An, BI 00084, Việt Nam';
-
         const pendingWarehouseAddress = lang === 'vi' ? 'Kho người bán (Đang cập nhật địa chỉ)' : 'Seller warehouse (address pending)';
-        const realSellerAddress = isAtHome
-          ? (!isBadSellerAddr(resolvedOrderSellerAddress) ? resolvedOrderSellerAddress : null) ||
-          (!isBadSellerAddr(detailInspectionDto?.sellerAddress) ? detailInspectionDto?.sellerAddress : null) ||
-          (!isBadSellerAddr(detailModalOrder.sellerAddress) ? detailModalOrder.sellerAddress : null) ||
-          ((isModalInspFailed || isModalRejected) && !isBadSellerAddr(modalReturnShipment?.receiverAddress) ? modalReturnShipment?.receiverAddress : null) ||
-          (!isBadSellerAddr((detailModalOrder as any).sellerLocation) ? (detailModalOrder as any).sellerLocation : null) ||
-          (!isBadSellerAddr(detailModalOrder.listing?.sellerAddress) ? detailModalOrder.listing?.sellerAddress : null) ||
-          (isTrangSeller ? trangWarehouse : pendingWarehouseAddress)
-          : modalInboundShipment?.senderAddress?.trim() || detailInspectionDto?.sellerAddress?.trim() || pendingWarehouseAddress;
+        const realSellerAddress =
+          (isAtHome ? detailInspectionDto?.sellerAddress?.trim() || modalDirectShipment?.senderAddress?.trim()
+            : modalInboundShipment?.senderAddress?.trim() || detailInspectionDto?.sellerAddress?.trim()) ||
+          pendingWarehouseAddress;
 
         const realHubAddress =
           modalInboundShipment?.receiverAddress ||
@@ -366,6 +330,7 @@ export function OrderDeliveryJourney({
           'Địa chỉ nhận hàng của người mua';
 
         const modalInspStatus = String(
+          (isAtHome ? detailInspectionDto?.status : undefined) ||
           (detailModalOrder as any)?.backendStatus ||
           (detailModalOrder as any)?.inspectionStatus ||
           (detailModalOrder as any)?.inspectionOrder?.status ||
@@ -409,6 +374,28 @@ export function OrderDeliveryJourney({
 
         if (isAtHome) {
           // TRƯỜNG HỢP 2: KIỂM ĐỊNH TẠI NHÀ & GIAO HÀNG (ON-SITE VERIFY)
+          const missedAppointment = !isModalCancelled && isMissedHomeInspectionAppointment(detailInspectionDto ?? {
+            orderType: 'AT_HOME',
+            status: modalInspStatus,
+            appointmentStatus: detailModalOrder.appointmentStatus,
+            appointmentScheduledAt: detailModalOrder.appointmentScheduledAt,
+            homeCheckedInAt: detailModalOrder.homeCheckedInAt,
+          });
+          const atHomeDeliveryCompleted = Boolean(
+            detailModalOrder.shippingDeliveredAt ||
+            detailModalOrder.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' ||
+            detailModalOrder.backendStatus === 'DELIVERED'
+          );
+          const atHomeDeliveryApproved = isModalAccepted && !isModalCancelled && !isModalInspFailed && !isModalRejected;
+          const showAtHomeDeliveryRoute = Boolean(
+            modalDirectShipment || atHomeDeliveryApproved || atHomeDeliveryCompleted || isModalCompletedOrReleased
+          );
+          const atHomeDeliveryOrigin = modalDirectShipment?.senderAddress?.trim() || realSellerAddress;
+          const atHomeDeliveryDestination = modalDirectShipment?.receiverAddress?.trim() ||
+            detailInspectionDto?.buyerDeliveryAddress?.address?.trim() ||
+            detailInspectionDto?.buyerAddress?.trim() ||
+            'Chưa có địa chỉ giao hàng đã xác nhận';
+
           return (
             <div className="space-y-3">
               <div className="text-xs font-bold text-[#24263e] uppercase tracking-wider flex items-center justify-between flex-wrap gap-2">
@@ -456,6 +443,10 @@ export function OrderDeliveryJourney({
                         ) : isModalInspFailed ? (
                           <span className="text-rose-700 font-bold bg-rose-100/90 px-2 py-0.5 rounded border border-rose-300">
                             ✕ Không Đạt Chuẩn
+                          </span>
+                        ) : missedAppointment ? (
+                          <span className="text-rose-700 font-bold bg-rose-100/90 px-2 py-0.5 rounded border border-rose-300">
+                            Quá hạn check-in · Chờ hẹn lại
                           </span>
                         ) : isInspectorArrivedForOrder(detailModalOrder.id, detailModalOrder) ? (
                           <span className="text-amber-800 font-bold bg-amber-100/90 px-2 py-0.5 rounded border border-amber-300 animate-pulse">
@@ -655,18 +646,18 @@ export function OrderDeliveryJourney({
                           } catch { }
                           return null;
                         })();
-                        const effectiveInspectorName = detailModalOrder.inspectorName || (detailInspectionDto as any)?.inspectorName || modalAssignedInspector?.inspectorName;
+                        const effectiveInspectorName = detailInspectionDto?.inspectorName || detailModalOrder.inspectorName || modalAssignedInspector?.inspectorName;
                         return (
                           <>
                             <div className="flex items-start gap-1.5">
                               <span className="text-slate-400 font-bold shrink-0">Thực hiện:</span>
                               <span className="font-semibold text-slate-800">
-                                {effectiveInspectorName ? `KTV ${effectiveInspectorName}` : 'Chờ trung tâm điều phối KTV'}
+                                {effectiveInspectorName ? `KTV ${effectiveInspectorName}` : 'Chưa phân công kiểm định viên'}
                               </span>
                             </div>
                             {/* Mã Vạch Tiếp Nhận & Mã Code trong Modal Chi Tiết */}
                             {isOrderSeller(detailModalOrder) ? (
-                              modalAppointmentScheduledAt && effectiveInspectorName && !isModalInspPassed && !isModalInspFailed && (
+                              !missedAppointment && modalAppointmentScheduledAt && effectiveInspectorName && !isModalInspPassed && !isModalInspFailed && (
                                 <div className="pt-2">
                                   <AtHomeIntakeBarcode
                                     orderId={detailModalOrder.id}
@@ -679,7 +670,7 @@ export function OrderDeliveryJourney({
                                 </div>
                               )
                             ) : (
-                              modalAppointmentScheduledAt && effectiveInspectorName && !isModalInspPassed && !isModalInspFailed && (
+                              !missedAppointment && modalAppointmentScheduledAt && effectiveInspectorName && !isModalInspPassed && !isModalInspFailed && (
                                 <div className="pt-2 p-2.5 rounded-xl bg-amber-50/70 border border-amber-200/80 text-xs text-amber-900 flex items-start gap-2">
                                   <Clock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                                   <div>
@@ -716,6 +707,9 @@ export function OrderDeliveryJourney({
                         if (isModalInspFailed) {
                           return 'Kỹ thuật viên đã hoàn tất kiểm tra: Thiết bị không đạt chuẩn.';
                         }
+                        if (missedAppointment) {
+                          return 'Kỹ thuật viên chưa check-in trong thời gian cho phép. Trung tâm kiểm định sẽ gửi lịch hẹn mới cho người bán.';
+                        }
                         if (isInspectorArrivedForOrder(detailModalOrder.id, detailModalOrder)) {
                           return 'Kỹ thuật viên đã đến và đang kiểm tra thiết bị tại nhà người bán.';
                         }
@@ -723,7 +717,7 @@ export function OrderDeliveryJourney({
                           return 'Người bán đã đề xuất lại phương án chia phí kiểm định. Chờ người mua duyệt trong phòng chat.';
                         }
                         if (isModalWaitingSellerApproval) {
-                          return 'Đã gửi yêu cầu kiểm định tại nhà. Chờ người bán duyệt trong phòng chat.';
+                          return 'Đã gửi yêu cầu kiểm định tại nhà. Chờ người bán duyệt.';
                         }
                         if (isModalWaitingFeePayment) {
                           return 'Hai bên đã thống nhất phương án. Chờ đóng phí kiểm định để KTV đến kiểm tra.';
@@ -794,39 +788,38 @@ export function OrderDeliveryJourney({
                           <span className="text-[11px] font-sans font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200">
                             ✓ Giao dịch hoàn tất
                           </span>
-                        ) : Boolean(detailModalOrder.shippingDeliveredAt || (detailModalOrder.escrowStatus as string) === 'DELIVERED_INSPECTION_WINDOW' || (detailModalOrder as any).backendStatus === 'DELIVERED') ? (
+                        ) : atHomeDeliveryCompleted ? (
                           <span className="text-[11px] font-sans font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200">
                             Đã giao hàng (48h)
                           </span>
-                        ) : modalDirectShipment?.orderCode ? (
-                          <span className="text-[11px] font-sans font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded border border-blue-200">
-                            Đang giao hàng
-                          </span>
-                        ) : isModalInspFailed || isModalRejected || isModalCancelled ? (
+                        ) : modalDirectShipment?.orderCode ? null : isModalInspFailed || isModalRejected || isModalCancelled ? (
                           <span className="text-[11px] font-sans font-medium text-rose-700 bg-rose-100 px-2 py-0.5 rounded border border-rose-200">
                             Không giao hàng
                           </span>
-                        ) : isModalInspPassed ? (
+                        ) : atHomeDeliveryApproved ? (
                           <span className="text-[11px] font-sans font-medium text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200">
-                            Sẵn sàng giao hàng
+                            Chờ tạo vận đơn
                           </span>
                         ) : (
-                          <span></span>
-
+                          <span className="text-[11px] font-sans font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                            {isModalPendingDecision ? 'Chờ người mua xác nhận' : 'Chưa đến bước giao hàng'}
+                          </span>
                         )}
                       </span>
                     </div>
 
-                    <div className="text-xs text-slate-600 space-y-1.5 pt-1">
-                      <div className="flex items-start gap-1.5">
-                        <span className="text-slate-400 font-bold shrink-0">Từ:</span>
-                        <span className="font-semibold text-slate-800 break-words">{realSellerAddress}</span>
+                    {showAtHomeDeliveryRoute && (
+                      <div className="text-xs text-slate-600 space-y-1.5 pt-1">
+                        <div className="flex items-start gap-1.5">
+                          <span className="text-slate-400 font-bold shrink-0">Từ:</span>
+                          <span className="font-semibold text-slate-800 break-words">{atHomeDeliveryOrigin}</span>
+                        </div>
+                        <div className="flex items-start gap-1.5">
+                          <span className="text-slate-400 font-bold shrink-0">Giao đến:</span>
+                          <span className="font-semibold text-slate-800 break-words">{atHomeDeliveryDestination}</span>
+                        </div>
                       </div>
-                      <div className="flex items-start gap-1.5">
-                        <span className="text-slate-400 font-bold shrink-0">Giao đến:</span>
-                        <span className="font-semibold text-slate-800 break-words">{realBuyerAddress}</span>
-                      </div>
-                    </div>
+                    )}
 
                     {/* Action buttons & Tracking for Bước 2 (Giao Hàng Trực Tiếp Lalamove) */}
                     {modalDirectShipment && (
@@ -864,7 +857,7 @@ export function OrderDeliveryJourney({
                     <span className="break-words leading-relaxed">
                       {isModalCompletedOrReleased
                         ? 'Giao dịch đã hoàn tất thành công. Người mua đã nhận hàng và tiền hàng đã được giải ngân về ví người bán.'
-                        : Boolean(detailModalOrder.shippingDeliveredAt || (detailModalOrder.escrowStatus as string) === 'DELIVERED_INSPECTION_WINDOW' || (detailModalOrder as any).backendStatus === 'DELIVERED')
+                        : atHomeDeliveryCompleted
                           ? 'Kiện hàng đã được tài xế Lalamove giao thành công tới người mua (Giai đoạn đối soát 48 giờ).'
                           : modalDirectShipment?.orderCode
                             ? `Đã tạo vận đơn Lalamove (#${modalDirectShipment.orderCode}).`
@@ -876,9 +869,9 @@ export function OrderDeliveryJourney({
                                   ? 'Đơn hàng đã bị hủy. Hệ thống không tạo vận đơn giao hàng.'
                                   : isModalPendingDecision
                                     ? 'KTV đã kiểm định ĐẠT chuẩn. Đang chờ người mua xác nhận mua hàng trước khi điều phối bưu tá.'
-                                    : isModalInspPassed
-                                      ? 'Sản phẩm kiểm định ĐẠT chuẩn. Tài xế Lalamove sẽ nhận hàng từ người bán và phát thẳng đến người mua.'
-                                      : 'Tài xế Lalamove nhận hàng tại nhà người bán và phát thẳng đến người mua.'}
+                                    : atHomeDeliveryApproved
+                                      ? 'Người mua đã xác nhận mua. Đang chờ tạo vận đơn.'
+                                      : 'Chờ sản phẩm đạt kiểm định và người mua xác nhận mua để chuẩn bị giao hàng.'}
                     </span>
                   </div>
                 </div>

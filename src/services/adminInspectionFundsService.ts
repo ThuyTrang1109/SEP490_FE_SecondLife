@@ -102,6 +102,23 @@ export function normalizeAdminInspectionFunds(raw: any): AdminInspectionOrderFun
           cashConfirmedAt: s.cashConfirmedAt || null,
         }))
       : [],
+    returnFee: raw.returnFee
+      ? {
+          reserveFee: raw.returnFee.reserveFee != null ? Number(raw.returnFee.reserveFee) : null,
+          quotedFee: raw.returnFee.quotedFee != null ? Number(raw.returnFee.quotedFee) : null,
+          actualFee: raw.returnFee.actualFee != null ? Number(raw.returnFee.actualFee) : null,
+          buyer: {
+            percent: Number(raw.returnFee.buyer?.percent ?? 0),
+            collected: Number(raw.returnFee.buyer?.collected ?? 0),
+            outstanding: Number(raw.returnFee.buyer?.outstanding ?? 0),
+          },
+          seller: {
+            percent: Number(raw.returnFee.seller?.percent ?? 0),
+            collected: Number(raw.returnFee.seller?.collected ?? 0),
+            outstanding: Number(raw.returnFee.seller?.outstanding ?? 0),
+          },
+        }
+      : null,
   };
 }
 
@@ -138,7 +155,7 @@ export async function getAdminInspectionOrderFunds(
             const bCollected = insp.buyerPaidAt ? (bShare + deposit) : 0;
             const sCollected = insp.sellerPaidAt ? sShare : 0;
             const total = bCollected + sCollected;
-            const reserve = Number(insp.returnShippingReserveFee ?? 408000);
+            const reserve = Number(insp.returnShippingReserveFee ?? 0);
             return normalizeAdminInspectionFunds({
               inspectionOrderId: insp.id,
               totalCollected: total,
@@ -154,9 +171,9 @@ export async function getAdminInspectionOrderFunds(
                 amountCollected: sCollected,
                 paidAt: insp.sellerPaidAt || null,
               },
-              inspectionFee: Number(insp.inspectionFee ?? 200000),
+              inspectionFee: Number(insp.inspectionFee ?? 0),
               travelFee: Number(insp.travelFee || (insp as any).travelFeeRoundTrip || 0),
-              shippingFee: Number(insp.shippingFee ?? 340000),
+              shippingFee: Number(insp.shippingFee ?? (insp as any).shippingFeeVnd ?? 0),
               buyerCommitmentDeposit: deposit,
               cashShippingSimulation: Boolean(insp.cashShippingSimulation),
               outboundCashPendingAmount: 0,

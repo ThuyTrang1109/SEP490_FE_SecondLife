@@ -18,6 +18,20 @@ test('SystemWalletTab renders shipping balance card with holding status and filt
   // Verify Header
   assert.match(html, /Ví Hệ Thống/);
 
+  // Verify Total System Balance Card
+  assert.match(html, /Ví tổng hệ thống/);
+  assert.match(html, /Toàn sàn/);
+  assert.match(html, /Tổng dòng tiền đang lưu ký/);
+
+  // Verify Product Escrow Card
+  assert.match(html, /Tiền hàng đang giữ/);
+  assert.match(html, /Ký quỹ sàn/);
+
+  // Verify Inspection Escrow Card
+  assert.match(html, /Tiền kiểm định đang giữ/);
+  assert.match(html, /Ký quỹ Hub/);
+  assert.match(html, /Phí kiểm định đang giữ bảo chứng cho Hub/);
+
   // Verify Shipping Balance Card
   assert.match(html, /Phí vận chuyển đã thu/);
   assert.match(html, /Đang giữ/);

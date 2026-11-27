@@ -20,15 +20,22 @@ export function getOrderEscrowHoldNotice(order: EscrowOrder, lang: Language, shi
   if (!isOrderEscrowOnHold(order)) return null;
   const vi = lang === 'vi';
   if (isOrderDisputed(order)) {
-    return {
-      title: vi ? 'Quỹ Escrow đang tạm đóng băng do khiếu nại / tranh chấp' : 'Escrow is frozen due to a dispute',
-      description: vi ? 'SecondLife đang xem xét khiếu nại. Khoản thanh toán được bảo lưu trong Escrow.' : 'SecondLife is reviewing the dispute. The payment remains in Escrow.',
-    };
+    return null;
   }
   if (
     order.inspectionMethod === 'AT_CENTER' &&
     !order.orderReturn &&
     getLalamoveInterruption(getLatestInspectionShipment(shipments, 'CENTER_TO_BUYER')) === 'REJECTED' &&
+    !isOrderDeliveredToBuyer(order, shipments)
+  ) {
+    return null;
+  }
+  if (
+    order.inspectionMethod === 'AT_HOME' &&
+    !order.orderReturn &&
+    getLalamoveInterruption(
+      getLatestDirectShipment(shipments) ?? getLatestInspectionShipment(shipments, 'SELLER_TO_BUYER')
+    ) &&
     !isOrderDeliveredToBuyer(order, shipments)
   ) {
     return null;

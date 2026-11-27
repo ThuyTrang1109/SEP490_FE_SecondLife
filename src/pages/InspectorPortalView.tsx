@@ -205,6 +205,13 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
   const [savedResults, setSavedResults] = useState<ReadonlyMap<string, InspectionOrderDto>>(new Map());
   const [isLoadingBackendOrders, setIsLoadingBackendOrders] = useState(Boolean(requestedInspectionId));
   const [taskSearchTerm, setTaskSearchTerm] = useState('');
+  const [taskTime, setTaskTime] = useState(Date.now);
+  useEffect(() => {
+    if (inspectorTab !== 'tasks') return;
+    setTaskTime(Date.now());
+    const timer = setInterval(() => setTaskTime(Date.now()), 15_000);
+    return () => clearInterval(timer);
+  }, [inspectorTab]);
   const [taskFilter, setTaskFilter] = useState<'ALL' | 'AT_CENTER' | 'AT_HOME' | 'PENDING' | 'DONE'>('ALL');
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -221,6 +228,15 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
   };
 
   const handleConfirmTask = async (orderId: string, orderTitle?: string, isAtHome?: boolean) => {
+    if (isAtHome) {
+      try {
+        await inspectorService.confirmTask(orderId, true);
+      } catch (error) {
+        showNotice(error instanceof Error ? error.message : 'Không thể tiếp nhận đơn kiểm định tại nhà.', true);
+        return;
+      }
+    }
+
     markOrderConfirmedByInspector(orderId);
     setConfirmedSignal((c) => c + 1);
 
@@ -254,10 +270,12 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
       window.dispatchEvent(new CustomEvent('secondlife_inspector_confirmed_signal', { detail: { orderId } }));
     } catch { }
 
-    try {
-      await inspectorService.confirmTask(orderId, isAtHome);
-    } catch (err) {
-      console.warn('Backend confirmTask notice:', err);
+    if (!isAtHome) {
+      try {
+        await inspectorService.confirmTask(orderId);
+      } catch (err) {
+        console.warn('Backend confirmTask notice:', err);
+      }
     }
   };
 
@@ -423,6 +441,8 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
         inspectorName: assignedName,
         inspectionMethod: bo.orderType === 'AT_HOME' ? 'AT_HOME' as const : 'AT_CENTER' as const,
         appointmentScheduledAt: bo.appointmentScheduledAt,
+        appointmentStatus: bo.appointmentStatus,
+        homeCheckedInAt: bo.homeCheckedInAt,
         inspectionReport: backendReport,
       };
       if (existing) {
@@ -467,8 +487,8 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
           model: 'Model tiêu chuẩn',
           purchaseYear: 2023,
           priceVnd: bo.postPrice || 1000000,
-          conditionGrade: 'Good' as any,
-          declaredConditionText: 'Máy hoạt động tốt',
+          conditionGrade: (bo.conditionGrade || (bo as any).itemCondition || (bo as any).condition || 'Good') as any,
+          declaredConditionText: (bo as any).itemCondition || bo.conditionGrade || (bo as any).condition || 'USED_GOOD',
           description: bo.note || 'Thiết bị cần đo kiểm theo quy trình',
           location: 'TP. Hồ Chí Minh',
           sellerId: bo.sellerId || 'seller-1',
@@ -905,11 +925,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
 
         {/* Right: ISO Badge + Profile Dropdown */}
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Live ISO Badge */}
-          <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/15 text-xs font-bold text-white/90">
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            <span>ISO/IEC 17025 • {stationCode}</span>
-          </div>
+
 
           {/* Account Menu */}
           <div className="relative" ref={userDropdownRef}>
@@ -1428,19 +1444,12 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                   filteredTasks.map((ord) => {
                     const isAtHome = ord.inspectionMethod === 'AT_HOME';
                     const stage = getInspectionTaskStage(ord.inspectionStatus);
-                    const apptTime = ord.appointmentScheduledAt || (() => {
-                      try {
-                        const raw = localStorage.getItem(`order_appointment_${ord.id}`);
-                        if (raw) return JSON.parse(raw)?.scheduledAt;
-                      } catch { }
-                      return null;
-                    })();
-                    const isInspectorArrived = typeof window !== 'undefined' ? Boolean(
-                      localStorage.getItem(`at_home_inspector_arrived_${ord.id}`) ||
+                    const apptTime = getOrderScheduledAppointmentTime(ord);
+                    const isInspectorArrived = Boolean(ord.homeCheckedInAt ||
                       ord.inspectionStatus === 'INSPECTING' ||
-                      (ord as any).status === 'INSPECTING' ||
-                      (ord as any).backendStatus === 'INSPECTING'
-                    ) : false;
+                      ord.status === 'INSPECTING');
+                    const checkIn = canInspectorCheckIn(apptTime, taskTime);
+                    const missedAppointment = isAtHome && !isInspectorArrived && checkIn.expired;
                     const isOrderConfirmed = isOrderConfirmedByInspector({
                       ...ord,
                       stage,
@@ -1533,13 +1542,14 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                                       day: '2-digit',
                                       month: '2-digit',
                                     });
-                                    const checkIn = canInspectorCheckIn(apptTime);
                                     return (
                                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${!checkIn.allowed
                                         ? 'bg-amber-50 text-amber-800 border-amber-200'
                                         : 'bg-blue-50 text-blue-700 border-blue-200'
                                         }`}>
-                                        Đến Theo Hẹn ({formattedAppt}) {!checkIn.allowed ? '• Mở nhận đơn trước 30p' : ''}
+                                        Đến Theo Hẹn ({formattedAppt}) {!isInspectorArrived && (checkIn.expired
+                                          ? '• Quá hạn check-in'
+                                          : !checkIn.allowed && '• Mở check-in trước 30 phút')}
                                       </span>
                                     );
                                   }
@@ -1665,6 +1675,10 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                               <Clock className="w-3.5 h-3.5 text-slate-400" />
                               <span>Chờ Người Bán Hẹn Lịch</span>
                             </button>
+                          ) : missedAppointment ? (
+                            <span className="flex-1 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-center text-xs font-bold text-rose-800">
+                              Quá hạn check-in · Chờ trung tâm hẹn lại
+                            </span>
                           ) : !canOpenWorkbench ? (
                             <button
                               type="button"
@@ -1720,11 +1734,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                                         <>
                                           <QrCode className="w-3.5 h-3.5 text-amber-300" />
                                           <span>
-                                            {(() => {
-                                              const appt = ord.appointmentScheduledAt || (ord as any).scheduledAt || getOrderScheduledAppointmentTime(ord);
-                                              const checkIn = canInspectorCheckIn(appt);
-                                              return !checkIn.allowed ? 'Chi Tiết Lịch Hẹn ' : 'Quét Mã Nhận Máy (Tại Nhà)';
-                                            })()}
+                                            {checkIn.allowed ? 'Quét Mã Nhận Máy (Tại Nhà)' : 'Chi Tiết Lịch Hẹn'}
                                           </span>
                                         </>
                                       )

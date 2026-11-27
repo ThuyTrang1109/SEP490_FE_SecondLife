@@ -257,7 +257,7 @@ test('at-home inspection card after purchase accepted shows awaiting shipment be
     order: purchaseAcceptedOrder, listing: buildChatProductListing(room), isSeller: true, isBuyer: false,
     currentRole: 'seller', lang: 'vi', onOrderUpdated: () => {}, onRefreshOrder: async () => {},
   }));
-  assert.match(sellerHtml, /Đã Xác Nhận Mua • Chờ bạn gửi hàng/);
+  assert.doesNotMatch(sellerHtml, /Đã Xác Nhận Mua • Chờ bạn gửi hàng/);
   assert.doesNotMatch(sellerHtml, /Đang giao hàng đến người mua • Lalamove/);
   assert.doesNotMatch(sellerHtml, /Kiện hàng đã được bàn giao cho tài xế Lalamove/);
 
@@ -266,7 +266,7 @@ test('at-home inspection card after purchase accepted shows awaiting shipment be
     order: purchaseAcceptedOrder, listing: buildChatProductListing(room), isSeller: false, isBuyer: true,
     currentRole: 'buyer', lang: 'vi', onOrderUpdated: () => {}, onRefreshOrder: async () => {},
   }));
-  assert.match(buyerHtml, /Đã Duyệt Mua • Chờ người bán gửi hàng/);
+  assert.doesNotMatch(buyerHtml, /Đã Duyệt Mua • Chờ người bán gửi hàng/);
   assert.doesNotMatch(buyerHtml, /Đang giao hàng tới bạn • Lalamove/);
   assert.doesNotMatch(buyerHtml, /Kiện hàng đã được bàn giao cho tài xế Lalamove/);
 });

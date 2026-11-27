@@ -34,7 +34,8 @@ import {
   Truck,
   RotateCcw,
   Building2,
-  Package
+  Package,
+  Plus
 } from 'lucide-react';
 import { CreateShipmentModal } from '../components/modals/CreateShipmentModal';
 import { ScheduleAppointmentModal } from '../components/modals/ScheduleAppointmentModal';
@@ -42,7 +43,11 @@ import { readOrderAppointment } from '../utils/orders/orderAppointments';
 import { DigitalInspectionCertificateModal, buildInspectionReportFromDto } from '../components/modals/DigitalInspectionCertificateModal';
 import { inspectorService, InspectionOrderDto } from '../services/inspectorService';
 import { getOrderFeed } from '../services/orderFeedService';
-import { shippingService } from '../services/shippingService';
+import { shippingService, type InspectionReturnFee } from '../services/shippingService';
+import { userService, type UserProfileDto } from '../services/userService';
+import { BuyerAddressSelectModal } from '../components/common/BuyerAddressSelectModal';
+import { BuyerDeliveryAddress, loadSavedBuyerAddresses, findDefaultOrFirstAddress, saveBuyerAddressesToStorage } from '../utils/buyerAddressStorage';
+import { type InspectionDeliveryAddress } from '../components/inspection/InspectionDeliveryAddressModal';
 import { ShipmentBackend, ShippingQuoteResponseDto } from '../types';
 import { walletService, WalletBackend, notifyWalletBalanceUpdated } from '../services/walletService';
 import { saveScopedLocalNotification } from '../utils/notificationStorage';
@@ -108,10 +113,44 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
   // Return shipment states
   const confirmRequestIdRef = React.useRef<string | null>(null);
   const [returnShipment, setReturnShipment] = useState<ShipmentBackend | null>(null);
+  const [returnFee, setReturnFee] = useState<InspectionReturnFee | null>(null);
+  const [isPayingReturnFee, setIsPayingReturnFee] = useState(false);
   const [createdLinkedOrderId, setCreatedLinkedOrderId] = useState<string | null>(null);
 
   // Modal states
   const [showConfirmModal, setShowConfirmModal] = useState<boolean>(false);
+  const [showDeliveryAddress, setShowDeliveryAddress] = useState(false);
+  const [deliveryProfile, setDeliveryProfile] = useState<UserProfileDto | null>(null);
+  const [savedAddresses, setSavedAddresses] = useState<BuyerDeliveryAddress[]>(() => {
+    return loadSavedBuyerAddresses(currentUser?.id, currentUser);
+  });
+  const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (currentUser?.id) {
+      const localList = loadSavedBuyerAddresses(currentUser.id, currentUser);
+      setSavedAddresses(localList);
+      // Fetch latest from backend API so other devices sync seamlessly
+      shippingService.getDeliveryAddresses().then((backendList) => {
+        if (Array.isArray(backendList) && backendList.length > 0) {
+          setSavedAddresses(backendList);
+          saveBuyerAddressesToStorage(backendList, currentUser.id);
+          if (!selectedAddressId || !backendList.some((a) => a.id === selectedAddressId)) {
+            const def = backendList.find((a) => a.isDefault) || backendList[0];
+            setSelectedAddressId(def?.id || null);
+          }
+        } else if (Array.isArray(backendList) && backendList.length === 0 && localList.length > 0) {
+          // Auto-migrate existing localStorage addresses to DB
+          shippingService.syncDeliveryAddresses(localList).then((synced) => {
+            if (Array.isArray(synced) && synced.length > 0) {
+              setSavedAddresses(synced);
+              saveBuyerAddressesToStorage(synced, currentUser.id);
+            }
+          }).catch(() => {});
+        }
+      }).catch(() => {});
+    }
+  }, [currentUser?.id]);
   const [showRejectModal, setShowRejectModal] = useState<boolean>(false);
   const [showShipmentModal, setShowShipmentModal] = useState<boolean>(false);
   const [showCertificateModal, setShowCertificateModal] = useState<boolean>(false);
@@ -515,6 +554,15 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
   const canDecide = purchaseDecision === 'pending' && !isUserSeller;
 
   useEffect(() => {
+    if (!canDecide || !currentUser?.id) return;
+    let active = true;
+    userService.getMyProfile().then((profile) => {
+      if (active) setDeliveryProfile(profile);
+    }).catch(() => { });
+    return () => { active = false; };
+  }, [canDecide, currentUser?.id]);
+
+  useEffect(() => {
     if (!canDecide || !inspectionDto) return;
     let active = true;
     walletService.getMyWallet()
@@ -570,37 +618,87 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
   const buyerFeePercent = inspectionDto?.buyerFeePercent ?? buyerFeePercentFor(inspectionDto?.feePayer);
   const { base: baseInspectionFee, transport: inspectionTransportFee, reserve: returnReserveFee,
     buyerShare: buyerFeeShare, sellerShare: sellerFeeShare, total: totalInspectionFee } = getInspectionStageOne(inspectionDto);
-  const buyerDestination = getInspectionBuyerDestination(inspectionDto, order, currentUser);
+  const profile = deliveryProfile?.id === currentUser?.id ? deliveryProfile : null;
+  const buyerDestination = getInspectionBuyerDestination(inspectionDto, null, currentUser ? {
+    ...currentUser,
+    name: profile?.fullName || currentUser.name,
+    phone: profile?.phone || '',
+    address: '',
+    streetAddress: profile?.streetAddress,
+    ward: profile?.ward,
+    district: profile?.district,
+    province: profile?.province,
+    latitude: profile?.latitude,
+    longitude: profile?.longitude,
+  } : null);
   const { name: recipientName, phone: recipientPhone, address: recipientAddress, latitude, longitude } = buyerDestination ?? {};
+
+  // Resolve active delivery address from saved addresses or order destination
+  const activeAddress = useMemo(() => {
+    if (selectedAddressId) {
+      const found = savedAddresses.find((a) => a.id === selectedAddressId);
+      if (found) return found;
+    }
+    // Match by order destination address if available
+    if (recipientAddress) {
+      const matched = savedAddresses.find((a) => a.streetAddress.trim().toLowerCase() === recipientAddress.trim().toLowerCase());
+      if (matched) return matched;
+    }
+    // Fallback to default or first saved address
+    const defaultAddr = findDefaultOrFirstAddress(savedAddresses);
+    if (defaultAddr) return defaultAddr;
+
+    // Fallback to order recipient destination if present
+    if (recipientAddress || (latitude != null && longitude != null)) {
+      return {
+        id: 'order-destination',
+        name: recipientName || currentUser?.name || 'Khách Hàng',
+        phone: recipientPhone || currentUser?.phone || '',
+        streetAddress: recipientAddress || '',
+        latitude,
+        longitude,
+        addressType: 'home' as const,
+        isDefault: false,
+      };
+    }
+    return null;
+  }, [selectedAddressId, savedAddresses, recipientName, recipientPhone, recipientAddress, latitude, longitude, currentUser]);
+
+  const activeRecipientName = activeAddress?.name || recipientName || currentUser?.name || '';
+  const activeRecipientPhone = activeAddress?.phone || recipientPhone || currentUser?.phone || '';
+  const activeRecipientAddress = activeAddress?.streetAddress || recipientAddress || '';
+  const activeLatitude = activeAddress?.latitude ?? latitude;
+  const activeLongitude = activeAddress?.longitude ?? longitude;
+  const hasEffectiveRecipient = Boolean(activeRecipientName && activeRecipientPhone && (activeRecipientAddress || (activeLatitude != null && activeLongitude != null)));
+  const hasRecipient = hasEffectiveRecipient;
+
   const postId = inspectionDto?.postId;
-  const deliveryQuoteKey = JSON.stringify([effectiveOrderId, postId, recipientName, recipientPhone, recipientAddress, latitude, longitude, quoteAttempt]);
+  const deliveryQuoteKey = JSON.stringify([effectiveOrderId, postId, activeRecipientName, activeRecipientPhone, activeRecipientAddress, activeLatitude, activeLongitude, quoteAttempt]);
   const currentDeliveryQuote = deliveryQuote?.key === deliveryQuoteKey ? deliveryQuote : null;
   const finalShippingQuote = currentDeliveryQuote?.quote ?? null;
-  const displayedRecipientAddress = currentDeliveryQuote?.address || recipientAddress;
+  const displayedRecipientAddress = currentDeliveryQuote?.address || activeRecipientAddress;
 
   useEffect(() => {
     setIsLoadingQuote(false);
     setQuoteError(null);
-    if (!postId || !canDecide || (!recipientAddress && (latitude == null || longitude == null))) return;
+    if (!postId || !canDecide || !hasEffectiveRecipient) return;
 
     const controller = new AbortController();
     const { signal } = controller;
     setIsLoadingQuote(true);
     const loadQuote = async () => {
       try {
-        const coords = latitude != null && longitude != null
-          ? { latitude, longitude }
-          : await shippingService.geocode(recipientAddress ?? '', signal);
-        const address = recipientAddress || (await shippingService.reverseGeocode(coords.latitude, coords.longitude, signal)).address?.trim();
+        const coords = activeLatitude != null && activeLongitude != null
+          ? { latitude: activeLatitude, longitude: activeLongitude }
+          : await shippingService.geocode(activeRecipientAddress ?? '', signal);
+        const address = activeRecipientAddress || (await shippingService.reverseGeocode(coords.latitude, coords.longitude, signal)).address?.trim();
         if (signal.aborted) return;
         if (!address) throw new Error('Chưa thể xác định địa chỉ nhận hàng từ vị trí đã chọn.');
         setDeliveryQuote({ key: deliveryQuoteKey, address, quote: null });
-        if (!recipientName || !recipientPhone) {
-          throw new Error('Cần có tên và số điện thoại hợp lệ của người nhận để tính cước giao hàng.');
-        }
+        if (!activeRecipientName || !activeRecipientPhone) return;
         const quote = await shippingService.getShippingQuote({
           postId,
-          deliveryAddress: { name: recipientName, phone: recipientPhone, address, latitude: coords.latitude, longitude: coords.longitude },
+          deliveryAddress: { name: activeRecipientName, phone: activeRecipientPhone, address, latitude: coords.latitude, longitude: coords.longitude },
         }, { signal });
         if (signal.aborted) return;
         if (!quote?.quoteId || !Number.isFinite(quote.shippingFee)) throw new Error('Chưa có báo giá vận chuyển.');
@@ -615,7 +713,69 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
     };
     void loadQuote();
     return () => controller.abort();
-  }, [postId, canDecide, recipientName, recipientPhone, recipientAddress, latitude, longitude, deliveryQuoteKey]);
+  }, [postId, canDecide, hasEffectiveRecipient, activeRecipientName, activeRecipientPhone, activeRecipientAddress, activeLatitude, activeLongitude, deliveryQuoteKey]);
+
+  // Sync default address to inspection order if order doesn't have an address yet
+  useEffect(() => {
+    if (canDecide && effectiveOrderId && activeAddress?.streetAddress && activeAddress?.latitude && activeAddress?.longitude) {
+      if (!inspectionDto?.buyerDeliveryAddress?.address) {
+        inspectorService.updatePurchaseDeliveryAddress(effectiveOrderId, {
+          name: activeAddress.name,
+          phone: activeAddress.phone,
+          address: activeAddress.streetAddress,
+          latitude: activeAddress.latitude,
+          longitude: activeAddress.longitude,
+        }).then((updated) => {
+          setInspectionDto(updated);
+        }).catch(() => { });
+      }
+    }
+  }, [canDecide, effectiveOrderId, activeAddress?.id, activeAddress?.streetAddress]);
+
+  // Auto-import order destination address into savedAddresses if on a new device/empty localStorage
+  useEffect(() => {
+    if (recipientAddress && savedAddresses.length === 0) {
+      const importedAddr: BuyerDeliveryAddress = {
+        id: `addr-${Date.now()}`,
+        name: recipientName || currentUser?.name || 'Khách Hàng',
+        phone: recipientPhone || currentUser?.phone || '',
+        streetAddress: recipientAddress,
+        latitude,
+        longitude,
+        addressType: 'home',
+        isDefault: true,
+      };
+      const newList = [importedAddr];
+      setSavedAddresses(newList);
+      saveBuyerAddressesToStorage(newList, currentUser?.id);
+      shippingService.syncDeliveryAddresses(newList).catch(() => {});
+    }
+  }, [recipientAddress, savedAddresses.length, recipientName, recipientPhone, latitude, longitude, currentUser?.id]);
+
+  const handleSelectAddress = async (addr: BuyerDeliveryAddress) => {
+    setSelectedAddressId(addr.id);
+    if (effectiveOrderId && addr.latitude && addr.longitude) {
+      try {
+        const updated = await inspectorService.updatePurchaseDeliveryAddress(effectiveOrderId, {
+          name: addr.name,
+          phone: addr.phone,
+          address: addr.streetAddress,
+          latitude: addr.latitude,
+          longitude: addr.longitude,
+        });
+        setInspectionDto(updated);
+      } catch (err) {
+        console.warn('Cập nhật địa chỉ nhận hàng lên hệ thống:', err);
+      }
+    }
+    setShowDeliveryAddress(false);
+  };
+
+  const saveDeliveryAddress = async (address: InspectionDeliveryAddress) => {
+    const updated = await inspectorService.updatePurchaseDeliveryAddress(effectiveOrderId, address);
+    setInspectionDto(updated);
+    setShowDeliveryAddress(false);
+  };
 
   // Ưu tiên báo giá khi hiển thị tiền hàng và cước giao đến người mua.
   const { itemPrice: stageTwoItemPrice, deliveryFee: stageTwoDeliveryFee, total: stageTwoTotal } = getInspectionStageTwo(inspectionDto, finalShippingQuote);
@@ -804,6 +964,59 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
   const shouldShowReturnShipment = Boolean(
     returnShipment && (!isViewingAsBuyer || !isBuyerRejectedOrExpired)
   );
+
+  const shouldCheckReturnFee = Boolean(
+    !isAtHome &&
+    effectiveOrderId &&
+    (hasHubReturn || isBuyerRejectedOrExpired || isFailed || isCancelled || Boolean(inspectionDto?.feeSettledAt))
+  );
+
+  useEffect(() => {
+    setReturnFee(null);
+    if (!shouldCheckReturnFee) return;
+    const controller = new AbortController();
+    const loadReturnFee = async () => {
+      try {
+        const feeData = await inspectorService.getInspectionReturnFee(effectiveOrderId, {
+          signal: controller.signal,
+          isBackground: true,
+        });
+        if (!controller.signal.aborted) {
+          setReturnFee(feeData);
+        }
+      } catch {
+        // Ignore when order has no return adjustment yet
+      }
+    };
+    void loadReturnFee();
+    return () => controller.abort();
+  }, [effectiveOrderId, shouldCheckReturnFee, returnShipment?.status, inspectionDto?.status, inspectionDto?.feeSettledAt]);
+
+  const handlePayReturnFee = async (amountToPay: number) => {
+    if (!effectiveOrderId || isPayingReturnFee || amountToPay <= 0) return;
+    setIsPayingReturnFee(true);
+    setAlertNotice(null);
+    try {
+      const updated = await inspectorService.payInspectionReturnFee(effectiveOrderId, amountToPay);
+      setReturnFee(updated);
+      notifyWalletBalanceUpdated();
+      try {
+        const w = await walletService.getMyWallet();
+        setWallet(w);
+      } catch { }
+      setAlertNotice({
+        type: 'success',
+        message: 'Đã nộp bổ sung cước hoàn từ ví thành công.',
+      });
+    } catch (err: any) {
+      setAlertNotice({
+        type: 'error',
+        message: err?.message || 'Không thể nộp cước hoàn từ ví lúc này. Vui lòng kiểm tra lại số dư ví.',
+      });
+    } finally {
+      setIsPayingReturnFee(false);
+    }
+  };
 
   const { videoProofUrl, unboxingVideoUrl, photos: inspectorPhotos, note: inspectorNote } = useMemo(
     () => getInspectionReportMedia(inspectionDto, unavailableMediaUrls),
@@ -1256,7 +1469,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
 
   const currentWalletBal = wallet?.balance ?? null;
   const isWalletSufficient = currentWalletBal !== null ? currentWalletBal >= finalPriceToPay : true;
-  const walletShortfall = currentWalletBal !== null && finalPriceToPay !== null
+  const walletShortfall = finalShippingQuote && currentWalletBal !== null
     ? Math.max(0, finalPriceToPay - currentWalletBal)
     : null;
 
@@ -1406,7 +1619,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                           : isApptPendingApproval
                             ? 'CHỜ TRUNG TÂM DUYỆT LỊCH'
                             : hasApptConfirmed
-                              ? (hasInsp ? 'ĐÃ PHÂN CÔNG KTV • CHỜ KHẢO SÁT' : 'ĐÃ CHỐT LỊCH • CHỜ GIAO KTV')
+                              ? (hasInsp ? 'ĐÃ PHÂN CÔNG KỸ THUẬT VIÊN • CHỜ KHẢO SÁT' : 'ĐÃ CHỐT LỊCH • CHỜ GIAO KTV')
                               : (isUserSeller ? 'CHỜ BẠN HẸN LỊCH ĐÓN KTV' : 'CHỜ NGƯỜI BÁN HẸN LỊCH ĐÓN KTV')
                     ) : 'CHƯA KIỂM ĐỊNH • CHỜ TIẾP NHẬN'}</span>
                   </span>
@@ -1495,6 +1708,144 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
           </div>
         )}
 
+        {/* Đối soát & Công nợ bù cước hoàn từ Hub (Luôn hiển thị cho cả Buyer và Seller kể cả khi từ chối/hết hạn mua và ẩn theo dõi vận đơn) */}
+        {returnFee?.buyer && returnFee?.seller && (() => {
+          const isActorSeller = isUserSeller && !isUserBuyer;
+          const myShare = isActorSeller ? returnFee.seller : returnFee.buyer;
+          if (!myShare) return null;
+          const hasAnyAdjustment = Boolean(
+            returnFee.quotedFee != null ||
+            returnFee.actualFee != null ||
+            (returnFee.buyer.collected ?? 0) > 0 ||
+            (returnFee.buyer.outstanding ?? 0) > 0 ||
+            (returnFee.seller.collected ?? 0) > 0 ||
+            (returnFee.seller.outstanding ?? 0) > 0
+          );
+          if (!hasAnyAdjustment) return null;
+          const hasDebt = (myShare.outstanding ?? 0) > 0;
+          return (
+            <div className={`p-4 sm:p-5 rounded-3xl border space-y-3 animate-fadeIn ${hasDebt ? 'bg-rose-50/70 border-rose-200' : 'bg-white border-slate-200/80 shadow-xs'}`}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-white ${hasDebt ? 'bg-rose-600' : 'bg-slate-800'}`}>
+                    <Wallet className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs sm:text-sm font-black text-slate-900">
+                      Đối Soát &amp; Công Nợ Cước Hoàn Từ Hub
+                    </h3>
+                    <p className="text-[11px] text-slate-600">
+                      {returnFee.actualFee != null
+                        ? 'Đã chốt cước thực tế sau khi hoàn hàng.'
+                        : returnFee.quotedFee != null
+                          ? 'Đang thu bù theo báo giá chuyến hoàn Lalamove.'
+                          : 'Chuyến hoàn trước đó đã hủy; phần đã thu sẽ được cấn trừ khi đặt lại hoặc khi quyết toán.'}
+                    </p>
+                  </div>
+                </div>
+                <span className={`px-2.5 py-1 rounded-full text-[10px] font-black border ${hasDebt
+                  ? 'bg-rose-100 text-rose-800 border-rose-300'
+                  : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                  }`}>
+                  {hasDebt ? `Cần nộp thêm ${formatVND(myShare.outstanding)}` : 'Đã hoàn tất phần cước của bạn'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs bg-white/90 p-3.5 rounded-2xl border border-slate-200/80">
+                <div>
+                  <span className="text-[11px] text-slate-500 block">Dự phòng ban đầu:</span>
+                  <span className="font-bold text-slate-900">{formatAmount(returnFee.reserveFee)}</span>
+                </div>
+                <div>
+                  <span className="text-[11px] text-slate-500 block">Báo giá chuyến hoàn:</span>
+                  <span className="font-bold text-slate-900">
+                    {returnFee.quotedFee != null ? formatVND(returnFee.quotedFee) : 'Chưa áp dụng / Đã hủy'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[11px] text-slate-500 block">Cước thực tế:</span>
+                  <span className="font-bold text-amber-700">
+                    {returnFee.actualFee != null ? formatVND(returnFee.actualFee) : 'Chờ xác nhận sau giao hàng'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                <div className="p-3 rounded-2xl bg-white border border-slate-200 space-y-1">
+                  <div className="font-bold text-slate-800 flex items-center justify-between">
+                    <span>Phần người mua ({returnFee.buyer.percent}%)</span>
+                    {!isActorSeller && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-bold">Bạn</span>}
+                  </div>
+                  <div className="flex justify-between text-slate-600">
+                    <span>Đã thu thêm từ ví:</span>
+                    <strong className="text-emerald-700 font-mono">{formatVND(returnFee.buyer.collected)}</strong>
+                  </div>
+                  <div className="flex justify-between text-slate-600">
+                    <span>Còn phải nộp:</span>
+                    <strong className={`font-mono ${returnFee.buyer.outstanding > 0 ? 'text-rose-700' : 'text-slate-700'}`}>
+                      {formatVND(returnFee.buyer.outstanding)}
+                    </strong>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-white border border-slate-200 space-y-1">
+                  <div className="font-bold text-slate-800 flex items-center justify-between">
+                    <span>Phần người bán ({returnFee.seller.percent}%)</span>
+                    {isActorSeller && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-bold">Bạn</span>}
+                  </div>
+                  <div className="flex justify-between text-slate-600">
+                    <span>Đã thu thêm từ ví:</span>
+                    <strong className="text-emerald-700 font-mono">{formatVND(returnFee.seller.collected)}</strong>
+                  </div>
+                  <div className="flex justify-between text-slate-600">
+                    <span>Còn phải nộp:</span>
+                    <strong className={`font-mono ${returnFee.seller.outstanding > 0 ? 'text-rose-700' : 'text-slate-700'}`}>
+                      {formatVND(returnFee.seller.outstanding)}
+                    </strong>
+                  </div>
+                </div>
+              </div>
+
+              {hasDebt && (
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                  <span className="text-[11px] text-rose-800 font-medium">
+                    Số dư ví hiện tại: <strong className="font-mono">{formatAmount(wallet?.balance ?? null)}</strong>
+                  </span>
+                  <div className="flex items-center gap-2">
+                    {onOpenTopUp && wallet != null && Number(wallet.balance ?? 0) < myShare.outstanding && (
+                      <button
+                        type="button"
+                        onClick={onOpenTopUp}
+                        className="px-3 py-2 rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 font-bold text-xs transition cursor-pointer"
+                      >
+                        Nạp thêm vào ví
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => void handlePayReturnFee(myShare.outstanding)}
+                      disabled={isPayingReturnFee}
+                      className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    >
+                      {isPayingReturnFee ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Đang nộp từ ví...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Wallet className="w-3.5 h-3.5" />
+                          <span>Nộp thêm từ ví ({formatVND(myShare.outstanding)})</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
         {/* Alert notification if any */}
         {alertNotice && (
           <div className={`p-4 rounded-2xl border text-sm font-semibold flex items-center justify-between gap-3 shadow-sm ${alertNotice.type === 'success' ? 'bg-emerald-50 border-emerald-300 text-emerald-900' : 'bg-red-50 border-red-300 text-red-900'
@@ -1527,7 +1878,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                   Sản phẩm đã vượt qua bài kiểm định kỹ thuật!
                 </h2>
                 <p className="text-xs sm:text-sm text-emerald-50 leading-relaxed">
-                  Bạn đã thanh toán trước phí kiểm định & tiền ship. Bây giờ hãy xem kỹ biên bản thẩm định từ Kỹ thuật viên. Bạn có toàn quyền <strong>Xác nhận mua tiếp</strong> (để thanh toán tiền sản phẩm) hoặc <strong>Từ chối mua</strong> (sản phẩm sẽ được hoàn trả cho người bán).
+                  Bạn đã thanh toán phí kiểm định {isAtHome ? 'và phí di chuyển của kỹ thuật viên' : 'và các khoản vận chuyển của giai đoạn kiểm định'}. Sau khi xem biên bản, bạn có thể <strong>xác nhận mua tiếp</strong> để thanh toán tiền sản phẩm và cước giao hàng, hoặc <strong>từ chối mua</strong>.
                 </p>
               </div>
 
@@ -1548,10 +1899,11 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                 </button>
                 <button
                   onClick={() => setShowConfirmModal(true)}
-                  className="px-6 py-3 rounded-2xl bg-white hover:bg-emerald-50 text-emerald-950 font-black text-xs sm:text-sm shadow-lg transition cursor-pointer flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98]"
+                  disabled={!finalShippingQuote || isSubmitting || timeLeft.isExpired}
+                  className="disabled:opacity-50 disabled:cursor-not-allowed px-6 py-3 rounded-2xl bg-white hover:bg-emerald-50 text-emerald-950 font-black text-xs sm:text-sm shadow-lg transition cursor-pointer flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98]"
                 >
                   <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  <span>Xác nhận mua ({formatVND(finalItemPrice)})</span>
+                  <span>{finalShippingQuote ? `Xác nhận mua (${formatVND(finalPriceToPay)})` : 'Xác nhận mua'}</span>
                 </button>
               </div>
             </div>
@@ -1784,7 +2136,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                                           : isApptPendingApproval
                                             ? 'Đã Đề Xuất Lịch • Chờ Hub Duyệt'
                                             : hasApptConfirmed
-                                              ? (hasInsp ? 'Đã Phân Công KTV' : 'Đã Chốt Lịch • Chờ Giao KTV')
+                                              ? (hasInsp ? 'Đã phân công kỹ thuật viên' : 'Đã Chốt Lịch • Chờ Giao KTV')
                                               : 'Chờ Bạn Hẹn Lịch Đón KTV')
                                         : 'Chờ Bạn Gửi Hàng Đến Hub')
                                       : 'Kênh Người Bán • Theo Dõi Đơn Kiểm Định'}
@@ -1824,7 +2176,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                                             : isApptCountered
                                               ? 'Trung tâm đề xuất lịch hẹn mới • Cần bạn phản hồi'
                                               : hasApptConfirmed
-                                                ? (hasInsp ? 'Đã phân công KTV • KTV sẽ đến kiểm định tận nhà' : 'Đã chốt lịch hẹn • KTV sẽ đến kiểm định tận nhà')
+                                                ? (hasInsp ? 'Đã phân công kỹ thuật viên • KTV sẽ đến kiểm định tận nhà' : 'Đã chốt lịch hẹn • KTV sẽ đến kiểm định tận nhà')
                                                 : 'Đang chờ xếp lịch kỹ thuật viên đến kiểm định tại nhà')
                                         : 'Đã thu đủ phí kiểm định • Vui lòng gửi máy đến Hub')
                                       : (isAtHome
@@ -1969,7 +2321,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                             : isApptCountered
                               ? 'Chờ Hẹn Lại Lịch'
                               : hasApptConfirmed
-                                ? (hasInsp ? 'Đã Phân Công KTV • Chờ Khảo Sát' : 'Đã Chốt Lịch • Chờ Giao KTV')
+                                ? (hasInsp ? 'Đã phân công kỹ thuật viên • Chờ Khảo Sát' : 'Đã Chốt Lịch • Chờ Giao KTV')
                                 : 'Chờ Người Bán Hẹn Lịch Đón KTV')
                         : 'Chờ Người Bán Gửi Hàng Đến Hub'}
                     </span>
@@ -1977,7 +2329,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                 ) : (
                   <>
                     <Clock className="w-3 h-3 text-amber-200" />
-                    <span>{isAtHome ? (hasApptConfirmed ? (hasInsp ? 'Đã Phân Công KTV • Chờ Khảo Sát' : 'Đã Chốt Lịch • Chờ Giao KTV') : 'Chờ Xác Nhận Lịch Hẹn') : 'Chờ Tiếp Nhận Thẩm Định'}</span>
+                    <span>{isAtHome ? (hasApptConfirmed ? (hasInsp ? 'Đã phân công kỹ thuật viên • Chờ Khảo Sát' : 'Đã Chốt Lịch • Chờ Giao KTV') : 'Chờ Xác Nhận Lịch Hẹn') : 'Chờ Tiếp Nhận Thẩm Định'}</span>
                   </>
                 )}
               </div>
@@ -2012,7 +2364,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                                           ? 'Đang chờ điều chỉnh lại lịch hẹn kiểm định'
                                           : hasApptConfirmed
                                             ? (hasInsp
-                                              ? 'Đã phân công KTV • KTV sẽ đến kiểm định tận nhà người bán'
+                                              ? 'Đã phân công kỹ thuật viên • KTV sẽ đến kiểm định tận nhà người bán'
                                               : 'Đã chốt lịch hẹn • Chờ người bán giao máy cho KTV')
                                             : 'Đang chờ xếp lịch kỹ thuật viên đến kiểm định tại nhà người bán')
                                     : 'Đang chờ Người bán đóng gói & gửi sản phẩm đến trung tâm kiểm định')
@@ -2699,11 +3051,9 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                     <div className="flex justify-between items-baseline gap-2">
                       <span>• Tiền vận chuyển {stageTwoDeliveryRoute}:</span>
                       <span className="font-bold text-slate-900 shrink-0">
-                        {isLoadingQuote && !apiDeliveryFee ? (
-                          <span className="text-slate-400 font-normal italic text-[11px]">Đang tính cước...</span>
-                        ) : (
-                          formatVND(apiDeliveryFee)
-                        )}
+                        {canDecide && !finalShippingQuote
+                          ? isLoadingQuote ? 'Đang tính cước…' : hasRecipient ? 'Chưa có báo giá' : 'Chưa có địa chỉ'
+                          : formatVND(apiDeliveryFee)}
                       </span>
                     </div>
                   )}
@@ -2711,11 +3061,99 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                   <div className="flex justify-between pt-2 border-t border-amber-200/80 font-black text-sm text-[#24263e]">
                     <span>Tổng tiền thanh toán giai đoạn 2:</span>
                     <span className="text-base font-black text-[#c34c36]">
-                      {formatVND(hasInspectionResult ? (finalItemPrice + (apiDeliveryFee || 0)) : finalItemPrice)}
+                      {canDecide && !finalShippingQuote ? '—' : formatVND(hasInspectionResult ? finalPriceToPay : finalItemPrice)}
                     </span>
                   </div>
                 </div>
               </div>
+
+              {canDecide && (
+                <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                  <div aria-hidden="true" className="h-1.5 bg-[repeating-linear-gradient(45deg,#c34c36,#c34c36_24px,#fff_24px,#fff_32px,#3b82f6_32px,#3b82f6_56px,#fff_56px,#fff_64px)]" />
+                  <div className="space-y-3 px-4 py-3.5">
+                    <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-lg bg-[#c34c36]/10 text-[#c34c36] flex items-center justify-center font-bold shrink-0">
+                          <MapPin className="w-3.5 h-3.5 text-[#c34c36]" />
+                        </div>
+                        <h4 className="font-extrabold text-xs uppercase tracking-wide text-slate-900">
+                          {lang === 'vi' ? 'Địa Chỉ Nhận Hàng' : 'Delivery Address'}
+                        </h4>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowDeliveryAddress(true)}
+                        disabled={timeLeft.isExpired || isSubmitting}
+                        className="text-xs font-bold text-blue-600 hover:text-blue-700 hover:underline cursor-pointer flex items-center gap-1 shrink-0 disabled:opacity-50"
+                      >
+                        <span>{activeAddress || hasEffectiveRecipient ? (lang === 'vi' ? 'Thay Đổi' : 'Change') : (lang === 'vi' ? 'Thêm Địa Chỉ Mới' : 'Add Address')}</span>
+                      </button>
+                    </div>
+
+                    {activeAddress || hasEffectiveRecipient ? (
+                      <div className="space-y-2">
+                        <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2.5">
+                          <div className="space-y-1.5 flex-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-black text-slate-900 text-sm">
+                                {activeRecipientName}
+                              </span>
+                              <span className="font-bold text-slate-600 text-xs sm:text-sm">
+                                (+84) {activeRecipientPhone.replace(/^(?:0|\+?84)/, '')}
+                              </span>
+                              {activeAddress?.isDefault && (
+                                <span className="px-1.5 py-0.5 text-[10px] font-bold text-[#c34c36] border border-[#c34c36]/40 rounded bg-red-50/70 leading-none">
+                                  {lang === 'vi' ? 'Mặc định' : 'Default'}
+                                </span>
+                              )}
+                              <span className="px-1.5 py-0.5 text-[10px] font-medium text-slate-600 bg-slate-100 rounded leading-none">
+                                {activeAddress?.addressType === 'office' ? (lang === 'vi' ? 'Văn Phòng' : 'Office') : (lang === 'vi' ? 'Nhà Riêng' : 'Home')}
+                              </span>
+                            </div>
+
+                            <p className="text-xs text-slate-700 font-medium leading-relaxed">
+                              {displayedRecipientAddress || activeRecipientAddress || (isLoadingQuote ? 'Đang tra địa chỉ…' : 'Vị trí đã chọn trên bản đồ')}
+                            </p>
+                          </div>
+
+                          <div className="shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => setShowDeliveryAddress(true)}
+                              disabled={timeLeft.isExpired || isSubmitting}
+                              className="px-3 py-1.5 rounded-xl border border-blue-200 text-blue-600 hover:bg-blue-50 text-xs font-bold transition cursor-pointer disabled:opacity-50"
+                            >
+                              {lang === 'vi' ? 'Thay Đổi' : 'Change'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-4 border-2 border-dashed border-amber-300 bg-amber-50/40 rounded-2xl flex flex-col items-center justify-center text-center space-y-2">
+                        <p className="text-xs text-slate-600">
+                          {lang === 'vi' ? 'Thêm địa chỉ nhận hàng để tính cước và xác nhận mua tiếp.' : 'Add a delivery address to calculate shipping quote.'}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setShowDeliveryAddress(true)}
+                          disabled={timeLeft.isExpired || isSubmitting}
+                          className="px-4 py-2 rounded-xl bg-[#c34c36] hover:bg-[#a83824] text-white font-bold text-xs shadow-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>{lang === 'vi' ? 'Thêm Địa Chỉ Mới' : 'Add Address'}</span>
+                        </button>
+                      </div>
+                    )}
+
+                    {quoteError && (
+                      <div role="status" className="flex items-start justify-between gap-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                        <span>{quoteError}</span>
+                        <button type="button" onClick={() => setQuoteAttempt((attempt) => attempt + 1)} className="shrink-0 font-bold underline cursor-pointer">Thử lại</button>
+                      </div>
+                    )}
+                  </div>
+                </section>
+              )}
 
               {/* Wallet Balance Status (chỉ hiện cho người mua khi đã Đạt và cần thanh toán) */}
               {canDecide && (
@@ -3241,7 +3679,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                   <>
                     <button
                       onClick={() => setShowConfirmModal(true)}
-                      disabled={isSubmitting || timeLeft.isExpired || isLoadingQuote}
+                      disabled={isSubmitting || timeLeft.isExpired || !finalShippingQuote}
                       className="w-full py-4 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-sm shadow-lg shadow-emerald-600/20 transition cursor-pointer flex flex-col items-center justify-center gap-0.5 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed text-center"
                     >
                       <div className="flex items-center gap-2">
@@ -3257,7 +3695,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                           ? 'Đang tính cước giao hàng...'
                           : finalShippingQuote
                             ? `Trừ ${formatVND(finalPriceToPay)} từ ví Escrow (gồm ${formatVND(apiDeliveryFee)} cước giao ${stageTwoDeliveryRoute})`
-                            : 'Xem địa chỉ nhận hàng và cước giao'}
+                            : hasRecipient ? 'Cần có báo giá vận chuyển' : 'Thêm địa chỉ nhận hàng để tiếp tục'}
                       </span>
                     </button>
 
@@ -3281,6 +3719,24 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
         </div>
 
       </div>
+
+      {showDeliveryAddress && canDecide && (
+        <BuyerAddressSelectModal
+          isOpen={showDeliveryAddress}
+          onClose={() => setShowDeliveryAddress(false)}
+          savedAddresses={savedAddresses}
+          selectedAddressId={selectedAddressId || activeAddress?.id || null}
+          onSelectAddress={handleSelectAddress}
+          onUpdateAddresses={(newList, targetId) => {
+            setSavedAddresses(newList);
+            if (targetId) setSelectedAddressId(targetId);
+          }}
+          sellerLocation={isAtHome ? inspectionDto?.sellerAddress : centerAddress}
+          sellerCity={isAtHome ? (inspectionDto?.sellerAddress || '') : (centerAddress || '')}
+          currentUser={currentUser}
+          lang={lang}
+        />
+      )}
 
       {/* MODAL 1: Confirm Final Purchase Dialog */}
       {showConfirmModal && (

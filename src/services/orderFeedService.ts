@@ -8,6 +8,7 @@ export interface OrderFeedItem {
   inspection: InspectionOrderDto | null;
   sellerCommissionPreview?: SellerCommissionPreviewDTO | null;
   orderReturn?: OrderReturnInfo | null;
+  hasActiveDispute?: boolean;
   buyerName: string | null;
   sellerName: string | null;
   postImageUrl: string | null;
@@ -87,6 +88,9 @@ export function orderFeedItemToRaw({ order, inspection, ...metadata }: OrderFeed
     counterShift: inspection?.counterShift || ordAny?.counterShift,
     counterNote: inspection?.counterNote || ordAny?.counterNote,
     inspectionOrder: inspection || ordAny?.inspectionOrder,
+    hasActiveDispute: metadata.hasActiveDispute !== undefined
+      ? Boolean(metadata.hasActiveDispute)
+      : ordAny?.hasActiveDispute,
     __isInspection: Boolean(inspection),
   };
 

@@ -1,5 +1,6 @@
 import { Coins as UiCoins } from 'lucide-react';
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { getNegotiationStep } from '../../utils/negotiationHelper';
 import { ChatMessage, Listing, Language, UserRole, UserProfile, Negotiation } from '../../types';
 import { formatVND } from '../../utils/translations';
 import {
@@ -1890,8 +1891,9 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
           <button
             type="button"
             onClick={() => {
-              if (!isSeller && maxRejectedPrice > 0 && offerInput <= maxRejectedPrice && listing.priceVnd > 50000) {
-                setOfferInput(Math.min(listing.priceVnd - 50000, maxRejectedPrice + 50000));
+              const step = getNegotiationStep(listing.priceVnd, maxRejectedPrice);
+              if (!isSeller && maxRejectedPrice > 0 && offerInput <= maxRejectedPrice && listing.priceVnd > step) {
+                setOfferInput(Math.min(listing.priceVnd - step, maxRejectedPrice + step));
               }
               setShowOfferForm(!showOfferForm);
               setShowInspectionProposalModal(false);

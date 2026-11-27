@@ -16,6 +16,7 @@ export const CHECKIN_ADVANCE_WINDOW_MINUTES = 30;
 
 export interface InspectorCheckInEligibility {
   allowed: boolean;
+  expired?: boolean;
   earliestCheckInTime: Date | null;
   minutesUntilCheckIn: number;
   reason?: string;
@@ -61,11 +62,103 @@ export function canInspectorCheckIn(
     };
   }
 
+  const latestCheckInMs = apptDate.getTime() + CHECKIN_ADVANCE_WINDOW_MINUTES * 60 * 1000;
+  if (nowMs > latestCheckInMs) {
+    return {
+      allowed: false,
+      expired: true,
+      earliestCheckInTime,
+      minutesUntilCheckIn: 0,
+      reason: 'Đã quá 30 phút sau giờ hẹn. Trung tâm kiểm định cần hẹn lại với người bán.',
+    };
+  }
+
   return {
     allowed: true,
     earliestCheckInTime,
     minutesUntilCheckIn: 0,
   };
+}
+
+export function isMissedHomeInspectionAppointment(order: {
+  orderType?: string | null;
+  inspectionMethod?: string | null;
+  status?: string | null;
+  backendStatus?: string | null;
+  inspectionStatus?: string | null;
+  appointmentStatus?: string | null;
+  appointmentScheduledAt?: string | null;
+  scheduledAt?: string | null;
+  homeCheckedInAt?: string | null;
+  inspectorArrivedAt?: string | null;
+  inspectorConfirmed?: boolean | null;
+}, nowTime = Date.now()): boolean {
+  if (!order) return false;
+
+  const isAtHome = (
+    order.orderType === 'AT_HOME' ||
+    order.inspectionMethod === 'AT_HOME' ||
+    String(order.orderType).toUpperCase() === 'AT_HOME' ||
+    String(order.inspectionMethod).toUpperCase() === 'AT_HOME' ||
+    String((order as any).inspectionOrder?.orderType).toUpperCase() === 'AT_HOME' ||
+    String((order as any).inspectionOrder?.inspectionMethod).toUpperCase() === 'AT_HOME'
+  );
+  if (!isAtHome) return false;
+
+  const isCheckedIn = Boolean(
+    order.homeCheckedInAt ||
+    order.inspectorArrivedAt ||
+    (order as any).home_checked_in_at ||
+    (order as any).inspector_arrived_at
+  );
+  if (isCheckedIn) return false;
+
+  const rawStatus = String(
+    order.status ||
+    order.backendStatus ||
+    order.inspectionStatus ||
+    (order as any).inspectionOrder?.status ||
+    ''
+  ).toUpperCase();
+
+  if (['INSPECTING', 'INSPECTION_IN_PROGRESS', 'PASSED', 'FAILED', 'COMPLETED', 'DELIVERING_TO_BUYER', 'SHIPPED_TO_BUYER'].includes(rawStatus)) {
+    return false;
+  }
+
+  const apptStatus = String(
+    order.appointmentStatus ||
+    (order as any).savedAppointment?.status ||
+    (order as any).inspectionOrder?.appointmentStatus ||
+    ''
+  ).toUpperCase();
+
+  // If already countered or proposed new time by center, seller is deciding on counter
+  if (apptStatus === 'COUNTERED_BY_CENTER') return false;
+
+  // If explicitly marked as missed/expired/cancelled appointment by BE
+  if (['MISSED', 'EXPIRED', 'RESCHEDULE_REQUIRED', 'CHECKIN_EXPIRED'].includes(apptStatus)) {
+    return true;
+  }
+
+  const apptTime = order.appointmentScheduledAt ||
+    order.scheduledAt ||
+    (order as any).savedAppointment?.scheduledAt ||
+    (order as any).inspectionOrder?.appointmentScheduledAt ||
+    getOrderScheduledAppointmentTime(order);
+
+  // If confirmed or has an appointment time
+  const isApptActive = apptStatus === 'CONFIRMED' ||
+    apptStatus === 'SCHEDULED' ||
+    apptStatus === 'DISPATCHED' ||
+    apptStatus === 'CONFIRMED_PENDING_DISPATCH' ||
+    Boolean((order as any).inspectorId || (order as any).inspectorName) ||
+    Boolean(apptTime);
+
+  if (isApptActive && apptTime) {
+    return canInspectorCheckIn(apptTime, nowTime).expired === true;
+  }
+
+  return false;
 }
 
 export function getOrderScheduledAppointmentTime(order: any): string | null {

@@ -8,7 +8,7 @@ import { formatInspectionDeadline, isInspectionPaymentExpired } from '../../../u
 import { formatVND } from '../../../utils/translations';
 import { isOrderDeliveredToBuyer, isOrderInTransitToBuyer } from '../../../utils/orders/orderReceipt';
 import { getInspectionPurchaseDecision } from '../../../utils/inspectionPurchase';
-import { isOrderEscrowOnHold } from '../../../utils/orders/orderDispute';
+import { isOrderDisputed, isOrderEscrowOnHold } from '../../../utils/orders/orderDispute';
 import { getRebookableDirectShipment } from '../../../utils/orders/directShipment';
 import { getLalamoveInterruption, getLatestDirectShipment } from '../../../utils/lalamoveTracking';
 import { getOrderAllShipments } from '../../../utils/orders/shipmentCache';
@@ -117,6 +117,20 @@ export function OrderCardActions({
   const isDirectOrder = !hasInspection;
   const allOrderShipments = ord.shipments ?? (ord?.id ? getOrderAllShipments(ord.id, (ord as any).linkedOrderId) : []);
   const directShipment = isDirectOrder ? getLatestDirectShipment(allOrderShipments) : null;
+  const atHomeSellerShipment = hasInspection && isAtHome ? getLatestDirectShipment(allOrderShipments) : null;
+  const canRebookAtHomeShipment = Boolean(
+    hasInspection &&
+    isAtHome &&
+    isPurchaseAccepted &&
+    orderIsSeller &&
+    !isOrderCancelledOrRefunded(ord) &&
+    !isOrderReceiptConfirmed(ord) &&
+    !isOrderDisputed(ord) &&
+    !ord.shippingDeliveredAt &&
+    atHomeSellerShipment &&
+    (atHomeSellerShipment.canRebook || Boolean(getLalamoveInterruption(atHomeSellerShipment))) &&
+    !atHomeSellerShipment.deliveredAt
+  );
   const isDirectShipInterrupted = directShipment ? Boolean(getLalamoveInterruption(directShipment)) : false;
   const hasActiveDirectShip = Boolean(directShipment && !isDirectShipInterrupted);
   const canRebookDirectShipment = Boolean(
@@ -419,6 +433,22 @@ export function OrderCardActions({
                 >
                   <Truck className="w-3.5 h-3.5 text-blue-600" />
                   <span>{lang === 'vi' ? 'Theo Dõi Lalamove' : 'Lalamove Tracking'}</span>
+                </button>
+              )}
+
+              {/* Nút Tạo lại vận đơn Lalamove khi vận đơn kiểm định tại nhà (AT_HOME) bị hủy/từ chối */}
+              {canRebookAtHomeShipment && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setCreateShipmentOrder(ord);
+                  }}
+                  className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:opacity-90 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-sm whitespace-nowrap shrink-0"
+                  title={lang === 'vi' ? 'Vận đơn trước đó đã bị hủy/từ chối. Bấm để tạo lại vận đơn Lalamove mới' : 'Previous shipment was cancelled/rejected. Click to rebook'}
+                >
+                  <Truck className="w-3.5 h-3.5" />
+                  <span>{lang === 'vi' ? 'Tạo lại vận đơn' : 'Rebook shipment'}</span>
                 </button>
               )}
 

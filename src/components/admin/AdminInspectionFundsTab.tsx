@@ -187,44 +187,6 @@ export const AdminInspectionFundsTab: React.FC<AdminInspectionFundsTabProps> = (
         console.warn('Could not fetch from inspectorService.getAllOrders:', err);
       }
 
-      // Also read local cached orders (center_inspection_orders + recent_placed_orders)
-      let localCachedList: any[] = [];
-      try {
-        const rawRecent = localStorage.getItem('recent_placed_orders');
-        const rawCenter = localStorage.getItem('center_inspection_orders');
-        const parsedRecent = rawRecent ? JSON.parse(rawRecent) : [];
-        const parsedCenter = rawCenter ? JSON.parse(rawCenter) : [];
-        localCachedList = [
-          ...(Array.isArray(parsedCenter) ? parsedCenter : []),
-          ...(Array.isArray(parsedRecent) ? parsedRecent : []),
-        ];
-      } catch {
-        // ignore parse error
-      }
-
-      // Fallback seed order to guarantee #17e67687-13fd-411c-8c70-be3e02b69ea9 is always present if not found
-      const seedOrders: InspectionOrderDto[] = [
-        {
-          id: '17e67687-13fd-411c-8c70-be3e02b69ea9',
-          postId: 'post_17e67687',
-          postTitle: 'Máy Hút Bụi Cầm Tay Philips 1000W-1600W - Dùng Gia Đình Nguyên Zin Lực Hút Mạnh',
-          postPrice: 500000,
-          buyerName: 'Nguyen Hieu Tuan',
-          sellerName: 'Thị Thùy Trang Nguyễn',
-          orderType: 'AT_CENTER',
-          status: 'CANCELLED',
-          inspectionFee: 200000,
-          shippingFee: 340000,
-          returnShippingReserveFee: 408000,
-          feePayer: 'SELLER_PAYS',
-          sellerFeeShare: 948000,
-          buyerFeeShare: 0,
-          sellerPaidAt: '2026-11-11T19:39:15Z',
-          feeSettledAt: null,
-          createdAt: '2026-11-11T19:30:00Z',
-        }
-      ];
-
       // Helper to extract timestamp for sorting newest first
       const getOrderTimestamp = (ord: any): number => {
         const dateStr =
@@ -241,10 +203,6 @@ export const AdminInspectionFundsTab: React.FC<AdminInspectionFundsTabProps> = (
           if (!isNaN(t) && t > 0) return t;
         }
 
-        if (ord.id === '17e67687-13fd-411c-8c70-be3e02b69ea9') {
-          return new Date('2026-11-11T19:39:15Z').getTime();
-        }
-
         return 0;
       };
 
@@ -252,7 +210,7 @@ export const AdminInspectionFundsTab: React.FC<AdminInspectionFundsTabProps> = (
       const seenIds = new Set<string>();
       const combined: InspectionOrderDto[] = [];
 
-      [...backendList, ...localCachedList, ...seedOrders].forEach((item: any) => {
+      backendList.forEach((item: any) => {
         if (!item || !item.id) return;
         const normalizedId = String(item.id).trim();
         if (seenIds.has(normalizedId)) return;
@@ -280,14 +238,14 @@ export const AdminInspectionFundsTab: React.FC<AdminInspectionFundsTabProps> = (
             sellerName: item.sellerName || 'Người bán',
             orderType: item.orderType || item.inspectionMethod || 'AT_CENTER',
             status: item.status || item.backendStatus || item.escrowStatus || 'WAITING_INSPECTION',
-            inspectionFee: Number(item.inspectionFee || item.inspectionFeeVnd || 200000),
-            shippingFee: Number(item.shippingFee || item.shippingFeeVnd || 340000),
-            returnShippingReserveFee: Number(item.returnShippingReserveFee ?? 408000),
+            inspectionFee: Number(item.inspectionFee || item.inspectionFeeVnd || 0),
+            shippingFee: Number(item.shippingFee || item.shippingFeeVnd || 0),
+            returnShippingReserveFee: Number(item.returnShippingReserveFee ?? 0),
             buyerCommitmentDeposit: Number(item.buyerCommitmentDeposit || 0),
             travelFee: Number(item.travelFee || item.travelFeeRoundTrip || 0),
             feePayer: item.feePayer || 'SELLER_PAYS',
             buyerFeePercent: item.buyerFeePercent,
-            sellerFeeShare: Number(item.sellerFeeShare ?? 948000),
+            sellerFeeShare: Number(item.sellerFeeShare ?? 0),
             buyerFeeShare: Number(item.buyerFeeShare ?? 0),
             sellerPaidAt: item.sellerPaidAt || null,
             buyerPaidAt: item.buyerPaidAt || null,
@@ -400,7 +358,6 @@ export const AdminInspectionFundsTab: React.FC<AdminInspectionFundsTabProps> = (
             const t = new Date(s).getTime();
             if (!isNaN(t) && t > 0) return t;
           }
-          if (ord.id === '17e67687-13fd-411c-8c70-be3e02b69ea9') return new Date('2026-11-11T19:39:15Z').getTime();
           return 0;
         };
         const timeA = getTs(a);

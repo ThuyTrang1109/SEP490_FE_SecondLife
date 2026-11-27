@@ -14,6 +14,7 @@ import {
 import { translations, formatVND } from '../utils/translations';
 import { dialogService } from '../utils/dialogService';
 import { resolveCategoryAndItem } from '../utils/catalogCache';
+import { isPostRequiringInspection } from '../utils/listingInspection';
 import { translateSystemNotification } from '../utils/systemNotificationTranslator';
 import {
   adminService,
@@ -293,7 +294,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               backendStatus: post.status,
               createdAt: post.createdAt || new Date().toISOString(),
               isInspectionGuaranteed: true,
-              requiresInspection: Number(post.price || post.priceVnd || 0) > 5000000,
+              requiresInspection: isPostRequiringInspection(post),
               photos: {
                 front: rawImages[0] || primaryImage,
                 back: rawImages[1] || primaryImage,
@@ -1234,7 +1235,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     },
     {
       id: 'credit-pricing' as AdminTab,
-      label: lang === 'vi' ? 'BẢNG GIÁ & CHIẾT KHẤU' : 'CREDIT & PRICING',
+      label: lang === 'vi' ? 'BẢNG GIÁ GÓI NẠP' : 'CREDIT & PRICING',
       icon: Tag,
       badge: null
     },
@@ -1616,7 +1617,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     className="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-bold text-slate-700 flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${isLoadingPosts ? 'animate-spin' : ''}`} />
-                    <span>Làm mới từ Backend</span>
+                    <span>Làm mới</span>
                   </button>
                 </div>
               </div>
@@ -2798,7 +2799,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                           2. Danh Sách Gói Dịch Vụ & Chính Sách Chiết Khấu Ưu Đãi
                         </h4>
                         <p className="text-[11px] text-slate-500 mt-0.5">
-                          Quản lý các gói dịch vụ bán lượt đăng bài, chat AI và định giá. Ưu đãi chiết khấu (%) do Backend tính toán tự động dựa trên đơn giá chuẩn.
+                          Quản lý các gói dịch vụ bán lượt đăng bài, chat AI và định giá. Ưu đãi chiết khấu (%) do hệ thống tính toán tự động dựa trên đơn giá chuẩn.
                         </p>
                       </div>
 

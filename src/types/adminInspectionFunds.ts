@@ -1,3 +1,5 @@
+import type { InspectionReturnFee } from '../services/shippingService';
+
 export type AdminCollectionStatus =
   | 'NOT_DUE'
   | 'NO_PAYMENT_REQUIRED'
@@ -17,6 +19,7 @@ export type AdminReturnReserveStatus =
   | 'AWAITING_CASH_CONFIRMATION'
   | 'AWAITING_RECONCILIATION'
   | 'EXCEEDS_RESERVE'
+  | 'SETTLED_OUTSTANDING'
   | 'SETTLED'
   | string;
 
@@ -88,5 +91,6 @@ export interface AdminInspectionOrderFundsDTO {
   feeSplit?: string | null;
   settlement?: AdminSettlementDTO | null;
   shipments?: AdminFundShipmentDTO[];
+  returnFee?: InspectionReturnFee | null;
 }
 

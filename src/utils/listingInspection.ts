@@ -301,3 +301,43 @@ export function resolveSellerListingInspectionState(
 
   return { passed: false };
 }
+
+let cachedHighValueThreshold: number | null = null;
+
+export function getSystemHighValueThreshold(): number {
+  if (cachedHighValueThreshold != null) return cachedHighValueThreshold;
+  try {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('system_high_value_threshold');
+      if (stored) {
+        const parsed = Number(stored);
+        if (Number.isFinite(parsed) && parsed > 0) {
+          cachedHighValueThreshold = parsed;
+          return parsed;
+        }
+      }
+    }
+  } catch { }
+  return 5000000;
+}
+
+export function setSystemHighValueThreshold(threshold: number): void {
+  if (Number.isFinite(threshold) && threshold > 0) {
+    cachedHighValueThreshold = threshold;
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('system_high_value_threshold', String(threshold));
+      }
+    } catch { }
+  }
+}
+
+export function isPostRequiringInspection(post: any, customThreshold?: number): boolean {
+  if (!post) return false;
+  if (typeof post.requiresInspection === 'boolean') return post.requiresInspection;
+  if (typeof post.isHighValue === 'boolean') return post.isHighValue;
+  const threshold = post.inspectionThreshold ?? customThreshold ?? getSystemHighValueThreshold();
+  const price = Number(post.price || post.priceVnd || 0);
+  return price > threshold;
+}
+

@@ -79,6 +79,7 @@ export function CenterPricing({ currentUser, isLoadingCategories, lang, checklis
     setProposingLevelFeeAmount,
     setProposingLevelFeeError,
     setSelectedProposalDetail,
+    centerApprovedTravelProposal,
     tierProposals,
     travelTiers,
   } = pricing;
@@ -86,10 +87,19 @@ export function CenterPricing({ currentUser, isLoadingCategories, lang, checklis
   const [selectedHistoryLevel, setSelectedHistoryLevel] = useState<InspectionComplexityLevel | null>(null);
   const [isTravelTiersHistoryOpen, setIsTravelTiersHistoryOpen] = useState(false);
 
-  const latestApprovedTierProposal = tierProposals.find(
-    (p) => p.tiers && p.tiers.length > 0 && p.status === 'APPROVED'
-  );
-  const latestTierProposalTime = latestApprovedTierProposal?.reviewedAt || latestApprovedTierProposal?.createdAt;
+  const effectiveApprovedTravelProposal =
+    centerApprovedTravelProposal ||
+    tierProposals.find(
+      (p) => p.tiers && p.tiers.length > 0 && String(p.status || '').toUpperCase() === 'APPROVED'
+    );
+  const effectiveTravelTiers =
+    (effectiveApprovedTravelProposal?.tiers && effectiveApprovedTravelProposal.tiers.length > 0)
+      ? effectiveApprovedTravelProposal.tiers
+      : travelTiers;
+  const latestTierProposalTime =
+    effectiveApprovedTravelProposal?.reviewedAt ||
+    effectiveApprovedTravelProposal?.updatedAt ||
+    effectiveApprovedTravelProposal?.createdAt;
 
   return (
     <div className="space-y-6 animate-fadeIn">
@@ -490,11 +500,20 @@ export function CenterPricing({ currentUser, isLoadingCategories, lang, checklis
           <div className="flex items-center gap-2">
             <Navigation className="w-4 h-4 text-slate-500" />
             <h4 className="font-bold text-xs text-slate-900 uppercase tracking-wider">
-              Bảng Bậc Thang Cước Di Chuyển Hiện Hành ({travelTiers.length} bậc)
+              Bảng Bậc Thang Cước Di Chuyển Hiện Hành ({effectiveTravelTiers.length} bậc)
             </h4>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-[11px] text-slate-400 font-medium">Áp dụng chung toàn hệ thống</span>
+            {effectiveApprovedTravelProposal ? (
+              <span className="text-[11px] text-emerald-700 font-bold bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                <span>
+                  Đang áp dụng cho cơ sở (Đề xuất #{effectiveApprovedTravelProposal.id.slice(0, 8)})
+                </span>
+              </span>
+            ) : (
+              <span className="text-[11px] text-slate-400 font-medium">Áp dụng chung toàn hệ thống</span>
+            )}
             <button
               type="button"
               onClick={() => setIsTravelTiersHistoryOpen(true)}
@@ -520,21 +539,21 @@ export function CenterPricing({ currentUser, isLoadingCategories, lang, checklis
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {isLoadingPricing && travelTiers.length === 0 ? (
+              {isLoadingPricing && effectiveTravelTiers.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="py-8 text-center text-slate-400">
                     <Loader2 className="w-5 h-5 animate-spin mx-auto text-[#24263e] mb-1" />
                     <span>Đang tải bảng bậc thang cước di chuyển...</span>
                   </td>
                 </tr>
-              ) : travelTiers.length === 0 ? (
+              ) : effectiveTravelTiers.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="py-8 text-center text-slate-400">
                     Chưa có dữ liệu bậc thang cước di chuyển từ hệ thống.
                   </td>
                 </tr>
               ) : (
-                travelTiers.map((tier, idx) => (
+                effectiveTravelTiers.map((tier, idx) => (
                   <tr key={tier.tierNumber || idx} className="hover:bg-slate-50/60 transition">
                     <td className="py-3 px-4 font-black text-slate-900">
                       #{tier.tierNumber || idx + 1}
@@ -549,11 +568,13 @@ export function CenterPricing({ currentUser, isLoadingCategories, lang, checklis
                       {formatVND(tier.pricePerKm || 0)} / km
                     </td>
                     <td className="py-3 px-4 text-slate-600 font-mono text-[11px]">
-                      {tier.updatedAt
-                        ? new Date(tier.updatedAt).toLocaleString('vi-VN')
-                        : tier.createdAt
-                          ? new Date(tier.createdAt).toLocaleString('vi-VN')
-                          : (latestTierProposalTime ? new Date(latestTierProposalTime).toLocaleString('vi-VN') : 'Đang áp dụng')}
+                      {latestTierProposalTime
+                        ? new Date(latestTierProposalTime).toLocaleString('vi-VN')
+                        : tier.updatedAt
+                          ? new Date(tier.updatedAt).toLocaleString('vi-VN')
+                          : tier.createdAt
+                            ? new Date(tier.createdAt).toLocaleString('vi-VN')
+                            : 'Đang áp dụng'}
                     </td>
                     <td className="py-3 px-4 text-center">
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -685,7 +706,9 @@ export function CenterPricing({ currentUser, isLoadingCategories, lang, checklis
                         )}
                       </td>
                       <td className="py-3 px-3 font-black text-[#c34c36] font-mono">
-                        {formatVND(prop.baseInspectionFee || 0)}
+                        {prop.tiers && prop.tiers.length > 0 && !prop.complexityLevel
+                          ? `${prop.tiers.length} bậc cước`
+                          : formatVND(prop.baseInspectionFee || 0)}
                       </td>
                       <td className="py-3 px-3 text-slate-600">
                         {prop.proposedByName || prop.proposedByEmail || 'TTKD'}

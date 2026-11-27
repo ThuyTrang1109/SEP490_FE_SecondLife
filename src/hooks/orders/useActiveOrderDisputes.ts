@@ -36,8 +36,14 @@ export function useActiveOrderDisputes(
     const buyerIds = new Set<string>();
     const sellerIds = new Set<string>();
     for (const order of routeOrder ? [...orders, routeOrder] : orders) {
-      // The dispute API requires carrier delivery. A pre-delivery shipping hold needs no report lookup.
-      if (order.backendEscrowStatus !== 'FROZEN' || !order.shippingDeliveredAt || order.orderReturn?.reportId) continue;
+      // The dispute API requires carrier delivery. A pre-delivery shipping hold needs no report lookup,
+      // and orders that already carry hasActiveDispute from the feed require no extra lookup.
+      if (
+        order.backendEscrowStatus !== 'FROZEN' ||
+        !order.shippingDeliveredAt ||
+        order.orderReturn?.reportId ||
+        order.hasActiveDispute !== undefined
+      ) continue;
       if (order.buyerId === userId) buyerIds.add(order.id);
       else if (order.sellerId === userId) sellerIds.add(order.id);
     }

@@ -62,10 +62,14 @@ export function PricingProposalDetailsModal({ selectedProposalDetail, setSelecte
           </div>
           <div>
             <span className="text-[10px] font-bold text-slate-400 uppercase block">
-              Phí kiểm định cơ sở:
+              {selectedProposalDetail.tiers && selectedProposalDetail.tiers.length > 0 && !selectedProposalDetail.complexityLevel
+                ? 'Số bậc cước đề xuất:'
+                : 'Phí kiểm định cơ sở:'}
             </span>
             <span className="font-black text-[#c34c36] text-xs font-mono block mt-0.5">
-              {formatVND(selectedProposalDetail.baseInspectionFee || 0)}
+              {selectedProposalDetail.tiers && selectedProposalDetail.tiers.length > 0 && !selectedProposalDetail.complexityLevel
+                ? `${selectedProposalDetail.tiers.length} bậc thang`
+                : formatVND(selectedProposalDetail.baseInspectionFee || 0)}
             </span>
           </div>
           <div>

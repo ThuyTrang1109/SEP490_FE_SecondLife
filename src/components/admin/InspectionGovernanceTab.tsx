@@ -269,6 +269,10 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
   const [page, setPage] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [totalElements, setTotalElements] = useState(0);
+  const [feeProposalTotal, setFeeProposalTotal] = useState<number>(0);
+  const [travelProposalTotal, setTravelProposalTotal] = useState<number>(0);
+  const [proposalBranchFilter, setProposalBranchFilter] = useState<'ALL' | 'HCM' | 'HANOI'>('ALL');
+  const [travelBranchFilter, setTravelBranchFilter] = useState<'ALL' | 'HCM' | 'HANOI'>('ALL');
   const pageSize = 10;
 
   // Selected Proposal for Details & Diff View
@@ -280,25 +284,44 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
   const [reviewAction, setReviewAction] = useState<'APPROVE' | 'REJECT'>('APPROVE');
   const [reviewNote, setReviewNote] = useState('');
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
 
   // Travel tiers state
   const [travelTiers, setTravelTiers] = useState<InspectionTravelTierDto[]>([]);
   const [isLoadingTiers, setIsLoadingTiers] = useState(false);
-  const [isEditingTiers, setIsEditingTiers] = useState(false);
-  const [editedTiers, setEditedTiers] = useState<InspectionTravelTierDto[]>([]);
-  const [tierValidationError, setTierValidationError] = useState<string | null>(null);
 
-  // Preview before saving tiers directly
-  const [isPreviewSaveTiersOpen, setIsPreviewSaveTiersOpen] = useState(false);
-  const [isSavingTiers, setIsSavingTiers] = useState(false);
+  // Active applied pricing state (Bảng giá đang áp dụng tại các trung tâm)
+  const [approvedFeeProposals, setApprovedFeeProposals] = useState<InspectionFeeProposalResponse[]>([]);
+  const [approvedTravelProposals, setApprovedTravelProposals] = useState<InspectionFeeProposalResponse[]>([]);
+  const [isLoadingActivePricing, setIsLoadingActivePricing] = useState<boolean>(false);
 
   // Feedback banner state
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error' | 'warning'; message: string } | null>(null);
 
+  const loadActivePricing = useCallback(async () => {
+    setIsLoadingActivePricing(true);
+    try {
+      const [feeRes, travelRes] = await Promise.allSettled([
+        inspectorService.getAdminFeeProposals('APPROVED', 0, 50, false),
+        inspectorService.getAdminFeeProposals('APPROVED', 0, 50, true),
+      ]);
+      if (feeRes.status === 'fulfilled') {
+        setApprovedFeeProposals(feeRes.value.items || []);
+      }
+      if (travelRes.status === 'fulfilled') {
+        setApprovedTravelProposals(travelRes.value.items || []);
+      }
+    } catch (err) {
+      console.warn('Failed to load active pricing:', err);
+    } finally {
+      setIsLoadingActivePricing(false);
+    }
+  }, []);
+
   useEffect(() => {
     // Initial data fetch
     inspectorService
-      .getInspectionCenters()
+      .getInspectionCenters(true)
       .then((loadedCenters) => {
         setCenters(loadedCenters);
         loadChecklistProposals(0, undefined, loadedCenters);
@@ -306,13 +329,22 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
       .catch(() => {
         loadChecklistProposals(0);
       });
-    loadProposals(0, proposalStatusFilter);
+    loadProposals(0, 'ALL', false);
     loadTravelTiers();
+    loadActivePricing();
+
+    // Fetch proposal counts for badges
+    inspectorService.getAdminFeeProposals('ALL', 0, 1, false)
+      .then((res) => setFeeProposalTotal(res.totalElements || 0))
+      .catch(() => {});
+    inspectorService.getAdminFeeProposals('ALL', 0, 1, true)
+      .then((res) => setTravelProposalTotal(res.totalElements || 0))
+      .catch(() => {});
 
     // Fetch catalogs for filters
     categoryService.getCategories().then(setCategories).catch(() => { });
     itemService.getItems().then(setItems).catch(() => { });
-  }, []);
+  }, [loadActivePricing]);
 
   // Filter items based on selected category
   const availableItems = useMemo(() => {
@@ -425,6 +457,153 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
   const otherCenters = useMemo(() => {
     return centers.filter((c) => c.id !== hanoiCenter?.id && c.id !== hcmCenter?.id);
   }, [centers, hanoiCenter, hcmCenter]);
+
+  // Hàm trích xuất và hiển thị tên rõ ràng của trung tâm gửi đề xuất biểu phí
+  const getProposalCenterInfo = useCallback(
+    (proposal?: InspectionFeeProposalResponse | null) => {
+      if (!proposal) {
+        return {
+          name: 'Trung tâm kiểm định',
+          email: '',
+          areaBadge: '',
+          address: undefined as string | null | undefined,
+          isHcm: false,
+          isHanoi: false,
+          branchKey: 'OTHER' as const,
+        };
+      }
+
+      // 0. Nhận diện ưu tiên tuyệt đối dựa theo ID cố định và email hệ thống
+      const pid = (proposal.proposedById || '').toLowerCase();
+      const pEmail = (proposal.proposedByEmail || proposal.proposedByName || '').toLowerCase();
+      const isKnownHanoi =
+        pid === 'e844ef8a-6558-40ce-9ec7-28414d2ef701' ||
+        pEmail.includes('center2') ||
+        pEmail.includes('hanoi') ||
+        pEmail.includes('hn');
+      const isKnownHcm =
+        pid === 'f5bd185b-0cf2-4e79-acb8-d9c1fdadc5ad' ||
+        (pEmail.includes('center@') && !pEmail.includes('center2')) ||
+        pEmail.includes('hcm') ||
+        pEmail.includes('saigon');
+
+      if (isKnownHanoi) {
+        return {
+          name: hanoiCenter?.name || 'Trung Tâm Kiểm Định SecondLife Hà Nội',
+          email: proposal.proposedByEmail || (proposal.proposedByName?.includes('@') ? proposal.proposedByName : 'center2@secondlife.com'),
+          areaBadge: 'Hà Nội',
+          address: hanoiCenter?.address || 'Khu Công nghệ cao Hòa Lạc, Km29 Đại lộ Thăng Long, Hà Nội',
+          isHcm: false,
+          isHanoi: true,
+          branchKey: 'HANOI' as const,
+        };
+      }
+      if (isKnownHcm) {
+        return {
+          name: hcmCenter?.name || 'Trung Tâm Kiểm Định SecondLife TP. Hồ Chí Minh',
+          email: proposal.proposedByEmail || (proposal.proposedByName?.includes('@') ? proposal.proposedByName : 'center@secondlife.com'),
+          areaBadge: 'TP. HCM',
+          address: hcmCenter?.address || 'Công Ty TNHH Gianty, Đường B4, Phường An Khánh, TP. Thủ Đức, TP. HCM',
+          isHcm: true,
+          isHanoi: false,
+          branchKey: 'HCM' as const,
+        };
+      }
+
+      // 1. Tìm trong danh mục centers theo proposedById (User ID)
+      let matched = proposal.proposedById
+        ? centers.find((c) => c.id && c.id.toLowerCase() === proposal.proposedById?.toLowerCase())
+        : null;
+
+      // 2. Nếu không thấy theo ID, tìm theo tên nếu proposedByName không phải là email
+      if (!matched && proposal.proposedByName && !proposal.proposedByName.includes('@')) {
+        matched = centers.find(
+          (c) => c.name && normalizeVN(c.name) === normalizeVN(proposal.proposedByName || '')
+        );
+      }
+
+      // 3. Nếu tìm thấy trung tâm tương ứng trong hệ thống
+      if (matched) {
+        const isHcm = isHcmText(matched.city) || isHcmText(matched.name) || isHcmText(matched.address);
+        const isHanoi = isHanoiText(matched.city) || isHanoiText(matched.name) || isHanoiText(matched.address);
+        return {
+          name: matched.name,
+          email: proposal.proposedByEmail || (proposal.proposedByName?.includes('@') ? proposal.proposedByName : ''),
+          areaBadge: isHcm ? 'TP. HCM' : isHanoi ? 'Hà Nội' : matched.city || '',
+          address: matched.address,
+          isHcm,
+          isHanoi,
+          branchKey: isHcm ? ('HCM' as const) : isHanoi ? ('HANOI' as const) : ('OTHER' as const),
+        };
+      }
+
+      // 4. Nếu proposedByName là tên thật (không chứa ký tự @ của email)
+      if (proposal.proposedByName && !proposal.proposedByName.includes('@')) {
+        const isHcm = isHcmText(proposal.proposedByName);
+        const isHanoi = isHanoiText(proposal.proposedByName);
+        return {
+          name: proposal.proposedByName,
+          email: proposal.proposedByEmail || '',
+          areaBadge: isHcm ? 'TP. HCM' : isHanoi ? 'Hà Nội' : '',
+          address: undefined as string | null | undefined,
+          isHcm,
+          isHanoi,
+          branchKey: isHcm ? ('HCM' as const) : isHanoi ? ('HANOI' as const) : ('OTHER' as const),
+        };
+      }
+
+      // 5. Suy luận dựa trên email và danh mục trung tâm sẵn có
+      const rawEmail = (proposal.proposedByEmail || proposal.proposedByName || '').toLowerCase();
+      if (rawEmail.includes('hanoi') || rawEmail.includes('center2') || rawEmail.includes('hn')) {
+        return {
+          name: hanoiCenter?.name || 'Trung Tâm Kiểm Định SecondLife Hà Nội',
+          email: proposal.proposedByEmail || proposal.proposedByName || '',
+          areaBadge: 'Hà Nội',
+          address: hanoiCenter?.address,
+          isHcm: false,
+          isHanoi: true,
+          branchKey: 'HANOI' as const,
+        };
+      }
+
+      if (hcmCenter || rawEmail.includes('hcm') || rawEmail.includes('center@') || rawEmail.includes('sg')) {
+        return {
+          name: hcmCenter?.name || 'Trung Tâm Kiểm Định SecondLife TP. Hồ Chí Minh',
+          email: proposal.proposedByEmail || proposal.proposedByName || '',
+          areaBadge: 'TP. HCM',
+          address: hcmCenter?.address,
+          isHcm: true,
+          isHanoi: false,
+          branchKey: 'HCM' as const,
+        };
+      }
+
+      if (centers.length > 0) {
+        const isHcm = isHcmText(centers[0].city) || isHcmText(centers[0].name);
+        const isHanoi = isHanoiText(centers[0].city) || isHanoiText(centers[0].name);
+        return {
+          name: centers[0].name,
+          email: proposal.proposedByEmail || proposal.proposedByName || '',
+          areaBadge: centers[0].city || '',
+          address: centers[0].address,
+          isHcm,
+          isHanoi,
+          branchKey: isHcm ? ('HCM' as const) : isHanoi ? ('HANOI' as const) : ('OTHER' as const),
+        };
+      }
+
+      return {
+        name: 'Trung Tâm Kiểm Định SecondLife',
+        email: proposal.proposedByEmail || proposal.proposedByName || '',
+        areaBadge: '',
+        address: undefined as string | null | undefined,
+        isHcm: false,
+        isHanoi: false,
+        branchKey: 'OTHER' as const,
+      };
+    },
+    [centers, hcmCenter, hanoiCenter]
+  );
 
   const isHanoiActive =
     checklistCenterFilter === 'HANOI' || (Boolean(hanoiCenter) && checklistCenterFilter === hanoiCenter?.id);
@@ -816,14 +995,23 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
     }
   };
 
-  const loadProposals = async (targetPage: number = 0, statusFilter: string = proposalStatusFilter) => {
+  const loadProposals = async (
+    targetPage: number = 0,
+    statusFilter: string = proposalStatusFilter,
+    travelOnly: boolean = activeSubTab === 'travel_tiers'
+  ) => {
     setIsLoadingProposals(true);
     try {
-      const data = await inspectorService.getAdminFeeProposals(statusFilter, targetPage, pageSize);
+      const data = await inspectorService.getAdminFeeProposals(statusFilter, targetPage, pageSize, travelOnly);
       setProposals(data.items || []);
       setTotalPages(data.totalPages || 1);
       setTotalElements(data.totalElements || 0);
       setPage(data.page || 0);
+      if (travelOnly) {
+        setTravelProposalTotal(data.totalElements || 0);
+      } else {
+        setFeeProposalTotal(data.totalElements || 0);
+      }
     } catch (err: any) {
       console.warn('Failed to load admin fee proposals:', err);
       setProposals([]);
@@ -835,8 +1023,149 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
   const handleStatusFilterChange = (newStatus: 'ALL' | InspectionFeeProposalStatus) => {
     setProposalStatusFilter(newStatus);
     setPage(0);
-    loadProposals(0, newStatus);
+    loadProposals(0, newStatus, activeSubTab === 'travel_tiers');
   };
+
+  // Lọc tách biệt giữa đề xuất biểu phí cơ sở L1-L4 và đề xuất cước di chuyển
+  const displayedProposals = useMemo(() => {
+    return proposals.filter((p) => {
+      const tierCount = p.tiers?.length ?? 0;
+      const isTravelOnly = tierCount > 0 && !p.categoryId && !p.complexityLevel;
+      if (activeSubTab === 'travel_tiers') {
+        return isTravelOnly;
+      }
+      return !isTravelOnly;
+    });
+  }, [proposals, activeSubTab]);
+
+  // Phân loại đề xuất theo 2 chi nhánh TP. HCM và Hà Nội
+  const hcmFeeProposals = useMemo(() => {
+    return displayedProposals.filter((p) => {
+      const info = getProposalCenterInfo(p);
+      return info.isHcm || info.branchKey === 'HCM';
+    });
+  }, [displayedProposals, getProposalCenterInfo]);
+
+  const hanoiFeeProposals = useMemo(() => {
+    return displayedProposals.filter((p) => {
+      const info = getProposalCenterInfo(p);
+      return info.isHanoi || info.branchKey === 'HANOI';
+    });
+  }, [displayedProposals, getProposalCenterInfo]);
+
+  // Danh sách đề xuất biểu phí độ phức tạp hiển thị theo bộ lọc chi nhánh
+  const visibleFeeProposals = useMemo(() => {
+    if (proposalBranchFilter === 'HCM') return hcmFeeProposals;
+    if (proposalBranchFilter === 'HANOI') return hanoiFeeProposals;
+    return displayedProposals;
+  }, [proposalBranchFilter, hcmFeeProposals, hanoiFeeProposals, displayedProposals]);
+
+  // Phân loại đề xuất cước di chuyển theo chi nhánh
+  const hcmTravelProposals = useMemo(() => {
+    return displayedProposals.filter((p) => {
+      const info = getProposalCenterInfo(p);
+      return info.isHcm || info.branchKey === 'HCM';
+    });
+  }, [displayedProposals, getProposalCenterInfo]);
+
+  const hanoiTravelProposals = useMemo(() => {
+    return displayedProposals.filter((p) => {
+      const info = getProposalCenterInfo(p);
+      return info.isHanoi || info.branchKey === 'HANOI';
+    });
+  }, [displayedProposals, getProposalCenterInfo]);
+
+  // Danh sách đề xuất cước di chuyển hiển thị theo bộ lọc chi nhánh
+  const visibleTravelProposals = useMemo(() => {
+    if (travelBranchFilter === 'HCM') return hcmTravelProposals;
+    if (travelBranchFilter === 'HANOI') return hanoiTravelProposals;
+    return displayedProposals;
+  }, [travelBranchFilter, hcmTravelProposals, hanoiTravelProposals, displayedProposals]);
+
+  // Lấy biểu phí độ phức tạp đang áp dụng của từng chi nhánh
+  const getActiveLevelFees = useCallback(
+    (branchKey: 'HCM' | 'HANOI') => {
+      const levels: { key: InspectionComplexityLevel; name: string }[] = [
+        { key: 'L1', name: 'Đơn giản (L1)' },
+        { key: 'L2', name: 'Trung bình (L2)' },
+        { key: 'L3', name: 'Phức tạp (L3)' },
+        { key: 'L4', name: 'Rất phức tạp (L4)' },
+      ];
+
+      // Lọc các proposal đã duyệt của chi nhánh
+      const centerApproved = approvedFeeProposals.filter((p) => {
+        const info = getProposalCenterInfo(p);
+        const matchBranch =
+          branchKey === 'HCM'
+            ? info.isHcm || info.branchKey === 'HCM'
+            : info.isHanoi || info.branchKey === 'HANOI';
+        return matchBranch && (p.status === 'APPROVED' || !p.status);
+      });
+
+      return levels.map((lvl) => {
+        const matched = centerApproved.find((p) => p.complexityLevel === lvl.key);
+        return {
+          level: lvl.key,
+          levelName: lvl.name,
+          fee: matched?.baseInspectionFee,
+          proposalId: matched?.id,
+          approvedAt: matched?.reviewedAt || matched?.updatedAt || matched?.createdAt,
+          isConfigured: matched?.baseInspectionFee != null && matched.baseInspectionFee > 0,
+        };
+      });
+    },
+    [approvedFeeProposals, getProposalCenterInfo]
+  );
+
+  // Lấy bảng 6 bậc thang cước di chuyển đang áp dụng của từng chi nhánh
+  const getActiveTravelTiers = useCallback(
+    (branchKey: 'HCM' | 'HANOI') => {
+      // Kết hợp tất cả đề xuất cước di chuyển APPROVED đã tải từ hệ thống
+      const allApproved = [
+        ...approvedTravelProposals,
+        ...proposals.filter((p) => p.status === 'APPROVED' && (p.tiers?.length ?? 0) > 0),
+      ];
+      // Loại bỏ trùng lặp id
+      const uniqueApproved = Array.from(new Map(allApproved.map((p) => [p.id, p])).values());
+
+      // Lọc các đề xuất cước thuộc chi nhánh yêu cầu
+      const centerApproved = uniqueApproved.filter((p) => {
+        const info = getProposalCenterInfo(p);
+        const matchBranch =
+          branchKey === 'HCM'
+            ? info.isHcm || info.branchKey === 'HCM'
+            : info.isHanoi || info.branchKey === 'HANOI';
+        return matchBranch && (p.status === 'APPROVED' || !p.status) && p.tiers && p.tiers.length > 0;
+      });
+
+      // Sắp xếp đề xuất được Admin phê duyệt mới nhất lên đầu
+      const sortedApproved = [...centerApproved].sort((a, b) => {
+        const timeA = new Date(a.reviewedAt || a.updatedAt || a.createdAt || 0).getTime();
+        const timeB = new Date(b.reviewedAt || b.updatedAt || b.createdAt || 0).getTime();
+        return timeB - timeA;
+      });
+
+      const latestApproved = sortedApproved[0];
+
+      if (latestApproved && latestApproved.tiers && latestApproved.tiers.length > 0) {
+        return {
+          hasCustomTiers: true,
+          proposalId: latestApproved.id,
+          approvedAt: latestApproved.reviewedAt || latestApproved.updatedAt || latestApproved.createdAt,
+          tiers: latestApproved.tiers,
+        };
+      }
+
+      // Nếu chi nhánh chưa có đề xuất cước riêng được duyệt, sử dụng bảng bậc thang mặc định của hệ thống
+      return {
+        hasCustomTiers: false,
+        proposalId: null,
+        approvedAt: null,
+        tiers: travelTiers,
+      };
+    },
+    [approvedTravelProposals, proposals, travelTiers, getProposalCenterInfo]
+  );
 
   const loadTravelTiers = async () => {
     setIsLoadingTiers(true);
@@ -852,7 +1181,6 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
       ];
       const tiers = Array.isArray(data) && data.length > 0 ? data : fallbackTiers;
       setTravelTiers(tiers);
-      setEditedTiers(JSON.parse(JSON.stringify(tiers)));
     } catch (err: any) {
       console.warn('Failed to load travel tiers:', err);
     } finally {
@@ -864,39 +1192,70 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
     setSelectedProposal(proposal);
     setReviewAction(action);
     setReviewNote('');
+    setReviewError(null);
     setIsReviewModalOpen(true);
   };
 
   const handleSubmitReview = async () => {
     if (!selectedProposal) return;
     if (reviewAction === 'REJECT' && !reviewNote.trim()) {
-      setFeedback({ type: 'error', message: 'Vui lòng nhập lý do từ chối đề xuất để trung tâm kiểm định nắm rõ' });
+      setReviewError('Vui lòng nhập lý do từ chối đề xuất để trung tâm kiểm định nắm rõ');
       return;
     }
 
     setIsSubmittingReview(true);
-    setFeedback(null);
+    setReviewError(null);
     try {
       await inspectorService.reviewFeeProposal(selectedProposal.id, {
         approved: reviewAction === 'APPROVE',
         reason: reviewNote.trim() || undefined,
       });
 
+      const isTravelProposal = (selectedProposal.tiers?.length ?? 0) > 0 && !selectedProposal.complexityLevel;
       setFeedback({
         type: 'success',
         message: reviewAction === 'APPROVE'
-          ? 'Đã phê duyệt đề xuất biểu phí thành công! Bảng bậc cước di chuyển đã được tự động cập nhật.'
-          : 'Đã từ chối đề xuất biểu phí thành công.'
+          ? (isTravelProposal
+              ? 'Đã phê duyệt đề xuất cước di chuyển thành công! Bảng bậc cước di chuyển đã được tự động cập nhật.'
+              : 'Đã phê duyệt đề xuất biểu phí độ phức tạp thành công! Bảng giá đang áp dụng đã được cập nhật.')
+          : (isTravelProposal
+              ? 'Đã từ chối đề xuất cước di chuyển thành công.'
+              : 'Đã từ chối đề xuất biểu phí độ phức tạp thành công.')
       });
+
+      // Cập nhật tức thời bảng cước di chuyển đang áp dụng của trung tâm vừa được duyệt
+      if (reviewAction === 'APPROVE') {
+        const newlyApproved: InspectionFeeProposalResponse = {
+          ...selectedProposal,
+          status: 'APPROVED',
+          reviewedAt: new Date().toISOString(),
+          reviewedByName: 'System Administrator',
+        };
+        if (isTravelProposal) {
+          setApprovedTravelProposals((prev) => [
+            newlyApproved,
+            ...prev.filter((p) => p.id !== selectedProposal.id),
+          ]);
+        } else {
+          setApprovedFeeProposals((prev) => [
+            newlyApproved,
+            ...prev.filter((p) => p.id !== selectedProposal.id),
+          ]);
+        }
+      }
 
       setIsReviewModalOpen(false);
       setSelectedProposal(null);
+      setReviewError(null);
       if (viewingProposal?.id === selectedProposal.id) {
         setViewingProposal(null);
       }
-      // Reload both proposals and active travel tiers
-      loadProposals(page, proposalStatusFilter);
+      // Reload both proposals, active travel tiers, and active applied pricing
+      loadProposals(page, proposalStatusFilter, activeSubTab === 'travel_tiers');
       loadTravelTiers();
+      loadActivePricing();
+      inspectorService.getAdminFeeProposals('ALL', 0, 1, false).then(res => setFeeProposalTotal(res.totalElements || 0)).catch(() => {});
+      inspectorService.getAdminFeeProposals('ALL', 0, 1, true).then(res => setTravelProposalTotal(res.totalElements || 0)).catch(() => {});
     } catch (err: any) {
       const status = err?.status || err?.statusCode;
       const errorMsg = err?.message || '';
@@ -907,82 +1266,383 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
         });
         setIsReviewModalOpen(false);
         setSelectedProposal(null);
+        setReviewError(null);
         if (viewingProposal?.id === selectedProposal?.id) setViewingProposal(null);
-        loadProposals(page, proposalStatusFilter);
+        loadProposals(page, proposalStatusFilter, activeSubTab === 'travel_tiers');
         loadTravelTiers();
+        loadActivePricing();
+        inspectorService.getAdminFeeProposals('ALL', 0, 1, false).then(res => setFeeProposalTotal(res.totalElements || 0)).catch(() => {});
+        inspectorService.getAdminFeeProposals('ALL', 0, 1, true).then(res => setTravelProposalTotal(res.totalElements || 0)).catch(() => {});
       } else {
-        setFeedback({ type: 'error', message: errorMsg || 'Xét duyệt đề xuất thất bại. Vui lòng thử lại.' });
+        setReviewError(errorMsg || 'Xét duyệt đề xuất thất bại. Vui lòng thử lại.');
       }
     } finally {
       setIsSubmittingReview(false);
     }
   };
 
-  // Direct Tier Editing handlers
-  const handleTierChange = (index: number, field: keyof InspectionTravelTierDto, value: any) => {
-    const updated = [...editedTiers];
-    updated[index] = { ...updated[index], [field]: value };
-    setEditedTiers(updated);
-    setTierValidationError(null);
+  const renderFeeProposalCard = (proposal: InspectionFeeProposalResponse) => {
+    const isPending = proposal.status === 'PENDING_APPROVAL' || proposal.status === 'PENDING';
+    const centerInfo = getProposalCenterInfo(proposal);
+    return (
+      <div
+        key={proposal.id}
+        className={`p-5 rounded-2xl bg-white border transition shadow-2xs space-y-4 ${
+          centerInfo.isHcm ? 'border-orange-200/80 hover:border-orange-400' : 'border-amber-200/80 hover:border-amber-400'
+        }`}
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-3">
+            <div className={`p-2.5 rounded-2xl shrink-0 ${centerInfo.isHcm ? 'bg-orange-50 text-orange-600' : 'bg-amber-50 text-amber-600'}`}>
+              <Building2 className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm font-black text-slate-900">
+                  Đề xuất biểu phí #{proposal.id.slice(0, 8)}
+                </span>
+                <span
+                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-black whitespace-nowrap ${proposal.status === 'APPROVED'
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : proposal.status === 'REJECTED'
+                      ? 'bg-rose-100 text-rose-800'
+                      : 'bg-amber-100 text-amber-800 animate-pulse'
+                    }`}
+                >
+                  {proposal.status === 'PENDING_APPROVAL' || proposal.status === 'PENDING'
+                    ? 'Chờ duyệt'
+                    : proposal.status === 'APPROVED'
+                      ? 'Đã phê duyệt'
+                      : 'Đã từ chối'}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 flex-wrap mt-1 text-xs text-slate-500">
+                <span>Đề xuất bởi:</span>
+                <span className="inline-flex items-center gap-1 font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded-md">
+                  <Building2 className={`w-3.5 h-3.5 shrink-0 ${centerInfo.isHcm ? 'text-orange-600' : 'text-amber-600'}`} />
+                  {centerInfo.name}
+                </span>
+                {centerInfo.areaBadge && (
+                  <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${
+                    centerInfo.isHcm ? 'bg-orange-100 text-orange-800' : 'bg-blue-100 text-blue-800'
+                  }`}>
+                    {centerInfo.areaBadge}
+                  </span>
+                )}
+                {centerInfo.email && (
+                  <span className="text-[11px] text-slate-500 font-medium">({centerInfo.email})</span>
+                )}
+                <span className="text-slate-300">•</span>
+                <span>
+                  Ngày gửi: {proposal.createdAt ? new Date(proposal.createdAt).toLocaleString('vi-VN') : 'Mới đây'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Action buttons */}
+          {isPending && hasFeeManagePermission && (
+            <div className="flex items-center gap-1.5 self-end sm:self-auto flex-wrap">
+              <button
+                type="button"
+                onClick={() => handleOpenReview(proposal, 'REJECT')}
+                className="h-8 px-3 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-bold transition cursor-pointer inline-flex items-center gap-1.5 shadow-2xs"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span>Từ chối</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleOpenReview(proposal, 'APPROVE')}
+                className="h-8 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition cursor-pointer inline-flex items-center gap-1.5 shadow-2xs"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>Phê duyệt</span>
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Proposal Quick Summary */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50/80 p-4 rounded-xl border border-slate-100">
+          <div>
+            <span className="text-[11px] font-bold text-slate-500 block">Phí kiểm định cơ sở đề xuất</span>
+            <span className="text-base font-black text-[#c34c36] block mt-0.5">
+              {formatVND(proposal.baseInspectionFee || 0)}
+            </span>
+          </div>
+          <div>
+            <span className="text-[11px] font-bold text-slate-500 block">Phạm vi / cấp độ áp dụng</span>
+            {proposal.complexityLevel ? (
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className="px-2 py-0.5 rounded text-[11px] font-black uppercase bg-[#24263e] text-white">
+                  Cấp {proposal.complexityLevel}
+                </span>
+                <span className="text-xs font-bold text-slate-700">
+                  {proposal.categoryName ? `(${proposal.categoryName})` : ''}
+                </span>
+              </div>
+            ) : (
+              <span className="text-xs font-bold text-slate-800 block mt-0.5">
+                {proposal.categoryName || 'Tất cả danh mục sản phẩm'}
+              </span>
+            )}
+          </div>
+          <div>
+            <span className="text-[11px] font-bold text-slate-500 block">Người xét duyệt</span>
+            <span className="text-xs font-bold text-slate-800 block mt-0.5">
+              {proposal.reviewedByName ? `${proposal.reviewedByName} (Đã xử lý)` : 'Chờ Admin xử lý'}
+            </span>
+            {proposal.rejectReason && (
+              <p className="text-[11px] text-rose-600 font-semibold mt-0.5">
+                Lý do từ chối: {proposal.rejectReason}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    );
   };
 
-  const validateEditedTiers = (): string | null => {
-    if (!editedTiers || editedTiers.length === 0) {
-      return 'Danh sách bậc thang không được để trống';
-    }
+  const renderActiveLevelFeeTable = (branchKey: 'HCM' | 'HANOI') => {
+    const isHcm = branchKey === 'HCM';
+    const center = isHcm ? hcmCenter : hanoiCenter;
+    const centerName =
+      center?.name ||
+      (isHcm
+        ? 'Trung Tâm Kiểm Định SecondLife TP. Hồ Chí Minh'
+        : 'Trung Tâm Kiểm Định SecondLife Hà Nội');
+    const centerEmail = isHcm ? 'center@secondlife.com' : 'center2@secondlife.com';
+    const centerBadge = isHcm ? 'TP. HCM' : 'Hà Nội';
+    const activeFees = getActiveLevelFees(branchKey);
+    const configuredCount = activeFees.filter((f) => f.isConfigured).length;
 
-    for (let i = 0; i < editedTiers.length; i++) {
-      const t = editedTiers[i];
-      if (!t.name || !t.name.trim()) {
-        return `Bậc #${t.tierNumber || i + 1}: Tên bậc không được để trống`;
-      }
-      const fromKm = Number(t.fromKm);
-      if (isNaN(fromKm) || fromKm < 0) {
-        return `Bậc #${t.tierNumber || i + 1}: Khoảng cách từ (fromKm) phải là số không âm`;
-      }
-      if (t.toKm !== null && t.toKm !== undefined && String(t.toKm).trim() !== '') {
-        const toKm = Number(t.toKm);
-        if (isNaN(toKm) || toKm <= fromKm) {
-          return `Bậc #${t.tierNumber || i + 1}: Khoảng cách đến (toKm = ${toKm}) phải lớn hơn khoảng cách từ (${fromKm} km)`;
-        }
-      }
-      const price = Number(t.pricePerKm);
-      if (isNaN(price) || price < 0) {
-        return `Bậc #${t.tierNumber || i + 1}: Đơn giá / km phải là số không âm`;
-      }
-    }
+    return (
+      <div
+        className={`p-4 rounded-2xl border shadow-2xs space-y-3.5 ${
+          isHcm
+            ? 'bg-gradient-to-r from-orange-50/50 via-white to-white border-orange-200/80'
+            : 'bg-gradient-to-r from-amber-50/50 via-white to-white border-amber-200/80'
+        }`}
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-2.5">
+            <div
+              className={`p-2 rounded-xl shrink-0 ${
+                isHcm ? 'bg-orange-100 text-orange-700' : 'bg-amber-100 text-amber-700'
+              }`}
+            >
+              <Building2 className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-black uppercase tracking-wider text-slate-800">
+                  Bảng giá độ phức tạp đang áp dụng
+                </span>
+                <span
+                  className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                    isHcm ? 'bg-orange-100 text-orange-800' : 'bg-amber-100 text-amber-800'
+                  }`}
+                >
+                  {centerBadge}
+                </span>
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                  <CheckCircle2 className="w-3 h-3" />
+                  <span>{configuredCount}/4 cấp độ đã kích hoạt</span>
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                {centerName} • <span className="text-slate-400 font-normal">{centerEmail}</span>
+              </p>
+            </div>
+          </div>
+        </div>
 
-    return null;
+        {configuredCount === 0 ? (
+          <div className="p-6 text-center bg-white rounded-xl border border-dashed border-slate-200 space-y-1">
+            <AlertCircle className="w-6 h-6 text-slate-400 mx-auto mb-1" />
+            <p className="text-xs font-bold text-slate-700">Chi nhánh này hiện chưa kích hoạt bảng giá độ phức tạp.</p>
+            <p className="text-[11px] text-slate-400">
+              Mức phí sẽ được tự động kích hoạt ngay khi Admin phê duyệt đề xuất biểu phí từ trung tâm.
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-2xs">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50 text-slate-600 font-bold tracking-wide text-xs">
+                  <th className="py-2.5 px-3.5 w-24 text-center">Cấp độ</th>
+                  <th className="py-2.5 px-3 min-w-[140px]">Tên độ phức tạp</th>
+                  <th className="py-2.5 px-4 text-right w-44">Đơn giá cơ sở đang áp dụng</th>
+                  <th className="py-2.5 px-3.5 text-center w-36">Trạng thái</th>
+                  <th className="py-2.5 px-3.5 text-right w-48">Căn cứ đề xuất</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {activeFees.map((fee) => (
+                  <tr key={fee.level} className="hover:bg-slate-50/60 transition">
+                    <td className="py-3 px-3.5 text-center whitespace-nowrap">
+                      <span
+                        className={`inline-block px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase ${
+                          fee.level === 'L1'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : fee.level === 'L2'
+                              ? 'bg-blue-100 text-blue-800'
+                              : fee.level === 'L3'
+                                ? 'bg-purple-100 text-purple-800'
+                                : 'bg-rose-100 text-rose-800'
+                        }`}
+                      >
+                        Cấp {fee.level}
+                      </span>
+                    </td>
+                    <td className="py-3 px-3 font-bold text-slate-800 whitespace-nowrap">
+                      {fee.levelName}
+                    </td>
+                    <td className="py-3 px-4 text-right whitespace-nowrap font-black text-sm text-[#c34c36]">
+                      {fee.isConfigured ? (
+                        formatVND(fee.fee || 0)
+                      ) : (
+                        <span className="text-slate-400 font-normal italic">Chưa áp dụng</span>
+                      )}
+                    </td>
+                    <td className="py-3 px-3.5 text-center whitespace-nowrap">
+                      {fee.isConfigured ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                          <CheckCircle2 className="w-3 h-3" />
+                          <span>Đang áp dụng</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500">
+                          <span>Chưa áp dụng</span>
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3 px-3.5 text-right whitespace-nowrap text-[11px] text-slate-500 font-medium">
+                      {fee.proposalId ? (
+                        <span>
+                          Đề xuất #{fee.proposalId.slice(0, 8)}
+                          {fee.approvedAt && (
+                            <span className="block text-[10px] text-slate-400">
+                              {new Date(fee.approvedAt).toLocaleDateString('vi-VN')}
+                            </span>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 italic">Mặc định hệ thống</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
   };
 
-  const handleOpenPreviewSaveTiers = () => {
-    const err = validateEditedTiers();
-    if (err) {
-      setTierValidationError(err);
-      return;
-    }
-    setTierValidationError(null);
-    setIsPreviewSaveTiersOpen(true);
-  };
+  const renderActiveTravelTierTable = (branchKey: 'HCM' | 'HANOI') => {
+    const isHcm = branchKey === 'HCM';
+    const center = isHcm ? hcmCenter : hanoiCenter;
+    const centerName =
+      center?.name ||
+      (isHcm
+        ? 'Trung Tâm Kiểm Định SecondLife TP. Hồ Chí Minh'
+        : 'Trung Tâm Kiểm Định SecondLife Hà Nội');
+    const centerEmail = isHcm ? 'center@secondlife.com' : 'center2@secondlife.com';
+    const centerBadge = isHcm ? 'TP. HCM' : 'Hà Nội';
+    const activeData = getActiveTravelTiers(branchKey);
 
-  const handleConfirmSaveTiers = async () => {
-    setIsSavingTiers(true);
-    setFeedback(null);
-    try {
-      const saved = await inspectorService.updateAdminTravelTiers(editedTiers);
-      setTravelTiers(saved);
-      setEditedTiers(JSON.parse(JSON.stringify(saved)));
-      setIsEditingTiers(false);
-      setIsPreviewSaveTiersOpen(false);
-      setFeedback({
-        type: 'success',
-        message: 'Đã cập nhật trực tiếp bảng 6 bậc thang cước di chuyển KTV thành công!'
-      });
-    } catch (err: any) {
-      setFeedback({ type: 'error', message: err?.message || 'Cập nhật bảng bậc thang thất bại' });
-    } finally {
-      setIsSavingTiers(false);
-    }
+    return (
+      <div
+        className={`p-4 rounded-2xl border shadow-2xs space-y-3.5 ${
+          isHcm
+            ? 'bg-gradient-to-r from-blue-50/40 via-white to-white border-blue-200/80'
+            : 'bg-gradient-to-r from-amber-50/40 via-white to-white border-amber-200/80'
+        }`}
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-2.5">
+            <div
+              className={`p-2 rounded-xl shrink-0 ${
+                isHcm ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
+              }`}
+            >
+              <Navigation className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-black uppercase tracking-wider text-slate-800">
+                  Bảng 6 bậc thang cước di chuyển đang áp dụng
+                </span>
+                <span
+                  className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                    isHcm ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-800'
+                  }`}
+                >
+                  {centerBadge}
+                </span>
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                  <CheckCircle2 className="w-3 h-3" />
+                  <span>Đang áp dụng ({activeData.tiers.length} bậc)</span>
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                {centerName} • <span className="text-slate-400 font-normal">{centerEmail}</span>
+                {activeData.proposalId && (
+                  <span className="text-blue-600 ml-1 font-bold">
+                    (Căn cứ đề xuất đã duyệt #{activeData.proposalId.slice(0, 8)})
+                  </span>
+                )}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-2xs">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="border-b border-slate-200 bg-slate-50 text-slate-600 font-bold tracking-wide text-xs">
+                <th className="py-2.5 px-3.5 w-20 text-center">Bậc thang</th>
+                <th className="py-2.5 px-4 min-w-[160px]">Tên hiển thị</th>
+                <th className="py-2.5 px-3 w-36 text-center">Khoảng cách từ (km)</th>
+                <th className="py-2.5 px-3 w-40 text-center">Khoảng cách đến (km)</th>
+                <th className="py-2.5 px-4 w-44 text-right">Đơn giá / km đang áp dụng</th>
+                <th className="py-2.5 px-3.5 w-32 text-center">Trạng thái</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {activeData.tiers.map((tier, idx) => (
+                <tr key={tier.tierNumber || idx} className="hover:bg-slate-50/60 transition">
+                  <td className="py-3 px-3.5 font-black text-slate-900 text-center">
+                    #{tier.tierNumber || idx + 1}
+                  </td>
+                  <td className="py-3 px-4 font-bold text-slate-800">
+                    {tier.name || `Bậc ${tier.tierNumber || idx + 1}`}
+                  </td>
+                  <td className="py-3 px-3 text-center whitespace-nowrap font-semibold text-slate-700">
+                    {tier.fromKm ?? 0} km
+                  </td>
+                  <td className="py-3 px-3 text-center whitespace-nowrap font-semibold text-slate-700">
+                    {tier.toKm != null ? `${tier.toKm} km` : 'Không giới hạn (∞)'}
+                  </td>
+                  <td className="py-3 px-4 text-right whitespace-nowrap font-black text-[#c34c36]">
+                    {formatVND(tier.pricePerKm || 0)} / km
+                  </td>
+                  <td className="py-3 px-3.5 text-center whitespace-nowrap">
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                      <CheckCircle2 className="w-3 h-3" />
+                      <span>Đang kích hoạt</span>
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -1010,7 +1670,10 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
               if (activeSubTab === 'checklist_proposals') {
                 loadChecklistProposals(checklistPage);
               } else if (activeSubTab === 'proposals') {
-                loadProposals(page, proposalStatusFilter);
+                loadProposals(page, proposalStatusFilter, false);
+              } else if (activeSubTab === 'travel_tiers') {
+                loadTravelTiers();
+                loadProposals(page, proposalStatusFilter, true);
               } else if (activeSubTab === 'return_shipping_policy') {
                 loadReturnShippingPolicy();
                 loadReturnShippingPolicyHistory(policyHistoryPage);
@@ -1064,23 +1727,34 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
 
         <button
           type="button"
-          onClick={() => setActiveSubTab('proposals')}
+          onClick={() => {
+            setActiveSubTab('proposals');
+            setProposalStatusFilter('ALL');
+            setPage(0);
+            loadProposals(0, 'ALL', false);
+          }}
           className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${activeSubTab === 'proposals'
             ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
             : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
             }`}
         >
           <FileText className="w-4 h-4 text-amber-600 shrink-0" />
-          <span className="truncate">Biểu phí kiểm định</span>
+          <span className="truncate">Biểu phí độ phức tạp</span>
           <span className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ${activeSubTab === 'proposals' ? 'bg-amber-100 text-amber-800' : 'bg-slate-200 text-slate-600'
             }`}>
-            {totalElements}
+            {feeProposalTotal || (activeSubTab === 'proposals' ? totalElements : 0)}
           </span>
         </button>
 
         <button
           type="button"
-          onClick={() => setActiveSubTab('travel_tiers')}
+          onClick={() => {
+            setActiveSubTab('travel_tiers');
+            setProposalStatusFilter('ALL');
+            setPage(0);
+            loadProposals(0, 'ALL', true);
+            loadTravelTiers();
+          }}
           className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${activeSubTab === 'travel_tiers'
             ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
             : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
@@ -1090,7 +1764,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
           <span className="truncate">Cước di chuyển</span>
           <span className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ${activeSubTab === 'travel_tiers' ? 'bg-blue-100 text-blue-800' : 'bg-slate-200 text-slate-600'
             }`}>
-            {travelTiers.length || 6} bậc
+            {travelProposalTotal || totalElements || 0}
           </span>
         </button>
 
@@ -1179,8 +1853,13 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                 Mỗi loại thiết bị (Item) chỉ có 1 bộ tiêu chuẩn hiệu lực toàn sàn. Kèm biểu phí theo trung tâm tác giả và cấp độ L1–L4.
               </p>
             </div>
-            <div className="text-xs text-slate-400 font-medium shrink-0">
-              Tổng cộng: <strong className="text-slate-700">{checklistTotalElements}</strong> bộ tiêu chuẩn
+            <div className="text-xs text-slate-400 font-medium shrink-0 flex items-center gap-2">
+              <span>
+                Tổng cộng: <strong className="text-slate-700">{checklistTotalElements}</strong> bộ tiêu chuẩn
+              </span>
+              <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-bold text-[10px]">
+                10 mục / trang
+              </span>
             </div>
           </div>
 
@@ -1784,26 +2463,51 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
           </div>
 
           {/* Checklist Pagination Controls */}
-          {checklistTotalPages > 1 && (
-            <div className="flex items-center justify-between p-3.5 bg-white rounded-2xl border border-slate-200 shadow-2xs">
-              <span className="text-xs text-slate-500 font-medium">
-                Trang <strong>{checklistPage + 1}</strong> / {checklistTotalPages} ({checklistTotalElements} bộ tiêu chuẩn)
-              </span>
-              <div className="flex items-center gap-2">
+          {checklistProposals.length > 0 && (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-white rounded-2xl border border-slate-200 shadow-2xs">
+              <div className="flex items-center gap-2 text-xs text-slate-500 font-medium">
+                <span>
+                  Trang <strong>{checklistPage + 1}</strong> / <strong>{Math.max(checklistTotalPages, 1)}</strong>
+                </span>
+                <span className="text-slate-300">•</span>
+                <span>
+                  Tổng cộng <strong>{checklistTotalElements}</strong> bộ tiêu chuẩn
+                </span>
+                <span className="text-slate-300">•</span>
+                <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-bold text-[10px]">
+                  10 bộ tiêu chuẩn / trang
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
                 <button
                   type="button"
                   onClick={() => handleChecklistPageChange(checklistPage - 1)}
                   disabled={checklistPage <= 0 || isLoadingChecklistProposals}
-                  className="px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 cursor-pointer transition"
+                  className="px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 cursor-pointer transition shadow-2xs"
                 >
                   <ChevronLeft className="w-4 h-4" />
                   <span>Trước</span>
                 </button>
+                {Array.from({ length: Math.max(checklistTotalPages, 1) }, (_, i) => i).map((pNum) => (
+                  <button
+                    key={pNum}
+                    type="button"
+                    onClick={() => handleChecklistPageChange(pNum)}
+                    disabled={isLoadingChecklistProposals}
+                    className={`w-8 h-8 rounded-xl text-xs font-bold transition cursor-pointer flex items-center justify-center ${
+                      checklistPage === pNum
+                        ? 'bg-[#24263e] text-white shadow-xs'
+                        : 'border border-slate-200 hover:bg-slate-50 text-slate-700'
+                    }`}
+                  >
+                    {pNum + 1}
+                  </button>
+                ))}
                 <button
                   type="button"
                   onClick={() => handleChecklistPageChange(checklistPage + 1)}
                   disabled={checklistPage >= checklistTotalPages - 1 || isLoadingChecklistProposals}
-                  className="px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 cursor-pointer transition"
+                  className="px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 cursor-pointer transition shadow-2xs"
                 >
                   <span>Sau</span>
                   <ChevronRight className="w-4 h-4" />
@@ -1815,17 +2519,18 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
       )}
 
       {/* ===================================================================== */}
-      {/* TAB 1: ĐỀ XUẤT BIỂU PHÍ (PROPOSALS)                                   */}
+      {/* TAB 1: ĐỀ XUẤT BIỂU PHÍ CƠ SỞ (L1–L4) TỪ TRUNG TÂM                     */}
       {/* ===================================================================== */}
       {activeSubTab === 'proposals' && (
-        <div className="space-y-4">
+        <div className="space-y-5 animate-fadeIn">
+          {/* Header */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-100">
             <div>
               <h3 className="text-sm sm:text-base font-black text-slate-900 tracking-tight">
-                Danh sách đề xuất biểu phí KTV từ các trung tâm kiểm định
+                Biểu phí độ phức tạp theo chi nhánh
               </h3>
               <p className="text-xs text-slate-500 font-medium">
-                Xét duyệt biểu phí cơ sở L1–L4 hoặc theo danh mục kèm bậc thang cước di chuyển do trung tâm đề xuất
+                Bảng giá độ phức tạp đang áp dụng và xét duyệt các đề xuất điều chỉnh mức phí L1–L4 phân chia theo 2 chi nhánh TP. Hồ Chí Minh và Hà Nội.
               </p>
             </div>
             <div className="text-xs text-slate-400 font-medium shrink-0">
@@ -1833,8 +2538,109 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
             </div>
           </div>
 
-          {/* Filter Bar & Controls */}
-          <div className="flex flex-wrap items-center gap-2">
+          {/* Branch Navigation Selector Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            {/* Tất cả chi nhánh */}
+            <button
+              type="button"
+              onClick={() => setProposalBranchFilter('ALL')}
+              className={`p-3 rounded-2xl border text-left transition cursor-pointer flex items-center justify-between gap-3 ${
+                proposalBranchFilter === 'ALL'
+                  ? 'bg-[#24263e] text-white border-[#24263e] shadow-xs'
+                  : 'bg-white text-slate-700 hover:bg-slate-50 border-slate-200 shadow-2xs'
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className={`p-2 rounded-xl shrink-0 ${proposalBranchFilter === 'ALL' ? 'bg-white/10 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                  <Building2 className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-xs font-bold block truncate">Tất cả chi nhánh</span>
+                  <span className={`text-[10px] block truncate ${proposalBranchFilter === 'ALL' ? 'text-slate-300' : 'text-slate-500'}`}>
+                    Toàn bộ 2 khu vực
+                  </span>
+                </div>
+              </div>
+              <span className={`px-2 py-0.5 rounded-full text-xs font-black shrink-0 ${
+                proposalBranchFilter === 'ALL' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
+              }`}>
+                {displayedProposals.length}
+              </span>
+            </button>
+
+            {/* Chi nhánh TP. Hồ Chí Minh */}
+            <button
+              type="button"
+              onClick={() => setProposalBranchFilter('HCM')}
+              className={`p-3 rounded-2xl border text-left transition cursor-pointer flex items-center justify-between gap-3 ${
+                proposalBranchFilter === 'HCM'
+                  ? 'bg-orange-600 text-white border-orange-600 shadow-xs'
+                  : 'bg-white text-slate-700 hover:bg-orange-50/40 border-slate-200 shadow-2xs'
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className={`p-2 rounded-xl shrink-0 ${proposalBranchFilter === 'HCM' ? 'bg-white/10 text-white' : 'bg-orange-100 text-orange-700'}`}>
+                  <MapPin className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-xs font-extrabold block">Chi nhánh TP. HCM</span>
+                    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${
+                      proposalBranchFilter === 'HCM' ? 'bg-white/20 text-white' : 'bg-orange-100 text-orange-800'
+                    }`}>
+                      TP. HCM
+                    </span>
+                  </div>
+                  <span className={`text-[10px] truncate block mt-0.5 ${proposalBranchFilter === 'HCM' ? 'text-orange-100' : 'text-slate-500'}`}>
+                    {hcmCenter?.name || 'TTKD SecondLife TP. HCM'}
+                  </span>
+                </div>
+              </div>
+              <span className={`px-2 py-0.5 rounded-full text-xs font-black shrink-0 ${
+                proposalBranchFilter === 'HCM' ? 'bg-white/20 text-white' : 'bg-orange-100 text-orange-800'
+              }`}>
+                {hcmFeeProposals.length}
+              </span>
+            </button>
+
+            {/* Chi nhánh Hà Nội */}
+            <button
+              type="button"
+              onClick={() => setProposalBranchFilter('HANOI')}
+              className={`p-3 rounded-2xl border text-left transition cursor-pointer flex items-center justify-between gap-3 ${
+                proposalBranchFilter === 'HANOI'
+                  ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
+                  : 'bg-white text-slate-700 hover:bg-amber-50/40 border-slate-200 shadow-2xs'
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className={`p-2 rounded-xl shrink-0 ${proposalBranchFilter === 'HANOI' ? 'bg-white/10 text-white' : 'bg-amber-100 text-amber-700'}`}>
+                  <MapPin className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-xs font-extrabold block">Chi nhánh Hà Nội</span>
+                    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${
+                      proposalBranchFilter === 'HANOI' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
+                    }`}>
+                      Hà Nội
+                    </span>
+                  </div>
+                  <span className={`text-[10px] truncate block mt-0.5 ${proposalBranchFilter === 'HANOI' ? 'text-amber-100' : 'text-slate-500'}`}>
+                    {hanoiCenter?.name || 'TTKD SecondLife Hà Nội'}
+                  </span>
+                </div>
+              </div>
+              <span className={`px-2 py-0.5 rounded-full text-xs font-black shrink-0 ${
+                proposalBranchFilter === 'HANOI' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
+              }`}>
+                {hanoiFeeProposals.length}
+              </span>
+            </button>
+          </div>
+
+          {/* Quick status filter pills */}
+          <div className="flex flex-wrap items-center gap-2 pt-1">
             <span className="text-xs font-bold text-slate-500 mr-1">Lọc trạng thái:</span>
             {[
               { key: 'ALL', label: 'Tất cả' },
@@ -1856,174 +2662,99 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
             ))}
           </div>
 
-          {/* Proposals List */}
+          {/* Bảng giá độ phức tạp đang áp dụng theo chi nhánh */}
+          <div className="space-y-4">
+            {(proposalBranchFilter === 'ALL' || proposalBranchFilter === 'HCM') && renderActiveLevelFeeTable('HCM')}
+            {(proposalBranchFilter === 'ALL' || proposalBranchFilter === 'HANOI') && renderActiveLevelFeeTable('HANOI')}
+          </div>
+
+          {/* Proposals List Section Title */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2">
+            <h4 className="text-xs font-black text-slate-700 uppercase tracking-wide flex items-center gap-2">
+              <FileText className="w-4 h-4 text-amber-600" />
+              <span>Danh sách đề xuất điều chỉnh biểu phí độ phức tạp</span>
+            </h4>
+            <div className="flex items-center gap-2 text-[11px] text-slate-500 font-medium">
+              <span>Hiển thị <strong>{visibleFeeProposals.length}</strong> đề xuất</span>
+              <span className="text-slate-300">•</span>
+              <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-bold text-[10px]">
+                10 đề xuất / trang
+              </span>
+            </div>
+          </div>
+
+          {/* Proposals List Section */}
           {isLoadingProposals ? (
             <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 shadow-2xs">
               <RefreshCw className="w-8 h-8 animate-spin mx-auto text-amber-500 mb-2" />
               <p className="text-xs text-slate-500 font-semibold">Đang tải danh sách đề xuất biểu phí...</p>
             </div>
-          ) : proposals.length === 0 ? (
-            <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 shadow-2xs">
-              <FileText className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-              <p className="text-sm font-bold text-slate-700">Chưa có đề xuất biểu phí nào phù hợp.</p>
+          ) : visibleFeeProposals.length === 0 ? (
+            <div className="p-10 text-center bg-white rounded-2xl border border-slate-200 shadow-2xs">
+              <FileText className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+              <p className="text-sm font-bold text-slate-700">
+                {proposalBranchFilter === 'HCM'
+                  ? 'Chi nhánh TP. HCM chưa có đề xuất biểu phí nào trong bộ lọc này.'
+                  : proposalBranchFilter === 'HANOI'
+                    ? 'Chi nhánh Hà Nội hiện chưa gửi đề xuất biểu phí độ phức tạp.'
+                    : 'Chưa có đề xuất biểu phí độ phức tạp nào phù hợp.'}
+              </p>
               <p className="text-xs text-slate-400 mt-1">
-                Các đề xuất điều chỉnh bảng giá từ Quản lý Trung tâm kiểm định sẽ hiển thị tại đây
+                Các đề xuất điều chỉnh biểu phí cơ sở L1–L4 do các trung tâm kiểm định gửi lên sẽ hiển thị tại đây.
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-4">
-              {proposals.map((proposal) => {
-                const isPending = proposal.status === 'PENDING_APPROVAL' || proposal.status === 'PENDING';
-                return (
-                  <div
-                    key={proposal.id}
-                    className="p-5 rounded-2xl bg-white border border-slate-200 hover:border-amber-300 transition shadow-2xs space-y-4"
-                  >
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2.5 rounded-2xl bg-amber-50 text-amber-700 shrink-0">
-                          <Building2 className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-sm font-black text-slate-900">
-                              Đề xuất biểu phí #{proposal.id.slice(0, 8)}
-                            </span>
-                            <span
-                              className={`px-2.5 py-0.5 rounded-full text-[10px] font-black whitespace-nowrap ${proposal.status === 'APPROVED'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : proposal.status === 'REJECTED'
-                                  ? 'bg-rose-100 text-rose-800'
-                                  : 'bg-amber-100 text-amber-800 animate-pulse'
-                                }`}
-                            >
-                              {proposal.status === 'PENDING_APPROVAL' || proposal.status === 'PENDING'
-                                ? 'Chờ duyệt'
-                                : proposal.status === 'APPROVED'
-                                  ? 'Đã phê duyệt'
-                                  : 'Đã từ chối'}
-                            </span>
-                          </div>
-                          <p className="text-xs text-slate-500 mt-0.5">
-                            Gửi bởi: <strong className="text-slate-700">{proposal.proposedByName || proposal.proposedByEmail || 'TTKD'}</strong> •{' '}
-                            Ngày gửi: {proposal.createdAt ? new Date(proposal.createdAt).toLocaleString('vi-VN') : 'Mới đây'}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Action buttons */}
-                      {isPending && hasFeeManagePermission && (
-                        <div className="flex items-center gap-1.5 self-end sm:self-auto flex-wrap">
-                          <button
-                            type="button"
-                            onClick={() => handleOpenReview(proposal, 'REJECT')}
-                            className="h-8 px-3 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-bold transition cursor-pointer inline-flex items-center gap-1.5 shadow-2xs"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                            <span>Từ chối</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenReview(proposal, 'APPROVE')}
-                            className="h-8 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition cursor-pointer inline-flex items-center gap-1.5 shadow-2xs"
-                          >
-                            <Check className="w-3.5 h-3.5" />
-                            <span>Phê duyệt</span>
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Proposal Quick Summary */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50/80 p-4 rounded-xl border border-slate-100">
-                      <div>
-                        <span className="text-[11px] font-bold text-slate-500 block">Phí kiểm định cơ sở đề xuất</span>
-                        <span className="text-base font-black text-[#c34c36] block mt-0.5">
-                          {formatVND(proposal.baseInspectionFee || 0)}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-[11px] font-bold text-slate-500 block">Phạm vi / cấp độ áp dụng</span>
-                        {proposal.complexityLevel ? (
-                          <div className="flex items-center gap-1.5 mt-0.5">
-                            <span className="px-2 py-0.5 rounded text-[11px] font-black uppercase bg-[#24263e] text-white">
-                              Cấp {proposal.complexityLevel}
-                            </span>
-                            <span className="text-xs font-bold text-slate-700">
-                              {proposal.categoryName ? `(${proposal.categoryName})` : ''}
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="text-xs font-bold text-slate-800 block mt-0.5">
-                            {proposal.categoryName || 'Tất cả danh mục sản phẩm'}
-                          </span>
-                        )}
-                      </div>
-                      <div>
-                        <span className="text-[11px] font-bold text-slate-500 block">Người xét duyệt</span>
-                        <span className="text-xs font-bold text-slate-800 block mt-0.5">
-                          {proposal.reviewedByName ? `${proposal.reviewedByName} (Đã xử lý)` : 'Chờ Admin xử lý'}
-                        </span>
-                        {proposal.rejectReason && (
-                          <p className="text-[11px] text-rose-600 font-semibold mt-0.5">
-                            Lý do từ chối: {proposal.rejectReason}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Attached tiers preview */}
-                    {proposal.tiers && proposal.tiers.length > 0 && (
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-slate-700">
-                            Các bậc cước di chuyển trong đề xuất ({proposal.tiers.length} bậc):
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-                          {proposal.tiers.map((t, idx) => (
-                            <div key={idx} className="p-2.5 rounded-xl border border-slate-200 bg-white text-center shadow-2xs">
-                              <span className="text-[10px] font-bold text-slate-400 block">
-                                {t.name || `Bậc ${t.tierNumber || idx + 1}`}
-                              </span>
-                              <span className="text-xs font-bold text-slate-700 block mt-0.5">
-                                {t.fromKm ?? 0} - {t.toKm != null ? `${t.toKm} km` : 'Không giới hạn (∞)'}
-                              </span>
-                              <span className="text-xs font-black text-[#c34c36] block mt-1">
-                                {formatVND(t.pricePerKm || 0)}/km
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+            <div className="grid grid-cols-1 gap-3.5">
+              {visibleFeeProposals.map((proposal) => renderFeeProposalCard(proposal))}
             </div>
           )}
 
           {/* Pagination Controls */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between p-3.5 bg-white rounded-2xl border border-slate-200 shadow-2xs">
-              <span className="text-xs text-slate-500 font-medium">
-                Trang <strong>{page + 1}</strong> / {totalPages} ({totalElements} đề xuất)
-              </span>
-              <div className="flex items-center gap-2">
+          {visibleFeeProposals.length > 0 && (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-white rounded-2xl border border-slate-200 shadow-2xs">
+              <div className="flex items-center gap-2 text-xs text-slate-500 font-medium">
+                <span>
+                  Trang <strong>{page + 1}</strong> / <strong>{Math.max(totalPages, 1)}</strong>
+                </span>
+                <span className="text-slate-300">•</span>
+                <span>
+                  Tổng cộng <strong>{feeProposalTotal || totalElements}</strong> đề xuất
+                </span>
+                <span className="text-slate-300">•</span>
+                <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-bold text-[10px]">
+                  10 đề xuất / trang
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
                 <button
                   type="button"
-                  onClick={() => loadProposals(page - 1, proposalStatusFilter)}
+                  onClick={() => loadProposals(page - 1, proposalStatusFilter, false)}
                   disabled={page <= 0 || isLoadingProposals}
-                  className="px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 cursor-pointer transition"
+                  className="px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 cursor-pointer transition shadow-2xs"
                 >
                   <ChevronLeft className="w-4 h-4" />
                   <span>Trước</span>
                 </button>
+                {Array.from({ length: Math.max(totalPages, 1) }, (_, i) => i).map((pNum) => (
+                  <button
+                    key={pNum}
+                    type="button"
+                    onClick={() => loadProposals(pNum, proposalStatusFilter, false)}
+                    disabled={isLoadingProposals}
+                    className={`w-8 h-8 rounded-xl text-xs font-bold transition cursor-pointer flex items-center justify-center ${
+                      page === pNum
+                        ? 'bg-[#24263e] text-white shadow-xs'
+                        : 'border border-slate-200 hover:bg-slate-50 text-slate-700'
+                    }`}
+                  >
+                    {pNum + 1}
+                  </button>
+                ))}
                 <button
                   type="button"
-                  onClick={() => loadProposals(page + 1, proposalStatusFilter)}
+                  onClick={() => loadProposals(page + 1, proposalStatusFilter, false)}
                   disabled={page >= totalPages - 1 || isLoadingProposals}
-                  className="px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 cursor-pointer transition"
+                  className="px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 cursor-pointer transition shadow-2xs"
                 >
                   <span>Sau</span>
                   <ChevronRight className="w-4 h-4" />
@@ -2035,185 +2766,317 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
       )}
 
       {/* ===================================================================== */}
-      {/* TAB 2: BẢNG 6 BẬC THANG DI CHUYỂN HIỆN HÀNH (TRAVEL TIERS)            */}
+      {/* TAB 3: ĐỀ XUẤT CƯỚC DI CHUYỂN TỪ CÁC TRUNG TÂM KIỂM ĐỊNH              */}
       {/* ===================================================================== */}
       {activeSubTab === 'travel_tiers' && (
         <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-100">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-100">
             <div>
-              <h3 className="text-sm sm:text-base font-black text-slate-900 tracking-tight">
-                Bảng 6 bậc thang cước di chuyển kỹ thuật viên
+              <h3 className="text-sm sm:text-base font-black text-slate-900 tracking-tight flex items-center gap-2">
+                <Navigation className="w-4 h-4 text-blue-600" />
+                <span>Danh sách đề xuất cước di chuyển từ các trung tâm kiểm định</span>
               </h3>
               <p className="text-xs text-slate-500 font-medium">
-                Công thức tính phí di chuyển thực tế khi kiểm định tận nhà dựa trên khoảng cách km
+                Xét duyệt các đề xuất điều chỉnh bảng 6 bậc thang cước di chuyển km do các trung tâm kiểm định gửi lên.
               </p>
             </div>
-
-            <div className="flex items-center gap-2 shrink-0">
-              {isEditingTiers ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsEditingTiers(false);
-                      setEditedTiers(JSON.parse(JSON.stringify(travelTiers)));
-                      setTierValidationError(null);
-                    }}
-                    className="px-3.5 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-bold transition cursor-pointer"
-                  >
-                    Hủy bỏ
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleOpenPreviewSaveTiers}
-                    className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
-                  >
-                    <Save className="w-3.5 h-3.5" />
-                    <span>Xem lại & lưu mới</span>
-                  </button>
-                </>
-              ) : (
-                hasFeeManagePermission && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsEditingTiers(true);
-                      setEditedTiers(JSON.parse(JSON.stringify(travelTiers)));
-                      setTierValidationError(null);
-                    }}
-                    className="px-4 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
-                  >
-                    <Edit2 className="w-3.5 h-3.5" />
-                    <span>Chỉnh sửa trực tiếp</span>
-                  </button>
-                )
-              )}
+            <div className="text-xs text-slate-400 font-medium shrink-0">
+              Tổng cộng: <strong className="text-slate-700">{travelProposalTotal || totalElements}</strong> đề xuất cước
             </div>
           </div>
 
-          {/* Policy Info Note */}
-          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-1">
-            <div className="flex items-center gap-2 font-bold text-slate-800">
-              <Info className="w-4 h-4 text-blue-600" />
-              <span>Quy tắc vận hành bậc thang di chuyển</span>
-            </div>
-            <p>
-              • Biểu phí gồm 6 bậc thang cố định áp dụng chung toàn quốc cho hình thức kiểm định tận nhà.
-            </p>
-            <p>
-              • Bậc cuối cùng được cấu hình với khoảng cách đến là <em>Không giới hạn (∞)</em> bằng cách để trống ô cự ly đến.
-            </p>
-            <p>
-              • Phí vận chuyển hàng hóa về trung tâm kiểm định là khoản do đối tác giao vận thực hiện, không quản trị tại bảng này.
-            </p>
-          </div>
+            {/* Filter Bar */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-200">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-xs font-bold text-slate-500 mr-1 flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5 text-blue-600" />
+                  Khu vực / Chi nhánh:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setTravelBranchFilter('ALL')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                    travelBranchFilter === 'ALL'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  Tất cả ({displayedProposals.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTravelBranchFilter('HCM')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                    travelBranchFilter === 'HCM'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  TP. HCM ({hcmTravelProposals.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTravelBranchFilter('HANOI')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                    travelBranchFilter === 'HANOI'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  Hà Nội ({hanoiTravelProposals.length})
+                </button>
+              </div>
 
-          {/* Validation error message if any */}
-          {tierValidationError && (
-            <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
-              <span>{tierValidationError}</span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-xs font-bold text-slate-500 mr-1">Trạng thái:</span>
+                {[
+                  { key: 'ALL', label: 'Tất cả' },
+                  { key: 'PENDING_APPROVAL', label: 'Chờ duyệt' },
+                  { key: 'APPROVED', label: 'Đã phê duyệt' },
+                  { key: 'REJECTED', label: 'Đã từ chối' }
+                ].map((st) => (
+                  <button
+                    key={st.key}
+                    type="button"
+                    onClick={() => handleStatusFilterChange(st.key as any)}
+                    className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                      proposalStatusFilter === st.key
+                        ? 'bg-slate-900 text-white shadow-xs'
+                        : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    {st.label}
+                  </button>
+                ))}
+              </div>
             </div>
-          )}
 
-          {isLoadingTiers ? (
-            <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 shadow-2xs">
-              <RefreshCw className="w-8 h-8 animate-spin mx-auto text-amber-500 mb-2" />
-              <p className="text-xs text-slate-500 font-semibold">Đang tải bảng bậc thang...</p>
+            {/* Bảng 6 bậc thang cước di chuyển đang áp dụng theo chi nhánh */}
+            <div className="space-y-4">
+              {(travelBranchFilter === 'ALL' || travelBranchFilter === 'HCM') && renderActiveTravelTierTable('HCM')}
+              {(travelBranchFilter === 'ALL' || travelBranchFilter === 'HANOI') && renderActiveTravelTierTable('HANOI')}
             </div>
-          ) : (
-            <div className="overflow-x-auto border border-slate-200 rounded-2xl bg-white shadow-2xs">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50 text-slate-600 font-bold tracking-wide text-xs">
-                    <th className="py-3 px-3.5 w-20 text-center">Bậc thang</th>
-                    <th className="py-3 px-4 min-w-[180px]">Tên hiển thị</th>
-                    <th className="py-3 px-3 w-36 text-center">Khoảng cách từ (km)</th>
-                    <th className="py-3 px-3 w-40 text-center">Khoảng cách đến (km)</th>
-                    <th className="py-3 px-4 w-44 text-right">Đơn giá / km (VND)</th>
-                    <th className="py-3 px-3.5 w-32 text-center">Trạng thái</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {(isEditingTiers ? editedTiers : travelTiers).map((tier, idx) => (
-                    <tr key={tier.tierNumber || idx} className="hover:bg-slate-50/60 transition">
-                      <td className="py-3.5 px-3.5 font-black text-slate-900 text-center">
-                        #{tier.tierNumber || idx + 1}
-                      </td>
 
-                      <td className="py-3.5 px-4">
-                        {isEditingTiers ? (
-                          <input
-                            type="text"
-                            value={tier.name || ''}
-                            onChange={(e) => handleTierChange(idx, 'name', e.target.value)}
-                            className="w-full max-w-[200px] px-2.5 py-1.5 rounded-lg border border-gray-300 text-xs font-bold focus:ring-2 focus:ring-amber-500 outline-hidden"
-                          />
-                        ) : (
-                          <span className="font-bold text-slate-800">{tier.name || `Bậc ${tier.tierNumber || idx + 1}`}</span>
+            {/* Travel Proposals Section Title */}
+            <div className="flex items-center justify-between pt-2">
+              <h4 className="text-xs font-black text-slate-700 uppercase tracking-wide flex items-center gap-2">
+                <Navigation className="w-4 h-4 text-blue-600" />
+                <span>Danh sách đề xuất cước di chuyển từ các trung tâm</span>
+              </h4>
+              <span className="text-[11px] text-slate-400 font-medium">
+                {visibleTravelProposals.length} đề xuất theo bộ lọc
+              </span>
+            </div>
+
+            {/* Travel proposals cards */}
+            {isLoadingProposals ? (
+              <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 shadow-2xs">
+                <RefreshCw className="w-8 h-8 animate-spin mx-auto text-blue-500 mb-2" />
+                <p className="text-xs text-slate-500 font-semibold">Đang tải danh sách đề xuất cước di chuyển...</p>
+              </div>
+            ) : visibleTravelProposals.length === 0 ? (
+              <div className="p-10 text-center bg-white rounded-2xl border border-slate-200 shadow-2xs">
+                <Navigation className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                <p className="text-sm font-bold text-slate-700">
+                  {travelBranchFilter === 'HCM'
+                    ? 'Chi nhánh TP. HCM chưa có đề xuất cước di chuyển nào trong bộ lọc này.'
+                    : travelBranchFilter === 'HANOI'
+                      ? 'Chi nhánh Hà Nội chưa có đề xuất cước di chuyển nào trong bộ lọc này.'
+                      : 'Chưa có đề xuất cước di chuyển nào phù hợp.'}
+                </p>
+                <p className="text-xs text-slate-400 mt-1">
+                  Khi các trung tâm kiểm định gửi đề xuất điều chỉnh bảng bậc thang cước di chuyển km, thông tin sẽ hiển thị tại đây.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4">
+                {visibleTravelProposals.map((proposal) => {
+                  const isPending = proposal.status === 'PENDING_APPROVAL' || proposal.status === 'PENDING';
+                  const centerInfo = getProposalCenterInfo(proposal);
+                  return (
+                    <div
+                      key={proposal.id}
+                      className="p-5 rounded-2xl bg-white border border-slate-200 hover:border-blue-300 transition shadow-2xs space-y-4"
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 rounded-2xl bg-blue-50 text-blue-700 shrink-0">
+                            <Building2 className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm font-black text-slate-900">
+                                Đề xuất cước di chuyển #{proposal.id.slice(0, 8)}
+                              </span>
+                              <span
+                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-black whitespace-nowrap ${proposal.status === 'APPROVED'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : proposal.status === 'REJECTED'
+                                    ? 'bg-rose-100 text-rose-800'
+                                    : 'bg-amber-100 text-amber-800 animate-pulse'
+                                  }`}
+                              >
+                                {proposal.status === 'PENDING_APPROVAL' || proposal.status === 'PENDING'
+                                  ? 'Chờ duyệt'
+                                  : proposal.status === 'APPROVED'
+                                    ? 'Đã phê duyệt'
+                                    : 'Đã từ chối'}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5 flex-wrap mt-1 text-xs text-slate-500">
+                              <span>Đề xuất bởi:</span>
+                              <span className="inline-flex items-center gap-1 font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded-md">
+                                <Building2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                                {centerInfo.name}
+                              </span>
+                              {centerInfo.areaBadge && (
+                                <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">
+                                  {centerInfo.areaBadge}
+                                </span>
+                              )}
+                              {centerInfo.email && (
+                                <span className="text-[11px] text-slate-500">({centerInfo.email})</span>
+                              )}
+                              <span className="text-slate-300">•</span>
+                              <span>
+                                Ngày gửi: {proposal.createdAt ? new Date(proposal.createdAt).toLocaleString('vi-VN') : 'Mới đây'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Action buttons */}
+                        {isPending && hasFeeManagePermission && (
+                          <div className="flex items-center gap-2 self-end sm:self-auto flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenReview(proposal, 'REJECT')}
+                              className="h-8 px-3 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-bold transition cursor-pointer inline-flex items-center gap-1.5 shadow-2xs"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                              <span>Từ chối</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenReview(proposal, 'APPROVE')}
+                              className="h-8 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition cursor-pointer inline-flex items-center gap-1.5 shadow-2xs"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                              <span>Phê duyệt</span>
+                            </button>
+                          </div>
                         )}
-                      </td>
+                      </div>
 
-                      <td className="py-3.5 px-3 text-center whitespace-nowrap">
-                        {isEditingTiers ? (
-                          <input
-                            type="number"
-                            min={0}
-                            value={tier.fromKm ?? 0}
-                            onChange={(e) => handleTierChange(idx, 'fromKm', Number(e.target.value))}
-                            className="w-24 px-2.5 py-1.5 rounded-lg border border-gray-300 text-xs font-bold text-center focus:ring-2 focus:ring-amber-500 outline-hidden"
-                          />
-                        ) : (
-                          <span className="font-semibold text-slate-700">{tier.fromKm ?? 0} km</span>
-                        )}
-                      </td>
-
-                      <td className="py-3.5 px-3 text-center whitespace-nowrap">
-                        {isEditingTiers ? (
-                          <input
-                            type="number"
-                            min={0}
-                            value={tier.toKm ?? ''}
-                            placeholder="Không giới hạn"
-                            onChange={(e) =>
-                              handleTierChange(idx, 'toKm', e.target.value.trim() !== '' ? Number(e.target.value) : null)
-                            }
-                            className="w-28 px-2.5 py-1.5 rounded-lg border border-gray-300 text-xs font-bold text-center focus:ring-2 focus:ring-amber-500 outline-hidden"
-                          />
-                        ) : (
-                          <span className="font-semibold text-slate-700">
-                            {tier.toKm != null ? `${tier.toKm} km` : 'Không giới hạn (∞)'}
+                      {/* Travel Proposal Key Summary */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-blue-50/40 p-4 rounded-xl border border-blue-100">
+                        <div>
+                          <span className="text-[11px] font-bold text-slate-500 block">Bậc cước đề xuất</span>
+                          <span className="text-base font-black text-blue-700 block mt-0.5">
+                            {proposal.tiers?.length || 6} bậc
                           </span>
-                        )}
-                      </td>
+                        </div>
+                        <div>
+                          <span className="text-[11px] font-bold text-slate-500 block">Phạm vi / cấp độ áp dụng</span>
+                          <span className="text-xs font-bold text-slate-800 block mt-0.5">
+                            Kiểm định tại nhà
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[11px] font-bold text-slate-500 block">Người xét duyệt</span>
+                          <span className="text-xs font-bold text-slate-800 block mt-0.5">
+                            {proposal.reviewedByName ? `${proposal.reviewedByName} (Đã xử lý)` : 'Chờ Admin xử lý'}
+                          </span>
+                          {proposal.rejectReason && (
+                            <p className="text-[11px] text-rose-600 font-semibold mt-0.5">
+                              Lý do từ chối: {proposal.rejectReason}
+                            </p>
+                          )}
+                        </div>
+                      </div>
 
-                      <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                        {isEditingTiers ? (
-                          <input
-                            type="number"
-                            min={0}
-                            step="any"
-                            value={tier.pricePerKm ?? 0}
-                            onChange={(e) => handleTierChange(idx, 'pricePerKm', Number(e.target.value))}
-                            className="w-32 px-2.5 py-1.5 rounded-lg border border-gray-300 text-xs font-bold text-[#c34c36] text-right focus:ring-2 focus:ring-amber-500 outline-hidden"
-                          />
-                        ) : (
-                          <span className="font-black text-[#c34c36]">{formatVND(tier.pricePerKm || 0)} / km</span>
-                        )}
-                      </td>
+                      {/* 6 Tiers Display Grid */}
+                      {proposal.tiers && proposal.tiers.length > 0 && (
+                        <div className="space-y-2">
+                          <span className="text-xs font-bold text-slate-700 block">
+                            Các bậc cước di chuyển trong đề xuất ({proposal.tiers.length} bậc):
+                          </span>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                            {proposal.tiers.map((t, idx) => (
+                              <div key={idx} className="p-2.5 rounded-xl border border-slate-200 bg-white text-center shadow-2xs">
+                                <span className="text-[10px] font-bold text-slate-400 block">
+                                  {t.name || `Bậc ${t.tierNumber || idx + 1}`}
+                                </span>
+                                <span className="text-xs font-bold text-slate-700 block mt-0.5">
+                                  {t.fromKm ?? 0} - {t.toKm != null ? `${t.toKm} km` : 'Không giới hạn (∞)'}
+                                </span>
+                                <span className="text-xs font-black text-[#c34c36] block mt-1">
+                                  {formatVND(t.pricePerKm || 0)}/km
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
 
-                      <td className="py-3.5 px-3.5 text-center whitespace-nowrap">
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                          <CheckCircle2 className="w-3 h-3" />
-                          <span>{tier.status === 'ACTIVE' || !tier.status ? 'Đang kích hoạt' : tier.status}</span>
-                        </span>
-                      </td>
-                    </tr>
+            {/* Travel Proposals Pagination */}
+            {visibleTravelProposals.length > 0 && (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-white rounded-2xl border border-slate-200 shadow-2xs">
+                <div className="flex items-center gap-2 text-xs text-slate-500 font-medium">
+                  <span>
+                    Trang <strong>{page + 1}</strong> / <strong>{Math.max(totalPages, 1)}</strong>
+                  </span>
+                  <span className="text-slate-300">•</span>
+                  <span>
+                    Tổng cộng <strong>{travelProposalTotal || totalElements}</strong> đề xuất cước
+                  </span>
+                  <span className="text-slate-300">•</span>
+                  <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-bold text-[10px]">
+                    10 đề xuất / trang
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => loadProposals(page - 1, proposalStatusFilter, true)}
+                    disabled={page <= 0 || isLoadingProposals}
+                    className="px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 cursor-pointer transition shadow-2xs"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                    <span>Trước</span>
+                  </button>
+                  {Array.from({ length: Math.max(totalPages, 1) }, (_, i) => i).map((pNum) => (
+                    <button
+                      key={pNum}
+                      type="button"
+                      onClick={() => loadProposals(pNum, proposalStatusFilter, true)}
+                      disabled={isLoadingProposals}
+                      className={`w-8 h-8 rounded-xl text-xs font-bold transition cursor-pointer flex items-center justify-center ${
+                        page === pNum
+                          ? 'bg-[#24263e] text-white shadow-xs'
+                          : 'border border-slate-200 hover:bg-slate-50 text-slate-700'
+                      }`}
+                    >
+                      {pNum + 1}
+                    </button>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                  <button
+                    type="button"
+                    onClick={() => loadProposals(page + 1, proposalStatusFilter, true)}
+                    disabled={page >= totalPages - 1 || isLoadingProposals}
+                    className="px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 cursor-pointer transition shadow-2xs"
+                  >
+                    <span>Sau</span>
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
         </div>
       )}
 
@@ -2863,333 +3726,324 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
       {/* ===================================================================== */}
       {/* MODAL 1: SO SÁNH BẬC PHÍ CHI TIẾT (SIDE-BY-SIDE DIFF VIEW)           */}
       {/* ===================================================================== */}
-      {viewingProposal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
-          <div className="w-full max-w-4xl rounded-3xl bg-white p-6 shadow-2xl border border-gray-100 space-y-5 max-h-[90vh] overflow-y-auto">
-            {/* Header */}
-            <div className="flex items-center justify-between pb-4 border-b border-gray-100">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2.5 rounded-2xl bg-amber-50 text-amber-600">
-                  <Sliders className="w-5 h-5" />
+      {viewingProposal && (() => {
+        const isTravelOnly = (viewingProposal.tiers?.length ?? 0) > 0 && !viewingProposal.complexityLevel;
+        const centerInfo = getProposalCenterInfo(viewingProposal);
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
+            <div className="w-full max-w-4xl rounded-3xl bg-white p-6 shadow-2xl border border-gray-100 space-y-5 max-h-[90vh] overflow-y-auto">
+              {/* Header */}
+              <div className="flex items-center justify-between pb-4 border-b border-gray-100">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2.5 rounded-2xl bg-amber-50 text-amber-600">
+                    <Sliders className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900">
+                      {isTravelOnly
+                        ? `Chi tiết & so sánh đề xuất cước di chuyển #${viewingProposal.id.slice(0, 8)}`
+                        : `Chi tiết & so sánh đề xuất biểu phí #${viewingProposal.id.slice(0, 8)}`}
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Đề xuất bởi <strong>{centerInfo.name}</strong> {centerInfo.areaBadge ? `(${centerInfo.areaBadge})` : ''} •{' '}
+                      {viewingProposal.createdAt ? new Date(viewingProposal.createdAt).toLocaleString('vi-VN') : ''}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setViewingProposal(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Proposal Key Info */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50 p-4 rounded-2xl">
+                <div>
+                  {isTravelOnly ? (
+                    <>
+                      <span className="text-[11px] font-bold text-slate-400 block">Số bậc cước đề xuất</span>
+                      <span className="text-lg font-black text-blue-600">
+                        {viewingProposal.tiers?.length || 6} bậc thang
+                      </span>
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        Bảng bậc thang cước di chuyển kỹ thuật viên theo km
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-[11px] font-bold text-slate-400 block">Phí kiểm định cơ sở đề xuất</span>
+                      <span className="text-lg font-black text-[#c34c36]">
+                        {formatVND(viewingProposal.baseInspectionFee || 0)}
+                      </span>
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        Phí cơ sở áp dụng theo danh mục sản phẩm trong CSDL
+                      </p>
+                    </>
+                  )}
                 </div>
                 <div>
-                  <h3 className="text-base font-black text-slate-900">
-                    Chi tiết & so sánh đề xuất biểu phí #{viewingProposal.id.slice(0, 8)}
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Đề xuất bởi {viewingProposal.proposedByName || viewingProposal.proposedByEmail} •{' '}
-                    {viewingProposal.createdAt ? new Date(viewingProposal.createdAt).toLocaleString('vi-VN') : ''}
-                  </p>
+                  <span className="text-[11px] font-bold text-slate-400 block">Phạm vi áp dụng</span>
+                  <span className="text-xs font-bold text-slate-800">
+                    {isTravelOnly
+                      ? 'Kiểm định tại nhà (Toàn quốc)'
+                      : viewingProposal.complexityLevel
+                        ? `Cấp ${viewingProposal.complexityLevel} (${viewingProposal.categoryName || 'Tất cả danh mục'})`
+                        : viewingProposal.categoryName || 'Tất cả danh mục sản phẩm'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[11px] font-bold text-slate-400 block">Trạng thái</span>
+                  <span
+                    className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black mt-1 ${viewingProposal.status === 'APPROVED'
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : viewingProposal.status === 'REJECTED'
+                        ? 'bg-rose-100 text-rose-800'
+                        : 'bg-amber-100 text-amber-800'
+                      }`}
+                  >
+                    {viewingProposal.status === 'PENDING_APPROVAL' || viewingProposal.status === 'PENDING'
+                      ? 'Chờ duyệt'
+                      : viewingProposal.status === 'APPROVED'
+                        ? 'Đã phê duyệt'
+                        : 'Đã từ chối'}
+                  </span>
+                  {viewingProposal.rejectReason && (
+                    <p className="text-[11px] text-rose-600 font-semibold mt-1">
+                      Lý do từ chối: {viewingProposal.rejectReason}
+                    </p>
+                  )}
                 </div>
               </div>
-              <button
-                onClick={() => setViewingProposal(null)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
 
-            {/* Proposal Key Info */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50 p-4 rounded-2xl">
-              <div>
-                <span className="text-[11px] font-bold text-slate-400 block">Phí kiểm định cơ sở đề xuất</span>
-                <span className="text-lg font-black text-[#c34c36]">
-                  {formatVND(viewingProposal.baseInspectionFee || 0)}
-                </span>
-                <p className="text-[10px] text-slate-400 mt-0.5">
-                  Phí cơ sở áp dụng theo danh mục sản phẩm trong CSDL
-                </p>
-              </div>
-              <div>
-                <span className="text-[11px] font-bold text-slate-400 block">Danh mục áp dụng</span>
-                <span className="text-xs font-bold text-slate-800">
-                  {viewingProposal.categoryName || 'Tất cả danh mục sản phẩm'}
-                </span>
-              </div>
-              <div>
-                <span className="text-[11px] font-bold text-slate-400 block">Trạng thái</span>
-                <span
-                  className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black mt-1 ${viewingProposal.status === 'APPROVED'
-                    ? 'bg-emerald-100 text-emerald-800'
-                    : viewingProposal.status === 'REJECTED'
-                      ? 'bg-rose-100 text-rose-800'
-                      : 'bg-amber-100 text-amber-800'
-                    }`}
+              {/* Side-by-Side Comparison Table (if has tiers) */}
+              {viewingProposal.tiers && viewingProposal.tiers.length > 0 && (
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold text-slate-800 tracking-wide">
+                    Bảng so sánh cước bậc thang di chuyển (Hiện hành vs đề xuất)
+                  </h4>
+                  <div className="overflow-x-auto border border-gray-100 rounded-2xl">
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="bg-slate-50 text-slate-600 font-bold border-b border-gray-100 text-xs">
+                          <th className="py-2.5 px-3">Bậc</th>
+                          <th className="py-2.5 px-3">Tên bậc</th>
+                          <th className="py-2.5 px-3">Cự ly hiện hành</th>
+                          <th className="py-2.5 px-3">Cự ly đề xuất</th>
+                          <th className="py-2.5 px-3">Đơn giá hiện hành</th>
+                          <th className="py-2.5 px-3">Đơn giá đề xuất</th>
+                          <th className="py-2.5 px-3 text-right">Chênh lệch</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {(viewingProposal.tiers || []).map((proposedTier, idx) => {
+                          const activeTier = travelTiers.find((t) => t.tierNumber === proposedTier.tierNumber) || travelTiers[idx];
+                          const oldPrice = activeTier?.pricePerKm ?? 0;
+                          const newPrice = proposedTier.pricePerKm ?? 0;
+                          const diff = newPrice - oldPrice;
+
+                          const oldDist = activeTier
+                            ? `${activeTier.fromKm ?? 0} - ${activeTier.toKm != null ? `${activeTier.toKm} km` : '∞'}`
+                            : '—';
+                          const newDist = `${proposedTier.fromKm ?? 0} - ${proposedTier.toKm != null ? `${proposedTier.toKm} km` : '∞'
+                            }`;
+
+                          return (
+                            <tr key={idx} className="hover:bg-slate-50/50">
+                              <td className="py-2.5 px-3 font-bold text-slate-900">
+                                #{proposedTier.tierNumber || idx + 1}
+                              </td>
+                              <td className="py-2.5 px-3 font-medium text-slate-800">
+                                {proposedTier.name}
+                              </td>
+                              <td className="py-2.5 px-3 text-slate-500 font-mono">
+                                {oldDist}
+                              </td>
+                              <td className="py-2.5 px-3 font-bold text-slate-800 font-mono">
+                                {newDist}
+                              </td>
+                              <td className="py-2.5 px-3 text-slate-500 font-mono">
+                                {formatVND(oldPrice)}/km
+                              </td>
+                              <td className="py-2.5 px-3 font-bold text-[#c34c36] font-mono">
+                                {formatVND(newPrice)}/km
+                              </td>
+                              <td className="py-2.5 px-3 text-right font-bold font-mono">
+                                {diff > 0 ? (
+                                  <span className="text-rose-600">+{formatVND(diff)}</span>
+                                ) : diff < 0 ? (
+                                  <span className="text-blue-600">{formatVND(diff)}</span>
+                                ) : (
+                                  <span className="text-slate-400">Không đổi</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Bottom Actions if Pending */}
+              <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+                <button
+                  onClick={() => setViewingProposal(null)}
+                  className="px-4 py-2 rounded-xl border border-gray-200 text-xs font-bold text-slate-600 hover:bg-gray-50 cursor-pointer"
                 >
-                  {viewingProposal.status === 'PENDING_APPROVAL' || viewingProposal.status === 'PENDING'
-                    ? 'Chờ duyệt'
-                    : viewingProposal.status === 'APPROVED'
-                      ? 'Đã phê duyệt'
-                      : 'Đã từ chối'}
-                </span>
-                {viewingProposal.rejectReason && (
-                  <p className="text-[11px] text-rose-600 font-semibold mt-1">
-                    Lý do từ chối: {viewingProposal.rejectReason}
-                  </p>
+                  Đóng
+                </button>
+
+                {(viewingProposal.status === 'PENDING_APPROVAL' || viewingProposal.status === 'PENDING') && hasFeeManagePermission && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        const p = viewingProposal;
+                        setViewingProposal(null);
+                        handleOpenReview(p, 'REJECT');
+                      }}
+                      className="px-4 py-2 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-bold transition cursor-pointer flex items-center gap-1.5"
+                    >
+                      <X className="w-4 h-4" />
+                      <span>Từ chối đề xuất</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        const p = viewingProposal;
+                        setViewingProposal(null);
+                        handleOpenReview(p, 'APPROVE');
+                      }}
+                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-xs"
+                    >
+                      <Check className="w-4 h-4" />
+                      <span>Phê duyệt đề xuất</span>
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
-
-            {/* Side-by-Side Comparison Table */}
-            <div className="space-y-2">
-              <h4 className="text-xs font-bold text-slate-800 tracking-wide">
-                Bảng so sánh cước bậc thang di chuyển (Hiện hành vs đề xuất)
-              </h4>
-              <div className="overflow-x-auto border border-gray-100 rounded-2xl">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="bg-slate-50 text-slate-600 font-bold border-b border-gray-100 text-xs">
-                      <th className="py-2.5 px-3">Bậc</th>
-                      <th className="py-2.5 px-3">Tên bậc</th>
-                      <th className="py-2.5 px-3">Cự ly hiện hành</th>
-                      <th className="py-2.5 px-3">Cự ly đề xuất</th>
-                      <th className="py-2.5 px-3">Đơn giá hiện hành</th>
-                      <th className="py-2.5 px-3">Đơn giá đề xuất</th>
-                      <th className="py-2.5 px-3 text-right">Chênh lệch</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {(viewingProposal.tiers || []).map((proposedTier, idx) => {
-                      const activeTier = travelTiers.find((t) => t.tierNumber === proposedTier.tierNumber) || travelTiers[idx];
-                      const oldPrice = activeTier?.pricePerKm ?? 0;
-                      const newPrice = proposedTier.pricePerKm ?? 0;
-                      const diff = newPrice - oldPrice;
-
-                      const oldDist = activeTier
-                        ? `${activeTier.fromKm ?? 0} - ${activeTier.toKm != null ? `${activeTier.toKm} km` : '∞'}`
-                        : '—';
-                      const newDist = `${proposedTier.fromKm ?? 0} - ${proposedTier.toKm != null ? `${proposedTier.toKm} km` : '∞'
-                        }`;
-
-                      return (
-                        <tr key={idx} className="hover:bg-slate-50/50">
-                          <td className="py-2.5 px-3 font-bold text-slate-900">
-                            #{proposedTier.tierNumber || idx + 1}
-                          </td>
-                          <td className="py-2.5 px-3 font-medium text-slate-800">
-                            {proposedTier.name}
-                          </td>
-                          <td className="py-2.5 px-3 text-slate-500 font-mono">
-                            {oldDist}
-                          </td>
-                          <td className="py-2.5 px-3 font-bold text-slate-800 font-mono">
-                            {newDist}
-                          </td>
-                          <td className="py-2.5 px-3 text-slate-500 font-mono">
-                            {formatVND(oldPrice)}/km
-                          </td>
-                          <td className="py-2.5 px-3 font-bold text-[#c34c36] font-mono">
-                            {formatVND(newPrice)}/km
-                          </td>
-                          <td className="py-2.5 px-3 text-right font-bold font-mono">
-                            {diff > 0 ? (
-                              <span className="text-rose-600">+{formatVND(diff)}</span>
-                            ) : diff < 0 ? (
-                              <span className="text-blue-600">{formatVND(diff)}</span>
-                            ) : (
-                              <span className="text-slate-400">Không đổi</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* Bottom Actions if Pending */}
-            <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-              <button
-                onClick={() => setViewingProposal(null)}
-                className="px-4 py-2 rounded-xl border border-gray-200 text-xs font-bold text-slate-600 hover:bg-gray-50 cursor-pointer"
-              >
-                Đóng
-              </button>
-
-              {(viewingProposal.status === 'PENDING_APPROVAL' || viewingProposal.status === 'PENDING') && hasFeeManagePermission && (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => {
-                      const p = viewingProposal;
-                      setViewingProposal(null);
-                      handleOpenReview(p, 'REJECT');
-                    }}
-                    className="px-4 py-2 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-bold transition cursor-pointer flex items-center gap-1.5"
-                  >
-                    <X className="w-4 h-4" />
-                    <span>Từ chối đề xuất</span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      const p = viewingProposal;
-                      setViewingProposal(null);
-                      handleOpenReview(p, 'APPROVE');
-                    }}
-                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-xs"
-                  >
-                    <Check className="w-4 h-4" />
-                    <span>Phê duyệt đề xuất</span>
-                  </button>
-                </div>
-              )}
-            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ===================================================================== */}
       {/* MODAL 2: REVIEW PROPOSAL (APPROVE / REJECT DIALOG)                    */}
       {/* ===================================================================== */}
-      {isReviewModalOpen && selectedProposal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
-          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl border border-gray-100 space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-              <div className="flex items-center gap-2">
-                <div
-                  className={`p-2 rounded-xl ${reviewAction === 'APPROVE' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
+      {isReviewModalOpen && selectedProposal && (() => {
+        const isTravelOnly = (selectedProposal.tiers?.length ?? 0) > 0 && !selectedProposal.complexityLevel;
+        const centerInfo = getProposalCenterInfo(selectedProposal);
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
+            <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl border border-gray-100 space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+                <div className="flex items-center gap-2">
+                  <div
+                    className={`p-2 rounded-xl ${reviewAction === 'APPROVE' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
+                      }`}
+                  >
+                    {reviewAction === 'APPROVE' ? <Check className="w-5 h-5" /> : <X className="w-5 h-5" />}
+                  </div>
+                  <h3 className="text-base font-black text-slate-900">
+                    {isTravelOnly
+                      ? (reviewAction === 'APPROVE' ? 'Phê duyệt đề xuất cước di chuyển' : 'Từ chối đề xuất cước di chuyển')
+                      : (reviewAction === 'APPROVE' ? 'Phê duyệt đề xuất biểu phí' : 'Từ chối đề xuất biểu phí')}
+                  </h3>
+                </div>
+                <button
+                  onClick={() => {
+                    setIsReviewModalOpen(false);
+                    setReviewError(null);
+                  }}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <p className="text-xs text-slate-600">
+                {isTravelOnly ? (
+                  <>
+                    Bạn đang thực hiện <strong>{reviewAction === 'APPROVE' ? 'phê duyệt' : 'từ chối'}</strong> đề xuất cước di chuyển #
+                    <strong>{selectedProposal.id.slice(0, 8)}</strong> gồm <strong>{selectedProposal.tiers?.length || 6} bậc thang</strong> của{' '}
+                    <strong className="text-blue-700">{centerInfo.name}</strong>.
+                  </>
+                ) : (
+                  <>
+                    Bạn đang thực hiện <strong>{reviewAction === 'APPROVE' ? 'phê duyệt' : 'từ chối'}</strong> đề xuất biểu phí #
+                    <strong>{selectedProposal.id.slice(0, 8)}</strong> với mức phí cơ sở đề xuất:{' '}
+                    <strong className="text-[#c34c36]">{formatVND(selectedProposal.baseInspectionFee || 0)}</strong>.
+                  </>
+                )}
+              </p>
+
+              {reviewError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 font-bold text-xs flex items-center gap-2 animate-fadeIn">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
+                  <span>{reviewError}</span>
+                </div>
+              )}
+
+              {reviewAction === 'APPROVE' && (
+                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs">
+                  {isTravelOnly
+                    ? 'Khi phê duyệt, bảng 6 bậc thang cước di chuyển trên toàn hệ thống sẽ được tự động cập nhật theo các bậc trong đề xuất này.'
+                    : `Khi phê duyệt, biểu phí cơ sở cấp ${selectedProposal.complexityLevel || 'L1–L4'} sẽ được kích hoạt cho trung tâm kiểm định.`}
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700">
+                  Ghi chú / ý kiến phản hồi {reviewAction === 'REJECT' && <span className="text-rose-500">* (Bắt buộc)</span>}:
+                </label>
+                <textarea
+                  rows={3}
+                  value={reviewNote}
+                  onChange={(e) => {
+                    setReviewNote(e.target.value);
+                    if (reviewError) setReviewError(null);
+                  }}
+                  placeholder={
+                    reviewAction === 'APPROVE'
+                      ? 'Nhập căn cứ phê duyệt (không bắt buộc)...'
+                      : 'Nhập lý do từ chối để Trung tâm kiểm định nắm rõ và điều chỉnh lại...'
+                  }
+                  className={`w-full p-3 rounded-xl border text-xs outline-hidden transition ${
+                    reviewError
+                      ? 'border-rose-400 ring-2 ring-rose-200'
+                      : 'border-gray-200 focus:ring-2 focus:ring-amber-500'
+                  }`}
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  onClick={() => {
+                    setIsReviewModalOpen(false);
+                    setReviewError(null);
+                  }}
+                  className="px-4 py-2 rounded-xl border border-gray-200 text-xs font-bold text-slate-600 hover:bg-gray-50 cursor-pointer"
+                >
+                  Hủy
+                </button>
+                <button
+                  onClick={handleSubmitReview}
+                  disabled={isSubmittingReview}
+                  className={`px-4 py-2 rounded-xl text-white text-xs font-bold flex items-center gap-1.5 shadow-xs disabled:opacity-50 cursor-pointer ${reviewAction === 'APPROVE'
+                    ? 'bg-emerald-600 hover:bg-emerald-700'
+                    : 'bg-rose-600 hover:bg-rose-700'
                     }`}
                 >
-                  {reviewAction === 'APPROVE' ? <Check className="w-5 h-5" /> : <X className="w-5 h-5" />}
-                </div>
-                <h3 className="text-base font-black text-slate-900">
-                  {reviewAction === 'APPROVE' ? 'Phê duyệt đề xuất biểu phí' : 'Từ chối đề xuất biểu phí'}
-                </h3>
+                  {isSubmittingReview && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{reviewAction === 'APPROVE' ? 'Xác nhận phê duyệt' : 'Xác nhận từ chối'}</span>
+                </button>
               </div>
-              <button
-                onClick={() => setIsReviewModalOpen(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <p className="text-xs text-slate-600">
-              Bạn đang thực hiện <strong>{reviewAction === 'APPROVE' ? 'phê duyệt' : 'từ chối'}</strong> đề xuất biểu phí #
-              <strong>{selectedProposal.id.slice(0, 8)}</strong> với mức phí cơ sở đề xuất:{' '}
-              <strong className="text-[#c34c36]">{formatVND(selectedProposal.baseInspectionFee || 0)}</strong>.
-            </p>
-
-            {reviewAction === 'APPROVE' && (
-              <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs">
-                Khi phê duyệt, bảng 6 bậc thang cước di chuyển trên toàn hệ thống sẽ được tự động cập nhật theo các bậc trong đề xuất này.
-              </div>
-            )}
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700">
-                Ghi chú / ý kiến phản hồi {reviewAction === 'REJECT' && <span className="text-rose-500">* (Bắt buộc)</span>}:
-              </label>
-              <textarea
-                rows={3}
-                value={reviewNote}
-                onChange={(e) => setReviewNote(e.target.value)}
-                placeholder={
-                  reviewAction === 'APPROVE'
-                    ? 'Nhập căn cứ phê duyệt (không bắt buộc)...'
-                    : 'Nhập lý do từ chối để Trung tâm kiểm định nắm rõ và điều chỉnh lại...'
-                }
-                className="w-full p-3 rounded-xl border border-gray-200 text-xs focus:ring-2 focus:ring-amber-500 outline-hidden"
-              />
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button
-                onClick={() => setIsReviewModalOpen(false)}
-                className="px-4 py-2 rounded-xl border border-gray-200 text-xs font-bold text-slate-600 hover:bg-gray-50 cursor-pointer"
-              >
-                Hủy
-              </button>
-              <button
-                onClick={handleSubmitReview}
-                disabled={isSubmittingReview}
-                className={`px-4 py-2 rounded-xl text-white text-xs font-bold flex items-center gap-1.5 shadow-xs disabled:opacity-50 cursor-pointer ${reviewAction === 'APPROVE'
-                  ? 'bg-emerald-600 hover:bg-emerald-700'
-                  : 'bg-rose-600 hover:bg-rose-700'
-                  }`}
-              >
-                {isSubmittingReview && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
-                <span>{reviewAction === 'APPROVE' ? 'Xác nhận phê duyệt' : 'Xác nhận từ chối'}</span>
-              </button>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
-      {/* ===================================================================== */}
-      {/* MODAL 3: PREVIEW BEFORE DIRECT SAVING TIERS                          */}
-      {/* ===================================================================== */}
-      {isPreviewSaveTiersOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
-          <div className="w-full max-w-2xl rounded-3xl bg-white p-6 shadow-2xl border border-gray-100 space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-              <div className="flex items-center gap-2">
-                <div className="p-2 rounded-xl bg-amber-50 text-amber-600">
-                  <Save className="w-5 h-5" />
-                </div>
-                <h3 className="text-base font-black text-slate-900">
-                  Xem lại thay đổi bảng bậc thang trước khi lưu
-                </h3>
-              </div>
-              <button
-                onClick={() => setIsPreviewSaveTiersOpen(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <p className="text-xs text-slate-600">
-              Bạn đang cập nhật trực tiếp biểu phí bậc thang di chuyển. Hãy kiểm tra lại các mức cước mới dưới đây:
-            </p>
-
-            <div className="overflow-x-auto border border-gray-100 rounded-2xl">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="bg-slate-50 text-slate-600 font-bold border-b border-gray-100 text-xs">
-                    <th className="py-2.5 px-3">Bậc</th>
-                    <th className="py-2.5 px-3">Tên bậc</th>
-                    <th className="py-2.5 px-3">Khoảng cách</th>
-                    <th className="py-2.5 px-3">Đơn giá mới</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {editedTiers.map((t, idx) => (
-                    <tr key={idx} className="hover:bg-slate-50/50">
-                      <td className="py-2.5 px-3 font-bold text-slate-900">#{t.tierNumber || idx + 1}</td>
-                      <td className="py-2.5 px-3 font-medium text-slate-800">{t.name}</td>
-                      <td className="py-2.5 px-3 text-slate-700 font-mono">
-                        {t.fromKm ?? 0} - {t.toKm != null ? `${t.toKm} km` : 'Không giới hạn (∞)'}
-                      </td>
-                      <td className="py-2.5 px-3 font-black text-[#c34c36] font-mono">
-                        {formatVND(t.pricePerKm || 0)} / km
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button
-                onClick={() => setIsPreviewSaveTiersOpen(false)}
-                className="px-4 py-2 rounded-xl border border-gray-200 text-xs font-bold text-slate-600 hover:bg-gray-50 cursor-pointer"
-              >
-                Quay lại sửa
-              </button>
-              <button
-                onClick={handleConfirmSaveTiers}
-                disabled={isSavingTiers}
-                className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs disabled:opacity-50 cursor-pointer"
-              >
-                {isSavingTiers && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
-                <span>Xác nhận lưu vào hệ thống</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       {/* MODAL: XEM CHI TIẾT BỘ TIÊU CHUẨN ĐỀ XUẤT */}
       {viewingChecklistProposal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-fadeIn backdrop-blur-xs">
@@ -3224,7 +4078,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                 <div className="flex items-center justify-between pb-1.5 border-b border-slate-200/60">
                   <div className="flex items-center gap-1.5 font-bold text-xs text-slate-900">
                     <Building2 className="w-4 h-4 text-amber-600" />
-                    <span>Biểu phí kiểm định của trung tâm tác giả</span>
+                    <span>Biểu phí độ phức tạp của trung tâm tác giả</span>
                   </div>
                   {(() => {
                     const centerInfo = getCenterDetails(viewingChecklistProposal);

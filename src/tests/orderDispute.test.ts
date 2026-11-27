@@ -3,8 +3,11 @@ import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { OrderSettlement } from '../components/orders/detail/OrderSettlement';
+import { OrderStatusBadge } from '../components/orders/OrderStatusBadge';
+import { orderFeedItemToRaw } from '../services/orderFeedService';
+import { mapEscrowOrder } from '../utils/mapEscrowOrder';
 import type { EscrowOrder, ShipmentBackend } from '../types';
-import { canOpenOrderDispute, canCreateApprovedOrderReturn, getApprovedReturnLabel, formatDisputeReason, formatDisputeStatus, formatDisputeDateTime, getOrderEscrowHoldNotice, getSellerDisputeResponseState, isOrderEscrowOnHold } from '../utils/orders/orderDispute';
+import { canOpenOrderDispute, canCreateApprovedOrderReturn, getApprovedReturnLabel, formatDisputeReason, formatDisputeStatus, formatDisputeDateTime, getOrderEscrowHoldNotice, getSellerDisputeResponseState, isOrderDisputed, isOrderEscrowOnHold } from '../utils/orders/orderDispute';
 import { resolveAppRoute } from '../app/router/paths';
 
 const delivery = Date.parse('2026-11-22T03:00:00Z');
@@ -44,7 +47,7 @@ test('a rejected Hub-to-buyer shipment hides only the generic escrow notice', ()
   assert.equal(isOrderEscrowOnHold(hubOrder), true);
   assert.equal(getOrderEscrowHoldNotice(hubOrder, 'vi'), null);
   assert.equal(getOrderEscrowHoldNotice(hubOrder, 'en', [rejected]), null);
-  assert.match(getOrderEscrowHoldNotice({ ...hubOrder, hasActiveDispute: true }, 'vi')?.title ?? '', /do khiếu nại/);
+  assert.equal(getOrderEscrowHoldNotice({ ...hubOrder, hasActiveDispute: true }, 'vi'), null);
 
   const otherShipments = [
     { ...rejected, leg: 'SELLER_TO_CENTER' },
@@ -145,5 +148,51 @@ test('seller dispute items preserve arbitration decision, evidence, and buyer de
   // Contains date and time
   assert.equal(formattedResolvedAt.includes('2026'), true);
   assert.equal(formattedResolvedAt.includes(':'), true);
+});
+
+test('orderFeedItemToRaw and mapEscrowOrder immediately preserve hasActiveDispute without waiting for secondary report polling', () => {
+  const mapped = mapEscrowOrder(orderFeedItemToRaw({
+    order: {
+      id: 'dbb5eafc-e658-4b78-ba52-14df3a44b6ab',
+      postId: 'post-1',
+      postTitle: 'Kệ phòng tắm',
+      buyerId: 'buyer-1',
+      sellerId: 'seller-1',
+      finalPrice: 250000,
+      shippingFee: 17100,
+      status: 'DELIVERED',
+      escrowStatus: 'FROZEN',
+      shippingDeliveredAt: '2026-11-26T12:00:00Z',
+    } as any,
+    inspection: null,
+    hasActiveDispute: true,
+    buyerName: 'Buyer',
+    sellerName: 'Seller',
+    postImageUrl: null,
+    categoryId: null,
+    itemId: null,
+    itemCondition: 'GOOD',
+  }), { currentListings: [], authoritative: true });
+
+  assert.equal(mapped.hasActiveDispute, true);
+  assert.equal(isOrderDisputed(mapped), true);
+  const badgeHtml = renderToStaticMarkup(createElement(OrderStatusBadge, {
+    status: mapped.escrowStatus,
+    orderItem: mapped,
+    lang: 'vi',
+    isSeller: false,
+    isOrderCancelledOrRefunded: () => false,
+    isOrderSellerConfirmed: () => true,
+    getOrderInboundShipment: () => null,
+    inboundLoadingOrders: new Set<string>(),
+    isInspectorArrivedForOrder: () => false,
+    getOrderAppointment: () => null,
+    autoPaidOrderIds: new Set<string>(),
+    isPartyInspectionFeePending: () => false,
+    getPartyInspectionFee: () => 0,
+    isPartyInspectionFeePaid: () => true,
+  }));
+  assert.match(badgeHtml, /Đang Tranh Chấp • Đóng Băng Escrow/);
+  assert.equal(getOrderEscrowHoldNotice(mapped, 'vi'), null);
 });
 

@@ -287,6 +287,7 @@ export interface CreateChecklistTemplateRequest {
 export type InspectionFeeProposalStatus = 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED';
 
 export interface InspectionFeeProposalResponse {
+  updatedAt?: string;
   id: string;
   categoryId?: string;
   categoryName?: string;

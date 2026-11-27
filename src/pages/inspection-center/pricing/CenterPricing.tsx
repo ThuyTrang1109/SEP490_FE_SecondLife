@@ -40,6 +40,7 @@ interface Props {
   >;
   pricing: Pick<ReturnType<typeof useCenterPricing>,
     | 'currentLevelFees'
+    | 'centerApprovedTravelProposal'
     | 'getPendingProposalForLevel'
     | 'handleOpenProposeModal'
     | 'handlePricingFilterChange'

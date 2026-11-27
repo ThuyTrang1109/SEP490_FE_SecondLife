@@ -172,7 +172,7 @@ test('orderFeedItemToRaw and mapEscrowOrder immediately preserve hasActiveDisput
     categoryId: null,
     itemId: null,
     itemCondition: 'GOOD',
-  }), { currentListings: [], authoritative: true });
+  }), { currentRole: 'buyer', currentListings: [], authoritative: true });
 
   assert.equal(mapped.hasActiveDispute, true);
   assert.equal(isOrderDisputed(mapped), true);

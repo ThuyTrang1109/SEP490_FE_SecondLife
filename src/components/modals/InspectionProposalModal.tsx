@@ -489,11 +489,11 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
               <div className="flex items-center gap-1.5 flex-wrap">
                 {((selectedCenter as any)?.city || (selectedCenter?.address?.includes('Hà Nội') ? 'Thành phố Hà Nội' : selectedCenter?.address?.includes('Hồ Chí Minh') ? 'Thành phố Hồ Chí Minh' : null)) && (
                   <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full border border-emerald-300">
-                    📍 {(selectedCenter as any).city || (selectedCenter?.address?.includes('Hà Nội') ? 'Thành phố Hà Nội' : 'Thành phố Hồ Chí Minh')}
+                    {(selectedCenter as any).city || (selectedCenter?.address?.includes('Hà Nội') ? 'Thành phố Hà Nội' : 'Thành phố Hồ Chí Minh')}
                   </span>
                 )}
                 <span className="text-[9.5px] bg-blue-50 text-blue-700 font-bold px-2 py-0.5 rounded-full border border-blue-200">
-                  🎯 {lang === 'vi' ? 'Gần người bán nhất' : 'Nearest to seller'}
+                  {lang === 'vi' ? 'Gần người bán nhất' : 'Nearest to seller'}
                 </span>
               </div>
             </div>
@@ -536,16 +536,16 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
                 )}
                 <div className="flex flex-wrap items-center gap-1.5 pl-4 pt-0.5 text-[9px] text-slate-500">
                   <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded font-bold">
-                    🔬 Trạm thẩm định chuẩn ISO/IEC 17025
+                    Trạm thẩm định chuẩn ISO/IEC 17025
                   </span>
                   {Boolean((selectedCenter as any).activeInspectors) && (
                     <span className="bg-slate-100 px-1.5 py-0.5 rounded font-medium text-slate-700">
-                      👨‍🔧 Đội ngũ: <strong>{(selectedCenter as any).activeInspectors} chuyên viên</strong>
+                      Đội ngũ: <strong>{(selectedCenter as any).activeInspectors} chuyên viên</strong>
                     </span>
                   )}
                   {Boolean((selectedCenter as any).capacityPerDay) && (
                     <span className="bg-slate-100 px-1.5 py-0.5 rounded font-medium text-slate-700">
-                      📦 Công suất: <strong>{(selectedCenter as any).capacityPerDay} máy/ngày</strong>
+                      Công suất: <strong>{(selectedCenter as any).capacityPerDay} máy/ngày</strong>
                     </span>
                   )}
                   {Boolean((selectedCenter as any).passRatePercentage) && (

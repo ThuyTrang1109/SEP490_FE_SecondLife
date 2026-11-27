@@ -572,7 +572,7 @@ export function OrderDeliveryJourney({
                               </div>
                               <div className="bg-white/90 p-2 rounded-lg border border-amber-200 space-y-1">
                                 <div className="flex items-center gap-1.5">
-                                  <span className="font-bold text-amber-900">📅 Giờ mới:</span>
+                                  <span className="font-bold text-amber-900">Giờ mới:</span>
                                   <span className="font-extrabold text-orange-700 bg-orange-100 px-1.5 py-0.5 rounded text-[11px]">
                                     {hasValidDate && validDate
                                       ? validDate.toLocaleString('vi-VN')
@@ -582,7 +582,7 @@ export function OrderDeliveryJourney({
                                 </div>
                                 {detailCounterNote && (
                                   <div className="text-[11px] text-amber-900 italic">
-                                    💬 Lý do: "{detailCounterNote}"
+                                    Lý do: "{detailCounterNote}"
                                   </div>
                                 )}
                               </div>

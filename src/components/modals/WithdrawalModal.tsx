@@ -1,3 +1,4 @@
+import { withdrawalBanks as SUPPORTED_BANKS } from '../../services/withdrawalBanks';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Wallet,
@@ -32,34 +33,7 @@ interface WithdrawalModalProps {
   onSuccess?: () => void;
 }
 
-const SUPPORTED_BANKS = [
-  { code: 'VCB', name: 'Vietcombank (Ngoại Thương Việt Nam)' },
-  { code: 'MB', name: 'MBBank (Quân Đội)' },
-  { code: 'TCB', name: 'Techcombank (Kỹ Thương)' },
-  { code: 'CTG', name: 'VietinBank (Công Thương Việt Nam)' },
-  { code: 'BIDV', name: 'BIDV (Đầu Tư và Phát Triển)' },
-  { code: 'ACB', name: 'ACB (Á Châu)' },
-  { code: 'VPB', name: 'VPBank (Việt Nam Thịnh Vượng)' },
-  { code: 'TPB', name: 'TPBank (Tiên Phong)' },
-  { code: 'STB', name: 'Sacombank (Sài Gòn Thương Tín)' },
-  { code: 'HDB', name: 'HDBank (Phát Triển TP.HCM)' },
-  { code: 'VIB', name: 'VIB (Quốc Tế Việt Nam)' },
-  { code: 'SHB', name: 'SHB (Sài Gòn - Hà Nội)' },
-  { code: 'VBA', name: 'Agribank (Nông Nghiệp & PTNT)' },
-  { code: 'MSB', name: 'MSB (Hàng Hải)' },
-  { code: 'OCB', name: 'OCB (Phương Đông)' },
-  { code: 'SSB', name: 'SeABank (Đông Nam Á)' },
-  { code: 'LPB', name: 'LPBank (Lộc Phát)' },
-  { code: 'EIB', name: 'Eximbank (Xuất Nhập Khẩu)' },
-  { code: 'BAB', name: 'Bac A Bank (Bắc Á)' },
-  { code: 'NAB', name: 'Nam A Bank (Nam Á)' },
-  { code: 'PVC', name: 'PVcomBank (Đại Chúng)' },
-  { code: 'KLB', name: 'KienlongBank (Kiên Long)' },
-  { code: 'BVB', name: 'BaoViet Bank (Bảo Việt)' },
-  { code: 'SGB', name: 'Saigonbank (Sài Gòn Công Thương)' },
-  { code: 'SHINHAN', name: 'Shinhan Bank Việt Nam' },
-  { code: 'WOORI', name: 'Woori Bank Việt Nam' },
-];
+
 
 export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
   isOpen,
@@ -74,12 +48,21 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
 
   // Form State
   const [bankCode, setBankCode] = useState('VCB');
+  const [bankSearch, setBankSearch] = useState('');
+  const [savedBanks, setSavedBanks] = useState<Awaited<ReturnType<typeof walletService.savedBankAccounts>>>([]);
+  useEffect(() => {
+    let active = true;
+    if (isOpen) walletService.savedBankAccounts().then(rows => { if (active) setSavedBanks(rows); }).catch(() => { if (active) setSavedBanks([]); });
+    return () => { active = false; };
+  }, [isOpen]);
+  const [manualBank, setManualBank] = useState('');
   const [accountNumber, setAccountNumber] = useState(initialAccountNumber || '');
   const [accountHolderName, setAccountHolderName] = useState(initialAccountHolder || '');
   const [amountStr, setAmountStr] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [idempotencyKey, setIdempotencyKey] = useState<string | null>(null);
 
   // History State
   const [historyList, setHistoryList] = useState<WalletWithdrawalResponseDto[]>([]);
@@ -136,6 +119,20 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
   const handleQuickAmount = (ratio: number) => {
     const val = Math.floor(availableBalance * ratio);
     setAmountStr(String(Math.max(0, val)));
+    setIdempotencyKey(null);
+  };
+
+  const cancelWithdrawal = async (id: string) => {
+    if (!window.confirm('Cancel this pending withdrawal? The reserved amount will be released to your available balance.')) return;
+    try { await walletService.cancelWithdrawal(id); await fetchHistory(0); onSuccess?.(); }
+    catch (err: any) { setErrorMessage(err?.message || 'This request can no longer be cancelled.'); }
+  };
+
+  const reportWithdrawalIssue = async (id: string) => {
+    const description = window.prompt('Describe the transfer issue. Do not enter bank passwords or OTP codes.');
+    if (!description?.trim()) return;
+    try { await walletService.reportWithdrawalIssue(id, 'OTHER', description.trim()); await fetchHistory(0); }
+    catch (err: any) { setErrorMessage(err?.message || 'The report could not be submitted.'); }
   };
 
   const handleSubmitWithdrawal = async (e: React.FormEvent) => {
@@ -144,8 +141,8 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
     setSuccessMessage(null);
 
     const amount = Number(cleanVndInput(amountStr));
-    if (isNaN(amount) || amount < 50000) {
-      setErrorMessage('Số tiền rút tối thiểu là 50.000 VND.');
+    if (isNaN(amount) || amount < 10000) {
+      setErrorMessage('Số tiền rút tối thiểu là 10.000 VND.');
       return;
     }
     if (amount > availableBalance) {
@@ -161,17 +158,28 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
       return;
     }
 
+    const selectedBank = SUPPORTED_BANKS.find((bank) => bank.code === bankCode);
     setIsSubmitting(true);
     try {
+      const confirmation = await walletService.getWithdrawalBankConfirmation();
+      const confirmed = window.confirm(
+        `${confirmation.text}\n\nNgân hàng: ${selectedBank?.name || manualBank.trim()}\nSố tài khoản: ${accountNumber.trim()}\nTên chủ tài khoản: ${accountHolderName.trim().toUpperCase()}`
+      );
+      if (!confirmed) return;
       const payload: CreateWithdrawalRequestDto = {
         amount,
         bankCode,
         accountNumber: accountNumber.trim(),
         accountHolderName: accountHolderName.trim().toUpperCase(),
+        bankName: selectedBank?.name || manualBank.trim(),
+        warningVersion: confirmation.version,
       };
 
-      await walletService.requestWithdrawal(payload);
-      setSuccessMessage(`Đã gửi yêu cầu rút ${formatVND(amount)} thành công. Hệ thống đang tiến hành xử lý chuyển khoản.`);
+      const requestKey = idempotencyKey || (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`);
+      setIdempotencyKey(requestKey);
+      await walletService.requestWithdrawal(payload, requestKey);
+      setIdempotencyKey(null);
+      setSuccessMessage(`Đã gửi yêu cầu rút ${formatVND(amount)}. Nhân viên dự kiến xử lý trong 1–3 ngày làm việc.`);
       setAmountStr('');
       if (onSuccess) onSuccess();
       // Auto switch to history after 1.5s
@@ -247,7 +255,7 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
           </div>
           <div className="text-right">
             <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-black uppercase">
-              Tối thiểu 50.000₫
+              Tối thiểu 10.000₫
             </span>
           </div>
         </div>
@@ -275,17 +283,24 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
                 <Building2 className="w-3.5 h-3.5 text-slate-400" />
                 <span>Ngân hàng thụ hưởng <span className="text-rose-500">*</span></span>
               </label>
+              {savedBanks.length > 0 && <select aria-label="Tài khoản đã lưu" defaultValue="" onChange={e => {
+                const bank = savedBanks.find(row => row.id === e.target.value);
+                if (bank) { setBankCode(bank.bankCode); setManualBank(bank.bankName); setAccountNumber(bank.accountNumber); setAccountHolderName(bank.accountHolderName); setIdempotencyKey(null); }
+              }}><option value="">Chọn tài khoản đã lưu</option>{savedBanks.map(b => <option key={b.id} value={b.id}>{b.bankName} · {b.accountNumber.slice(-4)}</option>)}</select>}
+              <input aria-label="Tìm ngân hàng" placeholder="Tìm theo tên, mã hoặc BIN" value={bankSearch} onChange={e => setBankSearch(e.target.value)} className="w-full border rounded p-2 mb-2" />
               <select
                 value={bankCode}
-                onChange={(e) => setBankCode(e.target.value)}
+                onChange={(e) => { setBankCode(e.target.value); setIdempotencyKey(null); }}
                 className="w-full text-xs px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#24263e] font-semibold"
               >
-                {SUPPORTED_BANKS.map((b) => (
+                {SUPPORTED_BANKS.filter(b => b.code === bankCode || [b.name,b.code,b.bin].some(v => v.toLowerCase().includes(bankSearch.trim().toLowerCase()))).map((b) => (
                   <option key={b.code} value={b.code}>
                     {b.code} - {b.name}
                   </option>
                 ))}
+                <option value="MANUAL">Ngân hàng khác (chuyển thủ công)</option>
               </select>
+              {bankCode === "MANUAL" && <input required maxLength={120} placeholder="Tên ngân hàng" value={manualBank} onChange={e => { setManualBank(e.target.value); setIdempotencyKey(null); }} className="w-full border rounded p-2 mt-2" />}
             </div>
 
             {/* Account Number */}
@@ -298,7 +313,7 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
                 type="text"
                 required
                 value={accountNumber}
-                onChange={(e) => setAccountNumber(e.target.value.replace(/\s+/g, ''))}
+                onChange={(e) => { setAccountNumber(e.target.value.replace(/\s+/g, '')); setIdempotencyKey(null); }}
                 placeholder="Nhập số tài khoản ngân hàng..."
                 className="w-full text-xs px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#24263e] font-mono font-bold"
               />
@@ -314,17 +329,23 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
                 type="text"
                 required
                 value={accountHolderName}
-                onChange={(e) => setAccountHolderName(e.target.value.toUpperCase())}
+                onChange={(e) => { setAccountHolderName(e.target.value.toUpperCase()); setIdempotencyKey(null); }}
                 placeholder="VD: NGUYEN VAN A"
                 className="w-full text-xs px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#24263e] font-bold"
               />
             </div>
 
+            <button type="button" className="text-xs underline" onClick={async () => {
+              try {
+                await walletService.saveBankAccount({bankName: SUPPORTED_BANKS.find(b => b.code === bankCode)?.name || manualBank.trim(), bankCode, accountNumber: accountNumber.trim(), accountHolderName: accountHolderName.trim()});
+                setSavedBanks(await walletService.savedBankAccounts()); setSuccessMessage('Đã lưu tài khoản vào hồ sơ.');
+              } catch { setErrorMessage('Không thể lưu. Vui lòng kiểm tra thông tin tài khoản.'); }
+            }}>Lưu tài khoản vào hồ sơ</button>
             {/* Amount */}
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
                 <span>Số tiền cần rút (VND) <span className="text-rose-500">*</span></span>
-                <span className="text-[10px] text-slate-400">Tối thiểu: 50.000₫</span>
+                <span className="text-[10px] text-slate-400">Tối thiểu: 10.000₫</span>
               </label>
               <div className="relative">
                 <input
@@ -332,7 +353,7 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
                   inputMode="numeric"
                   required
                   value={amountStr ? formatVndInput(amountStr) : ''}
-                  onChange={(e) => handleVndInputChange(e, (_num, raw) => setAmountStr(raw))}
+                  onChange={(e) => handleVndInputChange(e, (_num, raw) => { setAmountStr(raw); setIdempotencyKey(null); })}
                   onKeyDown={(e) => handleVndInputKeyDown(e, (_num, raw) => setAmountStr(raw))}
                   placeholder="Nhập số tiền (VND)..."
                   className="w-full text-xs px-3 py-2.5 pr-8 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#24263e] font-black text-base text-[#c34c36]"
@@ -385,7 +406,7 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
               </button>
               <button
                 type="submit"
-                disabled={isSubmitting || availableBalance < 50000}
+                disabled={isSubmitting || availableBalance < 10000}
                 className="px-5 py-2.5 bg-[#24263e] hover:bg-[#1a1c2e] text-white rounded-xl font-black text-xs shadow-md transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
               >
                 {isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
@@ -434,15 +455,17 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
                     </span>
                     <span
                       className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
-                        item.status === 'APPROVED'
+                        ['TRANSFERRED_AWAITING_REVIEW', 'COMPLETED'].includes(item.status)
                           ? 'bg-emerald-100 text-emerald-800'
                           : item.status === 'REJECTED'
                           ? 'bg-rose-100 text-rose-800'
                           : 'bg-amber-100 text-amber-800'
                       }`}
                     >
-                      {item.status === 'APPROVED'
-                        ? 'Đã chuyển tiền'
+                      {item.status === 'TRANSFERRED_AWAITING_REVIEW'
+                        ? 'Đã chuyển khoản · chờ đối soát'
+                        : item.status === 'COMPLETED'
+                        ? 'Hoàn tất'
                         : item.status === 'REJECTED'
                         ? 'Đã từ chối'
                         : 'Chờ duyệt'}
@@ -465,6 +488,8 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
                       <strong>Ghi chú từ sàn:</strong> {item.adminNote}
                     </div>
                   )}
+                  {item.status === 'PENDING' && <button onClick={() => cancelWithdrawal(item.id)} className="text-xs font-bold text-rose-700 underline">Hủy yêu cầu</button>}
+                  {item.status === 'TRANSFERRED_AWAITING_REVIEW' && item.disputeDeadline && Date.now() <= new Date(item.disputeDeadline).getTime() && <><button className="mr-3 font-bold" onClick={async () => { if (!window.confirm("Bạn xác nhận tiền đã vào tài khoản?")) return; try { await walletService.confirmReceipt(item.id); await fetchHistory(0); } catch { setErrorMessage("Không thể xác nhận. Vui lòng tải lại lịch sử."); } }}>Đã nhận</button><button onClick={() => reportWithdrawalIssue(item.id)} className="text-xs font-bold text-amber-800 underline">Báo cáo vấn đề trong 48 giờ</button></>}
                 </div>
               ))
             )}

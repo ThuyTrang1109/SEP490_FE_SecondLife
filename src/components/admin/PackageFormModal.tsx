@@ -1,3 +1,4 @@
+import { Gift as UiGift } from 'lucide-react';
 import React, { useState, useEffect, useMemo } from 'react';
 import { X, AlertCircle, Tag, Loader2, Check } from 'lucide-react';
 import { TopupPackage } from '../../types';
@@ -413,7 +414,7 @@ export const PackageFormModal: React.FC<PackageFormModalProps> = ({
         <div className="flex items-center justify-between pb-3.5 border-b border-slate-100">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 text-white flex items-center justify-center text-xl shadow-md shadow-emerald-200">
-              🎁
+              <UiGift size={16} aria-hidden="true" />
             </div>
             <div>
               <h3 className="text-base font-black text-slate-900 tracking-tight">
@@ -654,17 +655,17 @@ export const PackageFormModal: React.FC<PackageFormModalProps> = ({
             {/* Hướng dẫn khóa và mở khóa ô */}
             {pricingMode === 'discount' && (
               <p className="text-[10px] text-slate-500 font-medium">
-                ℹ️ Ô <strong>"Giá bán thực tế"</strong> đang bị khóa và tự động tính theo % giảm. Nhấn <button type="button" onClick={handleClearDiscount} className="text-rose-600 font-bold hover:underline inline">Xóa %</button> để chuyển sang nhập giá bán thực tế.
+                Ô <strong>"Giá bán thực tế"</strong> đang bị khóa và tự động tính theo % giảm. Nhấn <button type="button" onClick={handleClearDiscount} className="text-rose-600 font-bold hover:underline inline">Xóa %</button> để chuyển sang nhập giá bán thực tế.
               </p>
             )}
             {pricingMode === 'price' && (
               <p className="text-[10px] text-slate-500 font-medium">
-                ℹ️ Ô <strong>"% giảm mong muốn"</strong> đang bị khóa và tự động tính theo giá bán. Nhấn <button type="button" onClick={handleClearPrice} className="text-rose-600 font-bold hover:underline inline">Xóa giá</button> để chuyển sang nhập % giảm.
+                Ô <strong>"% giảm mong muốn"</strong> đang bị khóa và tự động tính theo giá bán. Nhấn <button type="button" onClick={handleClearPrice} className="text-rose-600 font-bold hover:underline inline">Xóa giá</button> để chuyển sang nhập % giảm.
               </p>
             )}
             {!pricingMode && (
               <p className="text-[10px] text-slate-500 font-medium">
-                💡 Khi nhập vào 1 ô, ô còn lại sẽ tự động khóa và hiển thị giá trị tính toán tương ứng. Xóa giá trị để mở khóa ô còn lại.
+                Khi nhập vào 1 ô, ô còn lại sẽ tự động khóa và hiển thị giá trị tính toán tương ứng. Xóa giá trị để mở khóa ô còn lại.
               </p>
             )}
 

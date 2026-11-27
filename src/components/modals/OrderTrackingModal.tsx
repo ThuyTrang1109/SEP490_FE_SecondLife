@@ -1476,7 +1476,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
 
                           {ev.count > 1 && (
                             <div className="text-[10px] text-slate-400 font-medium pt-0.5 flex items-center gap-1">
-                              <span>ℹ️ Đã đồng bộ tín hiệu {ev.count} lần từ hệ thống đối tác Lalamove</span>
+                              <span>Đã đồng bộ tín hiệu {ev.count} lần từ hệ thống đối tác Lalamove</span>
                             </div>
                           )}
                         </div>

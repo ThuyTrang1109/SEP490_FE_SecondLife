@@ -266,7 +266,7 @@ export function OrderCardInspection({
                         </div>
                         <div className="bg-white/90 p-2.5 rounded-lg border border-amber-200 space-y-1">
                           <div className="flex items-center gap-2">
-                            <span className="font-bold text-amber-900">📅 Thời gian đề xuất:</span>
+                            <span className="font-bold text-amber-900">Thời gian đề xuất:</span>
                             <span className="font-extrabold text-orange-700 bg-orange-100 px-2 py-0.5 rounded">
                               {isValidDate && validCounterDate
                                 ? validCounterDate.toLocaleString('vi-VN', {
@@ -282,7 +282,7 @@ export function OrderCardInspection({
                           </div>
                           {effectiveCounterNote && (
                             <div className="text-[11px] text-amber-900 italic">
-                              💬 <strong>Lý do từ Hub:</strong> "{effectiveCounterNote}"
+                              <strong>Lý do từ Hub:</strong> "{effectiveCounterNote}"
                             </div>
                           )}
                         </div>
@@ -315,7 +315,7 @@ export function OrderCardInspection({
                     );
                   })() : (isRejected && !isPendingApprovalOrFee) ? (
                     <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-[11px] text-rose-900 leading-relaxed">
-                      👉 <strong>{lang === 'vi' ? 'Lưu ý người bán:' : 'Seller note:'}</strong>{' '}
+                      <strong>{lang === 'vi' ? 'Lưu ý người bán:' : 'Seller note:'}</strong>{' '}
                       {lang === 'vi'
                         ? 'Trung tâm SecondLife đã từ chối lịch hẹn trước đó. Vui lòng bấm nút "Đặt Lại Lịch Hẹn KTV" bên dưới để chọn ca hẹn mới phù hợp hơn!'
                         : 'SecondLife Hub has rejected the previous appointment. Please click "Reschedule Appointment" below to pick a different shift!'}
@@ -324,7 +324,7 @@ export function OrderCardInspection({
                     <div className="p-2.5 rounded-lg bg-white/90 border border-amber-200/80 text-[11px] text-amber-900 space-y-1">
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-amber-950">
-                          📅 {lang === 'vi' ? 'Thời gian KTV đến nhà:' : 'Scheduled Arrival:'}
+                          {lang === 'vi' ? 'Thời gian KTV đến nhà:' : 'Scheduled Arrival:'}
                         </span>
                         <span className="font-extrabold text-amber-800 bg-amber-100/70 px-2 py-0.5 rounded">
                           {new Date(savedAppointment.scheduledAt).toLocaleString('vi-VN', {
@@ -337,12 +337,12 @@ export function OrderCardInspection({
                         </span>
                       </div>
                       <div>
-                        <span className="font-bold">📍 {lang === 'vi' ? 'Địa chỉ đón KTV:' : 'Address:'}</span>{' '}
+                        <span className="font-bold">{lang === 'vi' ? 'Địa chỉ đón KTV:' : 'Address:'}</span>{' '}
                         <span>{getOrderSellerAddress(ord)}</span>
                       </div>
                       {savedAppointment.note && !savedAppointment.note.startsWith('[Tem:') && !savedAppointment.note.includes('[Photos:') && !savedAppointment.note.includes('[Grade:') && !savedAppointment.note.includes('[Điểm:') && (
                         <div className="italic text-amber-800/80">
-                          💬 {lang === 'vi' ? 'Ghi chú đón KTV:' : 'Note:'} {savedAppointment.note}
+                          {lang === 'vi' ? 'Ghi chú đón KTV:' : 'Note:'} {savedAppointment.note}
                         </div>
                       )}
 
@@ -378,13 +378,13 @@ export function OrderCardInspection({
                             {isPurchaseAccepted ? (
                               isCompletedOrReleased ? (
                                 <p className="text-[11px] text-emerald-800 font-semibold bg-emerald-100/60 p-2 rounded-lg border border-emerald-200">
-                                  🎉 {lang === 'vi'
+                                  {lang === 'vi'
                                     ? 'Đơn hàng đã hoàn tất và tiền bán hàng đã được giải ngân về ví của bạn thành công.'
                                     : 'Order completed and funds have been released to your wallet successfully.'}
                                 </p>
                               ) : (deliveryStage === 'delivered' || ord.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' || ord.backendStatus === 'DELIVERED') ? (
                                 <p className="text-[11px] text-emerald-800 font-semibold bg-emerald-100/60 p-2 rounded-lg border border-emerald-200">
-                                  🎉 {lang === 'vi'
+                                  {lang === 'vi'
                                     ? 'Tài xế đã giao kiện hàng thành công tới người mua. Khách mua có 48 giờ để kiểm tra đối soát trước khi hệ thống tự động giải ngân vào ví của bạn.'
                                     : 'Package delivered to buyer successfully. Buyer has 48 hours inspection window before escrow is released to your wallet.'}
                                 </p>
@@ -396,13 +396,13 @@ export function OrderCardInspection({
                                 </p>
                               ) : deliveryStage === 'awaiting_pickup' ? (
                                 <p className="text-[11px] text-emerald-800 font-semibold bg-emerald-100/60 p-2 rounded-lg border border-emerald-200">
-                                  🎉 {lang === 'vi'
+                                  {lang === 'vi'
                                     ? 'Đã tạo vận đơn thành công. Vui lòng bàn giao kiện hàng cho tài xế Lalamove khi tài xế đến nhận.'
                                     : 'Lalamove shipment created successfully. Please keep the tamper seal intact and hand over the parcel to the Lalamove driver upon arrival.'}
                                 </p>
                               ) : (
                                 <p className="text-[11px] text-emerald-800 font-semibold bg-emerald-100/60 p-2 rounded-lg border border-emerald-200">
-                                  🎉 {lang === 'vi'
+                                  {lang === 'vi'
                                     ? 'Người mua đã xác nhận mua hàng thành công. Khách mua đã thanh toán đơn hàng. Vui lòng đóng gói cẩn thận (giữ nguyên tem niêm phong) và bấm nút "Đã gói hàng • Tạo đơn vận chuyển" bên dưới để bàn giao cho tài xế.'
                                     : 'Buyer has confirmed the purchase! Order is paid. Please pack carefully (keep the tamper seal intact) and click "Packed • Create Shipping Order" below to hand over to carrier.'}
                                 </p>
@@ -458,7 +458,7 @@ export function OrderCardInspection({
                     </div>
                   ) : (
                     <div className="p-2.5 rounded-lg bg-amber-100/60 border border-amber-200 text-[11px] text-amber-900 leading-relaxed">
-                      👉 <strong>{lang === 'vi' ? 'Lưu ý người bán:' : 'Seller note:'}</strong>{' '}
+                      <strong>{lang === 'vi' ? 'Lưu ý người bán:' : 'Seller note:'}</strong>{' '}
                       {isWaitingBuyerApproval
                         ? (lang === 'vi'
                           ? 'Bạn đã gửi lại đề xuất thay đổi phương án chia phí kiểm định. Vui lòng chờ người mua xem và đồng ý trong phòng chat trước khi hẹn lịch đón KTV.'
@@ -587,7 +587,7 @@ export function OrderCardInspection({
                     {/* Chặng 1 */}
                     <div className="p-2.5 rounded-lg bg-white/90 border border-blue-200 text-blue-950 space-y-1">
                       <div className="flex items-center justify-between font-bold">
-                        <span className="text-blue-700">📦 {lang === 'vi' ? 'Chặng 1: Gửi Hàng Đến Hub' : 'Leg 1: Send to Hub'}</span>
+                        <span className="text-blue-700">{lang === 'vi' ? 'Chặng 1: Gửi Hàng Đến Hub' : 'Leg 1: Send to Hub'}</span>
                         <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold ${(() => {
                           if (isWaitingFeePayment) return 'bg-amber-100 text-amber-800';
                           if (isWaitingSellerApproval || isWaitingBuyerApproval) return 'bg-slate-100 text-slate-700';
@@ -649,7 +649,7 @@ export function OrderCardInspection({
                                 ? 'text-emerald-700'
                                 : 'text-slate-700'
                         }>
-                          🚚 {isInspFailed || isRejected
+                          {isInspFailed || isRejected
                             ? (lang === 'vi' ? 'Chặng 2: Hoàn Trả Người Bán' : 'Leg 2: Return to Seller')
                             : (lang === 'vi' ? 'Chặng 2: Hub Giao Người Mua' : 'Leg 2: Hub to Buyer')}
                         </span>

@@ -581,8 +581,8 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
 
     // Real Withdrawals summary from DB (/v1/wallets/admin/withdrawals)
     const filteredWithdrawals = withdrawals.filter((w) => isWithinDateRange(w.createdAt));
-    const pendingWithdrawals = filteredWithdrawals.filter((w) => w.status === 'PENDING_REVIEW');
-    const approvedWithdrawals = filteredWithdrawals.filter((w) => w.status === 'APPROVED');
+    const pendingWithdrawals = filteredWithdrawals.filter((w) => ['PENDING', 'PROCESSING'].includes(w.status));
+    const approvedWithdrawals = filteredWithdrawals.filter((w) => ['TRANSFERRED_AWAITING_REVIEW', 'COMPLETED'].includes(w.status));
     const rejectedWithdrawals = filteredWithdrawals.filter((w) => w.status === 'REJECTED');
 
     const pendingWithdrawalAmount = pendingWithdrawals.reduce((s, w) => s + Number(w.amount || 0), 0);

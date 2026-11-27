@@ -1,3 +1,4 @@
+import { Lightbulb as UiLightbulb, ClipboardList as UiClipboardList } from 'lucide-react';
 import { paths } from '../../app/router/paths';
 import { isValidUUID, isSellerOfferId, isOfficialAcceptedNegotiation } from '../../utils/negotiationHelper';
 import { negotiationService } from '../../services';
@@ -2102,7 +2103,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     }
     setBankCheckMessage({
       type: 'success',
-      text: lang === 'vi' ? '🎉 Đã ký quỹ Escrow thành công! Đang chuyển hướng đến đơn hàng...' : '🎉 Escrow deposit verified! Redirecting...',
+      text: lang === 'vi' ? 'Đã ký quỹ Escrow thành công! Đang chuyển hướng đến đơn hàng...' : 'Escrow deposit verified! Redirecting...',
     });
 
     try {
@@ -2309,7 +2310,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               <div className="p-3.5 bg-emerald-50 border border-emerald-300 rounded-2xl text-emerald-900 font-semibold flex items-center gap-3 animate-fadeIn">
                 <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
                 <div>
-                  <h5 className="font-bold text-sm text-emerald-800">🎉 Đã Ký Quỹ Escrow Thành Công!</h5>
+                  <h5 className="font-bold text-sm text-emerald-800">Đã Ký Quỹ Escrow Thành Công!</h5>
                   <p className="text-[11px] text-emerald-700">
                     Số tiền {formatVND(remainingToPay)} đã được hệ thống đóng băng an toàn tại Quỹ Escrow. Đang chuyển hướng...
                   </p>
@@ -2842,10 +2843,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         </label>
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full border border-emerald-300">
-                            📍 {selectedCenter.city}
+                            {selectedCenter.city}
                           </span>
                           <span className="text-[9.5px] bg-blue-50 text-blue-700 font-bold px-2 py-0.5 rounded-full border border-blue-200">
-                            🎯 {lang === 'vi' ? 'Gần người bán nhất' : 'Nearest to seller'}
+                            {lang === 'vi' ? 'Gần người bán nhất' : 'Nearest to seller'}
                           </span>
                         </div>
                       </div>
@@ -2869,7 +2870,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                           </span>
                           {selectedCenter.phone && (
                             <span className="text-[10px] font-semibold text-slate-600 shrink-0">
-                              📞 Hotline: <strong className="text-slate-900">{selectedCenter.phone}</strong>
+                              Hotline: <strong className="text-slate-900">{selectedCenter.phone}</strong>
                             </span>
                           )}
                         </div>
@@ -2880,16 +2881,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         )}
                         <div className="flex flex-wrap items-center gap-1.5 pl-4.5 pt-0.5 text-[9px] text-slate-500">
                           <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded font-bold">
-                            🔬 Trạm thẩm định tiêu chuẩn
+                            Trạm thẩm định tiêu chuẩn
                           </span>
                           {Boolean(selectedCenter.activeInspectors) && (
                             <span className="bg-slate-100 px-1.5 py-0.5 rounded font-medium text-slate-700">
-                              👨‍🔧 Đội ngũ: <strong>{selectedCenter.activeInspectors} chuyên viên</strong>
+                              Đội ngũ: <strong>{selectedCenter.activeInspectors} chuyên viên</strong>
                             </span>
                           )}
                           {Boolean(selectedCenter.capacityPerDay) && (
                             <span className="bg-slate-100 px-1.5 py-0.5 rounded font-medium text-slate-700">
-                              📦 Công suất: <strong>{selectedCenter.capacityPerDay} máy/ngày</strong>
+                              Công suất: <strong>{selectedCenter.capacityPerDay} máy/ngày</strong>
                             </span>
                           )}
                           {Boolean(selectedCenter.passRatePercentage) && (
@@ -3013,7 +3014,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                                 {/* Thông báo phân loại xe nếu có từ BE */}
                                 {atCenterShippingQuote?.outbound?.vehicleSelection?.message && (
                                   <p className="mt-1 text-[9px] text-amber-800 bg-amber-50 px-2 py-1.5 rounded-lg border border-amber-200 leading-snug">
-                                    ℹ️ {atCenterShippingQuote.outbound.vehicleSelection.message}
+                                    {atCenterShippingQuote.outbound.vehicleSelection.message}
                                   </p>
                                 )}
 
@@ -3039,7 +3040,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
                           <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px]">
                             <span className="flex items-center gap-1 text-[10px] text-blue-700 font-bold">
-                              <span>🏷️ {lang === 'vi' ? 'Đã bao gồm cước 2 chiều Lalamove' : 'Includes 2-way shipping'}</span>
+                              <span>{lang === 'vi' ? 'Đã bao gồm cước 2 chiều Lalamove' : 'Includes 2-way shipping'}</span>
                             </span>
                             {inspectionMethod === 'AT_CENTER' && (
                               <span className="inline-flex items-center gap-1 text-[10px] font-black text-blue-700 bg-blue-100/90 px-2 py-0.5 rounded-full border border-blue-300">
@@ -3437,7 +3438,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
                           {/* Hướng dẫn giải pháp ngắn gọn, thân thiện */}
                           <div className="text-xs text-amber-800 dark:text-amber-300 bg-white/80 dark:bg-slate-900/60 p-2.5 rounded-xl border border-amber-200/70 dark:border-amber-800/40 flex items-start gap-2">
-                            <span className="text-sm shrink-0">💡</span>
+                            <span className="text-sm shrink-0"><UiLightbulb size={16} aria-hidden="true" /></span>
                             <span className="leading-relaxed text-[11px]">
                               <strong>Gợi ý:</strong> Bạn có thể nhắn tin trao đổi với người bán để kiểm tra lại thông số đóng gói bài đăng hoặc thỏa thuận phương án vận chuyển riêng.
                             </span>
@@ -3452,7 +3453,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                                 className="flex items-center justify-between w-full text-left text-xs font-bold text-amber-900 dark:text-amber-200 hover:text-amber-700 cursor-pointer py-1"
                               >
                                 <span className="flex items-center gap-1.5">
-                                  <span>📋</span>
+                                  <span><UiClipboardList size={16} aria-hidden="true" /></span>
                                   <span>Xem quy chuẩn kích thước các loại xe ({vehicleLimits.length} loại xe)</span>
                                 </span>
                                 {showVehicleLimits ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
@@ -3489,7 +3490,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                             <div className="space-y-1">
                               <p className="font-bold text-amber-950 leading-relaxed">{quoteError}</p>
                               <p className="text-[11px] text-amber-800">
-                                👉 Vui lòng kiểm tra và điều chỉnh vị trí hoặc địa chỉ giao nhận trên bản đồ rồi bấm thử lại.
+                                Vui lòng kiểm tra và điều chỉnh vị trí hoặc địa chỉ giao nhận trên bản đồ rồi bấm thử lại.
                               </p>
                             </div>
                           </div>
@@ -3613,7 +3614,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                               {/* Chi tiết kích thước và khối lượng của kiện hàng */}
                               <div className="flex items-center gap-2 pt-2 border-t border-emerald-100 text-[11px] text-slate-700 flex-wrap">
                                 <span className="font-semibold text-emerald-800 flex items-center gap-1">
-                                  📦 Kiện hàng:
+                                  Kiện hàng:
                                 </span>
                                 <span className="bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200 font-medium">
                                   Khối lượng: <strong className="text-slate-900">{weightDisplay}</strong>
@@ -3928,7 +3929,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     <div className="flex justify-between text-slate-600 text-[11px] items-center">
                       <span>Hình thức giao nhận:</span>
                       <span className="font-bold text-slate-800">
-                        🛡️ Kiểm định qua Hub
+                        Kiểm định qua Hub
                       </span>
                     </div>
 
@@ -3950,7 +3951,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       </div>
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between text-[10px] text-emerald-800 gap-1 pt-0.5 border-t border-emerald-200/60 font-medium">
                         <span className="truncate">
-                          📍 {selectedCenter?.name}
+                          {selectedCenter?.name}
                         </span>
                         <span className="shrink-0 font-semibold">
                           {feePercentLabel(buyerFeePercent, lang)}

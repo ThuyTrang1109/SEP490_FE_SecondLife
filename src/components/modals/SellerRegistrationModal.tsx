@@ -516,8 +516,8 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
 
           setSuccessMsg(
             lang === 'vi'
-              ? '📍 Đã tự động điền vị trí hiện tại! Bạn có thể tự do chỉnh sửa lại các ô bên dưới nếu cần.'
-              : '📍 Location auto-filled! You can freely edit any fields below.'
+              ? 'Đã tự động điền vị trí hiện tại! Bạn có thể tự do chỉnh sửa lại các ô bên dưới nếu cần.'
+              : 'Location auto-filled! You can freely edit any fields below.'
           );
           setTimeout(() => setSuccessMsg(null), 5000);
         } catch (err) {
@@ -1089,8 +1089,8 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
         onUpdateProfile(updated);
         setSuccessMsg(
           lang === 'vi'
-            ? '🎉 Cập nhật hồ sơ gian hàng thành công!'
-            : '🎉 Store profile updated successfully!'
+            ? 'Cập nhật hồ sơ gian hàng thành công!'
+            : 'Store profile updated successfully!'
         );
         setTimeout(() => setSuccessMsg(null), 6000);
         return;

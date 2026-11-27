@@ -577,7 +577,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
                   <span className="font-mono text-slate-700">{sellerContactPhone}</span>
                 </div>
                 <span className="text-slate-700 text-xs block leading-tight font-medium">
-                  📍 {sellerFullAddress}
+                  {sellerFullAddress}
                 </span>
                 <span className="text-[10px] text-amber-700 italic block">
                   {isAtHome
@@ -620,7 +620,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
                   </div>
                 )}
                 <span className="text-slate-700 text-xs block leading-tight font-medium">
-                  📍 {isHubInspection ? hubCenter.address : buyerFullAddress}
+                  {isHubInspection ? hubCenter.address : buyerFullAddress}
                 </span>
                 {isHubInspection ? (
                   <span className="text-[10px] text-blue-700 italic block">
@@ -650,14 +650,14 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
 
               <div className="space-y-1.5 text-xs text-slate-700">
                 <div className="flex items-start gap-2 bg-white/90 p-2 sm:p-2.5 rounded-xl border border-blue-100 shadow-2xs">
-                  <span className="font-bold text-blue-700 shrink-0 text-[11px]">📦 Chặng 1 (Vận đơn này):</span>
+                  <span className="font-bold text-blue-700 shrink-0 text-[11px]">Chặng 1 (Vận đơn này):</span>
                   <span className="leading-snug text-[11px]">
                     Bàn giao cho Lalamove giao đến <strong>{hubCenter.name}</strong> để đo kiểm kỹ thuật.
                   </span>
                 </div>
 
                 <div className="space-y-1 bg-white/90 p-2 sm:p-2.5 rounded-xl border border-blue-100 shadow-2xs text-[11px]">
-                  <div className="font-bold text-slate-900 text-[11px]">🚚 Chặng 2 (Kích hoạt sau khi có kết quả kiểm định):</div>
+                  <div className="font-bold text-slate-900 text-[11px]">Chặng 2 (Kích hoạt sau khi có kết quả kiểm định):</div>
                   <div className="flex items-start gap-1.5 text-emerald-800 leading-snug">
                     <span className="font-bold shrink-0">✅ Nếu ĐẠT:</span>
                     <span>
@@ -699,7 +699,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
                   </span>
                 </div>
                 <div className="flex items-start gap-2 bg-white/90 p-2 sm:p-2.5 rounded-xl border border-amber-200 shadow-2xs text-[11px] text-amber-900">
-                  <span className="font-bold shrink-0">📦 Bàn giao tài xế:</span>
+                  <span className="font-bold shrink-0">Bàn giao tài xế:</span>
                   <span className="leading-snug">
                     Vui lòng bàn giao kiện hàng nguyên vẹn cho tài xế Lalamove để giao thẳng tới địa chỉ người mua: <strong>{buyerFullAddress}</strong>.
                   </span>

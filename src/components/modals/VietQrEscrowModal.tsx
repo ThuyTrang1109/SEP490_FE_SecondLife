@@ -216,7 +216,7 @@ export const VietQrEscrowModal: React.FC<VietQrEscrowModalProps> = ({
             <div className="p-3.5 bg-emerald-50 border border-emerald-300 rounded-2xl text-emerald-900 font-semibold flex items-center gap-3 animate-fadeIn">
               <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
               <div>
-                <h5 className="font-bold text-sm text-emerald-800">🎉 Đã Ký Quỹ Escrow Thành Công!</h5>
+                <h5 className="font-bold text-sm text-emerald-800">Đã Ký Quỹ Escrow Thành Công!</h5>
                 <p className="text-[11px] text-emerald-700">
                   Số tiền {formatVND(remainingToPay)} đã được hệ thống đóng băng an toàn tại Quỹ Escrow. Đang chuyển hướng...
                 </p>

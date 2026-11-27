@@ -1,3 +1,4 @@
+import { Coins as UiCoins } from 'lucide-react';
 import { isValidUUID, isSellerOfferId, isNegotiationExpired, isOfficialAcceptedNegotiation } from '../../utils/negotiationHelper';
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { ChatMessage, Listing, Language, UserRole, UserCredit, UserProfile } from '../../types';
@@ -1395,7 +1396,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                           )}
                           <span className="text-[11px] font-black uppercase tracking-wider">
                             {isAccepted
-                              ? '🎉 Thỏa Thuận Chốt Giá Thành Công'
+                              ? 'Thỏa Thuận Chốt Giá Thành Công'
                               : isRejected
                                 ? '❌ Đề Xuất Giá Đã Bị Từ Chối'
                                 : isCancelled
@@ -1403,8 +1404,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                                   : isExpired
                                     ? '⏳ Phiên Thương Lượng Đã Hết Hạn'
                                     : isSellerOffer
-                                      ? '🏷️ Người Bán Đề Xuất Giá Mới'
-                                      : '🤝 Đề Xuất Thương Lượng Giá Mới'}
+                                      ? 'Người Bán Đề Xuất Giá Mới'
+                                      : 'Đề Xuất Thương Lượng Giá Mới'}
                           </span>
                         </div>
 
@@ -1512,7 +1513,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                                   }}
                                   className="px-4 py-2 bg-gradient-to-r from-[#c34c36] to-[#24263e] hover:opacity-95 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer transition transform hover:scale-102"
                                 >
-                                  <span>💰</span>
+                                  <span><UiCoins size={16} aria-hidden="true" /></span>
                                   <span>{lang === 'vi' ? 'Đề xuất mức giá khác' : 'Make Another Offer'}</span>
                                 </button>
                                 <span className="text-[10px] text-slate-500 font-medium">
@@ -2105,7 +2106,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                     : 'bg-gradient-to-r from-[#c34c36] to-[#e36a54] hover:opacity-95'
                     }`}
                 >
-                  <span>💰</span>
+                  <span><UiCoins size={16} aria-hidden="true" /></span>
                   <span>
                     {lang === 'vi'
                       ? isSeller

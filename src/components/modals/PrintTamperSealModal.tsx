@@ -1,3 +1,4 @@
+import { Lightbulb as UiLightbulb } from 'lucide-react';
 import React from 'react';
 import { Printer, X, ShieldCheck, AlertOctagon, Sparkles, CheckCircle2 } from 'lucide-react';
 import { ScannableQRCode } from '../common/ScannableQRCode';
@@ -163,7 +164,7 @@ export const PrintTamperSealModal: React.FC<PrintTamperSealModalProps> = ({
         {/* Tip for Inspector */}
         <div className="mt-4 p-3 bg-slate-50 rounded-xl text-slate-500 text-[11px] space-y-1 print:hidden border border-slate-100">
           <p>
-            💡 <strong>Hướng dẫn dán tem:</strong> Dán tem niêm phong đè lên ốc mở máy hoặc mép hộp sản phẩm.
+            <UiLightbulb size={16} aria-hidden="true" /> <strong>Hướng dẫn dán tem:</strong> Dán tem niêm phong đè lên ốc mở máy hoặc mép hộp sản phẩm.
           </p>
           <p>
             Mã QR trên tem có thể được quét trực tiếp bằng camera điện thoại của Shipper hoặc Người mua để tra cứu lịch sử trên hệ thống SecondLife.

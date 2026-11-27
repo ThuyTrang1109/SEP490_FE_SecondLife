@@ -173,12 +173,18 @@ export const walletService = {
    * Người dùng tạo yêu cầu rút tiền từ ví về tài khoản ngân hàng
    * POST /api/v1/wallets/withdrawals
    */
-  async requestWithdrawal(data: CreateWithdrawalRequestDto): Promise<WalletWithdrawalResponseDto> {
+  async requestWithdrawal(data: CreateWithdrawalRequestDto, idempotencyKey: string): Promise<WalletWithdrawalResponseDto> {
     const res = await request<WalletWithdrawalResponseDto>('/wallets/withdrawals', {
       method: 'POST',
       body: JSON.stringify(data),
+      headers: { 'Idempotency-Key': idempotencyKey, 'X-Bank-Info-Confirmed': 'true', 'X-Bank-Info-Warning-Version': data.warningVersion || '' },
       requiresAuth: true,
     });
+    return (res as any)?.data || res;
+  },
+
+  async getWithdrawalBankConfirmation(): Promise<{ version: string; text: string }> {
+    const res = await request<{ version: string; text: string }>('/wallets/withdrawal-bank-confirmation', { method: 'GET', requiresAuth: true });
     return (res as any)?.data || res;
   },
 
@@ -211,6 +217,31 @@ export const walletService = {
       totalPages: data?.totalPages ?? 1,
       isLast: data?.isLast ?? true,
     };
+  },
+
+  async savedBankAccounts(): Promise<SavedBankAccount[]> {
+    const result = await request<SavedBankAccount[]>('/me/bank-accounts', {method: 'GET', requiresAuth: true});
+    return (result as any)?.data ?? result;
+  },
+
+  async saveBankAccount(bank: Omit<SavedBankAccount, 'id'>) {
+    return request('/me/bank-accounts', {method: 'POST', requiresAuth: true, body: JSON.stringify(bank)});
+  },
+
+  async confirmReceipt(id: string) {
+    await request(`/wallets/withdrawals/${id}/received`, { method: 'POST', requiresAuth: true });
+  },
+
+  async cancelWithdrawal(id: string): Promise<WalletWithdrawalResponseDto> {
+    const res = await request<WalletWithdrawalResponseDto>(`/wallets/withdrawals/${id}/cancel`, { method: 'POST', requiresAuth: true });
+    return (res as any)?.data || res;
+  },
+
+  async reportWithdrawalIssue(id: string, type: string, description: string): Promise<WalletWithdrawalResponseDto> {
+    const res = await request<WalletWithdrawalResponseDto>(`/wallets/withdrawals/${id}/disputes`, {
+      method: 'POST', body: JSON.stringify({ type, description }), requiresAuth: true,
+    });
+    return (res as any)?.data || res;
   },
 
   /**
@@ -249,11 +280,20 @@ export const walletService = {
    * Admin phê duyệt hoặc từ chối yêu cầu rút tiền
    * POST /api/v1/wallets/admin/withdrawals/{id}/review
    */
-  async reviewWithdrawal(id: string, action: 'APPROVE' | 'REJECT', adminNote?: string): Promise<WalletWithdrawalResponseDto> {
+  async reviewWithdrawal(id: string, action: string, adminNote?: string): Promise<WalletWithdrawalResponseDto> {
     const res = await request<WalletWithdrawalResponseDto>(`/wallets/admin/withdrawals/${id}/review`, {
       method: 'POST',
       body: JSON.stringify({ action, adminNote: adminNote || '' }),
       requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  async uploadWithdrawalEvidence(id: string, file: File): Promise<WalletWithdrawalResponseDto> {
+    const body = new FormData();
+    body.append('file', file);
+    const res = await request<WalletWithdrawalResponseDto>(`/wallets/admin/withdrawals/${id}/evidence`, {
+      method: 'POST', body, requiresAuth: true,
     });
     return (res as any)?.data || res;
   },
@@ -264,6 +304,8 @@ export interface CreateWithdrawalRequestDto {
   bankCode: string;
   accountNumber: string;
   accountHolderName: string;
+  bankName?: string;
+  warningVersion?: string;
 }
 
 export interface WalletWithdrawalResponseDto {
@@ -274,7 +316,15 @@ export interface WalletWithdrawalResponseDto {
   bankCode: string;
   accountNumber: string;
   accountHolderName: string;
-  status: 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED';
+  status: 'PENDING' | 'PROCESSING' | 'TRANSFERRED_AWAITING_REVIEW' | 'DISPUTED' | 'DISPUTE_PROCESSING' | 'DISPUTE_RESOLVED' | 'COMPLETED' | 'REJECTED' | 'CANCELLED' | 'TRANSFER_FAILED';
+  requestCode?: string;
+  bankName?: string;
+  ownerRole?: string;
+  acceptedBy?: string | null;
+  acceptedAt?: string | null;
+  transferredAt?: string | null;
+  disputeDeadline?: string | null;
+  evidenceUrl?: string | null;
   reviewedBy?: string | null;
   reviewedAt?: string | null;
   adminNote?: string | null;
@@ -287,3 +337,5 @@ export interface WalletWithdrawalReviewRequestDto {
   adminNote?: string;
 }
 
+
+export interface SavedBankAccount { id: string; bankCode: string; bankName: string; accountNumber: string; accountHolderName: string; }

@@ -149,8 +149,8 @@ export const AtHomeIntakeBarcode: React.FC<AtHomeIntakeBarcodeProps> = ({
         {isQr
           ? (lang === 'vi' ? 'Khi kỹ thuật viên đến, hãy đưa mã QR để quét hoặc đọc mã tiếp nhận để nhập.' : 'Show this QR code or provide the intake code to the technician on arrival.')
           : (lang === 'vi'
-            ? '💡 Đưa mã vạch trên màn hình hoặc đọc mã tiếp nhận cho Kỹ thuật viên quét khi đến nhà. Thao tác này giúp xác thực đúng nhân sự kiểm định của SecondLife và bảo vệ bạn.'
-            : '💡 Show this barcode or provide the intake code to the technician upon arrival to verify authentic SecondLife staff.')}
+            ? 'Đưa mã vạch trên màn hình hoặc đọc mã tiếp nhận cho Kỹ thuật viên quét khi đến nhà. Thao tác này giúp xác thực đúng nhân sự kiểm định của SecondLife và bảo vệ bạn.'
+            : 'Show this barcode or provide the intake code to the technician upon arrival to verify authentic SecondLife staff.')}
       </p>
     </div>
   );

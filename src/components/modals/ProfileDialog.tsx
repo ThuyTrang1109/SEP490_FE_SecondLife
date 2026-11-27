@@ -1172,8 +1172,8 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
           setSellerFormSuccess(
             lang === 'vi'
-              ? '📍 Đã tự động điền vị trí hiện tại! Bạn có thể tự do chỉnh sửa lại các ô bên dưới nếu cần.'
-              : '📍 Location auto-filled! You can freely edit any fields below.'
+              ? 'Đã tự động điền vị trí hiện tại! Bạn có thể tự do chỉnh sửa lại các ô bên dưới nếu cần.'
+              : 'Location auto-filled! You can freely edit any fields below.'
           );
           setTimeout(() => setSellerFormSuccess(null), 5000);
         } catch (err) {
@@ -1449,8 +1449,8 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
         onUpdateProfile(updated);
         setSellerFormSuccess(
           lang === 'vi'
-            ? '🎉 Cập nhật hồ sơ gian hàng và địa chỉ kho lấy hàng thành công!'
-            : '🎉 Store profile and warehouse pickup address updated successfully!'
+            ? 'Cập nhật hồ sơ gian hàng và địa chỉ kho lấy hàng thành công!'
+            : 'Store profile and warehouse pickup address updated successfully!'
         );
         setTimeout(() => setSellerFormSuccess(null), 6000);
         return;
@@ -1592,8 +1592,8 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
         onUpdateProfile(updated);
         setSellerFormSuccess(
           lang === 'vi'
-            ? '🎉 Xác thực eKYC thành công! Quyền Người Bán của bạn đã được kích hoạt tự động.'
-            : '🎉 eKYC verified successfully! Your seller role is now active.'
+            ? 'Xác thực eKYC thành công! Quyền Người Bán của bạn đã được kích hoạt tự động.'
+            : 'eKYC verified successfully! Your seller role is now active.'
         );
       } else {
         const updated: UserProfile = {
@@ -3498,7 +3498,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                         </span>
                         {(pickupLatitude || currentUser.latitude || userLatitude) && (pickupLongitude || currentUser.longitude || userLongitude) && (
                           <span className="block text-[10px] text-orange-600 font-mono mt-0.5 font-semibold">
-                            📍 GPS: {(pickupLatitude ?? currentUser.latitude ?? userLatitude)?.toFixed(5)}, {(pickupLongitude ?? currentUser.longitude ?? userLongitude)?.toFixed(5)}
+                            GPS: {(pickupLatitude ?? currentUser.latitude ?? userLatitude)?.toFixed(5)}, {(pickupLongitude ?? currentUser.longitude ?? userLongitude)?.toFixed(5)}
                           </span>
                         )}
                       </div>

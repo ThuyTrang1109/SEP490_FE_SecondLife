@@ -2405,7 +2405,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
             {/* Bảng diễn giải công thức và ví dụ */}
             <div className="bg-slate-50 rounded-3xl p-5 border border-slate-200/80 space-y-3 text-xs">
               <h4 className="font-black text-slate-900 flex items-center gap-1.5 text-xs">
-                <span>📐 Ví dụ minh họa tính toán</span>
+                <span>Ví dụ minh họa tính toán</span>
               </h4>
               <p className="text-slate-600 text-[11px] leading-relaxed">
                 Khi người mua chọn kiểm định <strong>đưa đến trung tâm</strong>:

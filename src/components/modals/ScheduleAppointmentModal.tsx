@@ -758,7 +758,7 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
                     </span>
                   </div>
                   <div className="text-[11px] text-purple-700 font-medium flex items-center gap-2 mt-0.5">
-                    {assignedInspector.inspectorPhone && <span>📞 {assignedInspector.inspectorPhone}</span>}
+                    {assignedInspector.inspectorPhone && <span>{assignedInspector.inspectorPhone}</span>}
                     {assignedInspector.inspectorEmail && <span>✉️ {assignedInspector.inspectorEmail}</span>}
                   </div>
                 </div>
@@ -837,7 +837,7 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
                     {assignedInspector ? (
                       <>
                         KTV phụ trách: <strong className="text-purple-900 font-bold">{assignedInspector.inspectorName || 'KTV SecondLife'}</strong>
-                        {assignedInspector.inspectorPhone && <span className="ml-1 text-slate-600">📞 {assignedInspector.inspectorPhone}</span>}
+                        {assignedInspector.inspectorPhone && <span className="ml-1 text-slate-600">{assignedInspector.inspectorPhone}</span>}
                       </>
                     ) : (
                       'Sau khi chốt lịch, Trung tâm sẽ điều phối KTV đến tận nơi kiểm tra máy.'

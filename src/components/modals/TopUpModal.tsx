@@ -1842,7 +1842,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                           </p>
                           {currentUser?.role === 'admin' ? (
                             <div className="p-3 bg-amber-100/70 border border-amber-300 rounded-xl text-left text-[11px] text-amber-900 mt-2 space-y-1">
-                              <span className="font-bold block">💡 Hướng dẫn dành cho Quản trị viên (Admin):</span>
+                              <span className="font-bold block">Hướng dẫn dành cho Quản trị viên (Admin):</span>
                               <span>
                                 Backend yêu cầu phải có đơn giá chuẩn đang hoạt động cho 3 loại credit (ĐĂNG TIN, KIỂM ĐỊNH, CHAT AI).
                                 Vui lòng mở menu <strong>BẢNG GIÁ & CHIẾT KHẤU</strong> trên trang Quản trị để cấu hình đơn giá chuẩn.

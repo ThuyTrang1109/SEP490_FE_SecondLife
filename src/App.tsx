@@ -436,6 +436,7 @@ export default function App() {
 
   // Load wallet balance from Backend
   const loadUserWallet = React.useCallback(async () => {
+    if ((currentUser?.role || currentRole) === 'inspector') return;
     if (currentUserId && getAccessToken()) {
       try {
         const w = await walletService.getMyWallet();
@@ -451,7 +452,7 @@ export default function App() {
         console.warn('Could not load wallet from server:', err);
       }
     }
-  }, [currentUserId]);
+  }, [currentUserId, currentUser?.role, currentRole]);
 
   React.useEffect(() => {
     const refreshWallet = (e?: any) => {

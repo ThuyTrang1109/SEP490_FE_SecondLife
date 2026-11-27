@@ -209,7 +209,7 @@ export const LiveFaceScannerModal: React.FC<LiveFaceScannerModalProps> = ({
 
         {/* Gợi ý góc dưới */}
         <div className="flex items-center justify-center gap-3 text-[10px] text-slate-400 pt-0.5">
-          <span>💡 Hãy nhìn thẳng vào camera</span>
+          <span>Hãy nhìn thẳng vào camera</span>
           <span>•</span>
           <span>Không đeo kính râm / khẩu trang</span>
           <span>•</span>

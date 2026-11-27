@@ -1,3 +1,4 @@
+import { withdrawalBanks } from '../../services/withdrawalBanks';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Wallet,
@@ -69,6 +70,7 @@ export const WithdrawalsTab: React.FC<WithdrawalsTabProps> = ({ lang = 'vi', onN
       list = list.filter(
         (w) =>
           (w.userEmail && w.userEmail.toLowerCase().includes(term)) ||
+          (w.ownerRole && w.ownerRole.toLowerCase().includes(term)) ||
           (w.accountNumber && w.accountNumber.toLowerCase().includes(term)) ||
           (w.accountHolderName && w.accountHolderName.toLowerCase().includes(term)) ||
           (w.bankCode && w.bankCode.toLowerCase().includes(term)) ||
@@ -79,8 +81,9 @@ export const WithdrawalsTab: React.FC<WithdrawalsTabProps> = ({ lang = 'vi', onN
   }, [withdrawals, searchTerm]);
 
   // Stats
-  const pendingItems = useMemo(() => withdrawals.filter((w) => w.status === 'PENDING_REVIEW'), [withdrawals]);
-  const approvedItems = useMemo(() => withdrawals.filter((w) => w.status === 'APPROVED'), [withdrawals]);
+  const pendingItems = useMemo(() => withdrawals.filter((w) => w.status === 'PENDING'), [withdrawals]);
+  const transferFailedItems = useMemo(() => withdrawals.filter((w) => w.status === 'TRANSFER_FAILED'), [withdrawals]);
+  const approvedItems = useMemo(() => withdrawals.filter((w) => ['TRANSFERRED_AWAITING_REVIEW', 'COMPLETED'].includes(w.status)), [withdrawals]);
   const rejectedItems = useMemo(() => withdrawals.filter((w) => w.status === 'REJECTED'), [withdrawals]);
 
   const pendingAmount = useMemo(
@@ -93,6 +96,32 @@ export const WithdrawalsTab: React.FC<WithdrawalsTabProps> = ({ lang = 'vi', onN
     setReviewAction(action);
     setAdminNote(action === 'APPROVE' ? 'Đã giải ngân qua Internet Banking' : '');
     setActionError(null);
+  };
+
+  const handleClaim = async (item: WalletWithdrawalResponseDto) => {
+    try { await walletService.reviewWithdrawal(item.id, 'CLAIM'); await fetchWithdrawals(); }
+    catch (err: any) { setActionError(err?.message || 'Unable to accept this request.'); }
+  };
+
+  const handleEvidenceUpload = async (item: WalletWithdrawalResponseDto, file?: File) => {
+    if (!file) return;
+    try {
+      const saved = await walletService.uploadWithdrawalEvidence(item.id, file);
+      setWithdrawals((current) => current.map((row) => row.id === item.id ? saved : row));
+    } catch (err: any) { setActionError(err?.message || 'Evidence upload failed.'); }
+  };
+
+  const handleConfirmTransfer = async (item: WalletWithdrawalResponseDto) => {
+    if (!item.evidenceUrl || !window.confirm(`Đã đối chiếu người nhận ${item.accountHolderName}, tài khoản ${item.accountNumber} tại ${item.bankName || item.bankCode} và chuyển thành công ${formatVND(item.amount)}?`)) return;
+    try { await walletService.reviewWithdrawal(item.id, 'CONFIRM_TRANSFER'); await fetchWithdrawals(); }
+    catch (err: any) { setActionError(err?.message || 'Unable to confirm transfer.'); }
+  };
+
+  const handleResolveDispute = async (item: WalletWithdrawalResponseDto) => {
+    const resolution = window.prompt('Record the resolution and reconciliation outcome:');
+    if (!resolution?.trim()) return;
+    try { await walletService.reviewWithdrawal(item.id, 'RESOLVE_DISPUTE', resolution.trim()); await fetchWithdrawals(); }
+    catch (err: any) { setActionError(err?.message || 'Unable to resolve the dispute.'); }
   };
 
   const handleConfirmReview = async () => {
@@ -160,7 +189,7 @@ export const WithdrawalsTab: React.FC<WithdrawalsTabProps> = ({ lang = 'vi', onN
         <div className="bg-amber-50/70 border border-amber-200/80 rounded-2xl p-4 shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-amber-800 uppercase tracking-wide">
-              {lang === 'vi' ? 'Đang Chờ Duyệt' : 'Pending Review'}
+                {lang === 'vi' ? 'Chờ Tiếp Nhận' : 'Awaiting Claim'}
             </span>
             <div className="w-8 h-8 rounded-lg bg-amber-200/60 text-amber-900 flex items-center justify-center">
               <Clock className="w-4 h-4" />
@@ -235,8 +264,12 @@ export const WithdrawalsTab: React.FC<WithdrawalsTabProps> = ({ lang = 'vi', onN
         <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto pb-1 md:pb-0">
           {[
             { id: 'ALL', label: 'Tất cả' },
-            { id: 'PENDING_REVIEW', label: `Chờ duyệt (${pendingItems.length})` },
-            { id: 'APPROVED', label: `Đã duyệt (${approvedItems.length})` },
+            { id: 'PENDING', label: `Chờ nhận (${pendingItems.length})` },
+            { id: 'PROCESSING', label: 'Đang xử lý' },
+            { id: 'TRANSFER_FAILED', label: `Chuyển khoản lỗi (${transferFailedItems.length})` },
+            { id: 'TRANSFERRED_AWAITING_REVIEW', label: 'Chờ đối soát' },
+            { id: 'DISPUTED', label: 'Có báo cáo lỗi' },
+            { id: 'COMPLETED', label: `Hoàn tất (${approvedItems.length})` },
             { id: 'REJECTED', label: `Từ chối (${rejectedItems.length})` },
           ].map((tab) => (
             <button
@@ -305,8 +338,10 @@ export const WithdrawalsTab: React.FC<WithdrawalsTabProps> = ({ lang = 'vi', onN
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredWithdrawals.map((item) => {
-                  const isPending = item.status === 'PENDING_REVIEW';
-                  const isApproved = item.status === 'APPROVED';
+                  const isPending = item.status === 'PENDING';
+                  const isProcessing = item.status === 'PROCESSING';
+                  const isTransferFailed = item.status === 'TRANSFER_FAILED';
+                  const isApproved = ['TRANSFERRED_AWAITING_REVIEW', 'COMPLETED'].includes(item.status);
                   const isRejected = item.status === 'REJECTED';
 
                   return (
@@ -314,7 +349,7 @@ export const WithdrawalsTab: React.FC<WithdrawalsTabProps> = ({ lang = 'vi', onN
                       {/* ID & Date */}
                       <td className="py-3.5 px-4 font-mono">
                         <div className="font-bold text-slate-900 flex items-center gap-1">
-                          <span>#{item.id?.substring(0, 8)}</span>
+                          <span>#{item.requestCode || item.id?.substring(0, 8)}</span>
                         </div>
                         <div className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
                           <Calendar className="w-3 h-3" />
@@ -325,6 +360,7 @@ export const WithdrawalsTab: React.FC<WithdrawalsTabProps> = ({ lang = 'vi', onN
                       {/* User */}
                       <td className="py-3.5 px-4">
                         <div className="font-semibold text-slate-900">{item.userEmail || 'Chưa có email'}</div>
+                        <div className="text-[10px] text-indigo-600 font-bold">{item.ownerRole || 'UNKNOWN'}</div>
                         <div className="text-[10px] text-slate-400 font-mono">ID: {item.userId?.substring(0, 8)}...</div>
                       </td>
 
@@ -342,7 +378,7 @@ export const WithdrawalsTab: React.FC<WithdrawalsTabProps> = ({ lang = 'vi', onN
                           <span>{item.bankCode}</span>
                         </div>
                         <div className="font-mono text-slate-700 text-xs font-semibold">
-                          STK: {item.accountNumber}
+                          STK: {item.accountNumber?.length > 4 ? `••••${item.accountNumber.slice(-4)}` : item.accountNumber}
                         </div>
                         <div className="text-[11px] text-slate-500 font-medium">
                           Chủ TK: {item.accountHolderName}
@@ -354,19 +390,25 @@ export const WithdrawalsTab: React.FC<WithdrawalsTabProps> = ({ lang = 'vi', onN
                         {isPending && (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
                             <Clock className="w-3 h-3" />
-                            <span>Chờ Duyệt</span>
+                            <span>Chờ Tiếp Nhận</span>
                           </span>
                         )}
                         {isApproved && (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                             <CheckCircle2 className="w-3 h-3" />
-                            <span>Đã Giải Ngân</span>
+                            <span>{item.status === 'COMPLETED' ? 'Hoàn Tất' : 'Chờ Đối Soát'}</span>
                           </span>
                         )}
                         {isRejected && (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
                             <XCircle className="w-3 h-3" />
                             <span>Đã Từ Chối</span>
+                          </span>
+                        )}
+                        {isTransferFailed && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                            <AlertTriangle className="w-3 h-3" />
+                            <span>Chuyển khoản lỗi</span>
                           </span>
                         )}
                       </td>
@@ -385,15 +427,15 @@ export const WithdrawalsTab: React.FC<WithdrawalsTabProps> = ({ lang = 'vi', onN
 
                       {/* Actions */}
                       <td className="py-3.5 px-4 text-center whitespace-nowrap">
-                        {isPending ? (
+                        {isPending || isTransferFailed ? (
                           <div className="flex items-center justify-center gap-1.5">
                             <button
-                              onClick={() => handleOpenReview(item, 'APPROVE')}
+                              onClick={() => handleClaim(item)}
                               className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold transition flex items-center gap-1 shadow-xs cursor-pointer"
-                              title="Phê duyệt giải ngân"
+                              title="Tiếp nhận yêu cầu"
                             >
                               <Check className="w-3 h-3" />
-                              <span>Duyệt</span>
+                              <span>{isTransferFailed ? 'Thử chuyển lại' : 'Tiếp nhận'}</span>
                             </button>
                             <button
                               onClick={() => handleOpenReview(item, 'REJECT')}
@@ -404,6 +446,19 @@ export const WithdrawalsTab: React.FC<WithdrawalsTabProps> = ({ lang = 'vi', onN
                               <span>Từ chối</span>
                             </button>
                           </div>
+                        ) : isProcessing ? (
+                          <div className="flex flex-col items-center gap-1">
+                            <div>{item.bankName || item.bankCode} · {item.accountNumber} · {item.accountHolderName}</div>
+                            {withdrawalBanks.some(b => b.code === item.bankCode || b.bin === item.bankCode) ? <img className="w-24 h-24 object-contain" alt="QR chuyển khoản VietQR" src={`https://img.vietqr.io/image/${encodeURIComponent(item.bankCode)}-${encodeURIComponent(item.accountNumber)}-compact2.png?amount=${item.amount}&addInfo=${encodeURIComponent(item.requestCode || item.id)}&accountName=${encodeURIComponent(item.accountHolderName)}`} /> : <span>Chuyển khoản thủ công</span>}
+                            <label className="text-[10px] text-slate-600 cursor-pointer">Tải ảnh minh chứng
+                              <input type="file" accept="image/jpeg,image/png,image/webp" className="block max-w-36 text-[9px]" onChange={(event) => handleEvidenceUpload(item, event.target.files?.[0])} />
+                            </label>
+                            {item.evidenceUrl && <button onClick={() => handleConfirmTransfer(item)} className="px-2 py-1 rounded bg-emerald-600 text-white text-[10px] font-bold">Xác nhận đã chuyển khoản</button>}
+                          </div>
+                        ) : item.status === 'TRANSFERRED_AWAITING_REVIEW' ? (
+                          <span className="text-[11px] font-semibold text-amber-700">Hạn: {item.disputeDeadline ? new Date(item.disputeDeadline).toLocaleString('vi-VN') : '—'}</span>
+                        ) : item.status === 'DISPUTED' ? (
+                          <button onClick={() => handleResolveDispute(item)} className="px-2 py-1 rounded bg-indigo-600 text-white text-[10px] font-bold">Xử lý báo cáo</button>
                         ) : (
                           <span className="text-[11px] font-semibold text-slate-400">Đã xong</span>
                         )}
@@ -544,3 +599,4 @@ export const WithdrawalsTab: React.FC<WithdrawalsTabProps> = ({ lang = 'vi', onN
     </div>
   );
 };
+

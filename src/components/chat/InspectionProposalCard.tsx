@@ -998,7 +998,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                   <span className="font-semibold text-slate-800">{formatFee(returnReserveFee)}</span>
                 </div>
                 <div className="text-[10px] text-slate-500 italic bg-blue-50/50 p-1.5 rounded-lg border border-blue-100/70 leading-snug">
-                  ℹ️ {lang === 'vi'
+                  {lang === 'vi'
                     ? 'Khoản dự phòng cước trả về sẽ được hoàn nếu người mua mua tiếp hoặc hoàn phần dư sau khi đối soát cước trả hàng.'
                     : 'Return reserve is refunded if Buyer completes purchase or residual balance refunded after reconciliation.'}
                 </div>
@@ -1567,7 +1567,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                   </div>
                   {(currentAppt?.counterScheduledAt || (order as any).counterScheduledAt) && (
                     <div className="p-2 rounded-lg bg-white border border-amber-200 font-bold text-amber-900">
-                      📅 {new Date(currentAppt?.counterScheduledAt || (order as any).counterScheduledAt).toLocaleString('vi-VN')}
+                      {new Date(currentAppt?.counterScheduledAt || (order as any).counterScheduledAt).toLocaleString('vi-VN')}
                     </div>
                   )}
                   {isSeller && (

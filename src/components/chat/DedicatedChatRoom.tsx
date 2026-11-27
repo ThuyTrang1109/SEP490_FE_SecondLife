@@ -1,3 +1,4 @@
+import { Coins as UiCoins } from 'lucide-react';
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { ChatMessage, Listing, Language, UserRole, UserProfile, Negotiation } from '../../types';
 import { formatVND } from '../../utils/translations';
@@ -1642,14 +1643,14 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
                             )}
                             <span className="text-[11px] font-black uppercase tracking-wider">
                               {isAccepted
-                                ? '🎉 Thỏa Thuận Chốt Giá Thành Công'
+                                ? 'Thỏa Thuận Chốt Giá Thành Công'
                                 : isRejected
                                   ? '❌ Đề Xuất Giá Đã Bị Từ Chối'
                                   : isCancelled
                                     ? 'Đề Xuất Giá Đã Được Hủy'
                                     : isSellerOffer
-                                      ? '🏷️ Người Bán Đề Xuất Giá Mới'
-                                      : '🤝 Đề Xuất Thương Lượng Giá Mới'}
+                                      ? 'Người Bán Đề Xuất Giá Mới'
+                                      : 'Đề Xuất Thương Lượng Giá Mới'}
                             </span>
                           </div>
 
@@ -1901,7 +1902,7 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
               : 'bg-gradient-to-r from-[#c34c36] to-[#e36a54] hover:opacity-95'
               }`}
           >
-            <span>💰</span>
+            <span><UiCoins size={16} aria-hidden="true" /></span>
             <span>
               {isSeller
                 ? 'Đề xuất giá'

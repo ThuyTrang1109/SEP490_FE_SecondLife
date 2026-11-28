@@ -42,3 +42,25 @@ test('missing shipping data displays as unavailable while an explicit free deliv
   const free = renderBreakdown({ ...purchase, totalPaid: 420_000 }, { ...inspection, finalShippingFee: 0 });
   assert.match(free, /Cước giao hàng \(Người bán → Người mua\)<\/dt><dd[^>]*>0\s*₫/);
 });
+
+test('unpaid inspection breakdown hides the redundant Phase 2 unpaid product price row', () => {
+  const unpaidInspection: NonNullable<OrderFeedItem['inspection']> = {
+    id: 'insp-unpaid', postId: 'post', sellerId: 'seller', buyerId: 'buyer',
+    orderType: 'AT_CENTER', status: 'WAITING_SELLER_APPROVAL',
+    shippingFee: 340_000, returnShippingReserveFee: 374_000, inspectionFee: 15_000,
+    buyerFeePercent: 50,
+  };
+  const data = orderFeedItemToRaw({
+    order: null, inspection: unpaidInspection, buyerName: null, sellerName: null, postImageUrl: null,
+    categoryId: null, itemId: null, itemCondition: null,
+  });
+  const html = renderToStaticMarkup(createElement(OrderFeeBreakdown, {
+    order: mapEscrowOrder(data, { currentListings: [], currentRole: 'seller', authoritative: true }),
+    detailInspectionDto: unpaidInspection as any,
+    detailShipments: [],
+    getInspectionFeeSplit: () => 'SPLIT_50_50' as const,
+    lang: 'vi',
+  }));
+  assert.doesNotMatch(html, /Giá sản phẩm · Chưa thanh toán|Chưa thanh toán \(Giai đoạn 2\)/);
+  assert.match(html, /Phí kiểm định cơ sở:/);
+});

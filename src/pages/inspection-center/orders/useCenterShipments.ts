@@ -246,7 +246,7 @@ export function useCenterShipments({ currentUser, loadingShipmentsRef, loadOrder
         {
           title: 'Giao hàng từ Hub đến người mua',
           confirmText: 'Tạo vận đơn',
-          cancelText: 'Hủy Bỏ',
+          cancelText: 'Hủy bỏ',
           routeDetails: {
             originTitle: 'Điểm lấy hàng (Từ Hub)',
             originName: hubName,

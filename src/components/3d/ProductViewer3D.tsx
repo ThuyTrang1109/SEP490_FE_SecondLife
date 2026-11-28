@@ -34,9 +34,9 @@ interface Hotspot {
 
 const COLORWAYS = [
   { id: 'glass-black', name: 'Đen Tuyển Onyx', hex: 0x121212, roughness: 0.15, metalness: 0.9 },
-  { id: 'stainless', name: 'Xám Titan Kim Loại', hex: 0x4a4a4a, roughness: 0.3, metalness: 0.95 },
-  { id: 'silver', name: 'Bạc Metallic', hex: 0xa1a1aa, roughness: 0.25, metalness: 0.9 },
-  { id: 'pure-white', name: 'Trắng Ceramic', hex: 0xf4f4f5, roughness: 0.2, metalness: 0.6 }
+  { id: 'stainless', name: 'Xám titan kim loại', hex: 0x4a4a4a, roughness: 0.3, metalness: 0.95 },
+  { id: 'silver', name: 'Bạc metallic', hex: 0xa1a1aa, roughness: 0.25, metalness: 0.9 },
+  { id: 'pure-white', name: 'Trắng ceramic', hex: 0xf4f4f5, roughness: 0.2, metalness: 0.6 }
 ];
 
 export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang, onClose }) => {
@@ -55,7 +55,7 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
   const hotspots: Hotspot[] = [
     {
       id: 'compressor',
-      titleVi: 'Máy Nén Compressor & Hệ Thống Gas',
+      titleVi: 'Máy nén compressor & hệ thống gas',
       titleEn: 'Inverter Compressor & Refrigerant Gas',
       descVi: 'Máy nén Inverter vận hành siêu êm 38dB, nạp gas R600a/R32 nguyên bản, duy trì độ lạnh sâu -19.2°C chuẩn xác.',
       descEn: 'Ultra-quiet 38dB Inverter compressor, sealed R600a/R32 gas line maintaining stable -19.2°C freezing temperature.',
@@ -65,7 +65,7 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
     },
     {
       id: 'control_panel',
-      titleVi: 'Bảng Điều Khiển Cảm Ứng & Bo Mạch AI',
+      titleVi: 'Bảng điều khiển cảm ứng & bo mạch AI',
       titleEn: 'Touch Control Panel & AI Board',
       descVi: 'Bo mạch chính nguyên tem niêm phong hãng. Màn hình điều khiển LED cảm ứng nhạy bén, cảm biến nhiệt lượng chuẩn 100%.',
       descEn: 'OEM sealed mainboard. Responsive touch LED display panel with 100% accurate thermal sensors.',
@@ -75,7 +75,7 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
     },
     {
       id: 'body_chassis',
-      titleVi: 'Khung Vỏ Thép & Gioăng Cao Su',
+      titleVi: 'Khung vỏ thép & gioăng cao su',
       titleEn: 'Steel Body & Rubber Door Seal',
       descVi: 'Khung vỏ sơn tĩnh điện cao cấp. Gioăng cao su cánh cửa đàn hồi hít kín chống thất thoát nhiệt, ghi nhận vết xước dăm 0.2mm ở chân đế.',
       descEn: 'Powder-coated steel chassis. Magnetic door gasket perfectly sealed with micro 0.2mm scratch near foot stand.',
@@ -85,7 +85,7 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
     },
     {
       id: 'internal_components',
-      titleVi: 'Lồng Giặt Inox / Khay Kính Lực',
+      titleVi: 'Lồng giặt inox / khay kính lực',
       titleEn: 'Stainless Drum / Tempered Glass Shelves',
       descVi: 'Cơ cấu truyền động lồng giặt 3D / Khay kính chịu lực 100kg không nứt vỡ, sạch bong không bám cặn vôi.',
       descEn: 'Heavy-duty 3D washer drum / 100kg tempered glass shelves in pristine condition without limescale deposits.',
@@ -95,7 +95,7 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
     },
     {
       id: 'nfc-seal',
-      titleVi: 'Tem Niêm Phong Chống Giả NFC SecondLife',
+      titleVi: 'Tem niêm phong chống giả NFC secondLife',
       titleEn: 'SecondLife Cryptographic NFC Tamper Seal',
       descVi: 'Mã tem #SL-8839 đã mã hóa bưu kiện trên Blockchain. Nếu tem bị rách hoặc tháo gỡ trước khi người mua nhận máy, bảo lãnh Escrow hoàn tiền 100%.',
       descEn: 'Cryptographic seal #SL-8839 signed on chain. If breached before buyer acceptance, escrow issues immediate 100% refund.',
@@ -488,7 +488,7 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-bold text-white tracking-tight">
-                {listing?.title || (lang === 'vi' ? 'Mô Hình 3D Kiểm Định Thiết Bị' : '3D Hardware Inspection Model')}
+                {listing?.title || (lang === 'vi' ? 'Mô hình 3D kiểm định thiết bị' : '3D Hardware Inspection Model')}
               </h2>
               <span className="text-[10px] bg-white/10 text-white font-mono px-2 py-0.5 rounded-full border border-white/20">
                 PBR 3D SHADER
@@ -515,8 +515,8 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
             <Layers className="w-3.5 h-3.5" />
             <span>
               {explodedView
-                ? (lang === 'vi' ? 'Đóng Nắp Lưng' : 'Close Back Cover')
-                : (lang === 'vi' ? 'Bóc Tách Linh Kiện (X-Ray)' : 'Exploded View (X-Ray)')}
+                ? (lang === 'vi' ? 'Đóng nắp lưng' : 'Close Back Cover')
+                : (lang === 'vi' ? 'Bóc tách linh kiện (X-Ray)' : 'Exploded View (X-Ray)')}
             </span>
           </button>
 
@@ -531,7 +531,7 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
                 : 'bg-white/10 text-slate-400 border-white/20 hover:text-white'
             }`}
           >
-            {autoRotate ? 'Tắt Xoay Tự Động' : 'Bật Xoay Tự Động'}
+            {autoRotate ? 'Tắt xoay tự động' : 'Bật xoay tự động'}
           </button>
 
           <button
@@ -548,7 +548,7 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
             title="Chụp ảnh 3D & Lưu"
           >
             <Download className="w-3.5 h-3.5 text-white" />
-            <span>{snapshotTaken ? 'Đã Lưu!' : 'Chụp 3D'}</span>
+            <span>{snapshotTaken ? 'Đã lưu!' : 'Chụp 3D'}</span>
           </button>
 
           {onClose && (
@@ -572,7 +572,7 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
         <div className="absolute left-4 top-4 z-10 flex flex-col gap-2 max-w-[240px]">
           <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
             <Eye className="w-3 h-3 text-[#24263e]" />
-            <span>{lang === 'vi' ? 'Điểm Kiểm Tra Vi Mô' : 'Inspection Pins'}</span>
+            <span>{lang === 'vi' ? 'Điểm kiểm tra vi mô' : 'Inspection Pins'}</span>
           </div>
 
           {hotspots.map((spot) => {
@@ -674,7 +674,7 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
         <div className="flex items-center gap-2.5">
           <div className="flex items-center gap-1 text-slate-400 font-semibold">
             <Palette className="w-3.5 h-3.5 text-[#24263e]" />
-            <span>{lang === 'vi' ? 'Màu Hoàn Thiện:' : 'Colorway:'}</span>
+            <span>{lang === 'vi' ? 'Màu hoàn thiện:' : 'Colorway:'}</span>
           </div>
           <div className="flex items-center gap-2">
             {COLORWAYS.map((c) => (
@@ -744,7 +744,7 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
                   : 'bg-white/10 text-slate-400 hover:text-white border border-white/20'
               }`}
             >
-              Nắng Tự Nhiên
+              Nắng tự nhiên
             </button>
           </div>
         </div>

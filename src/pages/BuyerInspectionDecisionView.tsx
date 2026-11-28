@@ -146,9 +146,9 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
               setSavedAddresses(synced);
               saveBuyerAddressesToStorage(synced, currentUser.id);
             }
-          }).catch(() => {});
+          }).catch(() => { });
         }
-      }).catch(() => {});
+      }).catch(() => { });
     }
   }, [currentUser?.id]);
   const [showRejectModal, setShowRejectModal] = useState<boolean>(false);
@@ -652,7 +652,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
     if (recipientAddress || (latitude != null && longitude != null)) {
       return {
         id: 'order-destination',
-        name: recipientName || currentUser?.name || 'Khách Hàng',
+        name: recipientName || currentUser?.name || 'Khách hàng',
         phone: recipientPhone || currentUser?.phone || '',
         streetAddress: recipientAddress || '',
         latitude,
@@ -737,7 +737,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
     if (recipientAddress && savedAddresses.length === 0) {
       const importedAddr: BuyerDeliveryAddress = {
         id: `addr-${Date.now()}`,
-        name: recipientName || currentUser?.name || 'Khách Hàng',
+        name: recipientName || currentUser?.name || 'Khách hàng',
         phone: recipientPhone || currentUser?.phone || '',
         streetAddress: recipientAddress,
         latitude,
@@ -748,7 +748,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
       const newList = [importedAddr];
       setSavedAddresses(newList);
       saveBuyerAddressesToStorage(newList, currentUser?.id);
-      shippingService.syncDeliveryAddresses(newList).catch(() => {});
+      shippingService.syncDeliveryAddresses(newList).catch(() => { });
     }
   }, [recipientAddress, savedAddresses.length, recipientName, recipientPhone, latitude, longitude, currentUser?.id]);
 
@@ -1627,8 +1627,8 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
               </div>
               <h1 className="text-base sm:text-lg font-black text-slate-900 leading-tight">
                 {isUserSeller
-                  ? 'Kênh Người Bán • Chi Tiết Trạng Thái Kiểm Định'
-                  : 'Biên Bản Thẩm Định Kỹ Thuật & Quyết Định Mua Hàng'}
+                  ? 'Kênh người bán • Chi tiết trạng thái kiểm định'
+                  : 'Biên bản thẩm định kỹ thuật & quyết định mua hàng'}
               </h1>
             </div>
           </div>
@@ -1665,7 +1665,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                 </div>
                 <div>
                   <h3 className="text-xs sm:text-sm font-black text-amber-950">
-                    Tiến Trình Trả Hàng Về Cho Người Bán (Chặng Hub → Người bán)
+                    Tiến trình trả hàng về cho người bán (Chặng Hub → Người bán)
                   </h3>
                   <p className="text-[11px] text-amber-800">
                     {getHubReturnProgress(returnShipment, lang).label}
@@ -1732,7 +1732,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                   </div>
                   <div>
                     <h3 className="text-xs sm:text-sm font-black text-slate-900">
-                      Đối Soát &amp; Công Nợ Cước Hoàn Từ Hub
+                      Đối Soát &amp; công nợ cước hoàn từ Hub
                     </h3>
                     <p className="text-[11px] text-slate-600">
                       {returnFee.actualFee != null
@@ -1889,7 +1889,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                   className="px-5 py-3 rounded-2xl bg-amber-400 hover:bg-amber-300 text-amber-950 font-black text-xs sm:text-sm shadow-md transition cursor-pointer flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98]"
                 >
                   <Award className="w-4 h-4 text-amber-900" />
-                  <span>Xem Chứng Nhận Kiểm Định</span>
+                  <span>Xem chứng nhận kiểm định</span>
                 </button>
                 <button
                   onClick={() => setShowRejectModal(true)}
@@ -1915,7 +1915,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
               <div className="space-y-1 sm:space-y-1.5">
                 <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/20 backdrop-blur-md text-white text-[11px] font-bold border border-white/30">
                   <XCircle className="w-3.5 h-3.5 text-rose-200" />
-                  <span>{isUserSeller ? 'Kênh Người Bán • Kiểm Định Không Đạt (FAILED)' : 'Kết Quả: Không Đạt (FAILED)'}</span>
+                  <span>{isUserSeller ? 'Kênh người bán • Kiểm định không đạt (FAILED)' : 'Kết Quả: Không Đạt (FAILED)'}</span>
                 </div>
                 <h2 className="text-base sm:text-lg font-bold tracking-tight">
                   Sản phẩm kiểm định không đạt tiêu chuẩn kỹ thuật
@@ -1937,7 +1937,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                   className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl font-bold text-xs border border-white/25 shadow-xs transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
                 >
                   <Award className="w-3.5 h-3.5 text-amber-300" />
-                  <span>Xem Biên Bản Kiểm Định</span>
+                  <span>Xem biên bản kiểm định</span>
                 </button>
               )}
             </div>
@@ -1949,7 +1949,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
               <div className="space-y-1 sm:space-y-1.5">
                 <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/20 backdrop-blur-md text-white text-[11px] font-bold border border-white/30">
                   <XCircle className="w-3.5 h-3.5 text-rose-200" />
-                  <span>{isUserSeller ? 'Kênh Người Bán • Người Mua Từ Chối Mua Tiếp' : 'Bạn Đã Từ Chối Mua Tiếp'}</span>
+                  <span>{isUserSeller ? 'Kênh người bán • Người mua từ chối mua tiếp' : 'Bạn đã từ chối mua tiếp'}</span>
                 </div>
                 <h2 className="text-base sm:text-lg font-bold tracking-tight">
                   {isUserSeller
@@ -1976,7 +1976,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                     className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl font-bold text-xs border border-white/25 shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <Award className="w-3.5 h-3.5 text-amber-300" />
-                    <span>Xem Biên Bản Kiểm Định</span>
+                    <span>Xem biên bản kiểm định</span>
                   </button>
                 )}
                 <button
@@ -1986,7 +1986,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                   className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl font-bold text-xs border border-white/25 shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <MessageSquare className="w-3.5 h-3.5 text-rose-200" />
-                  <span>Xem Phòng Chat</span>
+                  <span>Xem phòng chat</span>
                 </button>
               </div>
             </div>
@@ -1998,7 +1998,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
               <div className="space-y-1 sm:space-y-1.5">
                 <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/20 backdrop-blur-md text-white text-[11px] font-bold border border-white/30">
                   <XCircle className="w-3.5 h-3.5 text-rose-200" />
-                  <span>{isUserSeller ? 'Kênh Người Bán • Đề Xuất Đã Bị Hủy / Từ Chối' : 'Đề Xuất Kiểm Định Đã Bị Hủy / Từ Chối'}</span>
+                  <span>{isUserSeller ? 'Kênh người bán • Đề xuất đã bị hủy / từ chối' : 'Đề xuất kiểm định đã bị hủy / từ chối'}</span>
                 </div>
                 <h2 className="text-base sm:text-lg font-bold tracking-tight">
                   {(() => {
@@ -2029,7 +2029,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                 className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl font-bold text-xs border border-white/25 shadow-xs transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
               >
                 <MessageSquare className="w-3.5 h-3.5 text-rose-200" />
-                <span>Xem Phòng Chat</span>
+                <span>Xem phòng chat</span>
               </button>
             </div>
           </div>
@@ -2042,12 +2042,12 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" />
                     <span>
                       {isOrderCompleted
-                        ? (isUserSeller ? 'Đã Nhận Tiền Vào Ví • Giao Dịch Hoàn Tất' : 'Giao Dịch Hoàn Tất • Đã Giải Ngân')
+                        ? (isUserSeller ? 'Đã nhận tiền vào ví • Giao dịch hoàn tất' : 'Giao dịch hoàn tất • Đã giải ngân')
                         : isOrderDelivered
-                          ? (isUserSeller ? 'Đã Giao Hàng • Chờ Đối Soát (48h)' : 'Đã Giao Hàng • 48h Kiểm Tra Đối Soát')
+                          ? (isUserSeller ? 'Đã giao hàng • Chờ đối soát (48h)' : 'Đã giao hàng • 48h kiểm tra đối soát')
                           : isUserSeller
-                            ? 'Người Mua Đã Mua Tiếp'
-                            : 'Đã Xác Nhận Mua Hàng'}
+                            ? 'Người mua đã mua tiếp'
+                            : 'Đã xác nhận mua hàng'}
                     </span>
                   </div>
                   <h2 className="text-base sm:text-lg font-bold tracking-tight">
@@ -2088,7 +2088,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                     className="px-5 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-amber-950 font-black text-xs shadow-sm transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
                   >
                     <Award className="w-4 h-4 text-amber-900" />
-                    <span>Xem Chứng Nhận Kiểm Định</span>
+                    <span>Xem chứng nhận kiểm định</span>
                   </button>
                 )}
               </div>
@@ -2106,7 +2106,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                   {isInspecting ? (
                     <>
                       <Clock className="w-3.5 h-3.5 text-amber-200" />
-                      <span>Đang Kiểm Định Kỹ Thuật</span>
+                      <span>Đang kiểm định kỹ thuật</span>
                     </>
                   ) : isInboundDelivered ? (
                     <>
@@ -2118,28 +2118,28 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                       <Store className="w-3.5 h-3.5 text-indigo-300" />
                       <span>
                         {isWaitingSellerApproval
-                          ? 'Chờ Bạn Phê Duyệt Đề Xuất'
+                          ? 'Chờ bạn phê duyệt đề xuất'
                           : isWaitingBuyerApproval
-                            ? 'Chờ Người Mua Duyệt Lại'
+                            ? 'Chờ người mua duyệt lại'
                             : isWaitingFeePayment
-                              ? 'Chờ Nộp Phí Kiểm Định'
+                              ? 'Chờ nộp phí kiểm định'
                               : isInboundCancelled
-                                ? 'Vận Đơn Đến Hub Đã Hủy'
+                                ? 'Vận đơn đến Hub đã hủy'
                                 : isInboundFailed
-                                  ? 'Vận Đơn Đến Hub Thất Bại'
+                                  ? 'Vận đơn đến Hub thất bại'
                                   : isShippingToCenter
-                                    ? 'Đang Giao Đến Hub'
+                                    ? 'Đang giao đến Hub'
                                     : (feesPaid || backendStatus === 'CONFIRMED_PENDING_DISPATCH')
                                       ? (isAtHome
                                         ? (isApptCountered
-                                          ? 'Hub Đề Xuất Lịch Mới'
+                                          ? 'Hub đề xuất lịch mới'
                                           : isApptPendingApproval
-                                            ? 'Đã Đề Xuất Lịch • Chờ Hub Duyệt'
+                                            ? 'Đã đề xuất lịch • Chờ Hub duyệt'
                                             : hasApptConfirmed
-                                              ? (hasInsp ? 'Đã phân công kỹ thuật viên' : 'Đã Chốt Lịch • Chờ Giao KTV')
-                                              : 'Chờ Bạn Hẹn Lịch Đón KTV')
-                                        : 'Chờ Bạn Gửi Hàng Đến Hub')
-                                      : 'Kênh Người Bán • Theo Dõi Đơn Kiểm Định'}
+                                              ? (hasInsp ? 'Đã phân công kỹ thuật viên' : 'Đã chốt lịch • Chờ giao KTV')
+                                              : 'Chờ bạn hẹn lịch đón KTV')
+                                        : 'Chờ bạn gửi hàng đến Hub')
+                                      : 'Kênh người bán • Theo dõi đơn kiểm định'}
                       </span>
                     </>
                   )}
@@ -2215,7 +2215,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                                       : feesPaid || backendStatus === 'CONFIRMED_PENDING_DISPATCH'
                                         ? (isAtHome
                                           ? (hasNoAppt
-                                            ? 'Khách mua đã đăng ký gói kiểm định tận nơi. Vui lòng bấm nút "Hẹn Lịch Đón KTV" bên dưới để chọn ngày giờ làm việc trong khung giờ hành chính (08:00 - 12:00 hoặc 13:00 - 17:00).'
+                                            ? 'Khách mua đã đăng ký gói kiểm định tận nơi. Vui lòng bấm nút "Hẹn lịch đón KTV" bên dưới để chọn ngày giờ làm việc trong khung giờ hành chính (08:00 - 12:00 hoặc 13:00 - 17:00).'
                                             : isApptPendingApproval
                                               ? `Đã gửi đề xuất lịch đón KTV${currentAppt?.scheduledAt || inspectionDto?.appointmentScheduledAt ? `: ${new Date(currentAppt?.scheduledAt || inspectionDto?.appointmentScheduledAt!).toLocaleString('vi-VN')}` : ''}. Đang chờ Hub xác nhận điều phối.`
                                               : isApptCountered
@@ -2240,7 +2240,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                   className="px-4 py-2 bg-gradient-to-r from-amber-500 via-orange-600 to-amber-600 hover:from-amber-600 hover:to-orange-700 text-white rounded-xl font-bold text-xs shadow-md transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer active:scale-95"
                 >
                   <Calendar className="w-3.5 h-3.5" />
-                  <span>{hasNoAppt ? 'Hẹn Lịch Đón KTV' : isApptCountered ? 'Hẹn Lại Lịch Khác' : 'Xem / Đổi Lịch Hẹn'}</span>
+                  <span>{hasNoAppt ? 'Hẹn lịch đón KTV' : isApptCountered ? 'Hẹn lại lịch khác' : 'Xem / đổi lịch hẹn'}</span>
                 </button>
               )}
 
@@ -2272,7 +2272,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                 {isInspecting ? (
                   <>
                     <Clock className="w-3 h-3 text-amber-200" />
-                    <span>Đang Kiểm Định Kỹ Thuật</span>
+                    <span>Đang kiểm định kỹ thuật</span>
                   </>
                 ) : isInboundDelivered ? (
                   <>
@@ -2282,32 +2282,32 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                 ) : isInboundCancelled ? (
                   <>
                     <XCircle className="w-3 h-3 text-rose-200" />
-                    <span>Vận Đơn Đến Hub Đã Hủy</span>
+                    <span>Vận đơn đến Hub đã hủy</span>
                   </>
                 ) : isInboundFailed ? (
                   <>
                     <AlertCircle className="w-3 h-3 text-rose-200" />
-                    <span>Vận Đơn Đến Hub Thất Bại</span>
+                    <span>Vận đơn đến Hub thất bại</span>
                   </>
                 ) : isShippingToCenter ? (
                   <>
                     <Truck className="w-3 h-3 text-amber-200" />
-                    <span>Đang Vận Chuyển Đến Hub</span>
+                    <span>Đang vận chuyển đến Hub</span>
                   </>
                 ) : isWaitingSellerApproval ? (
                   <>
                     <Clock className="w-3 h-3 text-amber-200" />
-                    <span>Chờ Người Bán Duyệt Đề Xuất</span>
+                    <span>Chờ người bán duyệt đề xuất</span>
                   </>
                 ) : isWaitingBuyerApproval ? (
                   <>
                     <Clock className="w-3 h-3 text-purple-200" />
-                    <span>Chờ Bạn Phản Hồi Đề Xuất Mới</span>
+                    <span>Chờ bạn phản hồi đề xuất mới</span>
                   </>
                 ) : isWaitingFeePayment ? (
                   <>
                     <Wallet className="w-3 h-3 text-amber-200" />
-                    <span>Chờ Nộp Phí Kiểm Định</span>
+                    <span>Chờ nộp phí kiểm định</span>
                   </>
                 ) : feesPaid || backendStatus === 'CONFIRMED_PENDING_DISPATCH' ? (
                   <>
@@ -2315,21 +2315,21 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                     <span>
                       {isAtHome
                         ? (hasNoAppt
-                          ? 'Chờ Người Bán Hẹn Lịch Đón KTV'
+                          ? 'Chờ người bán hẹn lịch đón KTV'
                           : isApptPendingApproval
-                            ? 'Chờ Hub Duyệt Lịch'
+                            ? 'Chờ Hub duyệt lịch'
                             : isApptCountered
-                              ? 'Chờ Hẹn Lại Lịch'
+                              ? 'Chờ hẹn lại lịch'
                               : hasApptConfirmed
-                                ? (hasInsp ? 'Đã phân công kỹ thuật viên • Chờ Khảo Sát' : 'Đã Chốt Lịch • Chờ Giao KTV')
-                                : 'Chờ Người Bán Hẹn Lịch Đón KTV')
-                        : 'Chờ Người Bán Gửi Hàng Đến Hub'}
+                                ? (hasInsp ? 'Đã phân công kỹ thuật viên • Chờ khảo sát' : 'Đã chốt lịch • Chờ giao KTV')
+                                : 'Chờ người bán hẹn lịch đón KTV')
+                        : 'Chờ người bán gửi hàng đến Hub'}
                     </span>
                   </>
                 ) : (
                   <>
                     <Clock className="w-3 h-3 text-amber-200" />
-                    <span>{isAtHome ? (hasApptConfirmed ? (hasInsp ? 'Đã phân công kỹ thuật viên • Chờ Khảo Sát' : 'Đã Chốt Lịch • Chờ Giao KTV') : 'Chờ Xác Nhận Lịch Hẹn') : 'Chờ Tiếp Nhận Thẩm Định'}</span>
+                    <span>{isAtHome ? (hasApptConfirmed ? (hasInsp ? 'Đã phân công kỹ thuật viên • Chờ khảo sát' : 'Đã chốt lịch • Chờ giao KTV') : 'Chờ xác nhận lịch hẹn') : 'Chờ tiếp nhận thẩm định'}</span>
                   </>
                 )}
               </div>
@@ -2507,29 +2507,29 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                     }`}
                 >
                   {isBuyerPurchaseRejected
-                    ? (isUserSeller ? '❌ Người Mua Từ Chối Mua' : '❌ Bạn Đã Từ Chối Mua')
+                    ? (isUserSeller ? '❌ người mua từ chối mua' : '❌ bạn đã từ chối mua')
                     : isCancelled
-                      ? '🚫 Đã Hủy / Từ Chối'
+                      ? '🚫 đã hủy / từ chối'
                       : isWaitingSellerApproval
-                        ? '⏳ Chờ Người Bán Duyệt'
+                        ? '⏳ chờ người bán duyệt'
                         : isWaitingBuyerApproval
-                          ? '⏳ Chờ Người Mua Duyệt Lại'
+                          ? '⏳ chờ người mua duyệt lại'
                           : isWaitingFeePayment
-                            ? '💳 Chờ Nạp Phí Kiểm Định'
+                            ? '💳 chờ nạp phí kiểm định'
                             : isPassed
-                              ? '✅ Đã Đạt Chuẩn'
+                              ? '✅ đã đạt chuẩn'
                               : isFailed
-                                ? '❌ Không Đạt'
+                                ? '❌ không đạt'
                                 : isInspecting
-                                  ? '🔬 Đang Kiểm Định'
+                                  ? '🔬 đang kiểm định'
                                   : isInboundDelivered
-                                    ? '🏢 Đã Đến Hub Kiểm Định'
+                                    ? '🏢 đã đến Hub kiểm định'
                                     : isInboundCancelled
-                                      ? '❌ Vận Đơn Đến Hub Đã Hủy'
+                                      ? '❌ vận đơn đến Hub đã hủy'
                                       : isInboundFailed
-                                        ? '⚠️ Vận Đơn Đến Hub Thất Bại'
+                                        ? '⚠️ Vận đơn đến Hub thất bại'
                                         : isShippingToCenter
-                                          ? '🚚 Đang Giao Đến Hub'
+                                          ? '🚚 đang giao đến Hub'
                                           : feePaymentLabel}
                 </span>
               </div>
@@ -2627,13 +2627,13 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                     onClick={() => setActiveReportTab('verdict')}
                     className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${activeReportTab === 'verdict' ? 'bg-white text-slate-900 shadow-xs' : 'hover:text-slate-900'}`}
                   >
-                    Đánh Giá KTV
+                    Đánh giá KTV
                   </button>
                   <button
                     onClick={() => setActiveReportTab('media')}
                     className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${activeReportTab === 'media' ? 'bg-white text-slate-900 shadow-xs' : 'hover:text-slate-900'}`}
                   >
-                    Video & Ảnh
+                    Video & ảnh
                   </button>
                 </div>
               </div>
@@ -2947,9 +2947,9 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
               <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                 <h4 className="text-sm font-black text-slate-900 flex items-center gap-2">
                   <Wallet className="w-4 h-4 text-emerald-600" />
-                  <span>Tài Chính & Ký Quỹ Đơn Hàng</span>
+                  <span>Tài chính & ký quỹ đơn hàng</span>
                 </h4>
-                <span className="text-[11px] font-bold text-slate-400">2 Giai Đoạn</span>
+                <span className="text-[11px] font-bold text-slate-400">2 giai đoạn</span>
               </div>
 
               {/* Stage 1: Already paid upfront or waiting approval */}
@@ -3024,7 +3024,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                     {isOrderCompleted
                       ? (isUserSeller ? 'ĐÃ NHẬN TIỀN VÀO VÍ' : 'HOÀN TẤT • ĐÃ GIẢI NGÂN')
                       : isOrderDelivered
-                        ? (isUserSeller ? 'ĐÃ GIAO HÀNG (48H)' : 'ĐÃ GIAO • ĐỐI SOÁT 48H')
+                        ? (isUserSeller ? '' : 'ĐÃ GIAO • ĐỐI SOÁT 48H')
                         : purchaseDecision
                           ? inspectionPurchaseDecisionLabel(purchaseDecision, lang, isUserSeller)
                           : isBuyerPurchaseRejected
@@ -3077,7 +3077,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                           <MapPin className="w-3.5 h-3.5 text-[#c34c36]" />
                         </div>
                         <h4 className="font-extrabold text-xs uppercase tracking-wide text-slate-900">
-                          {lang === 'vi' ? 'Địa Chỉ Nhận Hàng' : 'Delivery Address'}
+                          {lang === 'vi' ? 'Địa chỉ nhận hàng' : 'Delivery Address'}
                         </h4>
                       </div>
                       <button
@@ -3086,7 +3086,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                         disabled={timeLeft.isExpired || isSubmitting}
                         className="text-xs font-bold text-blue-600 hover:text-blue-700 hover:underline cursor-pointer flex items-center gap-1 shrink-0 disabled:opacity-50"
                       >
-                        <span>{activeAddress || hasEffectiveRecipient ? (lang === 'vi' ? 'Thay Đổi' : 'Change') : (lang === 'vi' ? 'Thêm Địa Chỉ Mới' : 'Add Address')}</span>
+                        <span>{activeAddress || hasEffectiveRecipient ? (lang === 'vi' ? 'Thay đổi' : 'Change') : (lang === 'vi' ? 'Thêm địa chỉ mới' : 'Add Address')}</span>
                       </button>
                     </div>
 
@@ -3107,7 +3107,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                                 </span>
                               )}
                               <span className="px-1.5 py-0.5 text-[10px] font-medium text-slate-600 bg-slate-100 rounded leading-none">
-                                {activeAddress?.addressType === 'office' ? (lang === 'vi' ? 'Văn Phòng' : 'Office') : (lang === 'vi' ? 'Nhà Riêng' : 'Home')}
+                                {activeAddress?.addressType === 'office' ? (lang === 'vi' ? 'Văn phòng' : 'Office') : (lang === 'vi' ? 'Nhà riêng' : 'Home')}
                               </span>
                             </div>
 
@@ -3123,7 +3123,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                               disabled={timeLeft.isExpired || isSubmitting}
                               className="px-3 py-1.5 rounded-xl border border-blue-200 text-blue-600 hover:bg-blue-50 text-xs font-bold transition cursor-pointer disabled:opacity-50"
                             >
-                              {lang === 'vi' ? 'Thay Đổi' : 'Change'}
+                              {lang === 'vi' ? 'Thay đổi' : 'Change'}
                             </button>
                           </div>
                         </div>
@@ -3140,7 +3140,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                           className="px-4 py-2 rounded-xl bg-[#c34c36] hover:bg-[#a83824] text-white font-bold text-xs shadow-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                         >
                           <Plus className="w-3.5 h-3.5" />
-                          <span>{lang === 'vi' ? 'Thêm Địa Chỉ Mới' : 'Add Address'}</span>
+                          <span>{lang === 'vi' ? 'Thêm địa chỉ mới' : 'Add Address'}</span>
                         </button>
                       </div>
                     )}
@@ -3194,46 +3194,44 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
               <div className="space-y-3 pt-2">
                 {decisionSettled ? (
                   purchaseDecision === 'accepted' ? (
-                    <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-950 space-y-3">
-                      <div className="flex items-center gap-2 font-bold text-emerald-900 text-sm">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                        <span>
-                          {isOrderCompleted
-                            ? (isUserSeller ? 'Đã Nhận Tiền Vào Ví' : 'Giao Dịch Hoàn Tất')
-                            : isOrderDelivered
-                              ? (isUserSeller ? 'Đã Giao Hàng (48h Đối Soát)' : 'Đã Giao • 48h Kiểm Tra')
-                              : (isUserSeller ? 'Người Mua Đã Mua Tiếp' : 'Đã Xác Nhận Mua Hàng')}
-                        </span>
-                      </div>
-                      <p className="text-xs text-emerald-800 leading-relaxed">
-                        {isOrderCompleted
-                          ? (isUserSeller
-                            ? 'Đơn hàng đã được xác nhận hoàn tất thành công. Tiền bán hàng đã được tự động giải ngân về ví của bạn.'
-                            : 'Đơn hàng đã hoàn tất thành công. Bạn đã nhận hàng và tiền hàng đã được giải ngân cho người bán.')
-                          : isOrderDelivered
-                            ? (isUserSeller
-                              ? 'Kiện hàng đã được tài xế Lalamove giao tới người mua. Khách mua có 48 giờ để dùng thử và kiểm tra đối soát.'
-                              : 'Kiện hàng đã được giao tới bạn. Bạn có 48 giờ để kiểm tra sản phẩm trước khi hệ thống tự động giải ngân.')
-                            : (isUserSeller
-                              ? (isAtHome
-                                ? 'Người mua đã thanh toán tiền mua sản phẩm. Vui lòng đóng gói cẩn thận và bàn giao cho tài xế Lalamove khi tài xế đến lấy hàng.'
-                                : 'Người mua đã thanh toán tiền mua sản phẩm. Trung tâm Hub đang chuẩn bị giao hàng đến người mua.')
-                              : 'Bạn đã hoàn tất thanh toán tiền sản phẩm (GĐ 2). Đơn hàng đang được điều phối vận chuyển đến bạn.')}
-                      </p>
+                    <div className={isOrderDelivered ? 'space-y-3' : 'p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-950 space-y-3'}>
+                      {!isOrderDelivered && (
+                        <>
+                          <div className="flex items-center gap-2 font-bold text-emerald-900 text-sm">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                            <span>
+                              {isOrderCompleted
+                                ? (isUserSeller ? 'Đã nhận tiền vào ví' : 'Giao dịch hoàn tất')
+                                : (isUserSeller ? 'Người mua đã mua tiếp' : 'Đã xác nhận mua hàng')}
+                            </span>
+                          </div>
+                          <p className="text-xs text-emerald-800 leading-relaxed">
+                            {isOrderCompleted
+                              ? (isUserSeller
+                                ? 'Đơn hàng đã được xác nhận hoàn tất thành công. Tiền bán hàng đã được tự động giải ngân về ví của bạn.'
+                                : 'Đơn hàng đã hoàn tất thành công. Bạn đã nhận hàng và tiền hàng đã được giải ngân cho người bán.')
+                              : (isUserSeller
+                                ? (isAtHome
+                                  ? 'Người mua đã thanh toán tiền mua sản phẩm. Vui lòng đóng gói cẩn thận và bàn giao cho tài xế Lalamove khi tài xế đến lấy hàng.'
+                                  : 'Người mua đã thanh toán tiền mua sản phẩm. Trung tâm Hub đang chuẩn bị giao hàng đến người mua.')
+                                : 'Bạn đã hoàn tất thanh toán tiền sản phẩm (GĐ 2). Đơn hàng đang được điều phối vận chuyển đến bạn.')}
+                          </p>
+                        </>
+                      )}
                       <button
                         type="button"
                         onClick={() => setShowCertificateModal(true)}
                         className="w-full py-3 px-4 rounded-2xl bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 font-bold text-xs sm:text-sm transition cursor-pointer flex items-center justify-center gap-2 shadow-xs"
                       >
                         <Award className="w-4 h-4 text-amber-600" />
-                        <span>Xem Chứng Nhận Kiểm Định</span>
+                        <span>Xem chứng nhận kiểm định</span>
                       </button>
                       <button
                         type="button"
                         onClick={onBack}
                         className="w-full py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition cursor-pointer text-center"
                       >
-                        Quay Lại Danh Sách Đơn Hàng
+                        Quay lại danh sách đơn hàng
                       </button>
                     </div>
                   ) : null
@@ -3242,7 +3240,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                     <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-200 text-indigo-950 space-y-3">
                       <div className="flex items-center gap-2 font-bold text-indigo-900 text-sm">
                         <Store className="w-4 h-4 text-indigo-600" />
-                        <span>Đề Xuất Kiểm Định Từ Người Mua</span>
+                        <span>Đề xuất kiểm định từ người mua</span>
                       </div>
                       <p className="text-xs text-indigo-800 leading-relaxed">
                         Người mua đã đề xuất kiểm định sản phẩm này {isAtHome ? 'tại nhà bạn' : 'tại trung tâm Hub'} trước khi nhận hàng. Bạn có đồng ý với phương án kiểm định và phân chia phí này không?
@@ -3262,7 +3260,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                           disabled={isSubmitting}
                           className="w-full py-3 px-3 bg-white hover:bg-rose-50 border border-rose-300 text-rose-700 rounded-xl text-xs font-bold transition cursor-pointer disabled:opacity-50 text-center"
                         >
-                          Từ Chối
+                          Từ chối
                         </button>
                       </div>
 
@@ -3281,7 +3279,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                         ) : (
                           <>
                             <MessageSquare className="w-4 h-4 text-indigo-200" />
-                            <span>Thương Lượng Lại</span>
+                            <span>Thương lượng lại</span>
                           </>
                         )}
                       </button>
@@ -3291,7 +3289,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                         onClick={onBack}
                         className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs transition cursor-pointer text-center"
                       >
-                        Quay Lại Quản Lý Đơn Bán Hàng
+                        Quay lại quản lý đơn bán hàng
                       </button>
                     </div>
                   ) : isWaitingFeePayment ? (
@@ -3300,10 +3298,10 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                         <Wallet className="w-4 h-4 text-amber-600" />
                         <span>
                           {sellerFeeShare > 0 && !inspectionDto.sellerPaidAt
-                            ? 'Chờ Bạn Nộp Phí Kiểm Định (Giai Đoạn 1)'
+                            ? 'Chờ bạn nộp phí kiểm định (Giai Đoạn 1)'
                             : sellerFeeShare === 0
-                              ? 'Đang Chờ Người Mua Nộp Phí Kiểm Định'
-                              : 'Đã Nộp Phí • Chờ Người Mua Thanh Toán'}
+                              ? 'Đang chờ người mua nộp phí kiểm định'
+                              : 'Đã nộp phí • Chờ người mua thanh toán'}
                         </span>
                       </div>
                       <p className="text-xs text-amber-800 leading-relaxed">
@@ -3320,7 +3318,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                           disabled={isSubmitting}
                           className="w-full py-3 px-3 bg-gradient-to-r from-orange-600 via-amber-600 to-[#c34c36] hover:opacity-95 text-white rounded-xl text-xs font-black transition cursor-pointer shadow-md disabled:opacity-50 text-center"
                         >
-                          {isSubmitting ? 'Đang xử lý...' : `Nộp Phí Kiểm Định (${formatAmount(sellerFeeShare)})`}
+                          {isSubmitting ? 'Đang xử lý...' : `Nộp phí kiểm định (${formatAmount(sellerFeeShare)})`}
                         </button>
                       )}
                       <button
@@ -3328,14 +3326,14 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                         onClick={onBack}
                         className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs transition cursor-pointer text-center"
                       >
-                        Quay Lại Quản Lý Đơn Bán Hàng
+                        Quay lại quản lý đơn bán hàng
                       </button>
                     </div>
                   ) : isBuyerPurchaseRejected ? (
                     <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-950 space-y-3">
                       <div className="flex items-center gap-2 font-bold text-rose-900 text-sm">
                         <XCircle className="w-4 h-4 text-rose-600" />
-                        <span>Người Mua Từ Chối Mua Tiếp</span>
+                        <span>Người mua từ chối mua tiếp</span>
                       </div>
                       <div className="space-y-1.5 text-xs text-rose-900 leading-relaxed">
                         <p>
@@ -3352,7 +3350,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                           className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs transition cursor-pointer text-center flex items-center justify-center gap-1.5 shadow-sm"
                         >
                           <Award className="w-4 h-4" />
-                          <span>Xem Chứng Nhận Kiểm Định</span>
+                          <span>Xem chứng nhận kiểm định</span>
                         </button>
                       )}
                       <button
@@ -3369,7 +3367,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                         ) : (
                           <>
                             <MessageSquare className="w-4 h-4 text-indigo-200" />
-                            <span>Mở Phòng Chat Với Người Mua</span>
+                            <span>Mở phòng chat với người mua</span>
                           </>
                         )}
                       </button>
@@ -3378,14 +3376,14 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                         onClick={onBack}
                         className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs transition cursor-pointer text-center"
                       >
-                        Quay Lại Quản Lý Đơn Bán Hàng
+                        Quay lại quản lý đơn bán hàng
                       </button>
                     </div>
                   ) : isCancelled ? (
                     <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-950 space-y-3">
                       <div className="flex items-center gap-2 font-bold text-rose-900 text-sm">
                         <XCircle className="w-4 h-4 text-rose-600" />
-                        <span>Đề Xuất Kiểm Định Đã Kết Thúc</span>
+                        <span>Đề xuất kiểm định đã kết thúc</span>
                       </div>
                       <p className="text-xs text-rose-800 leading-relaxed">
                         {(() => {
@@ -3409,7 +3407,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                         ) : (
                           <>
                             <MessageSquare className="w-4 h-4 text-indigo-200" />
-                            <span>Mở Phòng Chat Với Người Mua</span>
+                            <span>Mở phòng chat với người mua</span>
                           </>
                         )}
                       </button>
@@ -3418,14 +3416,14 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                         onClick={onBack}
                         className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs transition cursor-pointer text-center"
                       >
-                        Quay Lại Quản Lý Đơn Bán Hàng
+                        Quay lại quản lý đơn bán hàng
                       </button>
                     </div>
                   ) : (
                     <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-200 text-indigo-950 space-y-3">
                       <div className="flex items-center gap-2 font-bold text-indigo-900 text-sm">
                         <Store className="w-4 h-4 text-indigo-600" />
-                        <span>Góc Nhìn Người Bán</span>
+                        <span>Góc nhìn người bán</span>
                       </div>
                       <p className="text-xs text-indigo-800 leading-relaxed">
                         {isPassed
@@ -3439,7 +3437,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                         onClick={onBack}
                         className="w-full py-3 rounded-xl bg-[#24263e] hover:bg-slate-800 text-white font-bold text-xs transition cursor-pointer text-center"
                       >
-                        Quay Lại Quản Lý Đơn Bán Hàng
+                        Quay lại quản lý đơn bán hàng
                       </button>
                     </div>
                   )
@@ -3447,7 +3445,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                   <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200 text-blue-950 space-y-3">
                     <div className="flex items-center gap-2 font-bold text-blue-900 text-sm">
                       <Clock className="w-4 h-4 text-blue-600" />
-                      <span>{isAtHome ? 'Đang Chờ Người Bán Phản Hồi Kiểm Định Tại Nhà' : 'Đang Chờ Người Bán Phản Hồi'}</span>
+                      <span>{isAtHome ? 'Đang chờ người bán phản hồi kiểm định tại nhà' : 'Đang chờ người bán phản hồi'}</span>
                     </div>
                     <p className="text-xs text-blue-800 leading-relaxed">
                       {isAtHome
@@ -3468,7 +3466,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                       ) : (
                         <>
                           <MessageSquare className="w-4 h-4 text-blue-200" />
-                          <span>Đến Phòng Chat Thương Lượng</span>
+                          <span>Đến phòng chat thương lượng</span>
                         </>
                       )}
                     </button>
@@ -3477,14 +3475,14 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                       onClick={onBack}
                       className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs transition cursor-pointer text-center"
                     >
-                      Quay Lại Danh Sách Đơn Hàng
+                      Quay lại danh sách đơn hàng
                     </button>
                   </div>
                 ) : isWaitingBuyerApproval ? (
                   <div className="p-4 rounded-2xl bg-purple-50 border border-purple-200 text-purple-950 space-y-3">
                     <div className="flex items-center gap-2 font-bold text-purple-900 text-sm">
                       <Clock className="w-4 h-4 text-purple-600" />
-                      <span>Người Bán Đã Đề Xuất Lại Phương Án</span>
+                      <span>Người bán đã đề xuất lại phương án</span>
                     </div>
                     <p className="text-xs text-purple-800 leading-relaxed">
                       Người bán đã đề xuất lại phương án kiểm định / phân chia phí. Vui lòng vào phòng chat để xem và phản hồi đề xuất mới.
@@ -3503,7 +3501,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                       ) : (
                         <>
                           <MessageSquare className="w-4 h-4 text-purple-200" />
-                          <span>Đến Phòng Chat Xem Đề Xuất Mới</span>
+                          <span>Đến phòng chat xem đề xuất mới</span>
                         </>
                       )}
                     </button>
@@ -3512,7 +3510,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                       onClick={onBack}
                       className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs transition cursor-pointer text-center"
                     >
-                      Quay Lại Danh Sách Đơn Hàng
+                      Quay lại danh sách đơn hàng
                     </button>
                   </div>
                 ) : isWaitingFeePayment ? (
@@ -3522,17 +3520,17 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                       {buyerFeeShare === 0 ? (
                         <>
                           <Clock className="w-4 h-4 text-amber-600" />
-                          <span>Chờ Người Bán Nộp Phí Kiểm Định (Giai Đoạn 1)</span>
+                          <span>Chờ người bán nộp phí kiểm định (Giai Đoạn 1)</span>
                         </>
                       ) : inspectionDto.buyerPaidAt ? (
                         <>
                           <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                          <span>Đã Nộp Phí • Chờ Người Bán Thanh Toán</span>
+                          <span>Đã nộp phí • Chờ người bán thanh toán</span>
                         </>
                       ) : (
                         <>
                           <Wallet className="w-4 h-4 text-orange-600" />
-                          <span>Chờ Bạn Nộp Phí Kiểm Định (Giai Đoạn 1)</span>
+                          <span>Chờ bạn nộp phí kiểm định (Giai Đoạn 1)</span>
                         </>
                       )}
                     </div>
@@ -3558,7 +3556,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                         disabled={isSubmitting}
                         className="w-full py-3 px-3 bg-gradient-to-r from-orange-600 via-amber-600 to-[#c34c36] hover:opacity-95 text-white rounded-xl text-xs font-black transition cursor-pointer shadow-md disabled:opacity-50 text-center"
                       >
-                        {isSubmitting ? 'Đang xử lý...' : `Nộp Phí Kiểm Định (${formatAmount(buyerFeeShare)})`}
+                        {isSubmitting ? 'Đang xử lý...' : `Nộp phí kiểm định (${formatAmount(buyerFeeShare)})`}
                       </button>
                     )}
                     <button
@@ -3566,14 +3564,14 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                       onClick={onBack}
                       className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs transition cursor-pointer text-center"
                     >
-                      Quay Lại Danh Sách Đơn Hàng
+                      Quay lại danh sách đơn hàng
                     </button>
                   </div>
                 ) : isFailed ? (
                   <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-950 space-y-3">
                     <div className="flex items-center gap-2 font-bold text-rose-900 text-sm">
                       <XCircle className="w-4 h-4 text-rose-600" />
-                      <span>Kiểm Định Không Đạt (Đơn Hàng Đã Dừng)</span>
+                      <span>Kiểm định không đạt (Đơn hàng đã dừng)</span>
                     </div>
                     <p className="text-xs text-rose-800 leading-relaxed">
                       Sản phẩm không đạt chuẩn kiểm định chất lượng sau khi KTV nghiệm thu. Đơn hàng đã dừng và thiết bị sẽ được chuyển hoàn trả lại cho người bán.
@@ -3583,14 +3581,14 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                       onClick={onBack}
                       className="w-full py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition cursor-pointer text-center"
                     >
-                      Quay Lại Danh Sách Đơn Hàng
+                      Quay lại danh sách đơn hàng
                     </button>
                   </div>
                 ) : isBuyerPurchaseRejected ? (
                   <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-950 space-y-3">
                     <div className="flex items-center gap-2 font-bold text-rose-900 text-sm">
                       <XCircle className="w-4 h-4 text-rose-600" />
-                      <span>Bạn Đã Từ Chối Mua Tiếp</span>
+                      <span>Bạn đã từ chối mua tiếp</span>
                     </div>
                     <div className="space-y-1.5 text-xs text-rose-900 leading-relaxed">
                       <p>
@@ -3607,7 +3605,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                         className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs transition cursor-pointer text-center flex items-center justify-center gap-1.5 shadow-sm"
                       >
                         <Award className="w-4 h-4" />
-                        <span>Xem Chứng Nhận Kiểm Định</span>
+                        <span>Xem chứng nhận kiểm định</span>
                       </button>
                     )}
                     <button
@@ -3615,14 +3613,14 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                       onClick={onBack}
                       className="w-full py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition cursor-pointer text-center"
                     >
-                      Quay Lại Danh Sách Đơn Hàng
+                      Quay lại danh sách đơn hàng
                     </button>
                   </div>
                 ) : isCancelled ? (
                   <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-950 space-y-3">
                     <div className="flex items-center gap-2 font-bold text-rose-900 text-sm">
                       <XCircle className="w-4 h-4 text-rose-600" />
-                      <span>Đề Xuất Kiểm Định Đã Kết Thúc</span>
+                      <span>Đề xuất kiểm định đã kết thúc</span>
                     </div>
                     <p className="text-xs text-rose-800 leading-relaxed">
                       {(() => {
@@ -3646,7 +3644,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                       ) : (
                         <>
                           <MessageSquare className="w-4 h-4 text-indigo-200" />
-                          <span>Mở Phòng Chat Với Người Bán</span>
+                          <span>Mở phòng chat với người bán</span>
                         </>
                       )}
                     </button>
@@ -3655,14 +3653,14 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                       onClick={onBack}
                       className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs transition cursor-pointer text-center"
                     >
-                      Quay Lại Danh Sách Đơn Hàng
+                      Quay lại danh sách đơn hàng
                     </button>
                   </div>
                 ) : !canDecide ? (
                   <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-950 space-y-3">
                     <div className="flex items-center gap-2 font-bold text-amber-900 text-sm">
                       <Clock className="w-4 h-4 text-amber-600" />
-                      <span>Chưa Có Quyết Định Mua (Chờ KTV Hoàn Tất Thẩm Định)</span>
+                      <span>Chưa có quyết định mua (Chờ kỹ thuật viên hoàn tất thẩm định)</span>
                     </div>
                     <p className="text-xs text-amber-800 leading-relaxed">
                       Sản phẩm chưa có biên bản thẩm định đạt từ Kỹ thuật viên. Nút thanh toán tiền mua hàng (Giai đoạn 2) sẽ tự động mở khi KTV kiểm tra xong và xuất biên bản ĐẠT CHUẨN.
@@ -3672,7 +3670,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                       onClick={onBack}
                       className="w-full py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition cursor-pointer text-center"
                     >
-                      Quay Lại Danh Sách Đơn Hàng
+                      Quay lại danh sách đơn hàng
                     </button>
                   </div>
                 ) : (
@@ -3704,7 +3702,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                       disabled={isSubmitting}
                       className="w-full py-3 px-4 rounded-2xl bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 hover:text-red-600 hover:border-red-300 font-bold text-xs sm:text-sm transition cursor-pointer flex items-center justify-center text-center"
                     >
-                      <span>Từ chối mua tiếp / Hủy đơn (Báo Cho Người Bán)</span>
+                      <span>Từ chối mua tiếp / Hủy đơn (Báo cho người bán)</span>
                     </button>
                   </>
                 )}
@@ -3747,7 +3745,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                 <CheckCircle2 className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="text-base font-black text-slate-900">Xác Nhận Mua Hàng & Thanh Toán</h3>
+                <h3 className="text-base font-black text-slate-900">Xác nhận mua hàng & thanh toán</h3>
                 <p className="text-xs text-slate-500">Hoàn tất đơn mua sau kiểm định kỹ thuật</p>
               </div>
             </div>
@@ -3817,7 +3815,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                     }}
                     className="px-3 py-1.5 rounded-xl bg-[#c34c36] hover:bg-[#a83c28] text-white text-xs font-bold cursor-pointer transition shrink-0"
                   >
-                    Nạp Tiền Ngay
+                    Nạp tiền ngay
                   </button>
                 )}
               </div>
@@ -3829,7 +3827,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                 onClick={() => setShowConfirmModal(false)}
                 className="flex-1 py-3 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold transition cursor-pointer"
               >
-                Hủy Bỏ
+                Hủy bỏ
               </button>
               <button
                 type="button"
@@ -3845,7 +3843,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                 ) : timeLeft.isExpired ? (
                   <span>Đã hết hạn quyết định</span>
                 ) : (
-                  <span>Xác Nhận & Thanh Toán</span>
+                  <span>Xác nhận & thanh toán</span>
                 )}
               </button>
             </div>
@@ -3863,7 +3861,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
               </div>
               <div>
                 <h3 className="text-base font-black text-slate-900">
-                  {isUserSeller && isWaitingSellerApproval ? 'Từ Chối Đề Xuất Kiểm Định' : 'Từ Chối Mua Tiếp & Báo Người Bán'}
+                  {isUserSeller && isWaitingSellerApproval ? 'Từ chối đề xuất kiểm định' : 'Từ chối mua tiếp & báo người bán'}
                 </h3>
                 <p className="text-xs text-slate-500">
                   {isUserSeller && isWaitingSellerApproval
@@ -3999,7 +3997,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                     <span>Đang xử lý...</span>
                   </>
                 ) : (
-                  <span>{isUserSeller && isWaitingSellerApproval ? 'Xác Nhận Từ Chối' : 'Xác Nhận Từ Chối & Báo Người Bán'}</span>
+                  <span>{isUserSeller && isWaitingSellerApproval ? 'Xác nhận từ chối' : 'Xác nhận từ chối & báo người bán'}</span>
                 )}
               </button>
             </div>

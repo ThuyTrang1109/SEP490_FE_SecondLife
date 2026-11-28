@@ -1,4 +1,4 @@
-import { request, RequestOptions } from './apiClient';
+import { ApiError, request, RequestOptions } from './apiClient';
 import type { BuyerDeliveryAddress } from '../utils/buyerAddressStorage';
 import {
   ShippingQuoteRequestDto,
@@ -194,6 +194,11 @@ export interface SellerOnboardingResponseDto {
   emailVerifiedAt?: string;
   provinceId?: number;
   wardId?: number;
+}
+
+export interface PickupAddressUpdateStatusDto {
+  updatable: boolean;
+  reason?: string | null;
 }
 
 export interface SellerPickupAddressRequestDto {
@@ -690,16 +695,47 @@ export const shippingService = {
   },
 
   /**
+   * Kiểm tra điều kiện cập nhật địa chỉ kho lấy hàng của người bán
+   * GET /api/v1/shipping/pickup-address/status
+   */
+  async getPickupAddressUpdateStatus(): Promise<PickupAddressUpdateStatusDto> {
+    try {
+      const res = await request<PickupAddressUpdateStatusDto>('/shipping/pickup-address/status', {
+        method: 'GET',
+        requiresAuth: true,
+      });
+      const data = ((res as any)?.data ?? res) as PickupAddressUpdateStatusDto | null;
+      return {
+        updatable: data?.updatable ?? true,
+        reason: data?.reason ?? null,
+      };
+    } catch (err) {
+      console.warn('Backend /shipping/pickup-address/status not available:', err);
+      return { updatable: true, reason: null };
+    }
+  },
+
+  /**
    * Cập nhật địa chỉ lấy hàng của người bán trên BE
    * PUT /api/v1/shipping/pickup-address
    */
   async savePickupAddress(data: { name: string; phone: string; latitude: number; longitude: number }): Promise<ShippingAddressDto> {
-    const res = await request<ShippingAddressDto>('/shipping/pickup-address', {
-      method: 'PUT',
-      body: JSON.stringify(data),
-      requiresAuth: true,
-    });
-    return ((res as any)?.data ?? res) as ShippingAddressDto;
+    try {
+      const res = await request<ShippingAddressDto>('/shipping/pickup-address', {
+        method: 'PUT',
+        body: JSON.stringify({ ...data, name: data.name.trim(), phone: data.phone.replace(/\s+/g, '') }),
+        requiresAuth: true,
+      });
+      return ((res as any)?.data ?? res) as ShippingAddressDto;
+    } catch (error) {
+      if (error instanceof ApiError) {
+        const detail = error.errors?.[0]?.message;
+        if (typeof detail === 'string' && detail) {
+          throw new ApiError(detail, error.status, error.errors, error.path, error.code, error.details);
+        }
+      }
+      throw error;
+    }
   },
 
   /**

@@ -129,14 +129,14 @@ test('center history and dispatch wait for the inbound delivery before showing H
   assert.match(awaitingShipment.historyBadge, /Chờ người bán gửi hàng đến Hub/);
   assert.match(awaitingShipment.dispatch, /Chờ người bán gửi hàng đến Hub/);
   assert.match(awaitingShipment.dispatch, /<button[^>]*disabled/);
-  assert.doesNotMatch(awaitingShipment.dispatch, /Giao task|Đã Nhận Hàng/);
+  assert.doesNotMatch(awaitingShipment.dispatch, /Giao task|đã nhận hàng/);
 
   const shipping = render(shipment('inbound', 'SELLER_TO_CENTER', 'PICKED_UP'));
   assert.match(shipping.historyBadge, /Đang giao hàng đến Hub/);
   assert.match(shipping.dispatch, /<button[^>]*disabled/);
 
   const received = render(shipment('inbound', 'SELLER_TO_CENTER', 'DELIVERED'));
-  assert.match(received.historyBadge, /Đã Nhận Hàng • Chờ Giao KTV/);
+  assert.match(received.historyBadge, /Đã nhận hàng • Chờ giao KTV/);
   assert.match(received.dispatch, /Giao task/);
   assert.doesNotMatch(received.dispatch, /<button[^>]*disabled/);
   assert.equal(hasCenterReceivedInbound(order, shipment('other-leg', 'CENTER_TO_BUYER', 'DELIVERED')), false);
@@ -281,7 +281,7 @@ test('the shipment modal offers only the outbound action allowed by the inspecti
     { ...paid, orderType: 'AT_HOME' },
   ]) {
     const html = render(changes);
-    assert.match(html, /Lộ Trình Vận Đơn/);
+    assert.match(html, /Lộ trình vận đơn/);
     assert.doesNotMatch(html, buyerAction);
     assert.doesNotMatch(html, returnAction);
   }

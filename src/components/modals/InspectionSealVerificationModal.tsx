@@ -129,7 +129,7 @@ export const InspectionSealVerificationModal: React.FC<InspectionSealVerificatio
             </div>
             <div>
               <h3 className="text-base font-black text-slate-900 uppercase tracking-tight">
-                Xác Thực Tem Niêm Phong SecondLife
+                Xác thực tem niêm phong secondLife
               </h3>
               <p className="text-xs text-slate-500">Tra cứu chứng nhận số & giám sát chuỗi cung ứng</p>
             </div>
@@ -166,7 +166,7 @@ export const InspectionSealVerificationModal: React.FC<InspectionSealVerificatio
               title="Mở camera quét mã QR trên tem"
             >
               <Camera className="w-4 h-4 text-slate-600" />
-              <span className="hidden sm:inline">Quét Camera</span>
+              <span className="hidden sm:inline">Quét camera</span>
             </button>
           )}
 
@@ -176,7 +176,7 @@ export const InspectionSealVerificationModal: React.FC<InspectionSealVerificatio
             disabled={isLoading}
             className="px-5 py-2.5 bg-[#24263e] hover:bg-black text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shrink-0 disabled:opacity-50 shadow-xs"
           >
-            {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>Tra Cứu</span>}
+            {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>Tra cứu</span>}
           </button>
         </div>
 
@@ -263,7 +263,7 @@ export const InspectionSealVerificationModal: React.FC<InspectionSealVerificatio
               <div className="flex items-center justify-between">
                 <span className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                   <History className="w-4 h-4 text-slate-500" />
-                  <span>Lịch Sử Nhật Ký Quét Tem ({verificationData.scanHistory?.length || 0} lần)</span>
+                  <span>Lịch sử nhật ký quét tem ({verificationData.scanHistory?.length || 0} lần)</span>
                 </span>
 
                 <button
@@ -349,7 +349,7 @@ export const InspectionSealVerificationModal: React.FC<InspectionSealVerificatio
                       ) : (
                         <Send className="w-3.5 h-3.5" />
                       )}
-                      <span>Lưu Lịch Sử Quét</span>
+                      <span>Lưu lịch sử quét</span>
                     </button>
                   </div>
                 </form>

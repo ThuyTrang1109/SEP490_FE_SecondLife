@@ -206,7 +206,7 @@ export function OrderDetailActions({
                       isOrderReceiptConfirmed(detailModalOrder) ? null : isOrderCancelledOrRefunded(detailModalOrder) ? (
                         <div className="py-2.5 px-4 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl font-bold text-xs flex items-center justify-center gap-2 flex-1">
                           <XCircle className="w-4 h-4 text-rose-600" />
-                          <span>{lang === 'vi' ? 'Đơn Hàng Đã Bị Hủy • Dừng Mọi Thao Tác' : 'Order Cancelled'}</span>
+                          <span>{lang === 'vi' ? 'Đơn hàng đã bị hủy • Dừng mọi thao tác' : 'Order Cancelled'}</span>
                         </div>
                       ) : (
                         <>
@@ -311,7 +311,7 @@ export function OrderDetailActions({
                                         <X className="w-4 h-4" />
                                         <span>{detailHasInspection
                                           ? (lang === 'vi' ? 'Hủy yêu cầu' : 'Cancel request')
-                                          : (lang === 'vi' ? 'Hủy Đơn' : 'Cancel')}</span>
+                                          : (lang === 'vi' ? 'Hủy đơn' : 'Cancel')}</span>
                                       </button>
                                     )}
                                   </div>
@@ -465,7 +465,7 @@ export function OrderDetailActions({
                                           title={lang === 'vi' ? 'Đồng ý với ngày giờ mới mà Trung tâm kiểm định đề xuất' : 'Accept Hub suggested appointment'}
                                         >
                                           <Check className="w-4 h-4 stroke-[2.5]" />
-                                          <span>{lang === 'vi' ? 'Đồng Ý Lịch Mới Của Hub' : 'Accept Center Schedule'}</span>
+                                          <span>{lang === 'vi' ? 'Đồng Ý lịch mới của Hub' : 'Accept Center Schedule'}</span>
                                         </button>
                                         <button
                                           type="button"
@@ -476,7 +476,7 @@ export function OrderDetailActions({
                                           className="py-2.5 px-4 bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 rounded-xl font-bold text-xs sm:text-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
                                         >
                                           <Calendar className="w-4 h-4" />
-                                          <span>{lang === 'vi' ? 'Hẹn Lại Lịch Khác' : 'Reschedule'}</span>
+                                          <span>{lang === 'vi' ? 'Hẹn lại lịch khác' : 'Reschedule'}</span>
                                         </button>
                                       </div>
                                     );
@@ -486,7 +486,7 @@ export function OrderDetailActions({
                                     return (
                                       <div className="flex-1 py-2.5 px-4 bg-emerald-50 text-emerald-800 border border-emerald-300 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-2xs">
                                         <Wrench className="w-4 h-4 text-emerald-600 animate-spin" />
-                                        <span>{lang === 'vi' ? 'KTV Đã Đến Và Đang Kiểm Tra' : 'Inspector Arrived & Inspecting'}</span>
+                                        <span>{lang === 'vi' ? 'KTV đã đến và đang kiểm tra' : 'Inspector Arrived & Inspecting'}</span>
                                       </div>
                                     );
                                   }
@@ -504,8 +504,8 @@ export function OrderDetailActions({
                                         <Calendar className="w-4 h-4" />
                                         <span>
                                           {rej
-                                            ? (lang === 'vi' ? 'Đặt Lại Lịch Hẹn KTV' : 'Reschedule Visit')
-                                            : (lang === 'vi' ? 'Hẹn Lịch Đón KTV' : 'Schedule Visit')}
+                                            ? (lang === 'vi' ? 'Đặt lại lịch hẹn KTV' : 'Reschedule Visit')
+                                            : (lang === 'vi' ? 'Hẹn lịch đón KTV' : 'Schedule Visit')}
                                         </span>
                                       </button>
                                     );
@@ -565,14 +565,14 @@ export function OrderDetailActions({
                                     className="flex-1 py-2.5 px-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xs cursor-default select-none"
                                   >
                                     <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                                    <span>{lang === 'vi' ? 'Kiện Hàng Đã Giao Tới Hub Kiểm Định' : 'Delivered to Inspection Hub'}</span>
+                                    <span>{lang === 'vi' ? 'Kiện hàng đã giao tới Hub kiểm định' : 'Delivered to Inspection Hub'}</span>
                                   </div>
                                 ) : detailInboundProgress?.step === 2 ? (
                                   <div
                                     className="flex-1 py-2.5 px-4 bg-cyan-50 border border-cyan-200 text-cyan-800 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xs cursor-default select-none"
                                   >
                                     <Truck className="w-4 h-4 text-cyan-600" />
-                                    <span>{lang === 'vi' ? 'Tài Xế Đang Giao Kiện Hàng Tới Hub' : 'In Transit to Hub'}</span>
+                                    <span>{lang === 'vi' ? 'Tài xế đang giao kiện hàng tới Hub' : 'In Transit to Hub'}</span>
                                   </div>
                                 ) : detailInboundProgress?.label === (lang === 'vi' ? 'Vận đơn đã hủy' : 'Shipment cancelled') ? (
                                   <div
@@ -593,7 +593,7 @@ export function OrderDetailActions({
                                     className="flex-1 py-2.5 px-4 bg-teal-50 border border-teal-200 text-teal-800 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xs cursor-default select-none pointer-events-none"
                                   >
                                     <PackageCheck className="w-4 h-4 text-teal-600" />
-                                    <span>{lang === 'vi' ? 'Đã gói hàng • Chờ Bàn Giao Tài Xế' : 'Packed • Waiting for Carrier'}</span>
+                                    <span>{lang === 'vi' ? 'Đã gói hàng • Chờ bàn giao tài xế' : 'Packed • Waiting for Carrier'}</span>
                                   </div>
                                 ))}
 
@@ -603,7 +603,7 @@ export function OrderDetailActions({
                                     className="py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
                                   >
                                     <Truck className="w-4 h-4 text-white" />
-                                    <span>{lang === 'vi' ? 'Theo Dõi Lalamove' : 'Lalamove Tracking'}</span>
+                                    <span>{lang === 'vi' ? 'Theo dõi Lalamove' : 'Lalamove Tracking'}</span>
                                   </button>
                                 )}
                               </div>
@@ -621,8 +621,8 @@ export function OrderDetailActions({
                                   <Truck className="w-4 h-4 text-blue-600" />
                                   <span>
                                     {detailModalOrder.backendStatus === 'DELIVERED' || (detailModalOrder.escrowStatus as string) === 'COMPLETED_RELEASED'
-                                      ? (lang === 'vi' ? 'Đã Giao Thành Công' : 'Delivered')
-                                      : (lang === 'vi' ? 'Đang Giao Hàng' : 'In Transit')}
+                                      ? (lang === 'vi' ? 'Đã giao thành công' : 'Delivered')
+                                      : (lang === 'vi' ? 'Đang giao hàng' : 'In Transit')}
                                   </span>
                                 </span>
 
@@ -632,7 +632,7 @@ export function OrderDetailActions({
                                     className="flex-1 py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
                                   >
                                     <Truck className="w-4 h-4 text-white" />
-                                    <span>{lang === 'vi' ? 'Theo Dõi Vận Đơn Lalamove' : 'Lalamove Tracking'}</span>
+                                    <span>{lang === 'vi' ? 'Theo dõi vận đơn Lalamove' : 'Lalamove Tracking'}</span>
                                   </button>
                                 )}
                               </div>
@@ -741,7 +741,7 @@ export function OrderDetailActions({
                               title={lang === 'vi' ? 'Hủy yêu cầu kiểm định và hoàn trả 100% tiền tạm giữ về ví Escrow' : 'Cancel inspection request and refund funds'}
                             >
                               <XCircle className="w-4 h-4 text-rose-600" />
-                              <span>{lang === 'vi' ? 'Hủy Yêu Cầu Kiểm Định' : 'Cancel Inspection Request'}</span>
+                              <span>{lang === 'vi' ? 'Hủy yêu cầu kiểm định' : 'Cancel Inspection Request'}</span>
                             </button>
                           )}
                         </div>

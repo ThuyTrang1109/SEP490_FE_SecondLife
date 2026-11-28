@@ -165,7 +165,7 @@ function ShipmentStatusDetails({
           title={lang === 'vi' ? 'Mở cửa sổ Quá trình giao hàng Lalamove' : 'Open Delivery Progress Tracking'}
         >
           <Truck className="size-3.5 text-white" />
-          <span>{lang === 'vi' ? 'Xem Quá Trình Giao Hàng' : 'View Delivery Progress'}</span>
+          <span>{lang === 'vi' ? 'Xem quá trình giao hàng' : 'View Delivery Progress'}</span>
           <ExternalLink className="size-3 text-orange-200" />
         </button>
       </div>
@@ -268,7 +268,7 @@ function InspectionOrderFeeDetails({
             {isAtCenter ? (
               <>
                 <div className="flex items-center justify-between">
-                  <span>{vi ? '• Cước Lalamove Chặng 1 (Kho người bán ➔ Hub):' : '• Leg 1 Lalamove courier (to Hub):'}</span>
+                  <span>{vi ? '• Cước Lalamove chặng 1 (Kho người bán ➔ Hub):' : '• Leg 1 Lalamove courier (to Hub):'}</span>
                   <span className="font-bold text-slate-800">{formatVND(shippingFee)}</span>
                 </div>
                 <div className="flex items-center justify-between">
@@ -662,7 +662,7 @@ export const PreListingInspectionWorkflow: React.FC<PreListingInspectionWorkflow
 
   const trackingEscrowOrder = useMemo<EscrowOrder | null>(() => {
     if (!order) return null;
-    const centerName = order.inspectionCenterName || quotedCenterName || 'Trung Tâm Kiểm Định SecondLife';
+    const centerName = order.inspectionCenterName || quotedCenterName || 'Trung tâm kiểm định secondLife';
     const centerAddress = confirmedCenterAddress || order.inspectionCenterAddress || 'Khu Công nghệ cao Hòa Lạc, Hà Nội';
     const centerPhone = (quotedCenter as any)?.phone || (order as any).inspectionCenterPhone || '0908123456';
     const sellerAddr = (order as any).sellerAddress || (order as any).pickupAddress || '';
@@ -1373,7 +1373,7 @@ export const PreListingInspectionWorkflow: React.FC<PreListingInspectionWorkflow
                       : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                       }`}
                   >
-                    Ca Sáng (08:00 - 12:00)
+                    Ca sáng (08:00 - 12:00)
                   </button>
                   <button
                     type="button"
@@ -1383,7 +1383,7 @@ export const PreListingInspectionWorkflow: React.FC<PreListingInspectionWorkflow
                       : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                       }`}
                   >
-                    Ca Chiều (13:00 - 17:00)
+                    Ca chiều (13:00 - 17:00)
                   </button>
                 </div>
               </div>
@@ -1658,7 +1658,7 @@ export const PreListingInspectionWorkflow: React.FC<PreListingInspectionWorkflow
                   </span>
                 </div>
                 <p className="text-xs text-emerald-800 mt-0.5 leading-snug">
-                  Sản phẩm của bạn đã hoàn tất kiểm định và gắn huy hiệu <strong>Đã Kiểm Định</strong> uy tín nhất sàn. Người mua có thể tìm kiếm và đặt mua ngay bây giờ.
+                  Sản phẩm của bạn đã hoàn tất kiểm định và gắn huy hiệu <strong>Đã kiểm định</strong> uy tín nhất sàn. Người mua có thể tìm kiếm và đặt mua ngay bây giờ.
                 </p>
               </div>
             </div>

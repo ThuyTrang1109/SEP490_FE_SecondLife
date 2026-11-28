@@ -329,11 +329,11 @@ export function CenterOverview({
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50/80 text-slate-600 text-[11px] font-bold uppercase tracking-wider">
                 <th className="py-2.5 px-3 w-12 text-center">#</th>
-                <th className="py-2.5 px-4 w-[32%] min-w-[220px]">Mã Đơn & Sản Phẩm</th>
-                <th className="py-2.5 px-3 w-[14%] min-w-[120px]">Hình Thức</th>
-                <th className="py-2.5 px-3 w-[18%] min-w-[150px]">Người Bán / Mua</th>
-                <th className="py-2.5 px-3 w-[20%] min-w-[160px]">Trạng Thái</th>
-                <th className="py-2.5 px-4 w-[16%] min-w-[130px] text-right">Thao Tác</th>
+                <th className="py-2.5 px-4 w-[32%] min-w-[220px]">Mã đơn & sản phẩm</th>
+                <th className="py-2.5 px-3 w-[14%] min-w-[120px]">Hình thức</th>
+                <th className="py-2.5 px-3 w-[18%] min-w-[150px]">Người bán / mua</th>
+                <th className="py-2.5 px-3 w-[20%] min-w-[160px]">Trạng thái</th>
+                <th className="py-2.5 px-4 w-[16%] min-w-[130px] text-right">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -356,7 +356,7 @@ export function CenterOverview({
                         </td>
                         <td className="py-3 px-3">
                           <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-700">
-                            {order.orderType === 'AT_HOME' ? 'Tại Nhà Khách' : 'Tại Lab Hub'}
+                            {order.orderType === 'AT_HOME' ? 'Tại nhà khách' : 'Tại Lab Hub'}
                           </span>
                         </td>
                         <td className="py-3 px-3 text-[11px] text-slate-600">

@@ -384,7 +384,7 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
       month: '2-digit',
       year: 'numeric',
     });
-    const shiftLabel = shift === 'MORNING' ? 'Ca Sáng (08:00 - 12:00)' : 'Ca Chiều (13:00 - 17:00)';
+    const shiftLabel = shift === 'MORNING' ? 'Ca sáng (08:00 - 12:00)' : 'Ca chiều (13:00 - 17:00)';
     let buyerId: string | undefined;
 
     // Clear previous rejection if rescheduling
@@ -724,8 +724,8 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
             <div>
               <h3 className="text-sm sm:text-base font-black text-slate-900 leading-tight">
                 {readOnly
-                  ? (lang === 'vi' ? 'Lịch Hẹn Kiểm Định' : 'Inspection Appointment')
-                  : (lang === 'vi' ? 'Người Bán Hẹn Lịch Đón KTV' : 'Seller Inspection Appointment')}
+                  ? (lang === 'vi' ? 'Lịch hẹn kiểm định' : 'Inspection Appointment')
+                  : (lang === 'vi' ? 'Người bán hẹn lịch đón KTV' : 'Seller Inspection Appointment')}
               </h3>
               <p className="text-[11px] text-slate-500 font-medium">
                 {lang === 'vi' ? 'Đơn hàng' : 'Order'} #{orderCode || orderId.slice(0, 8)} • {lang === 'vi' ? 'Kiểm định tận nơi' : 'At-Home Inspection'}
@@ -812,7 +812,7 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
                 onClick={onClose}
                 className="px-4 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold transition cursor-pointer"
               >
-                {lang === 'vi' ? 'Đã Hiểu & Đóng' : 'Close'}
+                {lang === 'vi' ? 'Đã hiểu & đóng' : 'Close'}
               </button>
             </div>
           </div>
@@ -914,7 +914,7 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
                       }`}
                     >
                       <span className="text-[11px] font-black leading-none flex items-center gap-1">
-                        <span>Ca Sáng</span>
+                        <span>Ca sáng</span>
                         {isMorningFullOnDate && <span className="text-[9px] text-rose-500 font-bold">(Kín)</span>}
                       </span>
                       <span className={`text-[10px] font-medium leading-none mt-1 ${selectedShift === 'MORNING' ? 'text-amber-100' : 'text-slate-400'}`}>
@@ -932,7 +932,7 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
                       }`}
                     >
                       <span className="text-[11px] font-black leading-none flex items-center gap-1">
-                        <span>Ca Chiều</span>
+                        <span>Ca chiều</span>
                         {isAfternoonFullOnDate && <span className="text-[9px] text-rose-500 font-bold">(Kín)</span>}
                       </span>
                       <span className={`text-[10px] font-medium leading-none mt-1 ${selectedShift === 'AFTERNOON' ? 'text-orange-100' : 'text-slate-400'}`}>
@@ -1073,7 +1073,7 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
                 onClick={onClose}
                 className="px-3.5 py-1.5 rounded-xl border border-gray-200 text-xs font-bold text-slate-600 hover:bg-gray-100 bg-white transition cursor-pointer"
               >
-                {lang === 'vi' ? 'Hủy Bỏ' : 'Cancel'}
+                {lang === 'vi' ? 'Hủy bỏ' : 'Cancel'}
               </button>
               <button
                 type="submit"
@@ -1081,7 +1081,7 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
                 className="px-4.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm hover:shadow transition disabled:opacity-50 cursor-pointer active:scale-95"
               >
                 {isSubmitting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                <span>{lang === 'vi' ? 'Xác Nhận Đặt Lịch Hẹn' : 'Confirm Appointment'}</span>
+                <span>{lang === 'vi' ? 'Xác nhận đặt lịch hẹn' : 'Confirm Appointment'}</span>
               </button>
             </div>
           </form>

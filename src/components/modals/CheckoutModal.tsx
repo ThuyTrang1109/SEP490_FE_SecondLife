@@ -316,7 +316,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     if (profileAddress) {
       const defaultAddr: BuyerDeliveryAddress = {
         id: `addr-${Date.now()}`,
-        name: currentUser?.name || 'Khách Hàng',
+        name: currentUser?.name || 'Khách hàng',
         phone: currentUser?.phone || '',
         email: currentUser?.email || '',
         streetAddress: profileAddress,
@@ -466,7 +466,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     if (cityKey === 'OTHER') {
       setFormErrorMsg(
         lang === 'vi'
-          ? 'Hệ thống hiện chỉ hỗ trợ giao hàng tại khu vực Hà Nội và TP. Hồ Chí Minh (kèm các khu vực lân cận được Lalamove hỗ trợ: Bắc Ninh, Hải Phòng, Hưng Yên, Ninh Bình, Đồng Nai, Bình Dương, Vũng Tàu). Vui lòng chọn địa chỉ trong khu vực hỗ trợ.'
+          ? 'Hệ thống hiện chỉ hỗ trợ giao hàng tại khu vực Hà Nội và TP. Hồ Chí Minh (kèm các khu vực lân cận được Lalamove hỗ trợ: Bắc Ninh, Hải Phòng, hưng yên, ninh bình, đồng nai, bình dương, Vũng Tàu). Vui lòng chọn địa chỉ trong khu vực hỗ trợ.'
           : 'Service is currently only available in Hanoi and Ho Chi Minh City (& nearby regions).'
       );
       return;
@@ -817,7 +817,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       setQuoteLoading(false);
       setQuoteError(
         lang === 'vi'
-          ? 'Hệ thống hiện chỉ hỗ trợ giao hàng tại khu vực Hà Nội và TP. Hồ Chí Minh (kèm các khu vực lân cận: Bắc Ninh, Hải Phòng, Hưng Yên, Ninh Bình, Đồng Nai, Bình Dương, Vũng Tàu). Vui lòng đổi địa chỉ trong khu vực hỗ trợ.'
+          ? 'Hệ thống hiện chỉ hỗ trợ giao hàng tại khu vực Hà Nội và TP. Hồ Chí Minh (kèm các khu vực lân cận: Bắc Ninh, Hải Phòng, hưng yên, ninh bình, đồng nai, bình dương, Vũng Tàu). Vui lòng đổi địa chỉ trong khu vực hỗ trợ.'
           : 'Service is currently only available in Hanoi and Ho Chi Minh City (& nearby regions).'
       );
       setQuoteErrorCode('UNSUPPORTED_REGION');
@@ -840,7 +840,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
     const rawPhone = (opts?.phone || buyerPhone || currentUser?.phone || '').replace(/\D/g, '');
     const validPhone = rawPhone.length >= 9 && rawPhone.length <= 15 ? rawPhone : '0912345678';
-    const validName = (opts?.name || buyerName || currentUser?.name || 'Khách Hàng').trim() || 'Khách Hàng';
+    const validName = (opts?.name || buyerName || currentUser?.name || 'Khách hàng').trim() || 'Khách hàng';
     const negIdToUse = validNegotiationId;
 
     // Khóa định danh request theo thông số thực tế
@@ -1467,7 +1467,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       errors.buyerPhone = phoneErr;
     }
     if (!streetAddress.trim() || !deliveryLatitude || !deliveryLongitude || !isLocationConfirmed || !ghnQuote) {
-      errors.streetAddress = lang === 'vi' ? 'Vui lòng bấm nút "Xác Nhận Vị Trí Này" trên bản đồ để tính phí vận chuyển Lalamove' : 'Please click "Confirm Location" on the map to calculate Lalamove shipping fee';
+      errors.streetAddress = lang === 'vi' ? 'Vui lòng bấm nút "Xác nhận vị trí này" trên bản đồ để tính phí vận chuyển Lalamove' : 'Please click "Confirm Location" on the map to calculate Lalamove shipping fee';
     }
     if (deliveryOption === 'INSPECTION' && !agreedZinLoss) {
       errors.agreedZinLoss = lang === 'vi'
@@ -1545,7 +1545,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         const activeCityToCheck = activeAddress?.city || activeAddress?.streetAddress || '';
         if (activeCityToCheck && normalizeCityKey(activeCityToCheck) === 'OTHER') {
           const errorMsg = lang === 'vi'
-            ? 'Hệ thống hiện chỉ hỗ trợ giao hàng tại khu vực Hà Nội và TP. Hồ Chí Minh (kèm các khu vực lân cận được Lalamove hỗ trợ: Bắc Ninh, Hải Phòng, Hưng Yên, Ninh Bình, Đồng Nai, Bình Dương, Vũng Tàu). Vui lòng chọn lại địa chỉ nhận hàng.'
+            ? 'Hệ thống hiện chỉ hỗ trợ giao hàng tại khu vực Hà Nội và TP. Hồ Chí Minh (kèm các khu vực lân cận được Lalamove hỗ trợ: Bắc Ninh, Hải Phòng, hưng yên, ninh bình, đồng nai, bình dương, Vũng Tàu). Vui lòng chọn lại địa chỉ nhận hàng.'
             : 'Service is currently only available in Hanoi and Ho Chi Minh City (& nearby regions).';
           setOrderError(errorMsg);
           setQuoteError(errorMsg);
@@ -1579,7 +1579,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           if (prevTotal > 0 && Math.abs(newTotal - prevTotal) >= 1) {
             setOrderError(
               lang === 'vi'
-                ? `Cước phí vận chuyển Lalamove đã được cập nhật (${formatVND(newShippingFee)}). Tổng thanh toán thay đổi từ ${formatVND(prevTotal)} thành ${formatVND(newTotal)}. Vui lòng kiểm tra lại số tiền và bấm 'Xác Nhận Đặt Hàng' một lần nữa.`
+                ? `Cước phí vận chuyển Lalamove đã được cập nhật (${formatVND(newShippingFee)}). Tổng thanh toán thay đổi từ ${formatVND(prevTotal)} thành ${formatVND(newTotal)}. Vui lòng kiểm tra lại số tiền và bấm 'xác nhận đặt hàng' một lần nữa.`
                 : `Lalamove quote updated (${formatVND(newShippingFee)}). Total changed from ${formatVND(prevTotal)} to ${formatVND(newTotal)}. Please verify and click confirm again.`
             );
             setSubmittingOrder(false);
@@ -1610,15 +1610,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       if (currentBal < upfrontAmount) {
         setOrderError(
           lang === 'vi'
-            ? `Số dư ví của bạn (${formatVND(currentBal)}) không đủ để thanh toán ${isInspected ? 'tiền cọc kiểm định & tiền ship' : 'đơn hàng'} (${formatVND(upfrontAmount)}). Vui lòng nạp thêm tiền vào ví hoặc chọn hình thức 'Chuyển Khoản Trực Tiếp'.`
+            ? `Số dư ví của bạn (${formatVND(currentBal)}) không đủ để thanh toán ${isInspected ? 'tiền cọc kiểm định & tiền ship' : 'đơn hàng'} (${formatVND(upfrontAmount)}). Vui lòng nạp thêm tiền vào ví hoặc chọn hình thức 'chuyển khoản trực tiếp'.`
             : `Your wallet balance (${formatVND(currentBal)}) is insufficient for ${isInspected ? 'inspection deposit & shipping' : 'order checkout'} (${formatVND(upfrontAmount)}). Please top up or choose Direct Bank Transfer.`
         );
         return;
       }
     }
 
-    const alreadyBoughtIds = getBoughtListingIds();
-    if (alreadyBoughtIds.has(String(listing.id))) {
+    if (listing.backendStatus !== 'ACTIVE' && getBoughtListingIds().has(String(listing.id))) {
       setOrderError(
         lang === 'vi'
           ? 'Sản phẩm này đã được người khác đặt mua rồi! Vui lòng không đặt mua trùng lặp.'
@@ -1665,7 +1664,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             buyerLatitude: buyerLat,
             buyerLongitude: buyerLng,
             buyerDeliveryAddress: {
-              name: (buyerName || currentUser?.name || 'Khách Hàng').trim().slice(0, 100),
+              name: (buyerName || currentUser?.name || 'Khách hàng').trim().slice(0, 100),
               phone: validPhone,
               address: (activeAddress?.streetAddress || streetAddress || '').trim(),
               latitude: buyerLat,
@@ -1775,7 +1774,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               trackingNumber: '',
               status: 'PENDING',
               origin: listing.sellerAddress || listing.location || 'Địa chỉ kho người bán',
-              destination: selectedCenter?.address ? `${selectedCenter.name} (${selectedCenter.address})` : (selectedCenter?.name || 'Trạm Kiểm Định SecondLife Hub Lab'),
+              destination: selectedCenter?.address ? `${selectedCenter.name} (${selectedCenter.address})` : (selectedCenter?.name || 'Trạm kiểm định secondLife Hub Lab'),
               estimatedDelivery: 'Trong ngày',
               timeline: [
                 {
@@ -1791,7 +1790,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               carrier: 'Lalamove',
               trackingNumber: '',
               status: 'PENDING',
-              origin: selectedCenter?.address ? `${selectedCenter.name} (${selectedCenter.address})` : (selectedCenter?.name || 'Trạm Kiểm Định SecondLife Hub Lab'),
+              origin: selectedCenter?.address ? `${selectedCenter.name} (${selectedCenter.address})` : (selectedCenter?.name || 'Trạm kiểm định secondLife Hub Lab'),
               destination: fullAddress,
               estimatedDelivery: 'Giao nhanh trong ngày sau khi đạt chuẩn kiểm định',
               timeline: [
@@ -1865,7 +1864,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           sellerAvatarUrl: targetSellerAvatar,
         }),
         buyerId: currentUser?.id || 'buyer-current',
-        buyerName: (buyerName || currentUser?.name || 'Khách Hàng').trim(),
+        buyerName: (buyerName || currentUser?.name || 'Khách hàng').trim(),
         buyerPhone: buyerPhone.trim(),
         buyerAddress: fullAddress,
         sellerId: targetSellerId,
@@ -1918,13 +1917,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           localStorage.setItem(`cached_post_${listing.id}`, JSON.stringify(newOrder.listing));
         }
         localStorage.setItem(`order_buyer_info_${orderId}`, JSON.stringify({
-          buyerName: (buyerName || currentUser?.name || 'Khách Hàng').trim(),
+          buyerName: (buyerName || currentUser?.name || 'Khách hàng').trim(),
           buyerPhone: buyerPhone.trim(),
           buyerAddress: fullAddress,
         }));
         if (currentUser?.id) {
           localStorage.setItem(`buyer_info_${currentUser.id}`, JSON.stringify({
-            name: (buyerName || currentUser?.name || 'Khách Hàng').trim(),
+            name: (buyerName || currentUser?.name || 'Khách hàng').trim(),
             phone: buyerPhone.trim(),
           }));
         }
@@ -1971,9 +1970,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
           const sellerNotifMsg = isInspected
             ? (inspectionMethod === 'AT_HOME'
-              ? `Khách mua ${buyerName || 'Khách Hàng'} vừa đặt đơn kiểm định tại nhà cho "${listing.title}". Người bán vui lòng vào đơn hàng để xác nhận và hẹn lịch KTV đến tận nơi thẩm định!`
-              : `Khách mua ${buyerName || 'Khách Hàng'} vừa gửi yêu cầu kiểm định cho sản phẩm "${listing.title}". Người bán vui lòng vào đơn hàng để xác nhận đồng ý kiểm định!`)
-            : `Khách mua ${buyerName || 'Khách Hàng'} vừa đặt mua sản phẩm "${listing.title}". Vui lòng xác nhận đơn hàng!`;
+              ? `Khách mua ${buyerName || 'Khách hàng'} vừa đặt đơn kiểm định tại nhà cho "${listing.title}". Người bán vui lòng vào đơn hàng để xác nhận và hẹn lịch KTV đến tận nơi thẩm định!`
+              : `Khách mua ${buyerName || 'Khách hàng'} vừa gửi yêu cầu kiểm định cho sản phẩm "${listing.title}". Người bán vui lòng vào đơn hàng để xác nhận đồng ý kiểm định!`)
+            : `Khách mua ${buyerName || 'Khách hàng'} vừa đặt mua sản phẩm "${listing.title}". Vui lòng xác nhận đơn hàng!`;
 
           const sellerNotifItem = {
             id: `notif-seller-inspection-${orderId}`,
@@ -2154,7 +2153,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         recipientId: targetSellerId,
         recipientRole: 'seller',
         title: 'Đơn đặt hàng mới đã ký quỹ Escrow',
-        message: `Khách mua ${buyerName || 'Khách Hàng'} vừa ký quỹ thành công cho sản phẩm "${listing.title}". Vui lòng xác nhận đơn hàng!`,
+        message: `Khách mua ${buyerName || 'Khách hàng'} vừa ký quỹ thành công cho sản phẩm "${listing.title}". Vui lòng xác nhận đơn hàng!`,
         type: 'ORDER' as const,
         referenceId: paidOrder.id,
         referenceType: 'ORDER',
@@ -2316,7 +2315,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 </div>
                 <div>
                   <h3 className="font-extrabold text-sm sm:text-base text-[#24263e]">
-                    {lang === 'vi' ? 'Ký Quỹ Escrow Qua Ngân Hàng VietQR (SePay)' : 'Escrow Deposit via VietQR'}
+                    {lang === 'vi' ? 'Ký quỹ Escrow qua ngân hàng vietQR (SePay)' : 'Escrow Deposit via VietQR'}
                   </h3>
                   <p className="text-[10px] sm:text-[11px] text-slate-500 font-medium">
                     Đơn hàng: #{createdOrder.id} • Ký quỹ để đóng băng tiền bảo vệ giao dịch
@@ -2344,7 +2343,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               <div className="p-3.5 bg-emerald-50 border border-emerald-300 rounded-2xl text-emerald-900 font-semibold flex items-center gap-3 animate-fadeIn">
                 <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
                 <div>
-                  <h5 className="font-bold text-sm text-emerald-800">🎉 Đã Ký Quỹ Escrow Thành Công!</h5>
+                  <h5 className="font-bold text-sm text-emerald-800">🎉 đã ký quỹ Escrow thành công!</h5>
                   <p className="text-[11px] text-emerald-700">
                     Số tiền {formatVND(remainingToPay)} đã được hệ thống đóng băng an toàn tại Quỹ Escrow. Đang chuyển hướng...
                   </p>
@@ -2354,7 +2353,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               <div className="p-3.5 bg-rose-50 border border-rose-300 rounded-2xl text-rose-900 font-semibold flex items-center gap-3">
                 <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
                 <div>
-                  <h5 className="font-bold text-sm text-rose-800">⚠️ Mã Ký Quỹ Đã Quá Hạn (15 Phút Backend)</h5>
+                  <h5 className="font-bold text-sm text-rose-800">⚠️ Mã ký quỹ đã quá hạn (15 Phút Backend)</h5>
                   <p className="text-[11px] text-rose-700">
                     Thời hạn ký quỹ theo dữ liệu Backend đã kết thúc. Vui lòng không chuyển khoản vào mã này nữa để tránh đơn bị tự động hủy.
                   </p>
@@ -2492,10 +2491,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             <div className="p-3.5 bg-blue-50/80 border border-blue-200 rounded-2xl text-[11px] text-blue-950 space-y-1.5">
               <div className="font-extrabold flex items-center gap-1.5 text-blue-900">
                 <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0" />
-                <span>Cơ Chế Ký Quỹ Đóng Băng Tiền (Escrow Protection):</span>
+                <span>Cơ chế ký quỹ đóng băng tiền (Escrow Protection):</span>
               </div>
               <p className="text-slate-600 leading-snug">
-                Khoản tiền này sẽ được cổng SePay đối soát và <strong>đóng băng an toàn tại Quỹ Ký Quỹ Escrow</strong> của SecondLife. Người bán <strong>hoàn toàn CHƯA nhận được tiền</strong> cho đến khi bạn nhận được hàng, kiểm tra 48h và bấm xác nhận hài lòng.
+                Khoản tiền này sẽ được cổng SePay đối soát và <strong>đóng băng an toàn tại quỹ ký quỹ Escrow</strong> của SecondLife. Người bán <strong>hoàn toàn CHƯA nhận được tiền</strong> cho đến khi bạn nhận được hàng, kiểm tra 48h và bấm xác nhận hài lòng.
               </p>
               <div className="flex items-center gap-2 pt-1 text-[10px] font-bold text-emerald-700">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping shrink-0" />
@@ -2526,7 +2525,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 className="w-full sm:w-auto px-4 py-2.5 rounded-xl border border-rose-300 text-rose-700 hover:bg-rose-50 font-bold text-xs cursor-pointer flex items-center justify-center gap-1.5 transition"
               >
                 <X className="w-4 h-4" />
-                <span>{lang === 'vi' ? 'Hủy & Quay Lại Trang Mua Hàng' : 'Cancel & Return to Product'}</span>
+                <span>{lang === 'vi' ? 'Hủy & quay lại trang mua hàng' : 'Cancel & Return to Product'}</span>
               </button>
 
               <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
@@ -2540,7 +2539,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs cursor-pointer shadow-md transition flex items-center justify-center gap-1.5"
                   >
                     <CheckCircle2 className="w-4 h-4" />
-                    <span>{lang === 'vi' ? 'Xem Đơn Hàng Ngay' : 'View Order Now'}</span>
+                    <span>{lang === 'vi' ? 'Xem đơn hàng ngay' : 'View Order Now'}</span>
                   </button>
                 ) : (
                   <button
@@ -2583,7 +2582,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     <span>
                       {checkingBankPayment
                         ? (lang === 'vi' ? 'Đang kiểm tra đối soát...' : 'Checking...')
-                        : (lang === 'vi' ? 'Tôi Đã Chuyển Khoản • Kiểm Tra Ngay' : 'I Have Transferred • Check Now')}
+                        : (lang === 'vi' ? 'Tôi đã chuyển khoản • Kiểm tra ngay' : 'I Have Transferred • Check Now')}
                     </span>
                   </button>
                 )}
@@ -2616,7 +2615,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               </div>
               <div>
                 <h1 className="font-extrabold text-sm sm:text-base text-[#24263e] leading-tight">
-                  {lang === 'vi' ? 'Đặt Hàng & Thanh Toán Bảo Lãnh Escrow' : 'Escrow Protected Order & Checkout'}
+                  {lang === 'vi' ? 'Đặt hàng & thanh toán bảo lãnh Escrow' : 'Escrow Protected Order & Checkout'}
                 </h1>
                 <p className="text-[10px] sm:text-[11px] text-slate-500 font-medium">
                   {lang === 'vi' ? '100% tiền tạm giữ an toàn tại ngân hàng liên kết đến khi nghiệm thu' : '100% funds held securely until buyer approval'}
@@ -2656,7 +2655,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       <ShieldCheck className="w-3.5 h-3.5" />
                     </div>
                     <h4 className="font-extrabold text-xs sm:text-sm text-[#24263e] uppercase tracking-wide">
-                      {lang === 'vi' ? 'Phương Thức Giao Nhận & Bảo Vệ' : 'Delivery & Protection Option'}
+                      {lang === 'vi' ? 'Phương thức giao nhận & bảo vệ' : 'Delivery & Protection Option'}
                     </h4>
                   </div>
                 </div>
@@ -2687,7 +2686,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         </div>
                         <div>
                           <h5 className="font-extrabold text-xs text-slate-900 leading-tight">
-                            {lang === 'vi' ? 'Kiểm Định Hàng Qua Hub' : 'Hub Lab Inspection'}
+                            {lang === 'vi' ? 'Kiểm định hàng qua Hub' : 'Hub Lab Inspection'}
                           </h5>
                           <span className="text-[11px] text-emerald-700 font-bold block mt-0.5">
                             Verify Then Ship
@@ -2737,7 +2736,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         </div>
                         <div>
                           <h5 className="font-extrabold text-xs text-slate-900 leading-tight">
-                            {lang === 'vi' ? 'Giao Thẳng Trực Tiếp' : 'Direct Door-to-Door'}
+                            {lang === 'vi' ? 'Giao thẳng trực tiếp' : 'Direct Door-to-Door'}
                           </h5>
                           <span className="text-[11px] text-blue-700 font-bold block mt-0.5">
                             {lang === 'vi' ? 'Người bán → Người mua (Mua ngay)' : 'Direct Delivery (Buy Now)'}
@@ -2869,10 +2868,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       <div className="flex items-center justify-between">
                         <label className="text-[11px] font-extrabold text-[#24263e] uppercase tracking-wide flex items-center gap-1.5 flex-wrap">
                           <Building2 className="w-3.5 h-3.5 text-[#c34c36]" />
-                          <span>{lang === 'vi' ? '1. Trung Tâm Kiểm Định Tiếp Nhận' : '1. Assigned Inspection Hub'}</span>
+                          <span>{lang === 'vi' ? '1. Trung tâm kiểm định tiếp nhận' : '1. Assigned Inspection Hub'}</span>
                           <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 font-extrabold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 shadow-xs">
                             <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                            {lang === 'vi' ? 'Hệ thống Trạm Hub Chính Thức' : 'Official Verified Hubs'}
+                            {lang === 'vi' ? 'Hệ thống trạm Hub chính thức' : 'Official Verified Hubs'}
                           </span>
                         </label>
                         <div className="flex items-center gap-1.5 flex-wrap">
@@ -2941,7 +2940,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       <div className="flex items-center justify-between">
                         <label className="text-[11px] font-extrabold text-[#24263e] uppercase tracking-wide flex items-center gap-1.5">
                           <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
-                          <span>{lang === 'vi' ? '2. Chọn Phương Thức Kiểm Định' : '2. Inspection Method'}</span>
+                          <span>{lang === 'vi' ? '2. Chọn phương thức kiểm định' : '2. Inspection Method'}</span>
                         </label>
                         <span className="text-[10px] text-slate-500 font-semibold">
                           (2 phương thức linh hoạt)
@@ -3191,7 +3190,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                                 </div>
                                 <div>
                                   <div className="font-extrabold text-slate-900 text-xs flex items-center gap-1.5 flex-wrap">
-                                    <span>Biểu Phí Cước Di Chuyển KTV Tận Nhà</span>
+                                    <span>Biểu phí cước di chuyển KTV tận nhà</span>
                                     <span className="text-[10px] text-purple-700 font-bold bg-purple-100/90 px-2 py-0.5 rounded-full border border-purple-300">
                                       Khoảng cách: {distanceKm} km
                                     </span>
@@ -3202,7 +3201,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                                 </div>
                               </div>
                               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-purple-700 text-white font-black text-[10px] shadow-2xs self-start sm:self-auto">
-                                <span>2 Chiều Khứ Hồi (Giá x2)</span>
+                                <span>2 chiều khứ hồi (Giá x2)</span>
                               </span>
                             </div>
 
@@ -3211,7 +3210,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                               <table className="w-full text-left text-[11px]">
                                 <thead className="bg-purple-100/60 text-purple-950 font-bold uppercase text-[9.5px] tracking-wider border-b border-purple-200/80">
                                   <tr>
-                                    <th className="py-2 px-3">Bậc Thang Cự Ly</th>
+                                    <th className="py-2 px-3">Bậc thang cự ly</th>
                                     <th className="py-2 px-3 text-right text-slate-500">Đơn giá 1 chiều</th>
                                     <th className="py-2 px-3 text-right text-purple-900 font-black">Cước khứ hồi 2 chiều (x2)</th>
                                   </tr>
@@ -3263,7 +3262,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                             <div className="p-2.5 rounded-xl bg-purple-100/60 border border-purple-200/80 flex items-start gap-2 text-[10.5px] text-purple-950 leading-relaxed">
                               <Info className="w-3.5 h-3.5 text-purple-700 shrink-0 mt-0.5" />
                               <span>
-                                <strong>Cước khứ hồi trọn gói (x2):</strong> Kỹ thuật viên di chuyển 2 chiều (từ Trạm Kiểm Định tới nhà người bán và quay về). Cước tự động nhân đôi (x2) theo khoảng cách thực tế, không phát sinh thêm chi phí.
+                                <strong>Cước khứ hồi trọn gói (x2):</strong> Kỹ thuật viên di chuyển 2 chiều (từ trạm kiểm định tới nhà người bán và quay về). Cước tự động nhân đôi (x2) theo khoảng cách thực tế, không phát sinh thêm chi phí.
                               </span>
                             </div>
                           </div>
@@ -3297,7 +3296,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                           <MapPin className="w-3.5 h-3.5 text-[#c34c36]" />
                         </div>
                         <h4 className="font-extrabold text-xs sm:text-sm text-[#24263e] uppercase tracking-wide">
-                          {lang === 'vi' ? 'Địa Chỉ Nhận Hàng' : 'Delivery Address'}
+                          {lang === 'vi' ? 'Địa chỉ nhận hàng' : 'Delivery Address'}
                         </h4>
                       </div>
 
@@ -3307,7 +3306,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                           onClick={() => setIsAddressModalOpen(true)}
                           className="text-xs font-bold text-blue-600 hover:text-blue-700 hover:underline cursor-pointer flex items-center gap-1 shrink-0"
                         >
-                          <span>{lang === 'vi' ? 'Thay Đổi' : 'Change'}</span>
+                          <span>{lang === 'vi' ? 'Thay đổi' : 'Change'}</span>
                         </button>
                       ) : (
                         <button
@@ -3316,7 +3315,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                           className="text-xs font-bold text-[#c34c36] hover:text-[#a83824] hover:underline cursor-pointer flex items-center gap-1 shrink-0"
                         >
                           <Plus className="w-3.5 h-3.5" />
-                          <span>{lang === 'vi' ? 'Thêm Địa Chỉ Mới' : 'Add Address'}</span>
+                          <span>{lang === 'vi' ? 'Thêm địa chỉ mới' : 'Add Address'}</span>
                         </button>
                       )}
                     </div>
@@ -3339,7 +3338,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                                 </span>
                               )}
                               <span className="px-1.5 py-0.5 text-[10px] font-medium text-slate-600 bg-slate-100 rounded leading-none">
-                                {activeAddress.addressType === 'office' ? (lang === 'vi' ? 'Văn Phòng' : 'Office') : (lang === 'vi' ? 'Nhà Riêng' : 'Home')}
+                                {activeAddress.addressType === 'office' ? (lang === 'vi' ? 'Văn phòng' : 'Office') : (lang === 'vi' ? 'Nhà riêng' : 'Home')}
                               </span>
                             </div>
 
@@ -3354,7 +3353,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                               onClick={() => setIsAddressModalOpen(true)}
                               className="px-3 py-1.5 rounded-xl border border-blue-200 text-blue-600 hover:bg-blue-50 text-xs font-bold transition cursor-pointer"
                             >
-                              {lang === 'vi' ? 'Thay Đổi' : 'Change'}
+                              {lang === 'vi' ? 'Thay đổi' : 'Change'}
                             </button>
                           </div>
                         </div>
@@ -3381,7 +3380,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                           className="px-5 py-2.5 rounded-xl bg-[#c34c36] hover:bg-[#a83824] text-white font-bold text-xs shadow-sm transition flex items-center gap-1.5 cursor-pointer"
                         >
                           <Plus className="w-4 h-4" />
-                          <span>{lang === 'vi' ? 'Thêm Địa Chỉ Nhận Hàng Mới' : 'Add New Delivery Address'}</span>
+                          <span>{lang === 'vi' ? 'Thêm địa chỉ nhận hàng mới' : 'Add New Delivery Address'}</span>
                         </button>
                       </div>
                     )}
@@ -3427,7 +3426,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
                       <span>
                         {lang === 'vi'
-                          ? 'Vui lòng chọn vị trí trên bản đồ và bấm "Xác Nhận Vị Trí Này" để hệ thống tính phí vận chuyển Lalamove.'
+                          ? 'Vui lòng chọn vị trí trên bản đồ và bấm "Xác nhận vị trí này" để hệ thống tính phí vận chuyển Lalamove.'
                           : 'Please select a location on the map and click "Confirm Location" to calculate Lalamove shipping fee.'}
                       </span>
                     </div>
@@ -3576,7 +3575,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       <div className="flex items-center justify-between font-bold text-emerald-900 border-b border-emerald-200/80 pb-2">
                         <div className="flex items-center gap-2">
                           <Truck className="w-4 h-4 text-emerald-700" />
-                          <span className="font-extrabold">Báo Giá Vận Chuyển Lalamove</span>
+                          <span className="font-extrabold">Báo giá vận chuyển Lalamove</span>
                         </div>
                         <span className="text-[11px] bg-emerald-200/80 px-2.5 py-0.5 rounded-md text-emerald-900 font-bold">
                           Chặng: {formatShippingLeg(ghnQuote.leg)}
@@ -3704,7 +3703,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                           </div>
                           <div>
                             <h5 className="font-extrabold text-xs text-slate-900 leading-tight">
-                              {lang === 'vi' ? 'Ví Điện Tử SecondLife' : 'SecondLife Wallet'}
+                              {lang === 'vi' ? 'Ví điện tử secondLife' : 'SecondLife Wallet'}
                             </h5>
                             <span className="text-[10px] text-emerald-700 font-bold block">
                               {lang === 'vi' ? 'Ký quỹ Escrow tức thì' : 'Instant Escrow hold'}
@@ -3737,7 +3736,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                           </div>
                           <div>
                             <h5 className="font-extrabold text-xs text-slate-900 leading-tight">
-                              {lang === 'vi' ? 'Chuyển Khoản Trực Tiếp' : 'Direct Bank Transfer'}
+                              {lang === 'vi' ? 'Chuyển khoản trực tiếp' : 'Direct Bank Transfer'}
                             </h5>
                             <span className="text-[10px] text-blue-700 font-bold block">
                               {lang === 'vi' ? 'Quét mã VietQR (SePay)' : 'VietQR / SePay'}
@@ -3770,7 +3769,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                           </div>
                           <div>
                             <span className="text-xs font-black text-slate-900 block leading-tight">
-                              {lang === 'vi' ? 'Ví Tiền SecondLife' : 'SecondLife Wallet Escrow'}
+                              {lang === 'vi' ? 'Ví tiền secondLife' : 'SecondLife Wallet Escrow'}
                             </span>
                             <span className="text-xs text-slate-600 font-medium">
                               {lang === 'vi' ? 'Số dư hiện có: ' : 'Available Balance: '}
@@ -3789,7 +3788,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                             className="px-3.5 py-2 rounded-xl bg-[#c34c36] hover:bg-[#dc4729] text-white text-xs font-bold transition shadow-xs cursor-pointer flex items-center gap-1.5 shrink-0"
                           >
                             <QrCode className="w-3.5 h-3.5" />
-                            <span>{lang === 'vi' ? 'Nạp Tiền Ví' : 'Top Up Wallet'}</span>
+                            <span>{lang === 'vi' ? 'Nạp tiền ví' : 'Top Up Wallet'}</span>
                           </button>
                         ) : (wallet?.balance ?? 0) >= upfrontAmount ? (
                           <span className="px-2.5 py-1 rounded-lg bg-emerald-100/90 text-emerald-800 text-[11px] font-bold flex items-center gap-1 shrink-0">
@@ -3804,7 +3803,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                           <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                           <span>
                             {lang === 'vi'
-                              ? `Số dư ví còn thiếu ${formatVND(upfrontAmount - (wallet?.balance ?? 0))}. Bạn có thể nạp tiền vào ví hoặc chọn phương thức 'Chuyển Khoản Trực Tiếp'.`
+                              ? `Số dư ví còn thiếu ${formatVND(upfrontAmount - (wallet?.balance ?? 0))}. Bạn có thể nạp tiền vào ví hoặc chọn phương thức 'chuyển khoản trực tiếp'.`
                               : `Wallet is short by ${formatVND(upfrontAmount - (wallet?.balance ?? 0))}. Please top up or choose Direct Bank Transfer.`}
                           </span>
                         </div>
@@ -3838,7 +3837,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 <div className="flex items-center gap-2 border-b border-slate-100 pb-2.5">
                   <Package className="w-4 h-4 text-[#c34c36]" />
                   <h4 className="font-extrabold text-xs sm:text-sm text-[#24263e] uppercase tracking-wide">
-                    {lang === 'vi' ? 'Sản Phẩm Đặt Mua' : 'Product Order Summary'}
+                    {lang === 'vi' ? 'Sản phẩm đặt mua' : 'Product Order Summary'}
                   </h4>
                 </div>
                 {/* Item Snapshot */}
@@ -3855,7 +3854,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       <span className="text-[10px] text-slate-500 font-semibold">{resolveListingCategory(listing)}</span>
                       {hasAgreedDiscount && (
                         <span className="px-2 py-0.2 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
-                          {lang === 'vi' ? '⚡ Giá Thỏa Thuận Chat' : '⚡ Chat Deal Price'}
+                          {lang === 'vi' ? '⚡ giá thỏa thuận chat' : '⚡ Chat Deal Price'}
                         </span>
                       )}
                     </div>
@@ -4130,7 +4129,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     <MessageSquare className="w-4 h-4 text-white" />
                     <span>
                       {lang === 'vi'
-                        ? `Đến Phòng Chat Thương Lượng Kiểm Định (${formatVND(upfrontAmount)})`
+                        ? `Đến phòng chat thương lượng kiểm định (${formatVND(upfrontAmount)})`
                         : `Go to Chat to Negotiate Inspection (${formatVND(upfrontAmount)})`}
                     </span>
                   </button>
@@ -4216,7 +4215,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       <QrCode className="w-4 h-4 text-white" />
                       <span>
                         {lang === 'vi'
-                          ? `Đặt Hàng & Nhận Mã VietQR (${formatVND(totalAmount)})`
+                          ? `Đặt hàng & nhận mã vietQR (${formatVND(totalAmount)})`
                           : `Place Order & Get VietQR Code (${formatVND(totalAmount)})`}
                       </span>
                     </>
@@ -4235,7 +4234,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             {/* Modal Header */}
             <div className="px-6 py-4.5 border-b border-slate-100 flex items-center justify-between">
               <h3 className="font-extrabold text-base text-slate-900">
-                {lang === 'vi' ? 'Địa Chỉ Của Tôi' : 'My Addresses'}
+                {lang === 'vi' ? 'Địa chỉ của tôi' : 'My Addresses'}
               </h3>
               <button
                 type="button"
@@ -4278,7 +4277,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                           </span>
                         )}
                         <span className="px-1.5 py-0.5 text-[10px] font-medium text-slate-600 bg-slate-100 rounded">
-                          {addr.addressType === 'office' ? (lang === 'vi' ? 'Văn Phòng' : 'Office') : (lang === 'vi' ? 'Nhà Riêng' : 'Home')}
+                          {addr.addressType === 'office' ? (lang === 'vi' ? 'Văn phòng' : 'Office') : (lang === 'vi' ? 'Nhà riêng' : 'Home')}
                         </span>
                       </div>
                       <p className="text-xs text-slate-700 font-medium leading-relaxed break-words">
@@ -4322,7 +4321,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 className="w-full py-3 px-4 rounded-xl border border-dashed border-slate-300 hover:border-[#c34c36] hover:bg-[#fdf8f6]/40 text-slate-700 hover:text-[#c34c36] font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
-                <span>{lang === 'vi' ? 'Thêm Địa Chỉ Mới' : 'Add New Address'}</span>
+                <span>{lang === 'vi' ? 'Thêm địa chỉ mới' : 'Add New Address'}</span>
               </button>
             </div>
 
@@ -4340,7 +4339,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 onClick={() => setIsAddressModalOpen(false)}
                 className="px-5 py-2 rounded-xl bg-[#c34c36] hover:bg-[#a83824] text-white text-xs font-bold shadow-xs transition cursor-pointer"
               >
-                {lang === 'vi' ? 'Xác Nhận' : 'Confirm'}
+                {lang === 'vi' ? 'Xác nhận' : 'Confirm'}
               </button>
             </div>
           </div>
@@ -4355,8 +4354,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             <div className="px-6 py-4.5 border-b border-slate-100 flex items-center justify-between">
               <h3 className="font-extrabold text-base text-slate-900">
                 {editingAddress
-                  ? (lang === 'vi' ? 'Cập Nhật Địa Chỉ Nhận Hàng' : 'Edit Delivery Address')
-                  : (lang === 'vi' ? 'Thêm Địa Chỉ Nhận Hàng Mới' : 'New Delivery Address')}
+                  ? (lang === 'vi' ? 'Cập nhật địa chỉ nhận hàng' : 'Edit Delivery Address')
+                  : (lang === 'vi' ? 'Thêm địa chỉ nhận hàng mới' : 'New Delivery Address')}
               </h3>
               <button
                 type="button"
@@ -4463,7 +4462,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       }`}
                   >
                     <Home className="w-3.5 h-3.5" />
-                    <span>{lang === 'vi' ? 'Nhà Riêng' : 'Home'}</span>
+                    <span>{lang === 'vi' ? 'Nhà riêng' : 'Home'}</span>
                   </button>
                   <button
                     type="button"
@@ -4474,7 +4473,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       }`}
                   >
                     <Building2 className="w-3.5 h-3.5" />
-                    <span>{lang === 'vi' ? 'Văn Phòng' : 'Office'}</span>
+                    <span>{lang === 'vi' ? 'Văn phòng' : 'Office'}</span>
                   </button>
                 </div>
               </div>
@@ -4500,14 +4499,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 onClick={() => setIsAddressFormOpen(false)}
                 className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition cursor-pointer"
               >
-                {lang === 'vi' ? 'Trở Lại' : 'Back'}
+                {lang === 'vi' ? 'Trở lại' : 'Back'}
               </button>
               <button
                 type="button"
                 onClick={handleSaveAddressForm}
                 className="px-5 py-2 rounded-xl bg-[#c34c36] hover:bg-[#a83824] text-white text-xs font-bold shadow-xs transition cursor-pointer"
               >
-                {lang === 'vi' ? 'Hoàn Thành' : 'Save Address'}
+                {lang === 'vi' ? 'Hoàn thành' : 'Save Address'}
               </button>
             </div>
           </div>

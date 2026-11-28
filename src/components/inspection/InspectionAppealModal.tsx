@@ -144,7 +144,7 @@ export const InspectionAppealModal: React.FC<InspectionAppealModalProps> = ({
             </div>
             <div>
               <h3 className="font-bold text-lg text-gray-900 dark:text-gray-100">
-                Khiếu Nại Kết Quả Kiểm Định
+                Khiếu nại kết quả kiểm định
               </h3>
               <p className="text-xs text-gray-500 dark:text-gray-400">
                 Đơn hàng: {order.postTitle || order.id}
@@ -350,7 +350,7 @@ export const InspectionAppealModal: React.FC<InspectionAppealModalProps> = ({
                 <span>Đang gửi khiếu nại...</span>
               </>
             ) : (
-              <span>Gửi Khiếu Nại (24h)</span>
+              <span>Gửi khiếu nại (24h)</span>
             )}
           </button>
         </div>

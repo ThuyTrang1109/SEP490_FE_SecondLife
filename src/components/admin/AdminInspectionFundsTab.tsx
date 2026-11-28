@@ -407,7 +407,7 @@ export const AdminInspectionFundsTab: React.FC<AdminInspectionFundsTabProps> = (
             className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-            <span>Làm Mới</span>
+            <span>Làm mới</span>
           </button>
         </div>
       </div>
@@ -417,7 +417,7 @@ export const AdminInspectionFundsTab: React.FC<AdminInspectionFundsTabProps> = (
         {/* Card 1: Đơn đang giữ tiền */}
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1 border-l-4 border-l-amber-500">
           <div className="flex items-center justify-between text-slate-500">
-            <span className="text-[10px] font-bold uppercase tracking-wider">Đơn Đang Giữ Tiền</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider">Đơn đang giữ tiền</span>
             <Wallet className="w-4 h-4 text-amber-500" />
           </div>
           <div className="text-2xl font-black font-mono text-slate-900">
@@ -431,7 +431,7 @@ export const AdminInspectionFundsTab: React.FC<AdminInspectionFundsTabProps> = (
         {/* Card 2: Quỹ cước hoàn đang giữ */}
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1 border-l-4 border-l-orange-500">
           <div className="flex items-center justify-between text-slate-500">
-            <span className="text-[10px] font-bold uppercase tracking-wider">Quỹ Cước Hoàn Đang Giữ</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider">Quỹ cước hoàn đang giữ</span>
             <ArrowDownLeft className="w-4 h-4 text-orange-500" />
           </div>
           <div className="text-2xl font-black font-mono text-orange-600">
@@ -445,7 +445,7 @@ export const AdminInspectionFundsTab: React.FC<AdminInspectionFundsTabProps> = (
         {/* Card 3: Chờ quyết toán */}
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1 border-l-4 border-l-blue-500">
           <div className="flex items-center justify-between text-slate-500">
-            <span className="text-[10px] font-bold uppercase tracking-wider">Chờ Quyết Toán Hub</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider">Chờ quyết toán Hub</span>
             <Clock className="w-4 h-4 text-blue-500" />
           </div>
           <div className="text-2xl font-black font-mono text-blue-700">
@@ -459,7 +459,7 @@ export const AdminInspectionFundsTab: React.FC<AdminInspectionFundsTabProps> = (
         {/* Card 4: Đã quyết toán xong */}
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1 border-l-4 border-l-emerald-500">
           <div className="flex items-center justify-between text-slate-500">
-            <span className="text-[10px] font-bold uppercase tracking-wider">Đã Quyết Toán Xong</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider">Đã quyết toán xong</span>
             <CheckCircle2 className="w-4 h-4 text-emerald-500" />
           </div>
           <div className="text-2xl font-black font-mono text-emerald-600">
@@ -477,14 +477,14 @@ export const AdminInspectionFundsTab: React.FC<AdminInspectionFundsTabProps> = (
         <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div>
             <h3 className="text-sm font-bold text-slate-900 uppercase flex items-center gap-2">
-              <span>Danh Sách Đơn Kiểm Định Đang Quản Lý Dòng Tiền</span>
+              <span>Danh sách đơn kiểm định đang quản lý dòng tiền</span>
               <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-700">
                 {filteredOrders.length} đơn
               </span>
 
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Click vào nút <strong>"Đối Soát Tiền Kiểm Định"</strong> của bất kỳ đơn nào để xem toàn bộ luồng tiền, quỹ dự phòng và quyết toán
+              Click vào nút <strong>"Đối soát tiền kiểm định"</strong> của bất kỳ đơn nào để xem toàn bộ luồng tiền, quỹ dự phòng và quyết toán
             </p>
           </div>
 
@@ -564,10 +564,10 @@ export const AdminInspectionFundsTab: React.FC<AdminInspectionFundsTabProps> = (
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50/70 text-slate-500 uppercase text-[10px] tracking-wider">
                 <th className="py-3 px-4 font-bold min-w-[320px]">Mã Đơn &amp; Sản Phẩm</th>
-                <th className="py-3 px-4 font-bold">Người Bán / Mua</th>
-                <th className="py-3 px-4 font-bold text-right">Phí Đã Nộp</th>
-                <th className="py-3 px-4 font-bold text-center">Trạng Thái Đơn</th>
-                <th className="py-3 px-4 font-bold text-center">Hành Động</th>
+                <th className="py-3 px-4 font-bold">Người bán / mua</th>
+                <th className="py-3 px-4 font-bold text-right">Phí đã nộp</th>
+                <th className="py-3 px-4 font-bold text-center">Trạng thái đơn</th>
+                <th className="py-3 px-4 font-bold text-center">Hành động</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -672,7 +672,7 @@ export const AdminInspectionFundsTab: React.FC<AdminInspectionFundsTabProps> = (
                           title="Mở bảng đối soát dòng tiền chi tiết của đơn kiểm định này"
                         >
                           <ShieldCheck className="w-3.5 h-3.5" />
-                          <span>Đối Soát Tiền</span>
+                          <span>Đối soát tiền</span>
                         </button>
                       </td>
                     </tr>

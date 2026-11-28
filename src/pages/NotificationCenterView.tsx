@@ -186,7 +186,7 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
     e.stopPropagation();
     const confirmed = await dialogService.confirm(
       lang === 'vi' ? 'Bạn có chắc muốn xóa thông báo này không?' : 'Delete this notification?',
-      { title: lang === 'vi' ? 'Xác Nhận Xóa' : 'Confirm Delete', type: 'warning' }
+      { title: lang === 'vi' ? 'Xác nhận xóa' : 'Confirm Delete', type: 'warning' }
     );
     if (!confirmed) return;
     try {
@@ -204,7 +204,7 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
   const handleClearRead = async () => {
     const confirmed = await dialogService.confirm(
       lang === 'vi' ? 'Bạn có chắc muốn xóa toàn bộ các thông báo đã đọc?' : 'Clear all read notifications?',
-      { title: lang === 'vi' ? 'Dọn Dẹp Thông Báo' : 'Clear Read Notifications', type: 'warning' }
+      { title: lang === 'vi' ? 'Dọn dẹp thông báo' : 'Clear Read Notifications', type: 'warning' }
     );
     if (!confirmed) return;
     setIsProcessing(true);
@@ -225,7 +225,7 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
   const handleClearAll = async () => {
     const confirmed = await dialogService.confirm(
       lang === 'vi' ? 'Cảnh báo: Bạn có chắc chắn muốn xóa TOÀN BỘ mọi thông báo trong hộp thư không?' : 'Clear ALL notifications?',
-      { title: lang === 'vi' ? 'Xóa Toàn Bộ Thông Báo' : 'Clear All Notifications', type: 'error' }
+      { title: lang === 'vi' ? 'Xóa toàn bộ thông báo' : 'Clear All Notifications', type: 'error' }
     );
     if (!confirmed) return;
     setIsProcessing(true);
@@ -252,42 +252,42 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
         return (
           <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-blue-100 text-blue-800 border border-blue-200 flex items-center gap-1">
             <ShoppingBag className="w-3 h-3 text-blue-600" />
-            <span>Đơn Hàng</span>
+            <span>Đơn hàng</span>
           </span>
         );
       case 'INSPECTION':
         return (
           <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-purple-100 text-purple-800 border border-purple-200 flex items-center gap-1">
             <ShieldCheck className="w-3 h-3 text-purple-600" />
-            <span>Kiểm Định</span>
+            <span>Kiểm định</span>
           </span>
         );
       case 'SHIPPING':
         return (
           <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-orange-100 text-orange-800 border border-orange-200 flex items-center gap-1">
             <Truck className="w-3 h-3 text-orange-600" />
-            <span>Vận Chuyển</span>
+            <span>Vận chuyển</span>
           </span>
         );
       case 'WALLET':
         return (
           <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
             <Wallet className="w-3 h-3 text-emerald-600" />
-            <span>Ví Tiền</span>
+            <span>Ví tiền</span>
           </span>
         );
       case 'LISTING':
         return (
           <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-indigo-100 text-indigo-800 border border-indigo-200 flex items-center gap-1">
             <Package className="w-3 h-3 text-indigo-600" />
-            <span>Bài Đăng</span>
+            <span>Bài đăng</span>
           </span>
         );
       case 'NEGOTIATION':
         return (
           <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-1">
             <Tag className="w-3 h-3 text-amber-600" />
-            <span>Trả Giá</span>
+            <span>Trả giá</span>
           </span>
         );
       case 'SECURITY':
@@ -295,14 +295,14 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
         return (
           <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-200 flex items-center gap-1">
             <ShieldAlert className="w-3 h-3 text-rose-600" />
-            <span>Bảo Mật</span>
+            <span>Bảo mật</span>
           </span>
         );
       default:
         return (
           <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-slate-100 text-slate-800 border border-slate-200 flex items-center gap-1">
             <Sparkles className="w-3 h-3 text-slate-600" />
-            <span>Hệ Thống</span>
+            <span>Hệ thống</span>
           </span>
         );
     }
@@ -343,7 +343,7 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
               </div>
               <div>
                 <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-                  {lang === 'vi' ? 'Trung Tâm Thông Báo' : 'Notification Center'}
+                  {lang === 'vi' ? 'Trung tâm thông báo' : 'Notification Center'}
                 </h1>
                 <p className="text-xs text-slate-500">
                   {lang === 'vi'

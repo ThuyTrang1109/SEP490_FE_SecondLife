@@ -466,7 +466,7 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
             <div className="flex items-center justify-between">
               <h3 className="font-extrabold text-xs text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
                 <Scale className="w-4 h-4 text-[#c34c36]" />
-                <span>Hàng Đợi Tranh Chấp ({filteredReports.length})</span>
+                <span>Hàng đợi tranh chấp ({filteredReports.length})</span>
               </h3>
               <button
                 onClick={() => { void fetchQueue(); if (selectedReportId) void loadReportDetail(selectedReportId); }}
@@ -578,7 +578,7 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
                     <span className="font-mono font-extrabold text-slate-900 text-base">
-                      Hồ Sơ Tranh Chấp #{selectedReport.id.substring(0, 8)}
+                      Hồ sơ tranh chấp #{selectedReport.id.substring(0, 8)}
                     </span>
                     <span
                       className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${DISPUTE_STATUS_MAP[selectedReport.status]?.bg || 'bg-slate-200 text-slate-700'
@@ -624,7 +624,7 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
                       className="px-4 py-2 bg-[#24263e] hover:bg-[#c34c36] text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
                     >
                       <User className="w-3.5 h-3.5" />
-                      <span>Nhận Xử Lý Hồ Sơ</span>
+                      <span>Nhận xử lý hồ sơ</span>
                     </button>
                   )}
 
@@ -635,7 +635,7 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
                       className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-90 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
                     >
                       <Scale className="w-3.5 h-3.5" />
-                      <span>Đưa Ra Phán Quyết</span>
+                      <span>Đưa ra phán quyết</span>
                     </button>
                   )}
                 </div>
@@ -657,7 +657,7 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
               <div className="space-y-2">
                 <h4 className="font-extrabold text-xs text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
                   <FileText className="w-4 h-4 text-[#c34c36]" />
-                  <span>Đối Chiếu Bằng Chứng Hai Bên</span>
+                  <span>Đối chiếu bằng chứng hai bên</span>
                 </h4>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -802,7 +802,7 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
                   <div className="flex items-center justify-between">
                     <span className="font-extrabold text-xs text-slate-900 uppercase flex items-center gap-1.5">
                       <Scale className="w-4 h-4 text-[#c34c36]" />
-                      <span>Kết Luận Trọng Tài Đã Lưu</span>
+                      <span>Kết luận trọng tài đã lưu</span>
                     </span>
                     <span className="text-[11px] font-bold text-slate-500">
                       Bên chịu trách nhiệm: <strong className="text-slate-800">{RESPONSIBLE_PARTY_MAP[String(selectedReport.responsibleParty || '').toUpperCase()] || selectedReport.responsibleParty || 'Chưa xác định'}</strong>
@@ -820,7 +820,7 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
                   <div className="flex items-center justify-between border-b border-indigo-100 pb-2">
                     <span className="font-extrabold text-xs text-indigo-950 flex items-center gap-1.5">
                       <Truck className="w-4 h-4 text-indigo-600" />
-                      <span>Vận Hành Chuyến Hoàn Hàng (Người Mua sang Người Bán)</span>
+                      <span>Vận hành chuyến hoàn hàng (Người Mua sang Người Bán)</span>
                     </span>
 
                     {/* Actions on return shipment */}
@@ -832,7 +832,7 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
                           className="px-2.5 py-1 bg-white border border-indigo-200 hover:bg-indigo-50 text-indigo-800 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer"
                         >
                           <RefreshCw className="w-3 h-3" />
-                          <span>Đồng Bộ</span>
+                          <span>Đồng bộ</span>
                         </button>
 
                         {canHandleReturns && selectedReturnShipment.orderCode &&
@@ -842,7 +842,7 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
                               disabled={isProcessing}
                               className="px-2.5 py-1 bg-rose-100 hover:bg-rose-200 text-rose-800 rounded-lg text-xs font-bold transition cursor-pointer"
                             >
-                              Hủy Chuyến
+                              Hủy chuyến
                             </button>
                           )}
 
@@ -851,7 +851,7 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
                             onClick={() => setShowReconcileModal(true)}
                             className="px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded-lg text-xs font-bold transition cursor-pointer"
                           >
-                            Đối Soát
+                            Đối soát
                           </button>
                         )}
                       </div>
@@ -871,25 +871,25 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
                     <div className="space-y-3">
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                         <div className="p-2.5 bg-white rounded-lg border border-indigo-100">
-                          <span className="text-[10px] text-slate-400 block font-bold">Mã Vận Đơn:</span>
+                          <span className="text-[10px] text-slate-400 block font-bold">Mã vận đơn:</span>
                           <strong className="font-mono text-slate-800 text-[11px]">
                             {selectedReturnShipment.orderCode || selectedReturnShipment.shipmentId.substring(0, 8)}
                           </strong>
                         </div>
                         <div className="p-2.5 bg-white rounded-lg border border-indigo-100">
-                          <span className="text-[10px] text-slate-400 block font-bold">Trạng Thái Hãng:</span>
+                          <span className="text-[10px] text-slate-400 block font-bold">Trạng thái hãng:</span>
                           <strong className="text-indigo-700 text-[11px] font-black">
                             {LALAMOVE_STATUS_MAP[selectedReturnShipment.status] || selectedReturnShipment.status}
                           </strong>
                         </div>
                         <div className="p-2.5 bg-white rounded-lg border border-indigo-100">
-                          <span className="text-[10px] text-slate-400 block font-bold">Cước Tạm Tính:</span>
+                          <span className="text-[10px] text-slate-400 block font-bold">Cước tạm tính:</span>
                           <strong className="text-slate-800 text-[11px]">
                             {selectedReturnShipment.quotedFee ? formatVND(selectedReturnShipment.quotedFee) : '0 đ'}
                           </strong>
                         </div>
                         <div className="p-2.5 bg-white rounded-lg border border-indigo-100">
-                          <span className="text-[10px] text-slate-400 block font-bold">Cước Thực Tế:</span>
+                          <span className="text-[10px] text-slate-400 block font-bold">Cước thực tế:</span>
                           <strong className="text-emerald-700 text-[11px] font-black">
                             {selectedReturnShipment.actualFee != null ? formatVND(selectedReturnShipment.actualFee) : 'Chờ xác nhận'}
                           </strong>
@@ -922,7 +922,7 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
                   <div className="flex items-center justify-between border-b border-emerald-100 pb-2">
                     <span className="font-extrabold text-xs text-emerald-950 flex items-center gap-1.5">
                       <DollarSign className="w-4 h-4 text-emerald-600" />
-                      <span>Hoàn Tiền Cho Người Mua & Quyết Toán Phí Hoàn</span>
+                      <span>Hoàn tiền cho người mua & quyết toán phí hoàn</span>
                     </span>
 
                     {/* Refund Status Badge */}
@@ -955,19 +955,19 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
                       {/* Refund Receipt */}
                       <div className="bg-white p-3.5 rounded-xl border border-emerald-100 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                         <div>
-                          <span className="text-[10px] text-slate-400 block font-bold">Số Tiền Đã Hoàn Người Mua:</span>
+                          <span className="text-[10px] text-slate-400 block font-bold">Số tiền đã hoàn người mua:</span>
                           <strong className="text-emerald-700 text-sm font-black">
-                            {selectedReport.refundAmount ? formatVND(selectedReport.refundAmount) : '100% Tiền Hàng'}
+                            {selectedReport.refundAmount ? formatVND(selectedReport.refundAmount) : '100% tiền hàng'}
                           </strong>
                         </div>
                         <div>
-                          <span className="text-[10px] text-slate-400 block font-bold">Thời Điểm Hoàn:</span>
+                          <span className="text-[10px] text-slate-400 block font-bold">Thời điểm hoàn:</span>
                           <strong className="text-slate-800 text-[11px]">
                             {selectedReport.refundedAt ? new Date(selectedReport.refundedAt).toLocaleString('vi-VN') : 'N/A'}
                           </strong>
                         </div>
                         <div>
-                          <span className="text-[10px] text-slate-400 block font-bold">Người Thực Hiện:</span>
+                          <span className="text-[10px] text-slate-400 block font-bold">Người thực hiện:</span>
                           <strong className="text-slate-800 font-mono text-[11px]">
                             {selectedReport.refundedBy ? selectedReport.refundedBy.substring(0, 8) : 'Hệ thống'}
                           </strong>
@@ -978,7 +978,7 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
                       {feeAssessment && (
                         <div className="p-3 bg-white rounded-xl border border-slate-200 text-xs space-y-2">
                           <div className="flex items-center justify-between">
-                            <span className="font-bold text-slate-800">Khoản Phí Hoàn Hàng Của Người Bán:</span>
+                            <span className="font-bold text-slate-800">Khoản phí hoàn hàng của người bán:</span>
                             <span
                               className={`px-2 py-0.5 rounded text-[10px] font-black ${feeAssessment.status === 'PAID'
                                 ? 'bg-emerald-100 text-emerald-800'
@@ -997,17 +997,17 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
 
                           <div className="grid grid-cols-3 gap-2 text-[11px] pt-1">
                             <div>
-                              <span className="text-slate-400 block">Tổng Phí Hoàn:</span>
+                              <span className="text-slate-400 block">Tổng phí hoàn:</span>
                               <strong>{feeAssessment.feeAmount != null ? formatVND(feeAssessment.feeAmount) : 'N/A'}</strong>
                             </div>
                             <div>
-                              <span className="text-slate-400 block">Đã Thu Từ Ví:</span>
+                              <span className="text-slate-400 block">Đã thu từ ví:</span>
                               <strong className="text-emerald-700">
                                 {feeAssessment.collectedAmount != null ? formatVND(feeAssessment.collectedAmount) : '0 đ'}
                               </strong>
                             </div>
                             <div>
-                              <span className="text-slate-400 block">Ghi Nhận Công Nợ:</span>
+                              <span className="text-slate-400 block">Ghi nhận công nợ:</span>
                               <strong className="text-rose-700">
                                 {feeAssessment.debtAmount != null ? formatVND(feeAssessment.debtAmount) : '0 đ'}
                               </strong>
@@ -1022,7 +1022,7 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
                                 disabled={isProcessing}
                                 className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-xs transition cursor-pointer"
                               >
-                                Chốt Phí Hoàn Hàng Người Bán ({formatVND(selectedReturnShipment.actualFee)})
+                                Chốt phí hoàn hàng người bán ({formatVND(selectedReturnShipment.actualFee)})
                               </button>
                             </div>
                           )}
@@ -1044,7 +1044,7 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="font-extrabold text-sm text-slate-900 uppercase flex items-center gap-2">
                 <Scale className="w-4 h-4 text-[#c34c36]" />
-                <span>Đưa Ra Phán Quyết Tranh Chấp</span>
+                <span>Đưa ra phán quyết tranh chấp</span>
               </h3>
               <button
                 onClick={() => setShowResolveModal(false)}
@@ -1107,7 +1107,7 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
                 disabled={isProcessing}
                 className="px-5 py-2 bg-[#24263e] hover:bg-[#c34c36] text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
               >
-                {isProcessing ? 'Đang lưu...' : 'Lưu Phán Quyết'}
+                {isProcessing ? 'Đang lưu...' : 'Lưu phán quyết'}
               </button>
             </div>
           </div>
@@ -1118,7 +1118,7 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
       {showReconcileModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-4 border border-slate-200">
-            <h3 className="font-extrabold text-xs text-slate-900 uppercase">Đối Soát Vận Đơn Với Hãng</h3>
+            <h3 className="font-extrabold text-xs text-slate-900 uppercase">Đối soát vận đơn với hãng</h3>
             <div className="space-y-2 text-xs">
               <label className="font-bold text-slate-700 block">Nhập mã đơn Lalamove (orderCode):</label>
               <input
@@ -1141,7 +1141,7 @@ export const StaffDisputeManagement: React.FC<StaffDisputeManagementProps> = ({
                 disabled={isProcessing || !reconcileOrderCode.trim()}
                 className="px-4 py-1.5 bg-[#24263e] text-white rounded-lg text-xs font-bold cursor-pointer"
               >
-                Đối Soát Ngay
+                Đối soát ngay
               </button>
             </div>
           </div>

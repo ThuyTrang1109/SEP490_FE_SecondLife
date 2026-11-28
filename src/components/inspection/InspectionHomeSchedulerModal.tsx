@@ -95,7 +95,7 @@ export const InspectionHomeSchedulerModal: React.FC<InspectionHomeSchedulerModal
             </div>
             <div>
               <h3 className="font-bold text-lg text-gray-900 dark:text-gray-100">
-                {isInspector ? 'Lên Lịch Hẹn Kiểm Định Tại Nhà' : 'Thống Nhất Giờ Hẹn Kiểm Định'}
+                {isInspector ? 'Lên lịch hẹn kiểm định tại nhà' : 'Thống nhất giờ hẹn kiểm định'}
               </h3>
               <p className="text-xs text-gray-500 dark:text-gray-400">
                 Gói Kiểm định tại nhà (AT_HOME)
@@ -202,7 +202,7 @@ export const InspectionHomeSchedulerModal: React.FC<InspectionHomeSchedulerModal
             ) : (
               <>
                 <CheckCircle2 className="w-4 h-4" />
-                <span>Xác Nhận Giờ Hẹn</span>
+                <span>Xác nhận giờ hẹn</span>
               </>
             )}
           </button>

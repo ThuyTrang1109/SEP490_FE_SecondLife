@@ -70,7 +70,7 @@ export function CenterStaff({ setActiveTab, staffWorkloadMap, staff }: Props) {
             Phạm vi quản lý nhân sự ({staffList.length} kỹ thuật viên trực thuộc Trung tâm)
           </div>
           <p className="text-[11px] text-blue-800 leading-relaxed">
-            Hệ thống phân quyền hiển thị các Kỹ thuật viên do chính Trung tâm của bạn quản lý. Để thêm kỹ thuật viên mới cho trạm, vui lòng bấm nút <strong>"+ Cấp Tài Khoản KTV Mới"</strong> bên trên.
+            Hệ thống phân quyền hiển thị các Kỹ thuật viên do chính Trung tâm của bạn quản lý. Để thêm kỹ thuật viên mới cho trạm, vui lòng bấm nút <strong>"+ cấp tài khoản KTV mới"</strong> bên trên.
           </p>
         </div>
       </div>
@@ -81,11 +81,11 @@ export function CenterStaff({ setActiveTab, staffWorkloadMap, staff }: Props) {
           <thead>
             <tr className="bg-slate-50/80 border-b border-slate-100 text-slate-600 font-bold text-[11px] uppercase tracking-wider">
               <th className="py-2.5 px-4 w-12">#</th>
-              <th className="py-2.5 px-4">Kỹ Thuật Viên</th>
-              <th className="py-2.5 px-4">Email Công Vụ</th>
-              <th className="py-2.5 px-4">Số Task Đang Nhận</th>
-              <th className="py-2.5 px-4">Trạng Thái</th>
-              <th className="py-2.5 px-4 text-right">Thao Tác</th>
+              <th className="py-2.5 px-4">Kỹ thuật viên</th>
+              <th className="py-2.5 px-4">Email công vụ</th>
+              <th className="py-2.5 px-4">Số task đang nhận</th>
+              <th className="py-2.5 px-4">Trạng thái</th>
+              <th className="py-2.5 px-4 text-right">Thao tác</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">

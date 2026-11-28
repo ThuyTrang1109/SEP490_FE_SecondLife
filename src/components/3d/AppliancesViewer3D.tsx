@@ -39,7 +39,7 @@ export const AppliancesViewer3D: React.FC<AppliancesViewer3DProps> = ({ lang }) 
                   : 'text-[#24263e]/80 hover:text-[#24263e]'
               }`}
             >
-              {lang === 'vi' ? 'Tủ Lạnh' : 'Fridge'}
+              {lang === 'vi' ? 'Tủ lạnh' : 'Fridge'}
             </button>
             <button
               onClick={() => {
@@ -52,7 +52,7 @@ export const AppliancesViewer3D: React.FC<AppliancesViewer3DProps> = ({ lang }) 
                   : 'text-[#24263e]/80 hover:text-[#24263e]'
               }`}
             >
-              {lang === 'vi' ? 'Máy Giặt' : 'Washer'}
+              {lang === 'vi' ? 'Máy giặt' : 'Washer'}
             </button>
             <button
               onClick={() => {
@@ -77,8 +77,8 @@ export const AppliancesViewer3D: React.FC<AppliancesViewer3DProps> = ({ lang }) 
               <span className="w-2.5 h-2.5 rounded-full bg-[#24263e] animate-pulse" />
               <span>
                 {applianceType === 'fridge'
-                  ? (lang === 'vi' ? 'Tủ Lạnh • Grade A+ (99%)' : 'Refrigerator • Grade A+ (99%)')
-                  : (lang === 'vi' ? 'Máy Giặt • Inverter (98%)' : 'Washer • Inverter (98%)')}
+                  ? (lang === 'vi' ? 'Tủ lạnh • Grade A+ (99%)' : 'Refrigerator • Grade A+ (99%)')
+                  : (lang === 'vi' ? 'Máy giặt • Inverter (98%)' : 'Washer • Inverter (98%)')}
               </span>
             </div>
           </div>
@@ -97,8 +97,8 @@ export const AppliancesViewer3D: React.FC<AppliancesViewer3DProps> = ({ lang }) 
               <Sparkles className="w-3.5 h-3.5 text-[#24263e]" />
               <span>
                 {applianceType === 'fridge'
-                  ? (lang === 'vi' ? 'AI Định Giá: 14.800.000đ' : 'AI Valuation: 14,800,000đ')
-                  : (lang === 'vi' ? 'AI Định Giá: 7.950.000đ' : 'AI Valuation: 7,950,000đ')}
+                  ? (lang === 'vi' ? 'AI định giá: 14.800.000đ' : 'AI Valuation: 14,800,000đ')
+                  : (lang === 'vi' ? 'AI định giá: 7.950.000đ' : 'AI Valuation: 7,950,000đ')}
               </span>
             </div>
           </div>

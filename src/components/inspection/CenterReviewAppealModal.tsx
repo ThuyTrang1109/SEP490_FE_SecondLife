@@ -82,7 +82,7 @@ export const CenterReviewAppealModal: React.FC<CenterReviewAppealModalProps> = (
             </div>
             <div>
               <h3 className="font-bold text-lg text-gray-900 dark:text-gray-100">
-                Phê Duyệt Khiếu Nại Kiểm Định
+                Phê duyệt khiếu nại kiểm định
               </h3>
               <p className="text-xs text-gray-500 dark:text-gray-400">
                 Đơn hàng: {order.postTitle || order.id}
@@ -113,7 +113,7 @@ export const CenterReviewAppealModal: React.FC<CenterReviewAppealModalProps> = (
             <div className="p-4 rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-50/60 dark:bg-gray-800/40 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                  Kết Luận Kỹ Thuật Viên
+                  Kết luận kỹ thuật viên
                 </span>
                 <span className="px-2 py-0.5 rounded text-xs font-bold bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">
                   FAILED
@@ -153,7 +153,7 @@ export const CenterReviewAppealModal: React.FC<CenterReviewAppealModalProps> = (
             <div className="p-4 rounded-2xl border border-amber-200 dark:border-amber-900/50 bg-amber-50/40 dark:bg-amber-950/20 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-amber-800 dark:text-amber-400">
-                  Nội Dung Khiếu Nại Của Người Bán
+                  Nội dung khiếu nại của người bán
                 </span>
                 <span className="px-2 py-0.5 rounded text-xs font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
                   {order.appealStatus || 'PENDING_REVIEW'}
@@ -294,8 +294,8 @@ export const CenterReviewAppealModal: React.FC<CenterReviewAppealModalProps> = (
             ) : (
               <span>
                 {decision === 'OVERTURNED'
-                  ? 'Chấp Thuận Khiếu Nại (OVERTURNED)'
-                  : 'Bác Bỏ Khiếu Nại (UPHELD)'}
+                  ? 'Chấp thuận khiếu nại (OVERTURNED)'
+                  : 'Bác bỏ khiếu nại (UPHELD)'}
               </span>
             )}
           </button>

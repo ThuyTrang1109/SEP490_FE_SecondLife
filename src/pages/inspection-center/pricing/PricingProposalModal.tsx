@@ -40,7 +40,7 @@ export function PricingProposalModal({ pricing }: Props) {
             </div>
             <div>
               <h3 className="font-black text-sm text-slate-900">
-                Đề Xuất Điều Chỉnh Bậc Cước Di Chuyển
+                Đề xuất điều chỉnh bậc cước di chuyển
               </h3>
               <p className="text-[11px] text-slate-500">
                 {proposeStep === 'edit'
@@ -163,7 +163,7 @@ export function PricingProposalModal({ pricing }: Props) {
                 onClick={handleProceedToPreview}
                 className="px-5 py-2 bg-[#24263e] hover:bg-black text-white rounded-xl font-bold shadow-xs cursor-pointer flex items-center gap-1.5"
               >
-                <span>Tiếp Tục Xem Lại & Xác Nhận</span>
+                <span>Tiếp tục xem lại & xác nhận</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -230,7 +230,7 @@ export function PricingProposalModal({ pricing }: Props) {
                 disabled={isSubmittingProposal}
                 className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 font-bold cursor-pointer"
               >
-                Quay Lại Sửa
+                Quay lại sửa
               </button>
               <button
                 type="button"
@@ -239,7 +239,7 @@ export function PricingProposalModal({ pricing }: Props) {
                 className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold shadow-xs cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
               >
                 {isSubmittingProposal && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                <span>Xác Nhận Gửi Đề Xuất Lên Admin</span>
+                <span>Xác nhận gửi đề xuất lên Admin</span>
               </button>
             </div>
           </div>

@@ -43,6 +43,13 @@ import {
 } from 'lucide-react';
 import { UserProfile, UserRole, Language } from '../../types';
 import { formatVND } from '../../utils/translations';
+import {
+  BANK_ACCOUNT_NUMBER_MAX_LENGTH,
+  BANK_ACCOUNT_NUMBER_MIN_LENGTH,
+  sanitizeBankAccountHolder,
+  sanitizeBankAccountNumber,
+  validateBankAccountFields,
+} from '../../utils/bankAccountValidation';
 import { WithdrawalModal } from './WithdrawalModal';
 import { dialogService } from '../../utils/dialogService';
 import {
@@ -74,7 +81,7 @@ import {
 } from '../../services/reputationService';
 import { LiveFaceScannerModal, VnptEkycResultData } from './LiveFaceScannerModal';
 import { extractWardAndCity, cleanFullAddress, formatCombinedAddress } from '../../utils/addressUtils';
-import { LalamoveAddressPicker } from '../common/LalamoveAddressPicker';
+import { LalamoveAddressPicker, type SelectedLocationData } from '../common/LalamoveAddressPicker';
 
 export type ProfileTab = 'info' | 'reputation' | 'wallet' | 'kyc' | 'reports' | 'security' | 'settings';
 
@@ -105,7 +112,7 @@ export const POPULAR_VIETNAM_BANKS = [
   { code: 'BAB', name: 'Bac A Bank', fullName: 'Bắc Á' },
   { code: 'NAB', name: 'Nam A Bank', fullName: 'Nam Á' },
   { code: 'PVC', name: 'PVcomBank', fullName: 'Đại Chúng Việt Nam' },
-  { code: 'KLB', name: 'KienlongBank', fullName: 'Kiên Long' },
+  { code: 'KLB', name: 'KienlongBank', fullName: 'Kiên long' },
   { code: 'BVB', name: 'BaoViet Bank', fullName: 'Bảo Việt' },
   { code: 'SGB', name: 'Saigonbank', fullName: 'Sài Gòn Công Thương' },
   { code: 'SHINHAN', name: 'Shinhan Bank', fullName: 'Shinhan Bank Việt Nam' },
@@ -184,15 +191,27 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
   // Form states
   const [isEditing, setIsEditing] = useState<boolean>(false);
+  const [pickupLockReason, setPickupLockReason] = useState<string | null>(null);
   const [name, setName] = useState(currentUser.name || '');
   const [email, setEmail] = useState(currentUser.email || '');
   const [isEmailVerified, setIsEmailVerified] = useState<boolean>(() => Boolean(currentUser.emailVerified));
 
   useEffect(() => {
-    if (isOpen) {
-      setIsEditing(false);
+    if (!isOpen) return;
+    setIsEditing(false);
+    if (!isCurrentSeller) {
+      setPickupLockReason(null);
+      return;
     }
-  }, [isOpen]);
+    let active = true;
+    shippingService.getPickupAddressUpdateStatus()
+      .then((status) => {
+        if (!active) return;
+        setPickupLockReason(status.updatable ? null : (status.reason || 'Không thể thay đổi địa chỉ lấy hàng lúc này.'));
+      })
+      .catch(() => { });
+    return () => { active = false; };
+  }, [isOpen, isCurrentSeller]);
 
   useEffect(() => {
     setIsEmailVerified(Boolean(currentUser.emailVerified));
@@ -206,10 +225,10 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   const [bankName, setBankName] = useState(currentUser.bankAccount?.bankName || '');
   const [isCustomBank, setIsCustomBank] = useState(false);
   const [accountNumber, setAccountNumber] = useState(
-    currentUser.bankAccount?.accountNumber || ''
+    sanitizeBankAccountNumber(currentUser.bankAccount?.accountNumber || '')
   );
   const [accountHolder, setAccountHolder] = useState(
-    currentUser.bankAccount?.accountHolder || (currentUser.name ? currentUser.name.toUpperCase() : '')
+    sanitizeBankAccountHolder(currentUser.bankAccount?.accountHolder || currentUser.name || '')
   );
 
   // Real wallet & Escrow locked states (no mock)
@@ -425,7 +444,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   // Seller registration & switching states
   const [isSellerRegistered, setIsSellerRegistered] = useState<boolean>(currentUser.role === 'seller');
   const [shopName, setShopName] = useState(
-    currentUser.shopName || (currentUser.name ? `Gian Hàng ${currentUser.name}` : '')
+    currentUser.shopName || (currentUser.name ? `Gian hàng ${currentUser.name}` : '')
   );
   const [sellerPhone, setSellerPhone] = useState(currentUser.phone || '');
   const [pickupAddress, setPickupAddress] = useState(
@@ -438,17 +457,21 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
     currentUser.longitude ?? null
   );
   const [isWarehouseConfirmed, setIsWarehouseConfirmed] = useState(false);
-  useEffect(() => setIsWarehouseConfirmed(false), [isOpen, currentUser.id]);
+  const [warehouseDraft, setWarehouseDraft] = useState<SelectedLocationData | 'unconfirmed' | null>(null);
+  useEffect(() => {
+    setIsWarehouseConfirmed(false);
+    setWarehouseDraft(null);
+  }, [isOpen, currentUser.id]);
   const [idCardNumber, setIdCardNumber] = useState(currentUser.idCardNumber || '');
   const [sellerBankName, setSellerBankName] = useState(
     currentUser.bankAccount?.bankName || ''
   );
   const [isCustomSellerBank, setIsCustomSellerBank] = useState(false);
   const [sellerAccountNumber, setSellerAccountNumber] = useState(
-    currentUser.bankAccount?.accountNumber || ''
+    sanitizeBankAccountNumber(currentUser.bankAccount?.accountNumber || '')
   );
   const [sellerAccountHolder, setSellerAccountHolder] = useState(
-    currentUser.bankAccount?.accountHolder || (currentUser.name ? currentUser.name.toUpperCase() : '')
+    sanitizeBankAccountHolder(currentUser.bankAccount?.accountHolder || currentUser.name || '')
   );
   const [sellerProductTypes, setSellerProductTypes] = useState(currentUser.productTypes || '');
   const [sellerTermsAgreed, setSellerTermsAgreed] = useState(true);
@@ -731,8 +754,12 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       if (currentUser.birthday) setBirthday(currentUser.birthday);
       if (currentUser.bankAccount) {
         if (currentUser.bankAccount.bankName) setBankName(currentUser.bankAccount.bankName);
-        if (currentUser.bankAccount.accountNumber) setAccountNumber(currentUser.bankAccount.accountNumber);
-        if (currentUser.bankAccount.accountHolder) setAccountHolder(currentUser.bankAccount.accountHolder);
+        if (currentUser.bankAccount.accountNumber) {
+          setAccountNumber(sanitizeBankAccountNumber(currentUser.bankAccount.accountNumber));
+        }
+        if (currentUser.bankAccount.accountHolder) {
+          setAccountHolder(sanitizeBankAccountHolder(currentUser.bankAccount.accountHolder));
+        }
       }
       if (currentUser.province || currentUser.provinceName) {
         setSelectedProvinceName(currentUser.province || currentUser.provinceName || '');
@@ -751,10 +778,10 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       if (currentUser.role !== 'seller' && !existingVerification) {
         setShowSellerRegistrationForm(true);
       }
-      setShopName(currentUser.shopName || (currentUser.name ? `Gian Hàng ${currentUser.name}` : 'SecondLife Shop'));
+      setShopName(currentUser.shopName || (currentUser.name ? `Gian hàng ${currentUser.name}` : 'SecondLife Shop'));
       setSellerPhone(currentUser.phone || '');
-      const validInitPickup = (currentUser.pickupAddress && !currentUser.pickupAddress.includes('Hội đồng nhân dân'))
-        ? currentUser.pickupAddress
+      const validInitPickup = isKnownSeller
+        ? currentUser.pickupAddress || ''
         : (currentUser.streetAddress || currentUser.address || '');
       setPickupAddress(validInitPickup);
       setPickupLatitude(currentUser.latitude ?? null);
@@ -799,15 +826,15 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
             if (fresh.streetAddress && !fresh.streetAddress.includes('Hội đồng nhân dân')) {
               setUserStreetAddress(fresh.streetAddress);
               setAddress(fresh.streetAddress);
-              setPickupAddress((prev) => (!prev || prev.includes('Hội đồng nhân dân') ? fresh.streetAddress : prev));
+              if (!isSeller) setPickupAddress((prev) => prev || fresh.streetAddress);
             }
             if (fresh.latitude !== undefined && fresh.latitude !== null && Math.abs(fresh.latitude - 21.0285) > 0.005) {
               setUserLatitude(fresh.latitude);
-              setPickupLatitude((prev) => (!prev || Math.abs(prev - 21.0285) < 0.005 ? fresh.latitude : prev));
+              if (!isSeller) setPickupLatitude((prev) => prev ?? fresh.latitude);
             }
             if (fresh.longitude !== undefined && fresh.longitude !== null && Math.abs(fresh.longitude - 105.8542) > 0.005) {
               setUserLongitude(fresh.longitude);
-              setPickupLongitude((prev) => (!prev || Math.abs(prev - 105.8542) < 0.005 ? fresh.longitude : prev));
+              if (!isSeller) setPickupLongitude((prev) => prev ?? fresh.longitude);
             }
             if (fresh.gender) {
               setGender(fresh.gender.toLowerCase() as 'male' | 'female' | 'other');
@@ -882,10 +909,19 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       const tasks: Promise<any>[] = [shippingService.getSellerOnboarding()];
       if (isSeller) {
         tasks.push(shippingService.getPickupAddress());
+        tasks.push(shippingService.getPickupAddressUpdateStatus());
       }
       const results = await Promise.allSettled(tasks);
       const onboardingData = results[0];
       const pickupData = isSeller ? results[1] : null;
+      const pickupStatus = isSeller ? results[2] : null;
+      if (pickupStatus && pickupStatus.status === 'fulfilled' && pickupStatus.value) {
+        setPickupLockReason(
+          pickupStatus.value.updatable
+            ? null
+            : (pickupStatus.value.reason || 'Không thể thay đổi địa chỉ lấy hàng lúc này.')
+        );
+      }
 
       let addressFound = false;
 
@@ -900,34 +936,14 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
         const fullAddr = rawPickup.address.trim();
         setPickupAddress(fullAddr);
         setStreetAddress(fullAddr);
-        if (isSeller) {
-          setUserStreetAddress(fullAddr);
-          setAddress(fullAddr);
-        }
-
-        if (rawPickup.latitude != null) {
-          const lat = Number(rawPickup.latitude);
-          setPickupLatitude(lat);
-          if (isSeller) setUserLatitude(lat);
-        }
-        if (rawPickup.longitude != null) {
-          const lng = Number(rawPickup.longitude);
-          setPickupLongitude(lng);
-          if (isSeller) setUserLongitude(lng);
-        }
+        setPickupLatitude(rawPickup.latitude ?? null);
+        setPickupLongitude(rawPickup.longitude ?? null);
 
         if (rawPickup.name) {
           setShopName(rawPickup.name);
         }
         if (rawPickup.phone) {
           setSellerPhone(rawPickup.phone);
-        }
-
-        const extracted = isSeller ? extractWardAndCity(fullAddr) : '';
-        if (extracted) {
-          const [w, c] = extracted.split(',').map((s) => s.trim());
-          if (w) setSelectedWardName(w);
-          if (c) setSelectedProvinceName(c);
         }
 
         addressFound = true;
@@ -951,7 +967,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
         }
       }
 
-      if (!addressFound && currentUser?.streetAddress) {
+      if (!addressFound && !isSeller && currentUser?.streetAddress) {
         const fallbackAddr = currentUser.streetAddress;
         setPickupAddress(fallbackAddr);
         setStreetAddress(fallbackAddr);
@@ -1236,7 +1252,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       if (field === 'back') setDocBackUrl(uploaded.url);
       if (field === 'selfie') setSelfieUrl(uploaded.url);
     } catch (err: any) {
-      dialogService.error(err.message || 'Tải ảnh lên không thành công', 'Lỗi Tải Ảnh');
+      dialogService.error(err.message || 'Tải ảnh lên không thành công', 'Lỗi tải ảnh');
     } finally {
       setUploadingField(null);
     }
@@ -1367,6 +1383,16 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       setSellerFormError('Vui lòng nhập hoặc xác nhận địa chỉ kho trên bản đồ.');
       return;
     }
+    const sellerBankError = validateBankAccountFields({
+      bankName: sellerBankName,
+      accountNumber: sellerAccountNumber,
+      accountHolder: sellerAccountHolder,
+      lang,
+    });
+    if (sellerBankError) {
+      setSellerFormError(sellerBankError);
+      return;
+    }
 
     // NẾU ĐÃ LÀ NGƯỜI BÁN ĐÃ XÁC THỰC (Cập nhật thông tin gian hàng & kho không cần gọi lại eKYC)
     const isAlreadySeller = Boolean(
@@ -1382,34 +1408,24 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
         const cleanPhone = (sellerPhone || '').replace(/\s+/g, '').trim();
         const cleanShop = (shopName || '').trim().slice(0, 30);
 
-        // 1. Cập nhật địa chỉ kho lấy hàng Lalamove có tọa độ GPS
-        if (pickupLatitude && pickupLongitude) {
-          try {
-            await shippingService.savePickupAddress({
-              name: cleanShop,
-              phone: cleanPhone,
-              latitude: pickupLatitude,
-              longitude: pickupLongitude,
-            });
-          } catch (err: any) {
-            console.warn('savePickupAddress endpoint warning:', err);
-          }
+        if (pickupLockReason) {
+          throw new Error(pickupLockReason);
         }
-
-        if (pickupLatitude && pickupLongitude) {
-          try { await saveConfirmedWarehouse(); } catch (_) { }
+        if (!isWarehouseConfirmed || pickupLatitude == null || pickupLongitude == null) {
+          throw new Error(lang === 'vi' ? 'Vui lòng xác nhận vị trí kho trên bản đồ.' : 'Confirm the pickup location on the map.');
         }
-
-        // 3. Cập nhật thông tin profile cá nhân
-        try {
-          await userService.updateMyProfile({
-            fullName: name.trim(),
-            phone: cleanPhone || undefined,
-            streetAddress: streetAddress.trim() || undefined,
-            latitude: pickupLatitude ?? null,
-            longitude: pickupLongitude ?? null,
-          });
-        } catch (_) { }
+        const savedPickup = await shippingService.savePickupAddress({
+          name: cleanShop,
+          phone: cleanPhone,
+          latitude: pickupLatitude,
+          longitude: pickupLongitude,
+        });
+        const savedPickupAddress = savedPickup.address || pickupAddress;
+        const savedPickupLat = savedPickup.latitude ?? pickupLatitude;
+        const savedPickupLng = savedPickup.longitude ?? pickupLongitude;
+        setPickupAddress(savedPickupAddress);
+        setPickupLatitude(savedPickupLat);
+        setPickupLongitude(savedPickupLng);
 
         // 4. Lưu cache localStorage để duy trì trạng thái seller
         if (currentUser?.id) localStorage.setItem(`seller_registered_${currentUser.id}`, 'true');
@@ -1422,10 +1438,9 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
           role: 'seller',
           kycStatus: 'verified',
           shopName: cleanShop,
-          pickupAddress: pickupAddress.trim(),
-          latitude: pickupLatitude ?? currentUser.latitude,
-          longitude: pickupLongitude ?? currentUser.longitude,
-          phone: cleanPhone,
+          pickupAddress: savedPickupAddress,
+          latitude: savedPickupLat,
+          longitude: savedPickupLng,
           idCardNumber: idCardNumber.trim(),
           bankAccount: {
             bankName: sellerBankName.trim() || bankName,
@@ -1439,8 +1454,8 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
         onUpdateProfile(updated);
         setSellerFormSuccess(
           lang === 'vi'
-            ? '🎉 Cập nhật hồ sơ gian hàng và địa chỉ kho lấy hàng thành công!'
-            : '🎉 Store profile and warehouse pickup address updated successfully!'
+            ? 'Đã cập nhật địa chỉ kho lấy hàng.'
+            : 'Warehouse pickup address saved.'
         );
         setTimeout(() => setSellerFormSuccess(null), 6000);
         return;
@@ -1550,7 +1565,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
         onUpdateProfile(updated);
         setSellerFormSuccess(
           lang === 'vi'
-            ? '🎉 Xác thực eKYC thành công! Quyền Người Bán của bạn đã được kích hoạt tự động.'
+            ? '🎉 Xác thực eKYC thành công! Quyền người bán của bạn đã được kích hoạt tự động.'
             : '🎉 eKYC verified successfully! Your seller role is now active.'
         );
       } else {
@@ -1663,14 +1678,40 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       e.preventDefault();
     }
     setSaveError(null);
+    const hasPersonalChanges =
+      name.trim() !== (currentUser.name || '').trim() ||
+      phone.trim() !== (currentUser.phone || '').trim() ||
+      (gender || '') !== (currentUser.gender ? currentUser.gender.toLowerCase() : '') ||
+      (birthday || '') !== (currentUser.birthday || '') ||
+      (Boolean(avatarUrl) && avatarUrl !== currentUser.avatar);
+
+    if (isCurrentSeller && activeTab === 'info') {
+      if (pickupLockReason && !hasPersonalChanges) {
+        setSaveError(pickupLockReason);
+        return;
+      }
+      if (!pickupLockReason && warehouseDraft === 'unconfirmed') {
+        setSaveError(lang === 'vi' ? 'Vui lòng xác nhận vị trí kho trên bản đồ trước khi lưu.' : 'Confirm the pickup location on the map before saving.');
+        return;
+      }
+    }
+    const bankError = validateBankAccountFields({
+      bankName,
+      accountNumber,
+      accountHolder,
+      lang,
+    });
+    if (bankError) {
+      setSaveError(bankError);
+      return;
+    }
     setIsSaving(true);
 
     const rawFull = address || userStreetAddress.trim() || computeFullAddress();
     const fullAddr = cleanFullAddress(rawFull);
-    const cleanedPickup = cleanFullAddress(pickupAddress || fullAddr);
     const cleanedStreet = cleanFullAddress(userStreetAddress.trim() || fullAddr);
-    const finalLat = (isCurrentSeller ? pickupLatitude ?? userLatitude : userLatitude) ?? currentUser.latitude ?? null;
-    const finalLng = (isCurrentSeller ? pickupLongitude ?? userLongitude : userLongitude) ?? currentUser.longitude ?? null;
+    const finalLat = userLatitude ?? currentUser.latitude ?? null;
+    const finalLng = userLongitude ?? currentUser.longitude ?? null;
 
     // Tự động suy luận Ward & Province từ fullAddr nếu dropdown chưa chọn
     let effectiveWard = selectedWardName.trim() || currentUser?.wardName || currentUser?.ward || '';
@@ -1698,7 +1739,12 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       streetAddress: cleanedStreet || fullAddr || undefined,
       latitude: finalLat ?? undefined,
       longitude: finalLng ?? undefined,
-      pickupAddress: isCurrentSeller ? cleanedPickup || fullAddr : currentUser.pickupAddress,
+      ...(isCurrentSeller && {
+        address: currentUser.address,
+        streetAddress: currentUser.streetAddress,
+        latitude: currentUser.latitude,
+        longitude: currentUser.longitude,
+      }),
       avatar: avatarUrl || currentUser.avatar,
       gender: gender || undefined,
       birthday,
@@ -1710,50 +1756,47 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
     };
 
     try {
+      if (isCurrentSeller && activeTab === 'info' && !pickupLockReason && warehouseDraft && warehouseDraft !== 'unconfirmed') {
+        const saved = await shippingService.savePickupAddress(warehouseDraft);
+        updated.pickupAddress = saved.address || warehouseDraft.address;
+        updated.latitude = saved.latitude ?? warehouseDraft.latitude;
+        updated.longitude = saved.longitude ?? warehouseDraft.longitude;
+        setPickupAddress(updated.pickupAddress);
+        setPickupLatitude(updated.latitude);
+        setPickupLongitude(updated.longitude);
+        setWarehouseDraft(null);
+      }
+
       await userService.updateMyProfile({
         fullName: name.trim(),
         phone: phone.trim() || undefined,
         avatarUrl: avatarUrl || undefined,
         gender: gender ? (gender.toUpperCase() as 'MALE' | 'FEMALE' | 'OTHER') : null,
-        province: selectedProvinceName.trim() || undefined,
-        district: selectedDistrictName.trim() || undefined,
-        ward: selectedWardName.trim() || undefined,
-        streetAddress: cleanedStreet || fullAddr || undefined,
-        latitude: finalLat,
-        longitude: finalLng,
+        ...(!isCurrentSeller && {
+          province: selectedProvinceName.trim() || undefined,
+          district: selectedDistrictName.trim() || undefined,
+          ward: selectedWardName.trim() || undefined,
+          streetAddress: cleanedStreet || fullAddr || undefined,
+          latitude: finalLat,
+          longitude: finalLng,
+        }),
       });
 
-      if (isCurrentSeller && finalLat != null && finalLng != null) {
-        try {
-          await shippingService.savePickupAddress({
-            name: shopName || name.trim() || currentUser?.name || 'Gian Hàng',
-            phone: sellerPhone || phone.trim() || currentUser?.phone || '0900000000',
-            latitude: finalLat,
-            longitude: finalLng,
-          });
-        } catch (_) { }
-      }
-
-      // Chỉ cập nhật thông tin địa chỉ kho bưu tá lấy hàng lên Backend Onboarding khi role là Seller
-      if (isCurrentSeller && pickupLatitude && pickupLongitude) {
-        try { await saveConfirmedWarehouse(); } catch (_) { }
-      }
-
-      setPickupAddress(fullAddr);
-      if (userLatitude) setPickupLatitude(userLatitude);
-      if (userLongitude) setPickupLongitude(userLongitude);
-
       onUpdateProfile(updated);
+      setIsEditing(false);
       setIsSaved(true);
       setTimeout(() => setIsSaved(false), 3000);
     } catch (err: any) {
+      if (err?.status === 409 && typeof err?.message === 'string' && err.message) {
+        setPickupLockReason(err.message);
+      }
       setSaveError(
         err.message ||
         (lang === 'vi'
           ? 'Cập nhật thông tin thất bại. Vui lòng thử lại.'
           : 'Failed to update profile. Please try again.')
       );
-      setTimeout(() => setSaveError(null), 4000);
+      setTimeout(() => setSaveError(null), 5000);
     } finally {
       setIsSaving(false);
     }
@@ -1994,7 +2037,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                   <button
                     type="button"
                     onClick={() => setActiveTab('reputation')}
-                    title={lang === 'vi' ? 'Xem chi tiết Điểm Uy Tín' : 'View Trust Score Details'}
+                    title={lang === 'vi' ? 'Xem chi tiết điểm uy tín' : 'View Trust Score Details'}
                     className="inline-flex items-center gap-1.5 bg-amber-50/90 hover:bg-amber-100 text-slate-800 px-3.5 py-1.5 rounded-xl border border-amber-200/80 text-xs shadow-2xs transition active:scale-95 cursor-pointer"
                   >
                     <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
@@ -2353,61 +2396,23 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                   {/* SELLER ONLY: Lalamove Leaflet Map Warehouse Address Picker */}
                   {isCurrentSeller && (
                     <div className="space-y-2">
+                      {pickupLockReason && (
+                        <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2">
+                          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                          <span>{pickupLockReason}</span>
+                        </div>
+                      )}
                       <LalamoveAddressPicker
-                        readOnly={!isEditing}
+                        key={`${isEditing && !pickupLockReason ? 'edit' : 'view'}-warehouse`}
+                        readOnly={!isEditing || Boolean(pickupLockReason)}
                         hideCityPresets={true}
-                        initialName={name || currentUser?.name || ''}
-                        initialPhone={phone || currentUser?.phone || ''}
-                        onNameChange={(val) => setName(val)}
-                        onPhoneChange={(val) => setPhone(val)}
-                        initialLatitude={
-                          (pickupLatitude && Math.abs(pickupLatitude - 21.0285) > 0.005)
-                            ? pickupLatitude
-                            : (userLatitude && Math.abs(userLatitude - 21.0285) > 0.005)
-                              ? userLatitude
-                              : (currentUser?.latitude && Math.abs(currentUser.latitude - 21.0285) > 0.005)
-                                ? currentUser.latitude
-                                : undefined
-                        }
-                        initialLongitude={
-                          (pickupLongitude && Math.abs(pickupLongitude - 105.8542) > 0.005)
-                            ? pickupLongitude
-                            : (userLongitude && Math.abs(userLongitude - 105.8542) > 0.005)
-                              ? userLongitude
-                              : (currentUser?.longitude && Math.abs(currentUser.longitude - 105.8542) > 0.005)
-                                ? currentUser.longitude
-                                : undefined
-                        }
-                        initialAddress={
-                          pickupAddress || userStreetAddress || address || currentUser?.streetAddress || currentUser?.address || ''
-                        }
-                        onAddressConfirmed={(data) => {
-                          setUserLatitude(data.latitude);
-                          setUserLongitude(data.longitude);
-                          setPickupLatitude(data.latitude);
-                          setPickupLongitude(data.longitude);
-                          setAddress(data.address);
-                          setUserStreetAddress(data.address);
-                          setPickupAddress(data.address);
-                          setStreetAddress(data.address);
-
-                          const extracted = extractWardAndCity(data.address);
-                          let extWard = '';
-                          let extProv = data.city || '';
-                          if (extracted) {
-                            const [w, c] = extracted.split(',').map((s) => s.trim());
-                            if (w && c) {
-                              extWard = w;
-                              extProv = c;
-                            } else if (w) {
-                              extWard = w;
-                            }
-                          }
-                          if (extWard) setSelectedWardName(extWard);
-                          if (extProv) setSelectedProvinceName(extProv);
-                          if (data.name && !name) setName(data.name);
-                          if (data.phone && !phone) setPhone(data.phone);
-                        }}
+                        initialName={shopName || name}
+                        initialPhone={sellerPhone || phone}
+                        initialLatitude={pickupLatitude ?? undefined}
+                        initialLongitude={pickupLongitude ?? undefined}
+                        initialAddress={pickupAddress}
+                        onAddressUnconfirmed={() => setWarehouseDraft('unconfirmed')}
+                        onAddressConfirmed={setWarehouseDraft}
                         lang={lang}
                         title={lang === 'vi' ? 'Địa chỉ kho bưu tá lấy hàng' : 'Warehouse Pickup Address'}
                         description={lang === 'vi'
@@ -2429,7 +2434,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                             </div>
                             <div>
                               <span className="text-xs font-black text-slate-900 block">
-                                {lang === 'vi' ? 'Ví Ký Quỹ Escrow' : 'Escrow Wallet'}
+                                {lang === 'vi' ? 'Ví ký quỹ Escrow' : 'Escrow Wallet'}
                               </span>
                               <span className="text-[11px] text-slate-500">
                                 {bankName && accountNumber
@@ -2467,7 +2472,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       <div className="p-4 rounded-2xl bg-gradient-to-br from-blue-50/60 to-indigo-50/50 border border-blue-200/80 space-y-2.5 shadow-2xs">
                         <div className="flex items-center gap-2 text-blue-900 font-extrabold text-xs">
                           <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0" />
-                          <span>{lang === 'vi' ? 'Quyền Lợi Người Mua Xác Thực' : 'Verified Buyer Protection'}</span>
+                          <span>{lang === 'vi' ? 'Quyền lợi người mua xác thực' : 'Verified Buyer Protection'}</span>
                         </div>
                         <ul className="text-[11px] text-slate-600 space-y-2 pl-1">
                           <li className="flex items-start gap-1.5">
@@ -2490,20 +2495,12 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
               </div>
 
               {/* Action Feedback inside Tab 1 */}
-              {(isSaved || saveError) && (
+              {isSaved && (
                 <div className="pt-4 flex items-center justify-start border-t border-slate-100">
-                  {isSaved && (
-                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-600 animate-in fade-in">
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span>{lang === 'vi' ? 'Đã lưu thông tin thành công!' : 'Profile saved successfully!'}</span>
-                    </span>
-                  )}
-                  {saveError && (
-                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-rose-600 animate-in fade-in">
-                      <AlertCircle className="w-4 h-4 text-rose-500" />
-                      <span>{saveError}</span>
-                    </span>
-                  )}
+                  <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-600 animate-in fade-in">
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>{lang === 'vi' ? 'Đã lưu thông tin thành công!' : 'Profile saved successfully!'}</span>
+                  </span>
                 </div>
               )}
             </form>
@@ -2523,7 +2520,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     <div>
                       <div className="flex items-center gap-2.5">
                         <h3 className="text-lg sm:text-xl font-black text-white tracking-tight">
-                          {lang === 'vi' ? 'Hồ Sơ Điểm Uy Tín Người Dùng' : 'User Reputation Profile'}
+                          {lang === 'vi' ? 'Hồ sơ điểm uy tín người dùng' : 'User Reputation Profile'}
                         </h3>
                       </div>
                       <p className="text-xs text-slate-300 mt-1 max-w-xl leading-relaxed">
@@ -2538,7 +2535,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                   <div className="flex items-center gap-4 bg-white/10 backdrop-blur-md px-5 py-3.5 rounded-2xl border border-white/15 shrink-0 self-start md:self-auto">
                     <div className="text-right">
                       <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wider block">
-                        {lang === 'vi' ? 'Điểm Tổng Thể' : 'Overall Score'}
+                        {lang === 'vi' ? 'Điểm tổng thể' : 'Overall Score'}
                       </span>
                       <div className="flex items-baseline gap-1">
                         <span className="text-3xl font-black text-amber-300 font-mono tracking-tight">
@@ -2630,7 +2627,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 {/* Metric 1: Điểm giao dịch */}
                 <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-1">
                   <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide block">
-                    Điểm Giao Dịch
+                    Điểm giao dịch
                   </span>
                   <div className="flex items-baseline gap-1">
                     <span className="text-xl sm:text-2xl font-black text-slate-800 font-mono">
@@ -2648,7 +2645,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 {/* Metric 2: Điểm phạt xác nhận đơn */}
                 <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-1">
                   <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide block">
-                    Điểm Phạt Tích Lũy
+                    Điểm phạt tích lũy
                   </span>
                   <div className="flex items-baseline gap-1">
                     <span className={`text-xl sm:text-2xl font-black font-mono ${(reputationData?.confirmationPenaltyPoints ?? 0) > 0 ? 'text-rose-600' : 'text-slate-800'
@@ -2665,7 +2662,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 {/* Metric 3: Tổng số đơn đánh giá */}
                 <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-1">
                   <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide block">
-                    Đơn Hàng Đánh Giá
+                    Đơn hàng đánh giá
                   </span>
                   <div className="flex items-baseline gap-1">
                     <span className="text-xl sm:text-2xl font-black text-slate-800 font-mono">
@@ -2681,7 +2678,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 {/* Metric 4: Giao dịch thành công */}
                 <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-1">
                   <span className="text-[11px] font-bold text-emerald-600 uppercase tracking-wide block">
-                    Thành Công
+                    Thành công
                   </span>
                   <div className="flex items-baseline gap-1">
                     <span className="text-xl sm:text-2xl font-black text-emerald-700 font-mono">
@@ -2697,7 +2694,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 {/* Metric 5: Giao dịch có lỗi */}
                 <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-1">
                   <span className="text-[11px] font-bold text-rose-600 uppercase tracking-wide block">
-                    Lỗi Người Bán
+                    Lỗi người bán
                   </span>
                   <div className="flex items-baseline gap-1">
                     <span className="text-xl sm:text-2xl font-black text-rose-600 font-mono">
@@ -2713,7 +2710,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 {/* Metric 6: Tỷ lệ bàn giao trễ */}
                 <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-1">
                   <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide block">
-                    Tỷ Lệ Bàn Giao Trễ
+                    Tỷ lệ bàn giao trễ
                   </span>
                   <div className="flex items-baseline gap-1">
                     <span className="text-xl sm:text-2xl font-black text-slate-800 font-mono">
@@ -2734,7 +2731,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                   <div>
                     <h4 className="font-extrabold text-sm text-[#24263e] flex items-center gap-2">
                       <Clock className="w-4 h-4 text-[#c34c36]" />
-                      <span>{lang === 'vi' ? 'Lịch Sử Biến Động Điểm Uy Tín' : 'Reputation History'}</span>
+                      <span>{lang === 'vi' ? 'Lịch sử biến động điểm uy tín' : 'Reputation History'}</span>
                     </h4>
                     <p className="text-[11px] text-slate-500 mt-0.5">
                       Ghi nhận chi tiết từng sự kiện cộng/trừ điểm và thay đổi mẫu giao dịch
@@ -2763,12 +2760,12 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     <table className="w-full text-left text-xs">
                       <thead className="bg-slate-50/80 border-b border-slate-100 text-[11px] text-slate-500 font-extrabold uppercase tracking-wider">
                         <tr>
-                          <th className="py-3 px-4">Thời Gian</th>
-                          <th className="py-3 px-4">Sự Kiện</th>
-                          <th className="py-3 px-4">Mã Đơn</th>
-                          <th className="py-3 px-4 text-center">Điểm Trước / Sau</th>
-                          <th className="py-3 px-4 text-center">Phạt Tăng</th>
-                          <th className="py-3 px-4">Lý Do</th>
+                          <th className="py-3 px-4">Thời gian</th>
+                          <th className="py-3 px-4">Sự kiện</th>
+                          <th className="py-3 px-4">Mã đơn</th>
+                          <th className="py-3 px-4 text-center">Điểm trước / sau</th>
+                          <th className="py-3 px-4 text-center">Phạt tăng</th>
+                          <th className="py-3 px-4">Lý do</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 text-slate-700">
@@ -2862,7 +2859,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                   <div className="flex items-center justify-between text-xs text-[#24263e]/80 font-bold">
                     <span className="font-bold flex items-center gap-1.5 text-[#24263e]">
                       <Wallet className="w-4 h-4 text-[#c34c36]" />
-                      {lang === 'vi' ? 'Số Dư Khả Dụng Trong Ví' : 'Available Wallet Balance'}
+                      {lang === 'vi' ? 'Số dư khả dụng trong ví' : 'Available Wallet Balance'}
                     </span>
                     <div className="flex items-center gap-1.5">
                       <button
@@ -2875,7 +2872,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                         <RefreshCw className={`w-3 h-3 ${isLoadingWallet ? 'animate-spin' : ''}`} />
                       </button>
                       <span className="text-[10px] bg-white text-emerald-900 border border-emerald-500/30 px-2 py-0.5 rounded font-black">
-                        {lang === 'vi' ? 'Sẵn Sàng Rút' : 'Ready to Withdraw'}
+                        {lang === 'vi' ? 'Sẵn sàng rút' : 'Ready to Withdraw'}
                       </span>
                     </div>
                   </div>
@@ -2899,7 +2896,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                         className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#c34c36] hover:bg-[#a83d2a] text-white text-xs font-black shadow-sm transition cursor-pointer"
                       >
                         <PlusCircle className="w-3.5 h-3.5" />
-                        <span>{lang === 'vi' ? 'Nạp Tiền Vào Ví (VietQR)' : 'Top Up Wallet (VietQR)'}</span>
+                        <span>{lang === 'vi' ? 'Nạp tiền vào ví (VietQR)' : 'Top Up Wallet (VietQR)'}</span>
                       </button>
                     )}
                     <button
@@ -2908,7 +2905,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white hover:bg-slate-50 text-[#24263e] border border-[#24263e]/20 text-xs font-black shadow-sm transition cursor-pointer"
                     >
                       <ArrowUpRight className="w-3.5 h-3.5 text-[#c34c36]" />
-                      <span>{lang === 'vi' ? 'Rút Tiền Về Ngân Hàng' : 'Withdraw to Bank'}</span>
+                      <span>{lang === 'vi' ? 'Rút tiền về ngân hàng' : 'Withdraw to Bank'}</span>
                     </button>
                   </div>
                 </div>
@@ -2917,10 +2914,10 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                   <div className="flex items-center justify-between text-xs text-slate-600">
                     <span className="font-semibold flex items-center gap-1.5">
                       <Lock className="w-4 h-4 text-[#24263e]" />
-                      {lang === 'vi' ? 'Tiền Đang Phong Tỏa Escrow' : 'Funds in Escrow Hold'}
+                      {lang === 'vi' ? 'Tiền đang phong tỏa Escrow' : 'Funds in Escrow Hold'}
                     </span>
                     <span className="text-[10px] bg-[#c34c36]/10 text-[#24263e] px-2 py-0.5 rounded font-bold">
-                      {lang === 'vi' ? 'Đang Bảo Lãnh' : 'Under Escrow Protection'}
+                      {lang === 'vi' ? 'Đang bảo lãnh' : 'Under Escrow Protection'}
                     </span>
                   </div>
                   <div className="text-2xl font-black text-[#24263e] tracking-tight flex items-center gap-2">
@@ -2944,16 +2941,16 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                   <div className="flex items-center gap-2">
                     <Building className="w-4 h-4 text-slate-700" />
                     <h3 className="font-bold text-sm text-slate-900">
-                      {lang === 'vi' ? 'Tài Khoản Ngân Hàng Nhận Tiền Bán' : 'Bank Account for Payouts'}
+                      {lang === 'vi' ? 'Tài khoản ngân hàng nhận tiền bán' : 'Bank Account for Payouts'}
                     </h3>
                   </div>
                   {bankName && accountNumber ? (
                     <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                      {lang === 'vi' ? 'Đã Liên Kết 24/7' : 'Linked 24/7'}
+                      {lang === 'vi' ? 'Đã liên kết 24/7' : 'Linked 24/7'}
                     </span>
                   ) : (
                     <span className="text-[11px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                      {lang === 'vi' ? 'Chưa Thiết Lập' : 'Not Configured'}
+                      {lang === 'vi' ? 'Chưa thiết lập' : 'Not Configured'}
                     </span>
                   )}
                 </div>
@@ -3012,12 +3009,20 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     )}
                   </div>
                   <div>
-                    <label className="text-slate-500 text-[11px] block">{lang === 'vi' ? 'Số tài khoản' : 'Account number'}</label>
+                    <label className="text-slate-500 text-[11px] flex items-center justify-between">
+                      <span>{lang === 'vi' ? 'Số tài khoản' : 'Account number'}</span>
+                      <span className="text-[10px] font-semibold text-slate-400 tabular-nums">
+                        {accountNumber.length}/{BANK_ACCOUNT_NUMBER_MAX_LENGTH}
+                      </span>
+                    </label>
                     <input
                       type="text"
+                      inputMode="numeric"
+                      minLength={BANK_ACCOUNT_NUMBER_MIN_LENGTH}
+                      maxLength={BANK_ACCOUNT_NUMBER_MAX_LENGTH}
                       value={accountNumber}
-                      onChange={(e) => setAccountNumber(e.target.value)}
-                      placeholder={lang === 'vi' ? 'Nhập số tài khoản...' : 'Account number'}
+                      onChange={(e) => setAccountNumber(sanitizeBankAccountNumber(e.target.value))}
+                      placeholder={lang === 'vi' ? 'Nhập 8–16 chữ số...' : '8–16 digits'}
                       className="mt-1 w-full p-2 bg-white rounded-lg border border-gray-200 font-mono font-bold text-slate-900 placeholder:text-slate-400 placeholder:font-normal"
                     />
                   </div>
@@ -3026,8 +3031,8 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     <input
                       type="text"
                       value={accountHolder}
-                      onChange={(e) => setAccountHolder(e.target.value.toUpperCase())}
-                      placeholder={lang === 'vi' ? 'HỌ VÀ TÊN CHỦ TÀI KHOẢN' : 'ACCOUNT HOLDER NAME'}
+                      onChange={(e) => setAccountHolder(sanitizeBankAccountHolder(e.target.value))}
+                      placeholder={lang === 'vi' ? 'NGUYEN VAN A' : 'ACCOUNT HOLDER NAME'}
                       className="mt-1 w-full p-2 bg-white rounded-lg border border-gray-200 font-bold uppercase text-slate-900 placeholder:text-slate-400 placeholder:font-normal"
                     />
                   </div>
@@ -3038,7 +3043,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     onClick={handleSave}
                     className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition cursor-pointer"
                   >
-                    {lang === 'vi' ? 'Cập Nhật Tài Khoản Ngân Hàng' : 'Update Bank Account'}
+                    {lang === 'vi' ? 'Cập nhật tài khoản ngân hàng' : 'Update Bank Account'}
                   </button>
                 </div>
               </div>
@@ -3057,7 +3062,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                   <div className="space-y-1">
                     <h4 className="text-xs sm:text-sm font-bold text-emerald-950">
                       {lang === 'vi'
-                        ? 'Tài khoản đã hoàn tất định danh eKYC Căn Cước Công Dân'
+                        ? 'Tài khoản đã hoàn tất định danh eKYC căn cước công dân'
                         : 'Account verified via Citizen Identity eKYC'}
                     </h4>
                     <p className="text-xs text-emerald-800/80 leading-relaxed">
@@ -3066,9 +3071,9 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                         : 'Your profile has passed biometric matching with a SecondLife Verified badge. You can list items and receive Escrow payouts.'}
                     </p>
                     <div className="flex items-center gap-3 pt-1 text-[11px] font-semibold text-emerald-700">
-                      <span>{lang === 'vi' ? 'Mã Định Danh: ' : 'Verification ID: '}<strong>KYC-VN-{currentUser.id ? currentUser.id.slice(0, 8).toUpperCase() : 'VERIFIED'}</strong></span>
+                      <span>{lang === 'vi' ? 'Mã định danh: ' : 'Verification ID: '}<strong>KYC-VN-{currentUser.id ? currentUser.id.slice(0, 8).toUpperCase() : 'VERIFIED'}</strong></span>
                       <span>•</span>
-                      <span className="text-emerald-600 font-bold">{lang === 'vi' ? 'Trạng thái: Đã Xác Thực' : 'Status: Verified'}</span>
+                      <span className="text-emerald-600 font-bold">{lang === 'vi' ? 'Trạng thái: Đã xác thực' : 'Status: Verified'}</span>
                     </div>
                   </div>
                 </div>
@@ -3143,7 +3148,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                   <div className="p-3 rounded-xl border border-emerald-100 bg-emerald-50/50">
                     <span className="text-[10px] font-bold text-slate-500 block mb-0.5">
-                      {lang === 'vi' ? 'Khớp Khuôn Mặt' : 'Face Match'}
+                      {lang === 'vi' ? 'Khớp khuôn mặt' : 'Face Match'}
                     </span>
                     <span className="text-xs font-black text-emerald-700 flex items-center gap-1">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
@@ -3153,7 +3158,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
                   <div className="p-3 rounded-xl border border-emerald-100 bg-emerald-50/50">
                     <span className="text-[10px] font-bold text-slate-500 block mb-0.5">
-                      {lang === 'vi' ? 'Thực Thể Sống (Liveness)' : 'Liveness Test'}
+                      {lang === 'vi' ? 'Thực thể sống (Liveness)' : 'Liveness Test'}
                     </span>
                     <span className="text-xs font-black text-emerald-700 flex items-center gap-1">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
@@ -3163,7 +3168,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
                   <div className="p-3 rounded-xl border border-emerald-100 bg-emerald-50/50">
                     <span className="text-[10px] font-bold text-slate-500 block mb-0.5">
-                      {lang === 'vi' ? 'Chất Lượng Giấy Tờ' : 'Document Quality'}
+                      {lang === 'vi' ? 'Chất lượng giấy tờ' : 'Document Quality'}
                     </span>
                     <span className="text-xs font-black text-emerald-700 flex items-center gap-1">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
@@ -3176,7 +3181,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
               {/* Security Checklist */}
               <div className="space-y-2.5 pt-1">
                 <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                  {lang === 'vi' ? 'Cài Đặt An Toàn & Bảo Vệ Tài Khoản' : 'Security & Account Protection Settings'}
+                  {lang === 'vi' ? 'Cài đặt an toàn & bảo vệ tài khoản' : 'Security & Account Protection Settings'}
                 </h4>
 
                 {/* Email Verification Checklist Card */}
@@ -3195,13 +3200,13 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                   {isEmailVerified ? (
                     <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 inline-flex items-center gap-1">
                       <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                      {lang === 'vi' ? 'Đã Xác Thực' : 'Verified'}
+                      {lang === 'vi' ? 'Đã xác thực' : 'Verified'}
                     </span>
                   ) : (
                     <div className="flex items-center gap-2">
                       <span className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-300 inline-flex items-center gap-1">
                         <AlertCircle className="w-3 h-3 text-amber-600" />
-                        {lang === 'vi' ? 'Chưa Xác Thực' : 'Unverified'}
+                        {lang === 'vi' ? 'Chưa xác thực' : 'Unverified'}
                       </span>
                       {onOpenVerifyEmail && (
                         <button
@@ -3232,7 +3237,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     </div>
                   </div>
                   <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
-                    {lang === 'vi' ? 'Đang Bật' : 'Enabled'}
+                    {lang === 'vi' ? 'Đang bật' : 'Enabled'}
                   </span>
                 </div>
 
@@ -3260,7 +3265,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     }}
                     className="text-xs font-bold text-[#24263e] hover:underline cursor-pointer"
                   >
-                    {lang === 'vi' ? 'Đổi Mật Khẩu' : 'Change Password'}
+                    {lang === 'vi' ? 'Đổi mật khẩu' : 'Change Password'}
                   </button>
                 </div>
 
@@ -3277,7 +3282,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                   <Shield className="w-8 h-8" />
                 </div>
                 <h4 className="text-base font-black text-slate-900">
-                  {lang === 'vi' ? 'Không Hỗ Trợ Đăng Ký Người Bán' : 'Seller Registration Restricted'}
+                  {lang === 'vi' ? 'Không hỗ trợ đăng ký người bán' : 'Seller Registration Restricted'}
                 </h4>
                 <p className="text-xs text-slate-600 leading-relaxed">
                   {lang === 'vi'
@@ -3289,7 +3294,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                   onClick={() => setActiveTab('info')}
                   className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition cursor-pointer"
                 >
-                  {lang === 'vi' ? 'Quay Lại Thông Tin Cá Nhân' : 'Back to Personal Info'}
+                  {lang === 'vi' ? 'Quay lại thông tin cá nhân' : 'Back to Personal Info'}
                 </button>
               </div>
             ) : (
@@ -3297,14 +3302,14 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                      {lang === 'vi' ? 'Hồ Sơ Gian Hàng & Định Danh Người Bán' : 'Seller Center & Store Profile'}
+                      {lang === 'vi' ? 'Hồ sơ gian hàng & định danh người bán' : 'Seller Center & Store Profile'}
                     </h4>
                     <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${currentUser.role === 'seller'
                       ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                       : 'bg-blue-100 text-blue-800 border border-blue-200'
                       }`}>
                       {lang === 'vi' ? 'Đang hoạt động: ' : 'Active: '}
-                      <strong>{currentUser.role === 'seller' ? (lang === 'vi' ? 'Người Bán' : 'Seller') : (lang === 'vi' ? 'Người Mua' : 'Buyer')}</strong>
+                      <strong>{currentUser.role === 'seller' ? (lang === 'vi' ? 'Người bán' : 'Seller') : (lang === 'vi' ? 'Người mua' : 'Buyer')}</strong>
                     </span>
                   </div>
                   <p className="text-xs text-slate-500">
@@ -3411,7 +3416,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       <div className="flex items-center gap-2">
                         <Store className="w-4 h-4 text-[#24263e]" />
                         <span className="text-xs font-bold text-slate-900">
-                          {lang === 'vi' ? 'Hồ Sơ Gian Hàng Của Bạn' : 'Your Seller Store Profile'}
+                          {lang === 'vi' ? 'Hồ sơ gian hàng của bạn' : 'Your Seller Store Profile'}
                         </span>
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isApprovedSeller
                           ? 'bg-emerald-100 text-emerald-800'
@@ -3422,12 +3427,12 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                               : 'bg-amber-100 text-amber-800 border border-amber-200'
                           }`}>
                           {isApprovedSeller
-                            ? (lang === 'vi' ? 'Đã Kích Hoạt' : 'Active')
+                            ? (lang === 'vi' ? 'Đã kích hoạt' : 'Active')
                             : isRejected
-                              ? (lang === 'vi' ? 'Đã Bị Từ Chối' : 'Rejected')
+                              ? (lang === 'vi' ? 'Đã bị từ chối' : 'Rejected')
                               : isResubmitRequired
-                                ? (lang === 'vi' ? 'Yêu Cầu Nộp Lại' : 'Resubmit Required')
-                                : (lang === 'vi' ? 'Đang Chờ Quản Trị Viên Duyệt' : 'Pending Review')}
+                                ? (lang === 'vi' ? 'Yêu cầu nộp lại' : 'Resubmit Required')
+                                : (lang === 'vi' ? 'Đang chờ quản trị viên duyệt' : 'Pending Review')}
                         </span>
                       </div>
                       <div className="flex items-center gap-3">
@@ -3490,7 +3495,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
                       <div className="p-2.5 bg-white rounded-xl border border-gray-200/80">
                         <span className="text-[10px] text-slate-400 block mb-0.5">{lang === 'vi' ? 'Tên gian hàng' : 'Store name'}</span>
-                        <span className="font-bold text-slate-800">{shopName || (lang === 'vi' ? 'Gian Hàng SecondLife' : 'SecondLife Store')}</span>
+                        <span className="font-bold text-slate-800">{shopName || (lang === 'vi' ? 'Gian hàng secondLife' : 'SecondLife Store')}</span>
                       </div>
                       <div className="p-2.5 bg-white rounded-xl border border-gray-200/80">
                         <span className="text-[10px] text-slate-400 block mb-0.5">{lang === 'vi' ? 'Hotline bán hàng & Zalo' : 'Sales hotline & Zalo'}</span>
@@ -3553,7 +3558,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                               onClick={() => setShowSellerRegistrationForm(true)}
                               className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-bold text-xs transition cursor-pointer shadow-xs"
                             >
-                              {lang === 'vi' ? 'Cập Nhật Ảnh & Nộp Lại Ngay' : 'Update & Resubmit Now'}
+                              {lang === 'vi' ? 'Cập nhật ảnh & nộp lại ngay' : 'Update & Resubmit Now'}
                             </button>
                           </div>
                         </div>
@@ -3572,7 +3577,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                               onClick={() => setShowSellerRegistrationForm(true)}
                               className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-xs transition cursor-pointer shadow-xs"
                             >
-                              {lang === 'vi' ? 'Đăng Ký Lại Hồ Sơ Mới' : 'Reapply With New Details'}
+                              {lang === 'vi' ? 'Đăng ký lại hồ sơ mới' : 'Reapply With New Details'}
                             </button>
                           </div>
                         </div>
@@ -3580,12 +3585,12 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                         <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200 text-amber-900 space-y-1.5">
                           <div className="flex items-center gap-2 font-bold text-amber-800">
                             <Clock className="w-4 h-4 text-amber-600 shrink-0 animate-spin" />
-                            <span>{lang === 'vi' ? 'Đang Chờ Phê Duyệt Hồ Sơ eKYC' : 'Awaiting eKYC Approval'}</span>
+                            <span>{lang === 'vi' ? 'Đang chờ phê duyệt hồ sơ eKYC' : 'Awaiting eKYC Approval'}</span>
                           </div>
                           <p className="text-[11px] leading-relaxed text-slate-700 pl-6">
                             {lang === 'vi'
-                              ? 'Hồ sơ của bạn đang được Ban Quản trị SecondLife đối soát CCCD và địa chỉ kho. Vui lòng chờ phê duyệt trong 24 giờ làm việc. Trong thời gian này, bạn không thể chỉnh sửa hoặc gửi lại yêu cầu.'
-                              : 'Your profile is awaiting review by SecondLife administrators. Please wait for approval within 24 working hours. You cannot edit or resubmit during this time.'}
+                              ? 'Hồ sơ của bạn đang được Ban Quản trị SecondLife đối soát CCCD và địa chỉ kho. Vui lòng chờ phê duyệt . Trong thời gian này, bạn không thể chỉnh sửa hoặc gửi lại yêu cầu.'
+                              : 'Your profile is awaiting review by SecondLife administrators. Please wait for approval. You cannot edit or resubmit during this time.'}
                           </p>
                         </div>
                       ) : null}
@@ -3607,13 +3612,13 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                         <div>
                           <h5 className="text-xs font-black text-slate-900 uppercase tracking-wide">
                             {isApprovedSeller
-                              ? (lang === 'vi' ? 'Cập Nhật Thông Tin Gian Hàng' : 'Update Store Information')
-                              : (lang === 'vi' ? 'Đơn Đăng Ký Chuyển Tài Khoản Người Bán' : 'Seller Registration Form')}
+                              ? (lang === 'vi' ? 'Cập nhật thông tin gian hàng' : 'Update Store Information')
+                              : (lang === 'vi' ? 'Đơn đăng ký chuyển tài khoản người bán' : 'Seller Registration Form')}
                           </h5>
                           <p className="text-[11px] text-slate-500">
                             {lang === 'vi'
-                              ? 'Điền thông tin để Kỹ sư Hub và đơn vị vận chuyển (Lalamove) đến nhận thiết bị giám định'
-                              : 'Fill in details so Hub inspectors and couriers (Lalamove) can collect devices for inspection'}
+                              ? 'Điền thông tin để Kỹ sư Hub và đơn vị vận chuyển đến nhận thiết bị giám định'
+                              : 'Fill in details so Hub inspectors and couriers can collect devices for inspection'}
                           </p>
                         </div>
                       </div>
@@ -3656,21 +3661,21 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
                           <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                            {lang === 'vi' ? 'Tên Gian Hàng / Cửa Hàng' : 'Store / Shop Name'} <span className="text-red-500">*</span>
+                            {lang === 'vi' ? 'Tên gian hàng / cửa hàng' : 'Store / Shop Name'} <span className="text-red-500">*</span>
                           </label>
                           <input
                             type="text"
                             required
                             value={shopName}
                             onChange={(e) => setShopName(e.target.value)}
-                            placeholder={lang === 'vi' ? 'VD: Cửa Hàng Điện Gia Dụng...' : 'e.g., Home Appliances Store'}
+                            placeholder={lang === 'vi' ? 'VD: Cửa hàng điện gia dụng...' : 'e.g., Home Appliances Store'}
                             className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none text-xs bg-white text-slate-900"
                           />
                         </div>
 
                         <div>
                           <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                            {lang === 'vi' ? 'Số Điện Thoại Kinh Doanh & Zalo' : 'Business Phone & Zalo'} <span className="text-red-500">*</span>
+                            {lang === 'vi' ? 'Số điện thoại kinh doanh & Zalo' : 'Business Phone & Zalo'} <span className="text-red-500">*</span>
                           </label>
                           <input
                             type="text"
@@ -3688,7 +3693,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                         <div className="flex items-center justify-between flex-wrap gap-2">
                           <label className="text-[11px] font-bold text-slate-800 flex items-center gap-1.5">
                             <Mail className="w-3.5 h-3.5 text-[#c34c36]" />
-                            <span>{lang === 'vi' ? 'Email Gian Hàng (Bắt buộc xác thực OTP trước khi eKYC)' : 'Shop Email (OTP Verification Required)'}</span>
+                            <span>{lang === 'vi' ? 'Email gian hàng (Bắt buộc xác thực OTP trước khi eKYC)' : 'Shop Email (OTP Verification Required)'}</span>
                             <span className="text-red-500">*</span>
                           </label>
                           {isShopEmailVerified ? (
@@ -3707,7 +3712,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                         <div className="flex flex-col sm:flex-row gap-2">
                           <input
                             type="email"
-                            required
+                            required={!isApprovedSeller}
                             value={shopEmail}
                             disabled={isShopEmailVerified}
                             readOnly={isShopEmailVerified}
@@ -3747,7 +3752,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                             ) : isShopEmailVerified ? (
                               <>
                                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                                <span>{lang === 'vi' ? 'Đã Xác Thực' : 'Verified'}</span>
+                                <span>{lang === 'vi' ? 'Đã xác thực' : 'Verified'}</span>
                               </>
                             ) : (
                               <>
@@ -3793,7 +3798,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                                 ) : (
                                   <CheckCircle2 className="w-3.5 h-3.5" />
                                 )}
-                                <span>{lang === 'vi' ? 'Xác Nhận OTP' : 'Verify OTP'}</span>
+                                <span>{lang === 'vi' ? 'Xác nhận OTP' : 'Verify OTP'}</span>
                               </button>
                             </div>
 
@@ -3822,24 +3827,20 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
                       {/* Warehouse Pickup Address Section - Powered by Lalamove & Geoapify GPS */}
                       <div className="space-y-2">
+                        {pickupLockReason && (
+                          <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2">
+                            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                            <span>{pickupLockReason}</span>
+                          </div>
+                        )}
                         <LalamoveAddressPicker
+                          key={`${!pickupLockReason ? 'edit' : 'locked'}-seller-kyc-warehouse`}
+                          readOnly={Boolean(pickupLockReason)}
                           initialName={shopName || name || currentUser?.name || ''}
                           initialPhone={sellerPhone || phone || currentUser?.phone || ''}
-                          initialLatitude={
-                            pickupLatitude && !pickupAddress?.includes('Hội đồng nhân dân')
-                              ? pickupLatitude
-                              : (userLatitude ?? currentUser?.latitude ?? pickupLatitude ?? undefined)
-                          }
-                          initialLongitude={
-                            pickupLongitude && !pickupAddress?.includes('Hội đồng nhân dân')
-                              ? pickupLongitude
-                              : (userLongitude ?? currentUser?.longitude ?? pickupLongitude ?? undefined)
-                          }
-                          initialAddress={
-                            (pickupAddress && !pickupAddress.includes('Hội đồng nhân dân'))
-                              ? pickupAddress
-                              : (userStreetAddress || currentUser?.streetAddress || address || '')
-                          }
+                          initialLatitude={pickupLatitude ?? undefined}
+                          initialLongitude={pickupLongitude ?? undefined}
+                          initialAddress={pickupAddress}
                           onAddressUnconfirmed={() => setIsWarehouseConfirmed(false)}
                           onAddressConfirmed={(data) => {
                             setIsWarehouseConfirmed(true);
@@ -3847,11 +3848,11 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                             setPickupLongitude(data.longitude);
                             setPickupAddress(data.address);
                             setStreetAddress(data.address);
-                            if (data.name && !shopName) setShopName(data.name);
-                            if (data.phone && !sellerPhone) setSellerPhone(data.phone);
+                            if (data.name && (isApprovedSeller || !shopName)) setShopName(data.name);
+                            if (data.phone && (isApprovedSeller || !sellerPhone)) setSellerPhone(data.phone);
                           }}
                           lang={lang}
-                          title={lang === 'vi' ? 'Địa chỉ kho lấy hàng Lalamove' : 'Lalamove Pickup Location'}
+                          title={lang === 'vi' ? 'Địa chỉ kho lấy hàng.' : 'Lalamove Pickup Location'}
                           description={lang === 'vi' ? 'Kéo ghim trên bản đồ để tài xế Lalamove định vị chính xác kho lấy hàng.' : 'Drag pin on map to set Lalamove pickup location.'}
                         />
                       </div>
@@ -3859,11 +3860,11 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
                           <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                            {lang === 'vi' ? 'Số Căn Cước Công Dân (CCCD/CMND)' : 'Citizen Identity Number (CCCD)'} <span className="text-red-500">*</span>
+                            {lang === 'vi' ? 'Số căn cước công dân (CCCD/CMND)' : 'Citizen Identity Number (CCCD)'} <span className="text-red-500">*</span>
                           </label>
                           <input
                             type="text"
-                            required
+                            required={!isApprovedSeller}
                             value={idCardNumber}
                             onChange={(e) => setIdCardNumber(e.target.value)}
                             placeholder={lang === 'vi' ? 'Nhập 12 số CCCD gắn chip...' : '12-digit Citizen ID'}
@@ -3873,7 +3874,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
                         <div>
                           <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                            {lang === 'vi' ? 'Loại Thiết Bị Bán Chủ Yếu' : 'Primary Product Category'}
+                            {lang === 'vi' ? 'Loại thiết bị bán chủ yếu' : 'Primary Product Category'}
                           </label>
                           <input
                             type="text"
@@ -3889,7 +3890,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       <div className="p-3.5 rounded-2xl bg-[#faf8f5] border border-slate-200 space-y-3">
                         <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
                           <FileCheck className="w-4 h-4 text-[#24263e]" />
-                          <span>{lang === 'vi' ? 'Ảnh Tải Lên Xác Thực eKYC (Mặt Trước, Mặt Sau, Chân Dung)' : 'eKYC Verification Photo Uploads'}</span>
+                          <span>{lang === 'vi' ? 'Ảnh tải lên xác thực eKYC (Mặt trước, mặt sau, chân dung)' : 'eKYC Verification Photo Uploads'}</span>
                           <span className="text-red-500">*</span>
                         </div>
 
@@ -3898,7 +3899,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                           <div className="space-y-1">
                             <div className="flex items-center justify-between h-5">
                               <label className="text-[10px] font-bold text-slate-700 block truncate">
-                                {lang === 'vi' ? '1. Ảnh CCCD Mặt Trước' : '1. Front ID Card'} <span className="text-red-500">*</span>
+                                {lang === 'vi' ? '1. Ảnh CCCD mặt trước' : '1. Front ID Card'} <span className="text-red-500">*</span>
                               </label>
                               <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 shrink-0">
                                 {lang === 'vi' ? 'Mặt trước' : 'Front'}
@@ -3945,7 +3946,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                           <div className="space-y-1">
                             <div className="flex items-center justify-between h-5">
                               <label className="text-[10px] font-bold text-slate-700 block truncate">
-                                {lang === 'vi' ? '2. Ảnh CCCD Mặt Sau' : '2. Back ID Card'} <span className="text-red-500">*</span>
+                                {lang === 'vi' ? '2. Ảnh CCCD mặt sau' : '2. Back ID Card'} <span className="text-red-500">*</span>
                               </label>
                               <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 shrink-0">
                                 {lang === 'vi' ? 'Mặt sau' : 'Back'}
@@ -3992,7 +3993,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                           <div className="space-y-1">
                             <div className="flex items-center justify-between h-5">
                               <label className="text-[10px] font-bold text-slate-700 block truncate">
-                                {lang === 'vi' ? '3. Ảnh Chân Dung Selfie' : '3. Selfie Photo'} <span className="text-red-500">*</span>
+                                {lang === 'vi' ? '3. Ảnh chân dung selfie' : '3. Selfie Photo'} <span className="text-red-500">*</span>
                               </label>
                             </div>
                             <div className="relative border border-dashed border-slate-300 hover:border-[#c34c36] rounded-2xl p-2.5 bg-white text-center transition h-[145px] flex flex-col justify-between">
@@ -4036,7 +4037,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                                     className="w-full py-2 px-2 bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-slate-900 rounded-xl text-[10px] font-bold shadow-xs hover:opacity-95 transition flex items-center justify-center gap-1 cursor-pointer"
                                   >
                                     <Camera className="w-3.5 h-3.5 text-slate-900 shrink-0" />
-                                    <span>{lang === 'vi' ? 'Mở Camera Quét Mặt' : 'Scan Face'}</span>
+                                    <span>{lang === 'vi' ? 'Mở camera quét mặt' : 'Scan Face'}</span>
                                   </button>
                                   <span className="text-[9px] text-slate-500 font-medium block text-center">
                                     {lang === 'vi' ? 'Bắt buộc quét camera trực tiếp' : 'Live camera scan required'}
@@ -4052,7 +4053,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       <div className="p-3 rounded-2xl bg-white border border-gray-200 space-y-2.5">
                         <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
                           <CreditCard className="w-3.5 h-3.5 text-[#24263e]" />
-                          <span>{lang === 'vi' ? 'Tài Khoản Ngân Hàng Nhận Tiền Bán (Giải Ngân Escrow)' : 'Bank Account for Escrow Payout'}</span>
+                          <span>{lang === 'vi' ? 'Tài khoản ngân hàng nhận tiền bán (Giải ngân Escrow)' : 'Bank Account for Escrow Payout'}</span>
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
@@ -4109,24 +4110,38 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                             )}
                           </div>
                           <div>
-                            <label className="text-[10px] font-bold text-slate-500 block mb-0.5">{lang === 'vi' ? 'Số tài khoản' : 'Account number'}</label>
+                            <label className="text-[10px] font-bold text-slate-500 flex items-center justify-between mb-0.5">
+                              <span>{lang === 'vi' ? 'Số tài khoản' : 'Account number'}</span>
+                              <span className="font-semibold text-slate-400 tabular-nums">
+                                {sellerAccountNumber.length}/{BANK_ACCOUNT_NUMBER_MAX_LENGTH}
+                              </span>
+                            </label>
                             <input
                               type="text"
+                              inputMode="numeric"
+                              minLength={BANK_ACCOUNT_NUMBER_MIN_LENGTH}
+                              maxLength={BANK_ACCOUNT_NUMBER_MAX_LENGTH}
                               value={sellerAccountNumber}
-                              onChange={(e) => setSellerAccountNumber(e.target.value)}
-                              placeholder={lang === 'vi' ? 'Nhập số tài khoản...' : 'Account number'}
-                              className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs outline-none focus:border-[#c34c36]"
+                              onChange={(e) => setSellerAccountNumber(sanitizeBankAccountNumber(e.target.value))}
+                              placeholder={lang === 'vi' ? 'Nhập 8–16 chữ số...' : '8–16 digits'}
+                              className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 font-mono text-xs outline-none focus:border-[#c34c36]"
                             />
+                            <span className="mt-1 block text-[10px] text-slate-400">
+                              {lang === 'vi' ? 'Chỉ nhập số, từ 8 đến 16 chữ số.' : 'Digits only, 8 to 16 digits.'}
+                            </span>
                           </div>
                           <div>
                             <label className="text-[10px] font-bold text-slate-500 block mb-0.5">{lang === 'vi' ? 'Chủ tài khoản' : 'Account holder'}</label>
                             <input
                               type="text"
                               value={sellerAccountHolder}
-                              onChange={(e) => setSellerAccountHolder(e.target.value.toUpperCase())}
-                              placeholder={currentUser.name ? currentUser.name.toUpperCase() : (lang === 'vi' ? 'HỌ VÀ TÊN CHỦ TÀI KHOẢN' : 'ACCOUNT HOLDER NAME')}
-                              className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs outline-none focus:border-[#c34c36]"
+                              onChange={(e) => setSellerAccountHolder(sanitizeBankAccountHolder(e.target.value))}
+                              placeholder={sanitizeBankAccountHolder(currentUser.name || '') || (lang === 'vi' ? 'NGUYEN VAN A' : 'ACCOUNT HOLDER NAME')}
+                              className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs uppercase outline-none focus:border-[#c34c36]"
                             />
+                            <span className="mt-1 block text-[10px] text-slate-400">
+                              {lang === 'vi' ? 'Tự động in hoa, chỉ chữ không dấu, không ký tự đặc biệt.' : 'Auto uppercase, unaccented letters only.'}
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -4141,7 +4156,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                         />
                         <span className="text-[11px] text-slate-600 leading-relaxed">
                           {lang === 'vi'
-                            ? 'Tôi cam kết mọi thiết bị đăng bán là chính hãng, đúng tình trạng; sẵn sàng giao hàng cho tài xế Lalamove để Kỹ sư Hub kiểm định dán tem NFC và tuân thủ quy chế giải ngân qua quỹ tín thác Escrow của SecondLife.'
+                            ? 'Tôi cam kết mọi thiết bị đăng bán là thật, đúng tình trạng, tuân thủ quy chế giải ngân qua quỹ tín thác Escrow của SecondLife.'
                             : 'I commit that all listed appliances are authentic and match their described condition; I agree to hand them over to Lalamove couriers for Hub inspection and NFC sealing, and abide by the SecondLife Escrow payout terms.'}
                         </span>
                       </label>
@@ -4180,10 +4195,10 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                         <CheckCircle2 className="w-4 h-4" />
                         <span>
                           {isSubmittingSeller
-                            ? (lang === 'vi' ? 'Đang Gửi Hồ Sơ...' : 'Submitting...')
+                            ? (lang === 'vi' ? 'Đang gửi hồ sơ...' : 'Submitting...')
                             : isApprovedSeller
-                              ? (lang === 'vi' ? 'Cập Nhật Hồ Sơ Gian Hàng' : 'Update Store Profile')
-                              : (lang === 'vi' ? 'Xác Nhận Đăng Ký & Gửi Duyệt eKYC' : 'Confirm Registration & Submit eKYC')}
+                              ? (lang === 'vi' ? 'Lưu địa chỉ kho' : 'Save pickup address')
+                              : (lang === 'vi' ? 'Xác nhận đăng ký & gửi duyệt eKYC' : 'Confirm Registration & Submit eKYC')}
                         </span>
                       </button>
                     </div>
@@ -4204,11 +4219,11 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                   </div>
                   <div>
                     <h4 className="font-extrabold text-sm uppercase tracking-wide">
-                      {lang === 'vi' ? 'Khiếu Nại & Tố Cáo Của Tôi' : 'My Reports & Disputes'}
+                      {lang === 'vi' ? 'Khiếu nại & tố cáo của tôi' : 'My Reports & Disputes'}
                     </h4>
                     <p className="text-[11px] text-slate-300">
                       {lang === 'vi'
-                        ? 'Theo dõi tiến trình giải quyết vi phạm của Ban Quản Trị & Trust Team'
+                        ? 'Theo dõi tiến trình giải quyết vi phạm của ban quản trị & trust team'
                         : 'Track resolution progress of your reports with Trust & Safety Team'}
                     </p>
                   </div>
@@ -4322,7 +4337,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                             className="px-3 py-1 rounded-lg bg-[#24263e] hover:bg-[#c34c36] text-white font-bold text-xs transition cursor-pointer flex items-center gap-1 shadow-2xs"
                           >
                             <Eye className="w-3.5 h-3.5" />
-                            <span>{lang === 'vi' ? 'Xem Kết Quả' : 'View Detail'}</span>
+                            <span>{lang === 'vi' ? 'Xem kết quả' : 'View Detail'}</span>
                           </button>
                         </div>
                       </div>
@@ -4340,7 +4355,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                           <AlertTriangle className="w-4 h-4" />
                         </div>
                         <div>
-                          <h4 className="font-bold text-sm text-slate-900">Chi Tiết Khiếu Nại #{selectedReportDetail.id.slice(0, 8)}</h4>
+                          <h4 className="font-bold text-sm text-slate-900">Chi tiết khiếu nại #{selectedReportDetail.id.slice(0, 8)}</h4>
                           <span className="text-[10px] text-slate-400 font-mono">Request: {selectedReportDetail.requestId}</span>
                         </div>
                       </div>
@@ -4356,22 +4371,22 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     <div className="space-y-3 text-xs max-h-[60vh] overflow-y-auto pr-1">
                       <div className="grid grid-cols-2 gap-2 p-3 rounded-xl bg-slate-50 border border-slate-100">
                         <div>
-                          <span className="text-slate-400 block text-[10px] uppercase font-bold">Trạng Thái</span>
+                          <span className="text-slate-400 block text-[10px] uppercase font-bold">Trạng thái</span>
                           <span className="font-bold text-slate-900">{formatDisputeStatus(selectedReportDetail.status, lang)}</span>
                         </div>
                         <div>
-                          <span className="text-slate-400 block text-[10px] uppercase font-bold">Lý Do Vi Phạm</span>
+                          <span className="text-slate-400 block text-[10px] uppercase font-bold">Lý do vi phạm</span>
                           <span className="font-bold text-[#c34c36]">{formatDisputeReason(selectedReportDetail.reasonCode, lang)}</span>
                         </div>
                         {selectedReportDetail.postId && (
                           <div className="col-span-2">
-                            <span className="text-slate-400 block text-[10px] uppercase font-bold">Mã Bài Đăng Tố Cáo</span>
+                            <span className="text-slate-400 block text-[10px] uppercase font-bold">Mã bài đăng tố cáo</span>
                             <span className="font-mono text-slate-700 font-bold">{selectedReportDetail.postId}</span>
                           </div>
                         )}
                         {selectedReportDetail.orderId && (
                           <div className="col-span-2">
-                            <span className="text-slate-400 block text-[10px] uppercase font-bold">Mã Đơn Hàng</span>
+                            <span className="text-slate-400 block text-[10px] uppercase font-bold">Mã đơn hàng</span>
                             <span className="font-mono text-slate-700 font-bold">{selectedReportDetail.orderId}</span>
                           </div>
                         )}
@@ -4411,7 +4426,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       {selectedReportDetail.decisionReason && (
                         <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-950 space-y-1">
                           <span className="font-bold block text-emerald-800 text-[11px] uppercase tracking-wide">
-                            Kết luận xử lý từ Ban Quản Trị:
+                            Kết luận xử lý từ ban quản trị:
                           </span>
                           <p className="text-slate-800 leading-relaxed">{selectedReportDetail.decisionReason}</p>
                           {selectedReportDetail.responsibleParty && (
@@ -4443,6 +4458,14 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
             </div>
           )}
         </div>
+
+        {/* Inline error banner above footer so errors are visible without scrolling */}
+        {saveError && activeTab === 'info' && (
+          <div className="px-6 sm:px-8 py-2.5 bg-rose-50 border-t border-rose-200 text-rose-700 text-xs font-bold flex items-center gap-2 shrink-0">
+            <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+            <span>{saveError}</span>
+          </div>
+        )}
 
         {/* Modal Footer */}
         <div className="px-6 sm:px-8 py-4 bg-slate-50 border-t border-gray-100 rounded-b-3xl flex flex-wrap items-center justify-between gap-3 shrink-0">
@@ -4489,6 +4512,8 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       setGender(
                         currentUser?.gender ? (currentUser.gender.toLowerCase() as 'male' | 'female' | 'other') : ''
                       );
+                      setWarehouseDraft(null);
+                      setSaveError(null);
                       setIsEditing(false);
                     }}
                     className="px-5 py-2 rounded-xl bg-white border border-gray-200 hover:bg-gray-100 text-slate-700 text-xs font-bold transition cursor-pointer"
@@ -4524,7 +4549,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 >
                   {lang === 'vi' ? 'Đóng' : 'Close'}
                 </button>
-                {activeTab !== 'reputation' && (
+                {activeTab !== 'reputation' && activeTab !== 'settings' && (
                   <button
                     type="button"
                     onClick={handleSave}
@@ -4556,7 +4581,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2 text-slate-900 font-bold text-base">
                   <Lock className="w-5 h-5 text-[#24263e]" />
-                  <span>{lang === 'vi' ? 'Đổi Mật Khẩu Đăng Nhập' : 'Change Account Password'}</span>
+                  <span>{lang === 'vi' ? 'Đổi mật khẩu đăng nhập' : 'Change Account Password'}</span>
                 </div>
                 <button
                   onClick={() => {
@@ -4590,7 +4615,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
               <form onSubmit={handleChangePasswordSubmit} className="space-y-4">
                 <div>
                   <label className="text-xs font-bold text-slate-700 block mb-1">
-                    {lang === 'vi' ? 'Mật Khẩu Hiện Tại' : 'Current Password'} <span className="text-red-500">*</span>
+                    {lang === 'vi' ? 'Mật khẩu hiện tại' : 'Current Password'} <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="password"
@@ -4607,7 +4632,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
                 <div>
                   <label className="text-xs font-bold text-slate-700 block mb-1">
-                    {lang === 'vi' ? 'Mật Khẩu Mới' : 'New Password'} <span className="text-red-500">*</span>
+                    {lang === 'vi' ? 'Mật khẩu mới' : 'New Password'} <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="password"
@@ -4628,7 +4653,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
                 <div>
                   <label className="text-xs font-bold text-slate-700 block mb-1">
-                    {lang === 'vi' ? 'Xác Nhận Mật Khẩu Mới' : 'Confirm New Password'} <span className="text-red-500">*</span>
+                    {lang === 'vi' ? 'Xác nhận mật khẩu mới' : 'Confirm New Password'} <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="password"
@@ -4663,7 +4688,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     disabled={isSubmittingPass}
                     className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white text-xs font-bold hover:opacity-90 transition disabled:opacity-50 cursor-pointer"
                   >
-                    {isSubmittingPass ? (lang === 'vi' ? 'Đang xử lý...' : 'Processing...') : (lang === 'vi' ? 'Cập Nhật Mật Khẩu' : 'Update Password')}
+                    {isSubmittingPass ? (lang === 'vi' ? 'Đang xử lý...' : 'Processing...') : (lang === 'vi' ? 'Cập nhật mật khẩu' : 'Update Password')}
                   </button>
                 </div>
               </form>

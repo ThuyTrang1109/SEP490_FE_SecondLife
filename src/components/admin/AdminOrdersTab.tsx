@@ -171,7 +171,7 @@ export const AdminOrdersTab: React.FC<AdminOrdersTabProps> = ({
   // Export CSV
   const handleExportCSV = () => {
     if (orders.length === 0) return;
-    const headers = ['Mã Đơn', 'Ngày Tạo', 'Sản Phẩm', 'Người Mua', 'Email Buyer', 'Người Bán', 'Email Seller', 'Tiền Hàng', 'Phí Ship', 'Tổng Tiền', 'Trạng Thái Đơn', 'Trạng Thái Escrow', 'Kiểm Định'];
+    const headers = ['Mã đơn', 'Ngày tạo', 'Sản phẩm', 'Người mua', 'Email Buyer', 'Người bán', 'Email Seller', 'Tiền hàng', 'Phí ship', 'Tổng tiền', 'Trạng thái đơn', 'Trạng thái Escrow', 'Kiểm định'];
     const rows = orders.map((o) => [
       `"${o.id}"`,
       `"${new Date(o.createdAt).toLocaleString('vi-VN')}"`,
@@ -314,7 +314,7 @@ export const AdminOrdersTab: React.FC<AdminOrdersTabProps> = ({
           {/* Total Orders Badge */}
           <div className="flex items-center gap-2 px-3.5 py-2 bg-slate-100 rounded-xl border border-slate-200 self-start md:self-auto text-xs font-bold text-slate-700">
             <Package className="w-4 h-4 text-[#e07a5f]" />
-            <span>{lang === 'vi' ? 'Danh Sách Đơn Hàng' : 'Orders List'}</span>
+            <span>{lang === 'vi' ? 'Danh sách đơn hàng' : 'Orders List'}</span>
             <span className="px-2 py-0.5 rounded-full text-[11px] bg-white text-slate-800 font-mono shadow-2xs">
               {totalCount}
             </span>
@@ -327,7 +327,7 @@ export const AdminOrdersTab: React.FC<AdminOrdersTabProps> = ({
         {/* Card 1: Tổng đơn */}
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs hover:border-slate-300 transition">
           <div className="flex items-center justify-between text-slate-500 mb-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider">Tổng Đơn Hàng</span>
+            <span className="text-[11px] font-bold uppercase tracking-wider">Tổng đơn hàng</span>
             <span className="p-1.5 bg-slate-100 rounded-lg text-slate-700">
               <Package className="w-4 h-4" />
             </span>
@@ -343,7 +343,7 @@ export const AdminOrdersTab: React.FC<AdminOrdersTabProps> = ({
         {/* Card 2: Đã xác nhận / Chờ giao */}
         <div className="bg-white p-4 rounded-xl border border-sky-200 shadow-xs hover:border-sky-300 transition bg-linear-to-br from-sky-50/40 to-white">
           <div className="flex items-center justify-between text-sky-700 mb-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider">Đã Xác Nhận</span>
+            <span className="text-[11px] font-bold uppercase tracking-wider">Đã xác nhận</span>
             <span className="p-1.5 bg-sky-100 rounded-lg text-sky-800">
               <Check className="w-4 h-4" />
             </span>
@@ -359,7 +359,7 @@ export const AdminOrdersTab: React.FC<AdminOrdersTabProps> = ({
         {/* Card 3: Đang vận chuyển */}
         <div className="bg-white p-4 rounded-xl border border-blue-200 shadow-xs hover:border-blue-300 transition bg-linear-to-br from-blue-50/40 to-white">
           <div className="flex items-center justify-between text-blue-700 mb-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider">Đang Vận Chuyển</span>
+            <span className="text-[11px] font-bold uppercase tracking-wider">Đang vận chuyển</span>
             <span className="p-1.5 bg-blue-100 rounded-lg text-blue-800">
               <Truck className="w-4 h-4" />
             </span>
@@ -375,7 +375,7 @@ export const AdminOrdersTab: React.FC<AdminOrdersTabProps> = ({
         {/* Card 4: Hoàn thành & Đã giải ngân */}
         <div className="bg-white p-4 rounded-xl border border-emerald-200 shadow-xs hover:border-emerald-300 transition bg-linear-to-br from-emerald-50/40 to-white">
           <div className="flex items-center justify-between text-emerald-700 mb-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider">Hoàn Thành</span>
+            <span className="text-[11px] font-bold uppercase tracking-wider">Hoàn thành</span>
             <span className="p-1.5 bg-emerald-100 rounded-lg text-emerald-800">
               <CheckCircle2 className="w-4 h-4" />
             </span>
@@ -391,7 +391,7 @@ export const AdminOrdersTab: React.FC<AdminOrdersTabProps> = ({
         {/* Card 5: Đã hủy đơn */}
         <div className="bg-white p-4 rounded-xl border border-rose-200 shadow-xs hover:border-rose-300 transition bg-linear-to-br from-rose-50/40 to-white">
           <div className="flex items-center justify-between text-rose-700 mb-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider">Đã Hủy Đơn</span>
+            <span className="text-[11px] font-bold uppercase tracking-wider">Đã hủy đơn</span>
             <span className="p-1.5 bg-rose-100 rounded-lg text-rose-800">
               <X className="w-4 h-4" />
             </span>
@@ -407,7 +407,7 @@ export const AdminOrdersTab: React.FC<AdminOrdersTabProps> = ({
         {/* Card 6: Escrow đang giữ bảo đảm */}
         <div className="bg-white p-4 rounded-xl border border-indigo-200 shadow-xs hover:border-indigo-300 transition bg-linear-to-br from-indigo-50/40 to-white">
           <div className="flex items-center justify-between text-indigo-700 mb-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider">Escrow Đang Giữ</span>
+            <span className="text-[11px] font-bold uppercase tracking-wider">Escrow đang giữ</span>
             <span className="p-1.5 bg-indigo-100 rounded-lg text-indigo-800">
               <DollarSign className="w-4 h-4" />
             </span>
@@ -591,15 +591,15 @@ export const AdminOrdersTab: React.FC<AdminOrdersTabProps> = ({
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-slate-50/80 text-slate-500 font-bold border-b border-slate-200/80 uppercase text-[10px] tracking-wider">
-                <th className="py-3 px-4">Mã Đơn & Thời Gian</th>
+                <th className="py-3 px-4">Mã đơn & thời gian</th>
                 <th className="py-3 px-4">Sản Phẩm (DB)</th>
-                <th className="py-3 px-4">Người Mua</th>
-                <th className="py-3 px-4">Người Bán</th>
-                <th className="py-3 px-4 text-right">Tổng Tiền</th>
-                <th className="py-3 px-4">Dịch Vụ Hub</th>
-                <th className="py-3 px-4">Trạng Thái Đơn</th>
-                <th className="py-3 px-4">Ký Quỹ Escrow</th>
-                <th className="py-3 px-4 text-center">Thao Tác</th>
+                <th className="py-3 px-4">Người mua</th>
+                <th className="py-3 px-4">Người bán</th>
+                <th className="py-3 px-4 text-right">Tổng tiền</th>
+                <th className="py-3 px-4">Dịch vụ Hub</th>
+                <th className="py-3 px-4">Trạng thái đơn</th>
+                <th className="py-3 px-4">Ký quỹ Escrow</th>
+                <th className="py-3 px-4 text-center">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">

@@ -121,7 +121,7 @@ export function OrderActionDialog({ confirmDialog, orderActionLoading, onClose }
             ) : (
               <>
                 <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                <span>{confirmDialog.confirmText || 'Xác Nhận'}</span>
+                <span>{confirmDialog.confirmText || 'Xác nhận'}</span>
               </>
             )}
           </button>

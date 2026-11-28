@@ -52,7 +52,7 @@ export function OrderSettlement({
           <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-1.5">
             <div className="flex items-center gap-2 font-bold text-amber-900">
               <Clock className="w-4 h-4 text-amber-600 shrink-0" />
-              <span>Quy Trình Tự Động Giải Ngân Sau 48 Giờ</span>
+              <span>Quy trình tự động giải ngân sau 48 Giờ</span>
             </div>
             <p className="text-[11px] text-amber-800 leading-relaxed">
               Đơn hàng đã được bưu tá xác nhận giao thành công vào lúc <strong>{new Date(detailModalOrder.shippingDeliveredAt).toLocaleString('vi-VN')}</strong>.
@@ -66,7 +66,7 @@ export function OrderSettlement({
           <div className="flex items-center gap-2">
             <Receipt className="w-4 h-4 text-[#24263e]" />
             <span className="font-bold text-xs uppercase tracking-wide text-[#24263e]">
-              Chi Tiết Quyết Toán Giải Ngân
+              Chi tiết quyết toán giải ngân
             </span>
           </div>
           {isEscrowReleased ? (

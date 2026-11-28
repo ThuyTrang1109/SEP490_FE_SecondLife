@@ -62,7 +62,7 @@ export const PrintTamperSealModal: React.FC<PrintTamperSealModalProps> = ({
             </div>
             <div>
               <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">
-                In Tem Niêm Phong Chống Bóc Tách
+                In tem niêm phong chống bóc tách
               </h3>
               <p className="text-[11px] text-slate-500 font-mono">Mã tem: {tamperSealId}</p>
             </div>

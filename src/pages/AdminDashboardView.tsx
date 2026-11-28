@@ -64,6 +64,7 @@ import {
   ShieldCheck,
   Clock,
   ExternalLink,
+  ChevronLeft,
   ChevronRight,
   ChevronDown,
   Check,
@@ -201,7 +202,11 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [listingCategoryFilter, setListingCategoryFilter] = useState<string>('ALL');
 
   // Local state for listings and orders moderation
-  const [localListings, setLocalListings] = useState<Listing[]>(initialListings);
+  const POSTS_PAGE_SIZE = 10;
+  const [localListings, setLocalListings] = useState<Listing[]>(() => initialListings.slice(0, POSTS_PAGE_SIZE));
+  const [postsPage, setPostsPage] = useState<number>(0);
+  const [postsTotalPages, setPostsTotalPages] = useState<number>(1);
+  const [postsTotalElements, setPostsTotalElements] = useState<number>(0);
   const [localOrders, setLocalOrders] = useState<EscrowOrder[]>(initialOrders);
 
   // Real backend users & seller verifications from Swagger API
@@ -210,16 +215,16 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [userSearchTerm, setUserSearchTerm] = useState('');
 
   useEffect(() => {
-    if (initialListings && initialListings.length > 0) {
-      setLocalListings(initialListings);
+    if (initialListings && initialListings.length > 0 && postsTotalElements === 0) {
+      setLocalListings(initialListings.slice(0, POSTS_PAGE_SIZE));
     }
-  }, [initialListings]);
+  }, [initialListings, postsTotalElements]);
 
   useEffect(() => {
     if (activeTab === 'listings') {
-      loadAdminPosts();
+      void loadAdminPosts(postsPage, false);
     }
-  }, [activeTab]);
+  }, [activeTab, postsPage]);
 
   useEffect(() => {
     if (initialOrders && initialOrders.length > 0) {
@@ -244,71 +249,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       })
       .catch(() => { });
 
-    adminPostService.getAdminPosts()
-      .then(res => {
-        const items = Array.isArray(res) ? res : res?.items || res?.content || [];
-        if (items.length > 0) {
-          // Lọc bỏ hoàn toàn các bản nháp chưa hoàn thành (DRAFT) của các tài khoản người bán
-          const nonDrafts = items.filter((post: any) => post.status !== 'DRAFT');
-          const mapped: Listing[] = nonDrafts.map((post: any) => {
-            const rawImages: string[] = Array.isArray(post.imageUrls) && post.imageUrls.length > 0
-              ? post.imageUrls
-              : (post.coverImageUrl ? [post.coverImageUrl] : post.imageUrl ? [post.imageUrl] : post.thumbnailUrl ? [post.thumbnailUrl] : []);
-            const fallbackImage = 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=800';
-            const primaryImage = rawImages[0] || fallbackImage;
-
-            const resolved = resolveCategoryAndItem({
-              postId: post.id || post.postId,
-              categoryId: post.categoryId,
-              itemId: post.itemId,
-              title: post.title,
-              description: post.description || post.aiDescription,
-              category: post.category,
-              brand: post.brand,
-              model: post.model,
-            });
-
-            return {
-              id: post.id || `post-${Date.now()}`,
-              categoryId: post.categoryId || resolved.categoryId,
-              itemId: post.itemId || resolved.itemId,
-              categoryName: resolved.categoryName,
-              itemName: resolved.itemName,
-              title: post.title || 'Sản phẩm SecondLife',
-              category: (resolved.displayCategory || 'Đồ gia dụng') as any,
-              brand: resolved.brand,
-              model: post.model || resolved.model || 'Model',
-              purchaseYear: 2024,
-              priceVnd: Number(post.price || post.priceVnd || 0),
-              originalPriceVnd: Number(post.originalPriceVnd || post.aiSuggestedPrice || post.price || 0),
-              conditionGrade: (post.itemCondition || post.condition || 'Like New') as any,
-              declaredConditionText: post.itemCondition || post.condition || 'Tình trạng tốt',
-              description: post.description || post.aiDescription || 'Đã qua thẩm định SecondLife.',
-              location: post.location || 'Việt Nam',
-              sellerId: post.user?.id || post.sellerId || 'seller',
-              sellerName: post.user?.fullName || post.sellerName || 'Người bán SecondLife',
-              sellerRating: post.sellerRating ?? 0,
-              sellerCompletedOrders: post.sellerCompletedOrders ?? 0,
-              sellerVerified: true,
-              status: (post.status === 'ACTIVE' ? 'active' : post.status === 'REJECTED' ? 'rejected' : post.status === 'PENDING_REVIEW' || post.status === 'PENDING' ? 'pending' : 'active') as any,
-              backendStatus: post.status,
-              createdAt: post.createdAt || new Date().toISOString(),
-              isInspectionGuaranteed: true,
-              requiresInspection: isPostRequiringInspection(post),
-              photos: {
-                front: rawImages[0] || primaryImage,
-                back: rawImages[1] || primaryImage,
-                screenOrDetails: rawImages[2] || primaryImage,
-                accessoriesOrBox: rawImages[3] || primaryImage,
-                serialOrReceipt: rawImages[4] || primaryImage,
-              },
-              photoGallery: rawImages.length > 0 ? rawImages : [primaryImage],
-            };
-          });
-          setLocalListings(mapped);
-        }
-      })
-      .catch(() => { });
+    void loadAdminPosts(0, false);
   }, []);
 
   // Seller Verification Review states
@@ -497,57 +438,102 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   // Post Moderation Live Sync (GET /api/v1/admin/posts)
   const [isLoadingPosts, setIsLoadingPosts] = useState(false);
 
-  const loadAdminPosts = async () => {
+  const mapAdminPostToListing = (p: any): Listing => {
+    const rawImages: string[] = Array.isArray(p.imageUrls) && p.imageUrls.length > 0
+      ? p.imageUrls
+      : (p.coverImageUrl ? [p.coverImageUrl] : p.imageUrl ? [p.imageUrl] : p.thumbnailUrl ? [p.thumbnailUrl] : []);
+    const fallbackImage = 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=800';
+    const primaryImage = rawImages[0] || fallbackImage;
+
+    const resolved = resolveCategoryAndItem({
+      postId: p.id || p.postId,
+      categoryId: p.categoryId,
+      itemId: p.itemId,
+      title: p.title,
+      description: p.description || p.aiDescription,
+      category: p.categoryName || p.category,
+      brand: p.brand,
+      model: p.model,
+    });
+
+    return {
+      id: p.id,
+      categoryId: p.categoryId || resolved.categoryId,
+      itemId: p.itemId || resolved.itemId,
+      categoryName: p.categoryName || resolved.categoryName,
+      itemName: p.itemName || resolved.itemName,
+      title: p.title || 'Sản phẩm SecondLife',
+      category: (p.categoryName || resolved.displayCategory || 'Sản phẩm') as any,
+      brand: p.brand || resolved.brand || 'Khác',
+      model: p.model || resolved.model || '',
+      purchaseYear: p.purchaseYear || 2024,
+      priceVnd: Number(p.price || p.priceVnd || 0),
+      originalPriceVnd: Number(p.originalPriceVnd || p.aiSuggestedPrice || p.price || 0),
+      conditionGrade: (p.itemCondition || p.condition || 'USED') as any,
+      declaredConditionText: p.description || 'Chưa có mô tả',
+      description: p.description || p.aiDescription || '',
+      location: p.location || 'Toàn quốc',
+      sellerId: p.user?.id || p.sellerId || '',
+      sellerName: p.user?.fullName || p.user?.email || p.sellerName || 'Người bán',
+      sellerRating: p.sellerRating ?? 0,
+      sellerCompletedOrders: p.sellerCompletedOrders ?? 0,
+      sellerVerified: true,
+      status: (p.status === 'ACTIVE'
+        ? 'active'
+        : p.status === 'REJECTED'
+          ? 'rejected'
+          : p.status === 'PENDING_REVIEW' || p.status === 'PENDING'
+            ? 'pending'
+            : p.status === 'PENDING_INSPECTION' || p.status === 'READY_TO_PUBLISH'
+              ? 'pending_inspection'
+              : p.status === 'SOLD'
+                ? 'sold'
+                : p.status === 'DRAFT'
+                  ? 'draft'
+                  : 'reserved') as any,
+      backendStatus: p.status,
+      createdAt: p.createdAt || new Date().toISOString(),
+      isInspectionGuaranteed: true,
+      requiresInspection: isPostRequiringInspection(p),
+      photos: {
+        front: rawImages[0] || primaryImage,
+        back: rawImages[1] || primaryImage,
+        screenOrDetails: rawImages[2] || primaryImage,
+        accessoriesOrBox: rawImages[3] || primaryImage,
+        serialOrReceipt: rawImages[4] || primaryImage,
+      },
+      photoGallery: rawImages.length > 0 ? rawImages : [primaryImage],
+      suggestedAiPriceVnd: p.aiSuggestedPrice,
+      aiPriceEstimation: p.aiSuggestedPrice && p.aiSuggestedPrice > 0 ? {
+        minVnd: Math.round(Number(p.aiSuggestedPrice) * 0.9),
+        maxVnd: Math.round(Number(p.aiSuggestedPrice) * 1.1),
+        suggestedVnd: Number(p.aiSuggestedPrice),
+        quickSaleVnd: Math.round(Number(p.aiSuggestedPrice) * 0.85),
+        confidence: 96,
+        daysToSell: 3,
+      } : undefined,
+    };
+  };
+
+  const loadAdminPosts = async (targetPage = postsPage, showNotice = true) => {
     setIsLoadingPosts(true);
     try {
-      const res = await adminPostService.getAdminPosts();
+      const res = await adminPostService.getAdminPosts(undefined, undefined, undefined, {
+        page: targetPage,
+        size: POSTS_PAGE_SIZE,
+      });
       const items = res?.items || (res as any)?.content || (Array.isArray(res) ? res : []);
-      // Lọc bỏ hoàn toàn các bản nháp chưa submit (DRAFT) của các người bán
       const validPosts = items.filter((p: any) => p.status !== 'DRAFT');
-      if (validPosts.length > 0) {
-        const mappedListings: Listing[] = validPosts.map((p: any) => ({
-          id: p.id,
-          title: p.title || 'Sản phẩm SecondLife',
-          category: p.categoryName || 'Sản phẩm',
-          brand: p.brand || 'Khác',
-          model: p.model || '',
-          purchaseYear: p.purchaseYear || 2024,
-          priceVnd: p.price || 0,
-          conditionGrade: p.itemCondition || 'USED',
-          declaredConditionText: p.description || 'Chưa có mô tả',
-          description: p.description || '',
-          location: p.location || 'Toàn quốc',
-          sellerId: p.user?.id || p.sellerId || '',
-          sellerName: p.user?.fullName || p.user?.email || p.sellerName || 'Người bán',
-          sellerRating: p.sellerRating ?? 0,
-          sellerCompletedOrders: p.sellerCompletedOrders ?? 0,
-          sellerVerified: true,
-          status: p.status === 'ACTIVE' ? 'active' : p.status === 'REJECTED' ? 'rejected' : p.status === 'PENDING_REVIEW' || p.status === 'PENDING' ? 'pending' : 'active',
-          backendStatus: p.status,
-          createdAt: p.createdAt || new Date().toISOString(),
-          isInspectionGuaranteed: true,
-          requiresInspection: true,
-          photos: {
-            front: p.imageUrls?.[0] || 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=800',
-            back: p.imageUrls?.[1] || p.imageUrls?.[0] || 'https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&q=80&w=800',
-            screenOrDetails: p.imageUrls?.[2] || p.imageUrls?.[0] || 'https://images.unsplash.com/photo-1550009158-9ebf69173e03?auto=format&fit=crop&q=80&w=800',
-            accessoriesOrBox: p.imageUrls?.[3] || p.imageUrls?.[0] || 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=800',
-            serialOrReceipt: p.imageUrls?.[4] || p.imageUrls?.[0] || 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=800'
-          },
-          photoGallery: p.imageUrls?.length > 0 ? p.imageUrls : ['https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=800'],
-          suggestedAiPriceVnd: p.aiSuggestedPrice,
-          aiPriceEstimation: p.aiSuggestedPrice && p.aiSuggestedPrice > 0 ? {
-            minVnd: Math.round(Number(p.aiSuggestedPrice) * 0.9),
-            maxVnd: Math.round(Number(p.aiSuggestedPrice) * 1.1),
-            suggestedVnd: Number(p.aiSuggestedPrice),
-            quickSaleVnd: Math.round(Number(p.aiSuggestedPrice) * 0.85),
-            confidence: 96,
-            daysToSell: 3,
-          } : undefined
-        }));
-        setLocalListings(mappedListings);
-        triggerNotice(`Đã đồng bộ ${mappedListings.length} bài đăng thực tế từ máy chủ Backend.`);
+      const mappedListings: Listing[] = validPosts.map(mapAdminPostToListing);
+      const totalElements = Number(res?.totalElements ?? mappedListings.length);
+      const totalPages = Math.max(1, Number(res?.totalPages ?? Math.ceil(totalElements / POSTS_PAGE_SIZE)));
+      setLocalListings(mappedListings);
+      setPostsTotalElements(totalElements);
+      setPostsTotalPages(totalPages);
+      if (targetPage >= totalPages && totalPages > 0) {
+        setPostsPage(totalPages - 1);
       }
+
     } catch (err: any) {
       console.warn('Backend load admin posts fallback:', err);
     } finally {
@@ -814,6 +800,62 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     return `${pct}%`;
   };
 
+  const formatVerificationStatus = (status?: string | null) => {
+    switch (status) {
+      case 'APPROVED': return 'Đã phê duyệt';
+      case 'REJECTED': return 'Đã từ chối';
+      case 'RESUBMIT_REQUIRED': return 'Yêu cầu nộp lại';
+      case 'NEEDS_REVIEW': return 'Cần duyệt thủ công';
+      case 'EKYC_PENDING': return 'Đang xác thực eKYC';
+      case 'SUBMITTED': return 'Đã tiếp nhận';
+      case 'PENDING': return 'Đang chờ xử lý';
+      default: return status || 'Không xác định';
+    }
+  };
+
+  const formatRiskStatus = (riskStatus?: string | null) => {
+    switch (riskStatus) {
+      case 'CLEAR': return 'An toàn';
+      case 'REVIEW': return 'Cần xem xét';
+      case 'BLOCK': return 'Rủi ro cao (Chặn)';
+      case 'NOT_EVALUATED':
+      default:
+        return 'Chưa đánh giá';
+    }
+  };
+
+  const formatVerificationType = (type?: string | null) => {
+    switch (type) {
+      case 'CITIZEN_ID': return 'CCCD / CMND';
+      case 'PASSPORT': return 'Hộ chiếu';
+      case 'BUSINESS_LICENSE': return 'Giấy phép kinh doanh';
+      default: return type || 'CCCD / CMND';
+    }
+  };
+
+  const formatProviderName = (provider?: string | null) => {
+    if (!provider || provider === 'VNPT' || provider === 'VNPT_EKYC') return 'VNPT eKYC';
+    if (provider === 'MOCK') return 'Mô phỏng';
+    return provider;
+  };
+
+  const formatVerificationEventType = (eventType?: string | null) => {
+    switch (eventType) {
+      case 'SUBMITTED': return 'Tiếp nhận hồ sơ';
+      case 'RESUBMITTED': return 'Người bán đã nộp lại';
+      case 'EKYC_STARTED': return 'Bắt đầu kiểm tra eKYC';
+      case 'EKYC_PASSED': return 'eKYC đạt yêu cầu';
+      case 'EKYC_FAILED': return 'eKYC không đạt';
+      case 'RESUBMISSION_REQUIRED': return 'Yêu cầu nộp lại ảnh';
+      case 'RISK_REVIEW_REQUIRED': return 'Chuyển duyệt thủ công';
+      case 'SYSTEM_APPROVED': return 'Hệ thống tự động phê duyệt';
+      case 'SYSTEM_REJECTED': return 'Hệ thống tự động từ chối';
+      case 'ADMIN_APPROVED': return 'Quản trị viên phê duyệt';
+      case 'ADMIN_REJECTED': return 'Quản trị viên từ chối';
+      default: return eventType || 'Cập nhật hồ sơ';
+    }
+  };
+
   const QUICK_VERIFICATION_REASONS = [
     'Ảnh CMND/CCCD bị mờ, chói lóa không nhận diện được chữ số',
     'Ảnh khuôn mặt selfie không khớp với chân dung trên CCCD',
@@ -998,17 +1040,18 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       const listRes = await adminService.getSellerVerifications({ page: 0, size: 50 });
       if (listRes?.items) setBackendVerifications(listRes.items);
 
-      const statusText = updated?.status || res?.status || 'Đã gửi yêu cầu';
-      const ekycText = updated?.ekycStatus || res?.ekycStatus || '';
+      const statusText = formatVerificationStatus(updated?.status || res?.status);
+      const ekycRaw = updated?.ekycStatus || res?.ekycStatus;
+      const ekycText = ekycRaw === 'PASSED' ? 'Đạt chuẩn eKYC' : ekycRaw === 'FAILED' ? 'Không đạt eKYC' : ekycRaw === 'UNCERTAIN' ? 'Cần kiểm tra lại' : ekycRaw === 'PROVIDER_ERROR' ? 'Lỗi cổng VNPT' : '';
       setReviewNoticeMsg({
-        text: `Đã hoàn tất thử lại eKYC! Kết quả hiện tại: Trạng thái ${statusText} ${ekycText ? `(${ekycText})` : ''}`,
+        text: `Đã hoàn tất thử lại eKYC! Kết quả hiện tại: ${statusText}${ekycText ? ` (${ekycText})` : ''}`,
         type: 'success'
       });
       triggerNotice(`Đã kích hoạt thử lại eKYC. Kết quả: ${statusText}`);
     } catch (err: any) {
       const errMsg = err?.message || '';
       if (errMsg.includes('409') || err?.status === 409) {
-        setReviewNoticeMsg({ text: 'Hồ sơ không ở trạng thái hợp lệ để retry hoặc đã đổi trạng thái (409 Conflict). Đang tải lại...', type: 'error' });
+        setReviewNoticeMsg({ text: 'Hồ sơ không ở trạng thái hợp lệ để thử lại hoặc đã đổi trạng thái (409). Đang tải lại...', type: 'error' });
         triggerNotice('Hồ sơ đã đổi trạng thái, đang làm mới...');
         const updated = await adminService.getSellerVerificationById(id).catch(() => null);
         if (updated) setSelectedVerificationDetail(updated);
@@ -1034,7 +1077,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       const res = await adminService.getAdminUsers({ page: 0, size: 20 });
       if (res?.items) setBackendUsers(res.items);
     } catch (err: any) {
-      dialogService.error(err.message || 'Cập nhật trạng thái người dùng thất bại', 'Lỗi Cập Nhật');
+      dialogService.error(err.message || 'Cập nhật trạng thái người dùng thất bại', 'Lỗi cập nhật');
     }
   };
 
@@ -1050,7 +1093,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         city: newHubData.city,
         address: newHubData.address
       });
-      triggerNotice('Tạo tài khoản Trạm Kiểm Định Hub thành công!');
+      triggerNotice('Tạo tài khoản trạm kiểm định Hub thành công!');
       setShowAddHubModal(false);
       setNewHubData({
         hubCenterName: '',
@@ -1062,7 +1105,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       });
       void loadHubCenters();
     } catch (err: any) {
-      dialogService.error(err.message || 'Tạo tài khoản Trạm Hub thất bại', 'Lỗi Tạo Trạm Hub');
+      dialogService.error(err.message || 'Tạo tài khoản Trạm Hub thất bại', 'Lỗi tạo trạm Hub');
     }
   };
 
@@ -1181,7 +1224,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       id: 'listings' as AdminTab,
       label: lang === 'vi' ? 'QUẢN LÝ BÀI ĐĂNG' : 'POSTS MANAGEMENT',
       icon: Tag,
-      badge: localListings.length
+      badge: postsTotalElements || localListings.length
     },
     {
       id: 'catalog-ai' as AdminTab,
@@ -1328,11 +1371,11 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             <div className="absolute right-0 mt-2 w-56 bg-white text-[#24263e] rounded-2xl shadow-2xl border border-gray-200 py-1.5 z-50 text-xs animate-in fade-in">
               <div className="px-3.5 py-2.5 border-b border-gray-100">
                 <p className="font-black text-[#24263e] text-xs truncate">
-                  {currentUser?.name || (lang === 'vi' ? 'Quản Trị Viên Hệ Thống' : 'System Administrator')}
+                  {currentUser?.name || (lang === 'vi' ? 'Quản trị viên hệ thống' : 'System Administrator')}
                 </p>
                 <p className="text-[11px] text-gray-500 font-medium truncate">{currentUser?.email || 'admin@secondlife.vn'}</p>
                 <span className="inline-block mt-1 px-2 py-0.5 rounded-md bg-[#c34c36]/10 text-[#c34c36] font-extrabold text-[10px]">
-                  {lang === 'vi' ? 'Quyền: Toàn Quyền Admin' : 'Role: Super Admin'}
+                  {lang === 'vi' ? 'Quyền: Toàn quyền Admin' : 'Role: Super Admin'}
                 </span>
               </div>
               <div className="p-1">
@@ -1344,7 +1387,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   className="w-full text-left px-3 py-2 hover:bg-rose-50 rounded-xl text-rose-600 flex items-center gap-2 cursor-pointer font-bold transition"
                 >
                   <LogOut className="w-3.5 h-3.5" />
-                  <span>{lang === 'vi' ? 'Đăng Xuất' : 'Log Out'}</span>
+                  <span>{lang === 'vi' ? 'Đăng xuất' : 'Log Out'}</span>
                 </button>
               </div>
             </div>
@@ -1578,7 +1621,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
                 <div>
                   <h3 className="text-sm font-bold text-slate-900 uppercase">
-                    Danh Sách Sản Phẩm & Tin Đăng Bán Trên Sàn ({filteredListings.length})
+                    Danh sách sản phẩm &amp; tin đăng bán trên sàn ({postsTotalElements || filteredListings.length})
                   </h3>
                   <p className="text-xs text-slate-500">
                     Kiểm duyệt tính trung thực, đối chiếu gợi ý AI và quản lý trạng thái hiển thị
@@ -1603,15 +1646,15 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs outline-none bg-white cursor-pointer"
                   >
                     <option value="ALL">Tất cả ngành hàng</option>
-                    <option value="Tủ Lạnh">Tủ Lạnh</option>
-                    <option value="Máy Giặt">Máy Giặt</option>
-                    <option value="Máy Pha Cà Phê">Máy Pha Cà Phê</option>
-                    <option value="Robot Hút Bụi">Robot Hút Bụi</option>
+                    <option value="Tủ Lạnh">Tủ lạnh</option>
+                    <option value="Máy Giặt">Máy giặt</option>
+                    <option value="Máy Pha Cà Phê">Máy pha cà phê</option>
+                    <option value="Robot Hút Bụi">Robot hút bụi</option>
                   </select>
 
                   <button
                     type="button"
-                    onClick={loadAdminPosts}
+                    onClick={() => void loadAdminPosts(postsPage, true)}
                     disabled={isLoadingPosts}
                     title="Tải danh sách bài đăng thực tế từ database Backend Spring Boot"
                     className="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-bold text-slate-700 flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
@@ -1627,19 +1670,36 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 <table className="w-full text-left text-xs">
                   <thead>
                     <tr className="border-b border-slate-200 text-slate-500 uppercase text-[10px] tracking-wider">
-                      <th className="pb-3 font-bold">Ảnh & Sản Phẩm</th>
-                      <th className="pb-3 font-bold">Danh Mục</th>
-                      <th className="pb-3 font-bold">Người Bán</th>
+                      <th className="pb-3 font-bold">Ảnh & sản phẩm</th>
+                      <th className="pb-3 font-bold">Danh mục</th>
+                      <th className="pb-3 font-bold">Người bán</th>
                       <th className="pb-3 font-bold text-right">Giá sản phẩm</th>
 
-                      <th className="pb-3 font-bold text-center">Trạng Thái</th>
-                      <th className="pb-3 font-bold text-center">Thao Tác</th>
+                      <th className="pb-3 font-bold text-center">Trạng thái</th>
+                      <th className="pb-3 font-bold text-center">Thao tác</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {filteredListings.map((item) => {
+                      const backendStatus = String((item as any).backendStatus || '').toUpperCase();
                       const isVisible = item.status === 'active' || item.status === 'pending';
                       const isDraft = item.status === 'draft';
+                      const statusMeta =
+                        backendStatus === 'RETURNING'
+                          ? { label: 'Đang hoàn về người bán', cls: 'bg-amber-50 text-amber-700 border border-amber-200' }
+                          : backendStatus === 'RESERVED' || item.status === 'reserved'
+                            ? { label: 'Đang giữ chỗ', cls: 'bg-amber-50 text-amber-700 border border-amber-200' }
+                            : backendStatus === 'PENDING_INSPECTION' || backendStatus === 'READY_TO_PUBLISH' || item.status === 'pending_inspection'
+                              ? { label: 'Chờ kiểm định', cls: 'bg-sky-50 text-sky-700 border border-sky-200' }
+                              : backendStatus === 'SOLD' || item.status === 'sold'
+                                ? { label: 'Đã bán', cls: 'bg-slate-100 text-slate-700 border border-slate-200' }
+                                : backendStatus === 'REJECTED' || item.status === 'rejected'
+                                  ? { label: 'Bị từ chối', cls: 'bg-rose-50 text-rose-700 border border-rose-200' }
+                                  : isVisible
+                                    ? { label: 'Đang hiển thị', cls: 'bg-emerald-50 text-emerald-700 border border-emerald-200' }
+                                    : isDraft
+                                      ? { label: 'Bản nháp', cls: 'bg-slate-100 text-slate-500 border border-slate-200' }
+                                      : { label: 'Tạm ẩn', cls: 'bg-gray-100 text-gray-600' };
                       return (
                         <tr key={item.id} className="hover:bg-slate-50/80 transition">
                           <td className="py-3">
@@ -1671,14 +1731,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
                           <td className="py-3 text-center">
                             <span
-                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${isVisible
-                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                : isDraft
-                                  ? 'bg-slate-100 text-slate-500 border border-slate-200'
-                                  : 'bg-gray-100 text-gray-600'
-                                }`}
+                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${statusMeta.cls}`}
                             >
-                              {isVisible ? 'Đang Hiển Thị' : isDraft ? 'Bản Nháp' : 'Tạm Ẩn'}
+                              {statusMeta.label}
                             </span>
                           </td>
                           <td className="py-3 text-center">
@@ -1698,6 +1753,37 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     })}
                   </tbody>
                 </table>
+              </div>
+
+              {/* Pagination (10 sản phẩm / trang) */}
+              <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
+                <span>
+                  Hiển thị <strong className="text-slate-900 font-mono">{filteredListings.length}</strong> / tổng số{' '}
+                  <strong className="text-slate-900 font-mono">{postsTotalElements || filteredListings.length}</strong> sản phẩm (10 sản phẩm/trang)
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setPostsPage((p) => Math.max(0, p - 1))}
+                    disabled={postsPage === 0 || isLoadingPosts}
+                    className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
+                    title="Trang trước"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <span className="px-3 py-1 font-mono font-bold text-slate-800">
+                    Trang {postsPage + 1} / {Math.max(1, postsTotalPages)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setPostsPage((p) => Math.min(postsTotalPages - 1, p + 1))}
+                    disabled={postsPage >= postsTotalPages - 1 || isLoadingPosts}
+                    className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
+                    title="Trang sau"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -1747,10 +1833,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
                         <h3 className="text-base font-black text-slate-900 tracking-tight">
-                          Thẩm Định & Duyệt Hồ Sơ eKYC Người Bán
+                          Thẩm định & duyệt hồ sơ eKYC người bán
                         </h3>
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                          VNPT eKYC Engine
+                          Hệ thống VNPT eKYC
                         </span>
                       </div>
                       <p className="text-xs text-slate-500 mt-0.5">
@@ -1767,7 +1853,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     title="Làm mới danh sách hồ sơ"
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${isLoadingVerifications ? 'animate-spin text-rose-600' : 'text-slate-500'}`} />
-                    <span>{isLoadingVerifications ? 'Đang đồng bộ...' : 'Làm Mới Dữ Liệu'}</span>
+                    <span>{isLoadingVerifications ? 'Đang đồng bộ...' : 'Làm mới dữ liệu'}</span>
                   </button>
                 </div>
 
@@ -1784,7 +1870,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   >
                     <div className="flex items-center justify-between mb-1.5">
                       <span className={`text-[10px] font-bold uppercase tracking-wider ${verificationFilterTab === 'ALL' ? 'text-slate-300' : 'text-slate-400'}`}>
-                        Tổng Hồ Sơ
+                        Tổng hồ sơ
                       </span>
                       <Layers className={`w-3.5 h-3.5 ${verificationFilterTab === 'ALL' ? 'text-slate-300' : 'text-slate-400'}`} />
                     </div>
@@ -1807,7 +1893,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   >
                     <div className="flex items-center justify-between mb-1.5">
                       <span className={`text-[10px] font-bold uppercase tracking-wider ${verificationFilterTab === 'NEEDS_REVIEW' ? 'text-white/90' : 'text-amber-800'}`}>
-                        Cần Duyệt
+                        Cần duyệt
                       </span>
                       <Clock className={`w-3.5 h-3.5 ${verificationFilterTab === 'NEEDS_REVIEW' ? 'text-white' : 'text-amber-600'}`} />
                     </div>
@@ -1830,7 +1916,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   >
                     <div className="flex items-center justify-between mb-1.5">
                       <span className={`text-[10px] font-bold uppercase tracking-wider ${verificationFilterTab === 'PROVIDER_ERROR' ? 'text-white/90' : 'text-rose-800'}`}>
-                        Lỗi Provider VNPT
+                        Lỗi cổng VNPT
                       </span>
                       <AlertTriangle className={`w-3.5 h-3.5 ${verificationFilterTab === 'PROVIDER_ERROR' ? 'text-white' : 'text-rose-600'}`} />
                     </div>
@@ -1853,7 +1939,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   >
                     <div className="flex items-center justify-between mb-1.5">
                       <span className={`text-[10px] font-bold uppercase tracking-wider ${verificationFilterTab === 'RESUBMIT_REQUIRED' ? 'text-white/90' : 'text-orange-800'}`}>
-                        Chờ Nộp Lại
+                        Chờ nộp lại
                       </span>
                       <RefreshCw className={`w-3.5 h-3.5 ${verificationFilterTab === 'RESUBMIT_REQUIRED' ? 'text-white' : 'text-orange-600'}`} />
                     </div>
@@ -1861,7 +1947,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       {resubmitCount}
                     </div>
                     <span className={`text-[10px] font-medium block mt-0.5 ${verificationFilterTab === 'RESUBMIT_REQUIRED' ? 'text-white/90' : 'text-orange-700'}`}>
-                      Đang chờ seller cập nhật
+                      Đang chờ người bán cập nhật
                     </span>
                   </button>
 
@@ -1876,7 +1962,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   >
                     <div className="flex items-center justify-between mb-1.5">
                       <span className={`text-[10px] font-bold uppercase tracking-wider ${verificationFilterTab === 'APPROVED' ? 'text-white/90' : 'text-emerald-800'}`}>
-                        Đã Phê Duyệt
+                        Đã phê duyệt
                       </span>
                       <CheckCircle2 className={`w-3.5 h-3.5 ${verificationFilterTab === 'APPROVED' ? 'text-white' : 'text-emerald-600'}`} />
                     </div>
@@ -1884,7 +1970,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       {approvedCount}
                     </div>
                     <span className={`text-[10px] font-medium block mt-0.5 ${verificationFilterTab === 'APPROVED' ? 'text-white/90' : 'text-emerald-700'}`}>
-                      Đã cấp quyền SELLER
+                      Đã cấp quyền Người bán
                     </span>
                   </button>
                 </div>
@@ -1903,7 +1989,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                           : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
                           }`}
                       >
-                        Tất Cả ({backendVerifications.length})
+                        Tất cả ({backendVerifications.length})
                       </button>
 
                       <button
@@ -1914,7 +2000,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                           : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
                           }`}
                       >
-                        <span>Cần Duyệt</span>
+                        <span>Cần duyệt</span>
                         {needsReviewCount > 0 && (
                           <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-amber-500 text-white">
                             {needsReviewCount}
@@ -1930,7 +2016,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                           : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
                           }`}
                       >
-                        <span>Lỗi Provider</span>
+                        <span>Lỗi cổng VNPT</span>
                         {providerErrorCount > 0 && (
                           <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-rose-600 text-white animate-pulse">
                             {providerErrorCount}
@@ -1957,7 +2043,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                           : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
                           }`}
                       >
-                        Yêu Cầu Nộp Lại ({resubmitCount})
+                        Yêu cầu nộp lại ({resubmitCount})
                       </button>
 
                       <button
@@ -1968,7 +2054,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                           : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
                           }`}
                       >
-                        Đã Duyệt ({approvedCount})
+                        Đã duyệt ({approvedCount})
                       </button>
 
                       <button
@@ -1979,7 +2065,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                           : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
                           }`}
                       >
-                        Đã Từ Chối ({rejectedCount})
+                        Đã từ chối ({rejectedCount})
                       </button>
                     </div>
 
@@ -1991,7 +2077,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                           type="text"
                           value={verificationSearchTerm}
                           onChange={(e) => setVerificationSearchTerm(e.target.value)}
-                          placeholder="Tìm Shop, Tên, CCCD, SĐT..."
+                          placeholder="Tìm shop, tên, CCCD, SĐT..."
                           className="w-full pl-9 pr-8 py-2 rounded-xl border border-slate-200 text-xs outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-500/10 bg-white transition shadow-2xs"
                         />
                         {verificationSearchTerm && (
@@ -2011,7 +2097,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                           type="text"
                           value={userIdSearchInput}
                           onChange={(e) => setUserIdSearchInput(e.target.value)}
-                          placeholder="User ID..."
+                          placeholder="Mã người dùng..."
                           className="w-32 sm:w-36 px-2.5 py-2 rounded-xl border border-slate-200 text-xs outline-none focus:border-indigo-500 bg-white font-mono shadow-2xs"
                         />
                         <button
@@ -2019,7 +2105,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                           onClick={handleLookupVerificationByUserId}
                           disabled={isSearchingByUserId || !userIdSearchInput.trim()}
                           className="px-3 py-2 rounded-xl bg-[#24263e] hover:bg-black text-white text-xs font-bold transition cursor-pointer flex items-center gap-1 shadow-2xs disabled:opacity-50 shrink-0"
-                          title="Tra cứu hồ sơ eKYC theo User ID (GET /staff/seller-verifications/user/{userId})"
+                          title="Tra cứu hồ sơ eKYC theo mã người dùng"
                         >
                           {isSearchingByUserId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
                           <span>Tìm ID</span>
@@ -2033,12 +2119,12 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     <table className="w-full text-left text-xs">
                       <thead>
                         <tr className="border-b border-slate-200 bg-slate-50/80 text-slate-500 text-[11px] font-bold uppercase tracking-wider">
-                          <th className="py-3 px-4">Gian Hàng & Người Bán</th>
-                          <th className="py-3 px-4">Định Danh CCCD</th>
-                          <th className="py-3 px-4">Chỉ Số eKYC (VNPT)</th>
-                          <th className="py-3 px-4">Đánh Giá Rủi Ro</th>
-                          <th className="py-3 px-4">Trạng Thái Hồ Sơ</th>
-                          <th className="py-3 px-4 text-right">Thao Tác Quản Trị</th>
+                          <th className="py-3 px-4">Gian hàng & người bán</th>
+                          <th className="py-3 px-4">Định danh CCCD</th>
+                          <th className="py-3 px-4">Chỉ số eKYC (VNPT)</th>
+                          <th className="py-3 px-4">Đánh giá rủi ro</th>
+                          <th className="py-3 px-4">Trạng thái hồ sơ</th>
+                          <th className="py-3 px-4 text-right">Thao tác quản trị</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
@@ -2048,7 +2134,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                               <td className="py-3 px-4">
                                 <div className="font-bold text-slate-900 text-[13px] flex items-center gap-1.5">
                                   <Store className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                                  <span>{v.shopName || v.userFullName || 'Gian Hàng SecondLife'}</span>
+                                  <span>{v.shopName || v.userFullName || 'Gian hàng secondLife'}</span>
                                 </div>
                                 <div className="text-[11px] text-slate-500 flex items-center gap-2 mt-0.5">
                                   <span>{v.userFullName || '—'}</span>
@@ -2064,7 +2150,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                                   {v.documentNumber || v.documentNumberMasked || '—'}
                                 </span>
                                 <div className="text-[10px] text-slate-400 mt-0.5">
-                                  <span>{v.verificationType || 'CITIZEN_ID'}</span>
+                                  <span>{formatVerificationType(v.verificationType)}</span>
                                   {v.resubmissionCount > 0 && (
                                     <span className="ml-1 text-orange-600 font-bold">
                                       (Lần {v.resubmissionCount + 1})
@@ -2101,10 +2187,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                                   v.riskStatus === 'BLOCK' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
                                     'bg-purple-50 text-purple-700 border border-purple-200'
                                   }`}>
-                                  {v.riskStatus || 'NOT_EVALUATED'}
+                                  {formatRiskStatus(v.riskStatus)}
                                 </span>
                                 <div className="text-[10px] text-slate-400 mt-0.5">
-                                  Provider: <strong className="text-slate-600">{v.providerName || 'VNPT'}</strong>
+                                  Đơn vị xác thực: <strong className="text-slate-600">{formatProviderName(v.providerName)}</strong>
                                 </div>
                               </td>
 
@@ -2116,18 +2202,18 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                                         v.status === 'NEEDS_REVIEW' || v.status === 'SUBMITTED' || v.status === 'PENDING' ? 'bg-amber-100 text-amber-800 border border-amber-300 animate-pulse' :
                                           'bg-blue-100 text-blue-800 border border-blue-300'
                                     }`}>
-                                    {v.status}
+                                    {formatVerificationStatus(v.status)}
                                   </span>
 
                                   {v.ekycStatus === 'PROVIDER_ERROR' && (
                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                                      ⚠️ Lỗi Provider VNPT
+                                      ⚠️ Lỗi cổng VNPT
                                     </span>
                                   )}
 
-                                  {(v.reasonCodeDescription || v.rejectionReason) && (
-                                    <span className="text-[10px] text-slate-500 line-clamp-1 max-w-[200px]" title={v.reasonCodeDescription || v.rejectionReason}>
-                                      {v.reasonCodeDescription || v.rejectionReason}
+                                  {(v.rejectionReason || v.reasonCodeDescription) && (
+                                    <span className="text-[10px] text-slate-500 line-clamp-1 max-w-[200px]" title={v.rejectionReason || v.reasonCodeDescription}>
+                                      {v.rejectionReason || v.reasonCodeDescription}
                                     </span>
                                   )}
                                 </div>
@@ -2142,7 +2228,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                                     title="Xem toàn bộ ảnh CCCD, điểm chi tiết & Thẩm định"
                                   >
                                     <Eye className="w-3.5 h-3.5" />
-                                    <span>Xem & Thẩm Định</span>
+                                    <span>Xem & thẩm định</span>
                                   </button>
                                   {v.status === 'EKYC_PENDING' && v.ekycStatus === 'PROVIDER_ERROR' && (
                                     <button
@@ -2153,7 +2239,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                                       title="Thử lại pipeline eKYC với đối tác VNPT"
                                     >
                                       <RefreshCw className={`w-3.5 h-3.5 ${reviewingAction === 'RETRY' ? 'animate-spin' : ''}`} />
-                                      <span className="hidden sm:inline">Thử Lại</span>
+                                      <span className="hidden sm:inline">Thử lại</span>
                                     </button>
                                   )}
                                   {(v.status === 'NEEDS_REVIEW' || v.status === 'SUBMITTED' || v.status === 'PENDING') && (
@@ -2218,7 +2304,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
                 <div>
                   <h3 className="text-sm font-bold text-slate-900 uppercase">
-                    Danh Sách Khách Hàng & Tài Khoản Hoạt Động ({backendUsers.length || 44} Thành Viên)
+                    Danh sách khách hàng & tài khoản hoạt động ({backendUsers.length || 44} Thành viên)
                   </h3>
                   <p className="text-xs text-slate-500">
                     Quản lý danh tính người mua, người bán đã xác thực căn cước & bảo chứng tài chính
@@ -2324,7 +2410,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                                     : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-700'
                                     }`}
                                 >
-                                  {user.accountStatus === 'ACTIVE' ? 'Khóa' : 'Mở Khóa'}
+                                  {user.accountStatus === 'ACTIVE' ? 'Khóa' : 'Mở khóa'}
                                 </button>
                               </div>
                             </td>
@@ -2332,8 +2418,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                         ))
                     ) : (
                       [
-                        { name: 'Nguyễn Văn An', phone: '0912 345 678', email: 'an.nguyen@gmail.com', role: 'Người mua', status: 'ACTIVE', kyc: 'Đã xác thực OTP' },
-                        { name: 'Cửa hàng Gia Dụng Đức', phone: '0988 765 432', email: 'kt05@gmail.com', role: 'Người bán', status: 'ACTIVE', kyc: 'Đã xác thực OTP' }
+                        { name: 'Nguyễn văn an', phone: '0912 345 678', email: 'an.nguyen@gmail.com', role: 'Người mua', status: 'ACTIVE', kyc: 'Đã xác thực OTP' },
+                        { name: 'Cửa hàng gia dụng đức', phone: '0988 765 432', email: 'kt05@gmail.com', role: 'Người bán', status: 'ACTIVE', kyc: 'Đã xác thực OTP' }
                       ].map((user, i) => (
                         <tr key={i} className="hover:bg-slate-50/70 transition">
                           <td className="py-3 px-4 font-bold text-slate-900">{user.name}</td>
@@ -2364,6 +2450,37 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   </tbody>
                 </table>
               </div>
+
+              {/* Pagination (10 sản phẩm / trang) */}
+              <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
+                <span>
+                  Hiển thị <strong className="text-slate-900 font-mono">{filteredListings.length}</strong> / tổng số{' '}
+                  <strong className="text-slate-900 font-mono">{postsTotalElements || filteredListings.length}</strong> sản phẩm (10 sản phẩm/trang)
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setPostsPage((p) => Math.max(0, p - 1))}
+                    disabled={postsPage === 0 || isLoadingPosts}
+                    className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
+                    title="Trang trước"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <span className="px-3 py-1 font-mono font-bold text-slate-800">
+                    Trang {postsPage + 1} / {Math.max(1, postsTotalPages)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setPostsPage((p) => Math.min(postsTotalPages - 1, p + 1))}
+                    disabled={postsPage >= postsTotalPages - 1 || isLoadingPosts}
+                    className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
+                    title="Trang sau"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
@@ -2376,7 +2493,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 <div>
                   <h3 className="text-sm sm:text-base font-black text-slate-900 uppercase flex items-center gap-2">
                     <Building2 className="w-5 h-5 text-[#c34c36]" />
-                    <span>Danh Sách Trạm Kiểm Định Hub & Quản Lý Kỹ Thuật Viên</span>
+                    <span>Danh sách trạm kiểm định Hub & quản lý kỹ thuật viên</span>
                   </h3>
                   <p className="text-xs text-slate-500 mt-0.5">
                     Quản trị đối tác trạm kiểm định và điều phối kỹ thuật viên trên hệ thống
@@ -2397,7 +2514,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     className="px-3.5 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
                   >
                     <ShieldCheck className="w-4 h-4 text-amber-600" />
-                    <span>Biểu Phí Kiểm Định</span>
+                    <span>Biểu phí kiểm định</span>
                   </button>
                 </div>
               </div>
@@ -2469,12 +2586,12 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                         {hub.shippingAddressConfigured !== false ? (
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                            Đang Hoạt Động
+                            Đang hoạt động
                           </span>
                         ) : (
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1">
                             <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                            Chờ Cấu Hình GPS
+                            Chờ cấu hình GPS
                           </span>
                         )}
                       </div>
@@ -2546,7 +2663,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
                 <div>
                   <h3 className="text-sm font-bold text-slate-900 uppercase">
-                    Quản Trị Bảng Giá Credit & Chính Sách Chiết Khấu Gói Nạp
+                    Quản trị bảng giá credit & chính sách chiết khấu gói nạp
                   </h3>
                   <p className="text-xs text-slate-500">
                     Cấu hình đơn giá Credit cho đăng tin (LISTING), thẩm định (VALUATION) và các bậc ưu đãi số lượng
@@ -2576,7 +2693,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       <div>
                         <h4 className="text-xs font-bold text-slate-800 uppercase flex items-center gap-1.5">
                           <Tag className="w-4 h-4 text-emerald-600" />
-                          1. Đơn Giá Dịch Vụ Cơ Bản Theo Loại Credit
+                          1. Đơn giá dịch vụ cơ bản theo loại credit
                         </h4>
                         <p className="text-[11px] text-slate-500 mt-0.5">
                           Đơn giá chuẩn VNĐ / 1 lượt dịch vụ. Giá tham chiếu và % tiết kiệm của các gói nạp được Backend tự động tính từ các đơn giá này.
@@ -2796,7 +2913,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       <div>
                         <h4 className="text-xs font-bold text-slate-800 uppercase flex items-center gap-1.5">
                           <TrendingUp className="w-4 h-4 text-emerald-600" />
-                          2. Danh Sách Gói Dịch Vụ & Chính Sách Chiết Khấu Ưu Đãi
+                          2. Danh sách gói dịch vụ & chính sách chiết khấu ưu đãi
                         </h4>
                         <p className="text-[11px] text-slate-500 mt-0.5">
                           Quản lý các gói dịch vụ bán lượt đăng bài, chat AI và định giá. Ưu đãi chiết khấu (%) do hệ thống tính toán tự động dựa trên đơn giá chuẩn.
@@ -2821,23 +2938,23 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     {/* Quick Metrics for Topup Packages */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                        <div className="text-[10px] text-slate-500 font-bold uppercase">Tổng Gói</div>
+                        <div className="text-[10px] text-slate-500 font-bold uppercase">Tổng gói</div>
                         <div className="text-xl font-black text-slate-900 mt-0.5">{topupPackages.length}</div>
                       </div>
                       <div className="p-3 rounded-xl bg-emerald-50/60 border border-emerald-200">
-                        <div className="text-[10px] text-emerald-800 font-bold uppercase">Đang Mở Bán</div>
+                        <div className="text-[10px] text-emerald-800 font-bold uppercase">Đang mở bán</div>
                         <div className="text-xl font-black text-emerald-800 mt-0.5">
                           {topupPackages.filter(p => p.active !== false).length}
                         </div>
                       </div>
                       <div className="p-3 rounded-xl bg-purple-50/60 border border-purple-200">
-                        <div className="text-[10px] text-purple-800 font-bold uppercase">Gói Combo</div>
+                        <div className="text-[10px] text-purple-800 font-bold uppercase">Gói combo</div>
                         <div className="text-xl font-black text-purple-800 mt-0.5">
                           {topupPackages.filter(p => (p.postCredits || 0) > 0 && ((p.chatCredits || 0) > 0 || (p.valuationCredits || 0) > 0)).length}
                         </div>
                       </div>
                       <div className="p-3 rounded-xl bg-rose-50/60 border border-rose-200">
-                        <div className="text-[10px] text-rose-800 font-bold uppercase">Chiết Khấu Cao Nhất</div>
+                        <div className="text-[10px] text-rose-800 font-bold uppercase">Chiết khấu cao nhất</div>
                         <div className="text-xl font-black text-rose-700 mt-0.5">
                           {(() => {
                             const validDiscounts = topupPackages
@@ -2854,14 +2971,14 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       <table className="w-full text-left text-xs">
                         <thead>
                           <tr className="border-b border-slate-200 bg-slate-50 text-slate-600 text-[11px] font-bold">
-                            <th className="py-2.5 px-4">Tên Gói & Mô Tả</th>
-                            <th className="py-2.5 px-3 text-center">Đăng Tin</th>
+                            <th className="py-2.5 px-4">Tên gói & mô tả</th>
+                            <th className="py-2.5 px-3 text-center">Đăng tin</th>
                             <th className="py-2.5 px-3 text-center">Chat AI</th>
-                            <th className="py-2.5 px-3 text-center">Định Giá AI</th>
+                            <th className="py-2.5 px-3 text-center">Định giá AI</th>
                             <th className="py-2.5 px-4 text-right">Giá Gói (VNĐ)</th>
-                            <th className="py-2.5 px-4 text-center">Ưu Đãi Chiết Khấu</th>
-                            <th className="py-2.5 px-4 text-center">Trạng Thái</th>
-                            <th className="py-2.5 px-4 text-center">Thao Tác</th>
+                            <th className="py-2.5 px-4 text-center">Ưu đãi chiết khấu</th>
+                            <th className="py-2.5 px-4 text-center">Trạng thái</th>
+                            <th className="py-2.5 px-4 text-center">Thao tác</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -3019,7 +3136,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       </div>
                       <div>
                         <h3 className="text-lg font-black text-slate-900 tracking-tight">
-                          Xác Nhận Ngừng Bán Gói Dịch Vụ?
+                          Xác nhận ngừng bán gói dịch vụ?
                         </h3>
                         <p className="text-xs text-slate-500 mt-1">
                           Gói sẽ được ẩn khỏi danh sách mua của người bán trên sàn. Dữ liệu gói và lịch sử giao dịch trước đây vẫn được lưu trữ nguyên vẹn.
@@ -3060,7 +3177,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                         disabled={isDeactivatingPackage}
                         className="flex-1 py-3 px-4 rounded-xl border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold text-xs transition cursor-pointer"
                       >
-                        Hủy Bỏ
+                        Hủy bỏ
                       </button>
                       <button
                         type="button"
@@ -3076,7 +3193,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                         ) : (
                           <>
                             <Ban className="w-4 h-4" />
-                            <span>Ngừng Bán Gói</span>
+                            <span>Ngừng bán gói</span>
                           </>
                         )}
                       </button>
@@ -3150,18 +3267,18 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className="font-black text-sm text-slate-900 uppercase">
-                        Thẩm Định eKYC Người Bán #{selectedVerificationDetail.id}
+                        Thẩm định eKYC người bán #{selectedVerificationDetail.id}
                       </h3>
                       <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${selectedVerificationDetail.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' :
                         selectedVerificationDetail.status === 'REJECTED' ? 'bg-rose-100 text-rose-800 border border-rose-300' :
                           selectedVerificationDetail.status === 'RESUBMIT_REQUIRED' ? 'bg-orange-100 text-orange-800 border border-orange-300' :
                             'bg-amber-100 text-amber-800 border border-amber-300'
                         }`}>
-                        {selectedVerificationDetail.status}
+                        {formatVerificationStatus(selectedVerificationDetail.status)}
                       </span>
                       {selectedVerificationDetail.ekycStatus === 'PROVIDER_ERROR' && (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
-                          ⚠️ PROVIDER_ERROR
+                          ⚠️ Lỗi cổng VNPT
                         </span>
                       )}
                     </div>
@@ -3202,9 +3319,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-300 text-amber-950 text-xs flex items-center gap-2.5">
                     <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
                     <div>
-                      <strong className="block font-bold">Gián đoạn kết nối đối tác eKYC VNPT (PROVIDER_ERROR)</strong>
+                      <strong className="block font-bold">Gián đoạn kết nối đối tác eKYC VNPT</strong>
                       <span className="text-[11px] text-amber-800">
-                        Hồ sơ đã được tiếp nhận nhưng đối soát eKYC tự động bị gián đoạn do sự cố kết nối hoặc cấu hình VNPT. Quản trị viên hãy kiểm tra dịch vụ và bấm <strong>"Thử Lại eKYC"</strong> bên dưới để chạy lại quy trình từ ảnh đã lưu.
+                        Hồ sơ đã được tiếp nhận nhưng đối soát eKYC tự động bị gián đoạn do sự cố kết nối hoặc cấu hình VNPT. Quản trị viên hãy kiểm tra dịch vụ và bấm <strong>"Thử lại eKYC"</strong> bên dưới để chạy lại quy trình từ ảnh đã lưu.
                       </span>
                     </div>
                   </div>
@@ -3215,7 +3332,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   <div className="p-3.5 rounded-2xl bg-orange-50 border border-orange-200 text-orange-950 text-xs flex items-center gap-2.5">
                     <RefreshCw className="w-5 h-5 text-orange-600 shrink-0" />
                     <div>
-                      <strong className="block font-bold">Hồ sơ đang ở trạng thái YÊU CẦU NỘP LẠI (RESUBMIT_REQUIRED)</strong>
+                      <strong className="block font-bold">Hồ sơ đang ở trạng thái Yêu cầu nộp lại</strong>
                       <span className="text-[11px] text-orange-800">
                         Lý do: <em>{selectedVerificationDetail.rejectionReason || 'Chụp lại ảnh chứng từ rõ nét'}</em>. Đang chờ người bán đăng nhập để tải lại ảnh mới. Các thao tác thẩm định tạm khóa cho đến khi người bán nộp lại.
                       </span>
@@ -3228,8 +3345,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs flex items-center gap-2.5">
                     <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
                     <div>
-                      <strong className="block font-bold">Hồ sơ đã được PHÊ DUYỆT thành công!</strong>
-                      <span className="text-[11px] text-emerald-700">Người dùng đã được cấp quyền bán hàng (Role: SELLER). Các nút thao tác đã được đóng để bảo vệ tính toàn vẹn dữ liệu.</span>
+                      <strong className="block font-bold">Hồ sơ đã được phê duyệt thành công!</strong>
+                      <span className="text-[11px] text-emerald-700">Người dùng đã được cấp quyền bán hàng (Vai trò: Người bán). Các nút thao tác đã được đóng để bảo vệ tính toàn vẹn dữ liệu.</span>
                     </div>
                   </div>
                 )}
@@ -3238,8 +3355,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 text-xs flex items-center gap-2.5">
                     <XCircle className="w-5 h-5 text-rose-600 shrink-0" />
                     <div>
-                      <strong className="block font-bold">Hồ sơ đã BỊ TỪ CHỐI và kết thúc!</strong>
-                      <span className="text-[11px] text-rose-700">Lý do: {selectedVerificationDetail.rejectionReason || 'Chưa đạt yêu cầu thẩm định identity'}. Quy trình xét duyệt hồ sơ này đã đóng. Người dùng cần tạo hồ sơ mới nếu muốn đăng ký lại.</span>
+                      <strong className="block font-bold">Hồ sơ đã bị từ chối và kết thúc!</strong>
+                      <span className="text-[11px] text-rose-700">Lý do: {selectedVerificationDetail.rejectionReason || 'Chưa đạt yêu cầu thẩm định danh tính'}. Quy trình xét duyệt hồ sơ này đã đóng. Người dùng cần tạo hồ sơ mới nếu muốn đăng ký lại.</span>
                     </div>
                   </div>
                 )}
@@ -3250,7 +3367,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     <div className="flex items-center gap-2">
                       <Store className="w-4 h-4 text-rose-600" />
                       <span className="font-bold text-slate-900 text-xs">
-                        Thông Tin Đăng Ký Gian Hàng & Liên Hệ
+                        Thông tin đăng ký gian hàng & liên hệ
                       </span>
                     </div>
                     <span className="text-[11px] font-medium text-slate-500">
@@ -3262,7 +3379,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     <div>
                       <span className="text-[10px] text-slate-400 uppercase font-bold block">Tên gian hàng / Hotline:</span>
                       <span className="font-bold text-slate-800 text-[13px] block">
-                        {selectedVerificationDetail.shopName || selectedVerificationDetail.userFullName || 'Gian Hàng SecondLife'}
+                        {selectedVerificationDetail.shopName || selectedVerificationDetail.userFullName || 'Gian hàng secondLife'}
                       </span>
                       <span className="text-[11px] text-slate-600 flex items-center gap-1 mt-0.5">
                         <Phone className="w-3 h-3 text-slate-400" />
@@ -3287,7 +3404,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                         {selectedVerificationDetail.documentNumber || selectedVerificationDetail.documentNumberMasked || '—'}
                       </span>
                       <span className="text-[11px] text-slate-500 mt-0.5 block">
-                        Loại: <strong>{selectedVerificationDetail.verificationType || 'CITIZEN_ID'}</strong>
+                        Loại: <strong>{formatVerificationType(selectedVerificationDetail.verificationType)}</strong>
                         {selectedVerificationDetail.resubmissionCount > 0 && ` • Đã nộp lại ${selectedVerificationDetail.resubmissionCount} lần`}
                       </span>
                     </div>
@@ -3308,7 +3425,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     <div className="pt-2 border-t border-slate-200/60 flex flex-wrap items-center gap-3 text-[11px] text-slate-600">
                       {selectedVerificationDetail.providerReferenceId && (
                         <div>
-                          <span className="font-bold text-slate-800">Mã đối tác (Ref ID): </span>
+                          <span className="font-bold text-slate-800">Mã tham chiếu đối tác: </span>
                           <span className="font-mono bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-900">
                             {selectedVerificationDetail.providerReferenceId}
                           </span>
@@ -3316,7 +3433,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       )}
                       {selectedVerificationDetail.clientSession && (
                         <div>
-                          <span className="font-bold text-slate-800">Phiên client: </span>
+                          <span className="font-bold text-slate-800">Phiên thiết bị: </span>
                           <span className="font-mono bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-900">
                             {selectedVerificationDetail.clientSession}
                           </span>
@@ -3331,10 +3448,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
                       <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-                      <span>Kết Quả Thẩm Định eKYC & Đánh Giá Rủi Ro:</span>
+                      <span>Kết quả thẩm định eKYC & đánh giá rủi ro:</span>
                     </span>
                     <span className="text-[11px] text-slate-500">
-                      Provider: <strong className="text-slate-800">{selectedVerificationDetail.providerName || 'VNPT eKYC'}</strong>
+                      Đơn vị xác thực: <strong className="text-slate-800">{formatProviderName(selectedVerificationDetail.providerName)}</strong>
                     </span>
                   </div>
 
@@ -3342,7 +3459,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     {/* Khớp Mặt */}
                     <div className="p-3.5 rounded-2xl bg-gradient-to-br from-indigo-50/80 to-blue-50/50 border border-indigo-100 flex flex-col justify-between shadow-2xs">
                       <div className="flex items-center justify-between text-indigo-700 mb-1">
-                        <span className="text-[11px] font-bold">Khớp Mặt</span>
+                        <span className="text-[11px] font-bold">Khớp mặt</span>
                         <ScanFace className="w-4 h-4" />
                       </div>
                       <div className="font-black text-2xl text-indigo-950 font-mono">
@@ -3358,7 +3475,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     {/* Thực Thể Sống */}
                     <div className="p-3.5 rounded-2xl bg-gradient-to-br from-emerald-50/80 to-teal-50/50 border border-emerald-100 flex flex-col justify-between shadow-2xs">
                       <div className="flex items-center justify-between text-emerald-700 mb-1">
-                        <span className="text-[11px] font-bold">Thực Thể Sống</span>
+                        <span className="text-[11px] font-bold">Thực thể sống</span>
                         <Sparkles className="w-4 h-4" />
                       </div>
                       <div className="font-black text-2xl text-emerald-950 font-mono">
@@ -3366,7 +3483,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       </div>
                       <span className="text-[10px] text-emerald-600 font-medium mt-1">
                         {selectedVerificationDetail.livenessScore !== undefined && selectedVerificationDetail.livenessScore !== null
-                          ? '✓ Người thật (Active)'
+                          ? '✓ Người thật hợp lệ'
                           : 'Chưa kiểm tra'}
                       </span>
                     </div>
@@ -3374,7 +3491,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     {/* Chất Lượng Giấy Tờ */}
                     <div className="p-3.5 rounded-2xl bg-gradient-to-br from-amber-50/80 to-orange-50/50 border border-amber-100 flex flex-col justify-between shadow-2xs">
                       <div className="flex items-center justify-between text-amber-700 mb-1">
-                        <span className="text-[11px] font-bold">Chất Lượng Giấy Tờ</span>
+                        <span className="text-[11px] font-bold">Chất lượng giấy tờ</span>
                         <FileSpreadsheet className="w-4 h-4" />
                       </div>
                       <div className="font-black text-2xl text-amber-950 font-mono">
@@ -3390,11 +3507,11 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     {/* Đánh Giá Rủi Ro */}
                     <div className="p-3.5 rounded-2xl bg-gradient-to-br from-purple-50/80 to-pink-50/50 border border-purple-100 flex flex-col justify-between shadow-2xs">
                       <div className="flex items-center justify-between text-purple-700 mb-1">
-                        <span className="text-[11px] font-bold">Đánh Giá Rủi Ro</span>
+                        <span className="text-[11px] font-bold">Đánh giá rủi ro</span>
                         <ShieldCheck className="w-4 h-4" />
                       </div>
-                      <div className="font-black text-base text-purple-950 font-mono uppercase truncate">
-                        {selectedVerificationDetail.riskStatus || 'NOT_EVALUATED'}
+                      <div className="font-black text-base text-purple-950 truncate">
+                        {formatRiskStatus(selectedVerificationDetail.riskStatus)}
                       </div>
                       <span className="text-[10px] text-purple-600 font-medium mt-1">
                         Điểm: {formatScore(selectedVerificationDetail.riskScore)}
@@ -3416,7 +3533,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
                       <Eye className="w-3.5 h-3.5 text-slate-500" />
-                      <span>Hình Ảnh Đối Chiếu Danh Tính & Giấy Tờ:</span>
+                      <span>Hình ảnh đối chiếu danh tính & giấy tờ:</span>
                     </span>
                     <span className="text-[11px] text-slate-400">Bấm vào ảnh để phóng to toàn màn hình</span>
                   </div>
@@ -3424,9 +3541,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     {/* Mặt trước */}
                     <div className="space-y-1">
-                      <span className="text-[11px] font-bold text-slate-600 block">1. CCCD Mặt Trước</span>
+                      <span className="text-[11px] font-bold text-slate-600 block">1. CCCD mặt trước</span>
                       <div
-                        onClick={() => selectedVerificationDetail.documentFrontUrl && setPreviewImageModal({ url: selectedVerificationDetail.documentFrontUrl, title: 'CCCD Mặt Trước' })}
+                        onClick={() => selectedVerificationDetail.documentFrontUrl && setPreviewImageModal({ url: selectedVerificationDetail.documentFrontUrl, title: 'CCCD mặt trước' })}
                         className="group relative aspect-4/3 rounded-2xl border border-slate-200 overflow-hidden bg-slate-100 flex items-center justify-center cursor-pointer hover:border-indigo-500 transition shadow-xs"
                       >
                         {selectedVerificationDetail.documentFrontUrl ? (
@@ -3445,9 +3562,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
                     {/* Mặt sau */}
                     <div className="space-y-1">
-                      <span className="text-[11px] font-bold text-slate-600 block">2. CCCD Mặt Sau</span>
+                      <span className="text-[11px] font-bold text-slate-600 block">2. CCCD mặt sau</span>
                       <div
-                        onClick={() => selectedVerificationDetail.documentBackUrl && setPreviewImageModal({ url: selectedVerificationDetail.documentBackUrl, title: 'CCCD Mặt Sau' })}
+                        onClick={() => selectedVerificationDetail.documentBackUrl && setPreviewImageModal({ url: selectedVerificationDetail.documentBackUrl, title: 'CCCD mặt sau' })}
                         className="group relative aspect-4/3 rounded-2xl border border-slate-200 overflow-hidden bg-slate-100 flex items-center justify-center cursor-pointer hover:border-indigo-500 transition shadow-xs"
                       >
                         {selectedVerificationDetail.documentBackUrl ? (
@@ -3466,9 +3583,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
                     {/* Chân dung selfie */}
                     <div className="space-y-1">
-                      <span className="text-[11px] font-bold text-slate-600 block">3. Chân Dung Selfie</span>
+                      <span className="text-[11px] font-bold text-slate-600 block">3. Chân dung selfie</span>
                       <div
-                        onClick={() => selectedVerificationDetail.selfieUrl && setPreviewImageModal({ url: selectedVerificationDetail.selfieUrl, title: 'Ảnh Chân Dung Selfie' })}
+                        onClick={() => selectedVerificationDetail.selfieUrl && setPreviewImageModal({ url: selectedVerificationDetail.selfieUrl, title: 'Ảnh chân dung selfie' })}
                         className="group relative aspect-4/3 rounded-2xl border border-slate-200 overflow-hidden bg-slate-100 flex items-center justify-center cursor-pointer hover:border-indigo-500 transition shadow-xs"
                       >
                         {selectedVerificationDetail.selfieUrl ? (
@@ -3492,13 +3609,13 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   <div className="space-y-1.5 pt-1">
                     <h4 className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
                       <History className="w-3.5 h-3.5 text-slate-500" />
-                      <span>Lịch sử sự kiện xử lý (Audit Trail):</span>
+                      <span>Lịch sử sự kiện xử lý:</span>
                     </h4>
                     <div className="max-h-32 overflow-y-auto space-y-1.5 pr-1">
                       {selectedVerificationDetail.eventHistory.map((ev: any, idx: number) => (
                         <div key={ev.id || idx} className="p-2 rounded-xl bg-slate-50 border border-slate-200 text-[11px] flex items-start justify-between gap-2">
                           <div>
-                            <span className="font-bold text-slate-800">{ev.eventType}</span>
+                            <span className="font-bold text-slate-800">{formatVerificationEventType(ev.eventType)}</span>
                             {ev.notes && <p className="text-slate-600 text-[10px] mt-0.5">{ev.notes}</p>}
                           </div>
                           <span className="text-[10px] text-slate-400 shrink-0 font-mono">
@@ -3541,7 +3658,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
                       <div className="pt-1">
                         <label className="text-[10px] text-slate-500 font-bold block mb-1">
-                          Nội dung lý do chi tiết (rejectionReason - tối đa 1000 ký tự):
+                          Nội dung lý do chi tiết (tối đa 1000 ký tự):
                         </label>
                         <input
                           type="text"
@@ -3581,55 +3698,55 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 {isTerminalStatus ? (
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-xs font-bold text-slate-500">
-                      Hồ sơ ở trạng thái <strong>{selectedVerificationDetail.status}</strong> — Các thao tác đã đóng.
+                      Hồ sơ ở trạng thái <strong>{formatVerificationStatus(selectedVerificationDetail.status)}</strong> — Các thao tác đã đóng.
                     </span>
                     <button
                       type="button"
                       disabled={true}
                       className="px-4 py-2.5 bg-slate-200 text-slate-400 rounded-xl font-bold text-xs cursor-not-allowed opacity-60"
                     >
-                      Từ Chối
+                      Từ chối
                     </button>
                     <button
                       type="button"
                       disabled={true}
                       className="px-4 py-2.5 bg-slate-200 text-slate-400 rounded-xl font-bold text-xs cursor-not-allowed opacity-60"
                     >
-                      Yêu Cầu Nộp Lại
+                      Yêu cầu nộp lại
                     </button>
                     <button
                       type="button"
                       disabled={true}
                       className="px-5 py-2.5 bg-slate-200 text-slate-400 rounded-xl font-bold text-xs cursor-not-allowed opacity-60"
                     >
-                      Phê Duyệt
+                      Phê duyệt
                     </button>
                   </div>
                 ) : isResubmitRequired ? (
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-xs font-bold text-orange-700">
-                      Đang chờ người bán tải lại ảnh chứng từ (RESUBMIT_REQUIRED) — Các thao tác tạm khóa.
+                      Đang chờ người bán tải lại ảnh chứng từ — Các thao tác tạm khóa.
                     </span>
                     <button
                       type="button"
                       disabled={true}
                       className="px-4 py-2.5 bg-slate-200 text-slate-400 rounded-xl font-bold text-xs cursor-not-allowed opacity-60"
                     >
-                      Từ Chối
+                      Từ chối
                     </button>
                     <button
                       type="button"
                       disabled={true}
                       className="px-4 py-2.5 bg-slate-200 text-slate-400 rounded-xl font-bold text-xs cursor-not-allowed opacity-60"
                     >
-                      Yêu Cầu Nộp Lại
+                      Yêu cầu nộp lại
                     </button>
                     <button
                       type="button"
                       disabled={true}
                       className="px-5 py-2.5 bg-slate-200 text-slate-400 rounded-xl font-bold text-xs cursor-not-allowed opacity-60"
                     >
-                      Phê Duyệt
+                      Phê duyệt
                     </button>
                   </div>
                 ) : (
@@ -3648,7 +3765,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                         ) : (
                           <RefreshCw className="w-4 h-4" />
                         )}
-                        <span>Thử Lại eKYC</span>
+                        <span>Thử lại eKYC</span>
                       </button>
                     )}
 
@@ -3665,7 +3782,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       ) : (
                         <XCircle className="w-4 h-4" />
                       )}
-                      <span>Từ Chối Hồ Sơ</span>
+                      <span>Từ chối hồ sơ</span>
                     </button>
 
                     {/* 2. Yêu cầu nộp lại */}
@@ -3681,7 +3798,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       ) : (
                         <RefreshCw className="w-4 h-4" />
                       )}
-                      <span>Yêu Cầu Nộp Lại</span>
+                      <span>Yêu cầu nộp lại</span>
                     </button>
 
                     {/* 3. Phê duyệt eKYC */}
@@ -3690,14 +3807,14 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       disabled={isProcessing}
                       onClick={() => handleApproveSellerVerification(selectedVerificationDetail.id, selectedVerificationDetail.status)}
                       className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl font-bold text-xs transition cursor-pointer shadow-xs flex items-center gap-1.5"
-                      title="Phê duyệt hồ sơ và cấp vai trò SELLER"
+                      title="Phê duyệt hồ sơ và cấp vai trò Người bán"
                     >
                       {reviewingAction === 'APPROVE' ? (
                         <Loader2 className="w-4 h-4 animate-spin" />
                       ) : (
                         <CheckCircle2 className="w-4 h-4" />
                       )}
-                      <span>Phê Duyệt eKYC</span>
+                      <span>Phê duyệt eKYC</span>
                     </button>
                   </div>
                 )}
@@ -3748,7 +3865,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
                 <AlertCircle className="w-5 h-5 text-rose-600" />
-                <span>Nhập Lý Do Từ Chối eKYC Người Bán</span>
+                <span>Nhập lý do từ chối eKYC người bán</span>
               </h3>
               <button
                 onClick={() => setRejectModalVerificationId(null)}
@@ -3760,7 +3877,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
             <div className="space-y-3 text-xs">
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Mã lý do từ chối (Reason Code):</label>
+                <label className="block text-slate-700 font-bold mb-1">Lý do từ chối:</label>
                 <select
                   value={rejectionReasonCode}
                   onChange={(e) => setRejectionReasonCode(e.target.value)}
@@ -3775,7 +3892,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               </div>
 
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Chi tiết lý do từ chối (rejectionReason - tối đa 1000 ký tự):</label>
+                <label className="block text-slate-700 font-bold mb-1">Chi tiết lý do từ chối (tối đa 1000 ký tự):</label>
                 <textarea
                   rows={3}
                   maxLength={1000}
@@ -3792,13 +3909,13 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 onClick={() => setRejectModalVerificationId(null)}
                 className="px-4 py-2 rounded-xl border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
               >
-                Hủy Bỏ
+                Hủy bỏ
               </button>
               <button
                 onClick={handleRejectSellerVerification}
                 className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition cursor-pointer"
               >
-                Xác Nhận Từ Chối
+                Xác nhận từ chối
               </button>
             </div>
           </div>
@@ -3815,7 +3932,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               <div className="flex items-center gap-2">
                 <Building2 className="w-5 h-5 text-[#fce5da]" />
                 <h3 className="font-bold text-sm text-slate-900">
-                  Tạo Tài Khoản Trạm Kiểm Định (Hub) Mới
+                  Tạo tài khoản trạm kiểm định (Hub) Mới
                 </h3>
               </div>
               <button
@@ -3828,13 +3945,13 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
             <form onSubmit={handleCreateHubAccount} className="space-y-3 text-xs">
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Tên Trạm Hub / Trung tâm:</label>
+                <label className="block text-slate-700 font-bold mb-1">Tên trạm Hub / trung tâm:</label>
                 <input
                   type="text"
                   required
                   value={newHubData.hubCenterName}
                   onChange={(e) => setNewHubData({ ...newHubData, hubCenterName: e.target.value })}
-                  placeholder="Ví dụ: Trạm Kiểm Định Hub Tân Bình"
+                  placeholder="Ví dụ: Trạm kiểm định Hub tân bình"
                   className="w-full p-2.5 rounded-xl border border-slate-300 outline-none focus:border-[#fce5da]"
                 />
               </div>
@@ -3895,7 +4012,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   required
                   value={newHubData.address}
                   onChange={(e) => setNewHubData({ ...newHubData, address: e.target.value })}
-                  placeholder="123 Cộng Hòa, Phường 13, Q. Tân Bình"
+                  placeholder="123 cộng hòa, phường 13, Q. Tân Bình"
                   className="w-full p-2.5 rounded-xl border border-slate-300 outline-none focus:border-[#fce5da]"
                 />
               </div>
@@ -3906,13 +4023,13 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   onClick={() => setShowAddHubModal(false)}
                   className="px-4 py-2 rounded-xl border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
                 >
-                  Hủy Bỏ
+                  Hủy bỏ
                 </button>
                 <button
                   type="submit"
                   className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white text-xs font-bold transition cursor-pointer shadow-sm hover:opacity-95"
                 >
-                  Tạo Tài Khoản Hub
+                  Tạo tài khoản Hub
                 </button>
               </div>
             </form>
@@ -3930,7 +4047,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   <Users className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-slate-900 text-base">Chi Tiết Tài Khoản Người Dùng</h3>
+                  <h3 className="font-bold text-slate-900 text-base">Chi tiết tài khoản người dùng</h3>
                   <p className="text-xs text-slate-500 font-mono">ID: {selectedUserDetailId}</p>
                 </div>
               </div>
@@ -4073,7 +4190,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               <div className="flex items-center gap-2">
                 <ShieldCheck className="w-5 h-5 text-indigo-600" />
                 <h3 className="font-bold text-sm text-slate-900">
-                  Phân Quyền Vai Trò Người Dùng
+                  Phân quyền vai trò người dùng
                 </h3>
               </div>
               <button
@@ -4188,7 +4305,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs"
               >
                 {isSavingUserRoles && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                <span>Lưu Phân Vai Trò</span>
+                <span>Lưu phân vai trò</span>
               </button>
             </div>
           </div>
@@ -4205,7 +4322,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               <div className="flex items-center gap-2">
                 <History className="w-5 h-5 text-indigo-600" />
                 <h3 className="font-bold text-sm text-slate-900">
-                  Lịch Sử Thay Đổi Vai Trò Của Tài Khoản
+                  Lịch sử thay đổi vai trò của tài khoản
                 </h3>
               </div>
               <button
@@ -4272,7 +4389,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   <Unlock className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-sm text-slate-900">Gỡ Bỏ Hạn Chế Bán Hàng</h3>
+                  <h3 className="font-extrabold text-sm text-slate-900">Gỡ bỏ hạn chế bán hàng</h3>
                   <p className="text-[11px] text-slate-400 font-mono">POST /api/v1/admin/sellers/{'{id}'}/reputation/lift-restriction</p>
                 </div>
               </div>
@@ -4325,7 +4442,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 className="px-4 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white transition flex items-center gap-1.5 shadow-xs disabled:opacity-50 cursor-pointer"
               >
                 {liftRestrictionModal.isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                <span>Xác Nhận Gỡ Hạn Chế</span>
+                <span>Xác nhận gỡ hạn chế</span>
               </button>
             </div>
           </div>

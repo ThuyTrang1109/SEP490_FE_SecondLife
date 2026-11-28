@@ -32,7 +32,7 @@ export function OrderDetailProduct({
                 </div>
                 <div>
                   <h4 className="font-bold text-sm text-rose-950">
-                    {lang === 'vi' ? 'Đơn Hàng Đã Bị Hủy & Hoàn Tiền' : 'Order Cancelled & Refunded'}
+                    {lang === 'vi' ? 'Đơn hàng đã bị hủy & hoàn tiền' : 'Order Cancelled & Refunded'}
                   </h4>
                   <p className="text-[11px] text-rose-700">
                     {lang === 'vi'

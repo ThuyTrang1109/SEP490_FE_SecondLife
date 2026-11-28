@@ -40,6 +40,15 @@ import {
 import { UserProfile, UserRole, Language } from '../../types';
 import { LiveFaceScannerModal, VnptEkycResultData } from './LiveFaceScannerModal';
 import { LalamoveAddressPicker } from '../common/LalamoveAddressPicker';
+import { VietQrBankPicker } from '../common/VietQrBankPicker';
+import { SellerCelebrationOverlay } from '../common/SellerCelebrationOverlay';
+import {
+  BANK_ACCOUNT_NUMBER_MAX_LENGTH,
+  BANK_ACCOUNT_NUMBER_MIN_LENGTH,
+  sanitizeBankAccountHolder,
+  sanitizeBankAccountNumber,
+  validateBankAccountFields,
+} from '../../utils/bankAccountValidation';
 
 interface SellerRegistrationModalProps {
   isOpen: boolean;
@@ -49,6 +58,20 @@ interface SellerRegistrationModalProps {
   onRoleChange: (role: UserRole) => void;
   onNavigateToCreateListing?: () => void;
   lang?: Language;
+}
+
+const SHOP_NAME_MIN_LENGTH = 5;
+const SHOP_NAME_MAX_LENGTH = 30;
+const SHOP_NAME_VALID_REGEX = /^[\p{L}\p{N} ]+$/u;
+
+function sanitizeShopName(value: string): string {
+  return value.replace(/[^\p{L}\p{N} ]/gu, '').slice(0, SHOP_NAME_MAX_LENGTH);
+}
+
+function getDefaultShopName(user?: Pick<UserProfile, 'shopName' | 'name'>): string {
+  const raw = user?.shopName || (user?.name ? `Gian hàng ${user.name}` : 'SecondLife Shop');
+  const sanitized = sanitizeShopName(raw).trim();
+  return sanitized.length >= SHOP_NAME_MIN_LENGTH ? sanitized : 'SecondLife Shop';
 }
 
 export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = ({
@@ -77,7 +100,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
             <AlertCircle className="w-8 h-8" />
           </div>
           <h3 className="text-lg font-black text-slate-900">
-            {lang === 'vi' ? 'Không Hỗ Trợ Đăng Ký Người Bán' : 'Seller Registration Restricted'}
+            {lang === 'vi' ? 'Không hỗ trợ đăng ký người bán' : 'Seller Registration Restricted'}
           </h3>
           <p className="text-sm text-slate-600 leading-relaxed">
             {lang === 'vi'
@@ -101,9 +124,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
   const isRegistered = isAlreadySeller;
 
   // Form State
-  const [shopName, setShopName] = useState(
-    currentUser.shopName || (currentUser.name ? `Gian Hàng ${currentUser.name}` : 'SecondLife Shop')
-  );
+  const [shopName, setShopName] = useState(() => getDefaultShopName(currentUser));
   const [sellerPhone, setSellerPhone] = useState(currentUser.phone || '');
   const [pickupAddress, setPickupAddress] = useState(
     currentUser.pickupAddress || currentUser.address || ''
@@ -113,10 +134,10 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
     currentUser.bankAccount?.bankName || ''
   );
   const [sellerAccountNumber, setSellerAccountNumber] = useState(
-    currentUser.bankAccount?.accountNumber || ''
+    sanitizeBankAccountNumber(currentUser.bankAccount?.accountNumber || '')
   );
   const [sellerAccountHolder, setSellerAccountHolder] = useState(
-    currentUser.bankAccount?.accountHolder || (currentUser.name ? currentUser.name.toUpperCase() : '')
+    sanitizeBankAccountHolder(currentUser.bankAccount?.accountHolder || currentUser.name || '')
   );
   const [sellerProductTypes, setSellerProductTypes] = useState(
     currentUser.productTypes || ''
@@ -149,6 +170,12 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
   const [isSubmittingOtp, setIsSubmittingOtp] = useState(false);
   const [otpError, setOtpError] = useState<string | null>(null);
   const [isEmailVerifiedForOnboarding, setIsEmailVerifiedForOnboarding] = useState(false);
+  const isUsingVerifiedAccountEmail = Boolean(
+    currentUser?.emailVerified &&
+    currentUser?.email &&
+    shopEmail.trim().toLowerCase() === currentUser.email.trim().toLowerCase()
+  );
+  const isShopEmailReady = isEmailVerifiedForOnboarding || isUsingVerifiedAccountEmail;
   const [inlineOtpCode, setInlineOtpCode] = useState('');
   const [isSendingOtp, setIsSendingOtp] = useState(false);
   const [otpSentSuccess, setOtpSentSuccess] = useState<string | null>(null);
@@ -170,6 +197,53 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
 
   // Verification state & registration check
   const [existingVerification, setExistingVerification] = useState<SellerVerificationResponseDto | null>(null);
+  const [cooldownUnlockAt, setCooldownUnlockAt] = useState<Date | null>(null);
+  const [cooldownServerMsg, setCooldownServerMsg] = useState<string | null>(null);
+
+  const MAX_DAILY_REJECTED_SUBMISSIONS = 5;
+  const SUBMISSION_COOLDOWN_HOURS = 24;
+
+  const formatCooldownUnlockTime = (date: Date): string => {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      hour: '2-digit',
+      minute: '2-digit',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour12: false,
+    }).formatToParts(date);
+    const get = (type: string) => parts.find((p) => p.type === type)?.value || '';
+    return `${get('hour')}:${get('minute')} ngày ${get('day')}/${get('month')}/${get('year')}`;
+  };
+
+  const syncRejectionCooldown = async (status?: string | null) => {
+    if (status !== 'REJECTED') {
+      setCooldownUnlockAt(null);
+      setCooldownServerMsg(null);
+      return;
+    }
+    try {
+      const history = await sellerService.getVerificationHistory();
+      const windowStartMs = Date.now() - SUBMISSION_COOLDOWN_HOURS * 3600 * 1000;
+      const recentRejectedTimestamps = (Array.isArray(history) ? history : [])
+        .filter((item) => item.status === 'REJECTED' && item.submittedAt)
+        .map((item) => Date.parse(item.submittedAt))
+        .filter((ts) => Number.isFinite(ts) && ts >= windowStartMs);
+
+      if (recentRejectedTimestamps.length >= MAX_DAILY_REJECTED_SUBMISSIONS) {
+        const latestRejectedMs = Math.max(...recentRejectedTimestamps);
+        const unlockDate = new Date(latestRejectedMs + SUBMISSION_COOLDOWN_HOURS * 3600 * 1000);
+        if (unlockDate.getTime() > Date.now()) {
+          setCooldownUnlockAt(unlockDate);
+          return;
+        }
+      }
+      setCooldownUnlockAt(null);
+    } catch {
+      // Keep any server-provided cooldown notice if history fetch fails
+    }
+  };
 
   const isApprovedSeller = currentUser.role === 'seller' || isAlreadySeller || existingVerification?.status === 'APPROVED';
   const verStatus = existingVerification?.status || null;
@@ -177,12 +251,36 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
     existingVerification &&
     ['SUBMITTED', 'EKYC_PENDING', 'NEEDS_REVIEW', 'PENDING'].includes(verStatus)
   );
+  const isProviderErrorPending = Boolean(
+    existingVerification?.status === 'EKYC_PENDING' &&
+    existingVerification?.ekycStatus === 'PROVIDER_ERROR'
+  );
   const isResubmitRequired = Boolean(verStatus === 'RESUBMIT_REQUIRED');
   const isRejected = Boolean(verStatus === 'REJECTED');
+  const isCooldownLocked = Boolean(
+    isRejected && ((cooldownUnlockAt && cooldownUnlockAt.getTime() > Date.now()) || cooldownServerMsg)
+  );
   const hasRegistered = Boolean(isApprovedSeller || isPendingReview || isResubmitRequired || isRejected);
 
   // UI state
+  const [isCheckingVerification, setIsCheckingVerification] = useState<boolean>(Boolean(isOpen && !isAlreadySeller));
   const [showForm, setShowForm] = useState(!hasRegistered);
+  const [showApprovalCelebration, setShowApprovalCelebration] = useState(false);
+
+  const finishCelebrationAndRelogin = () => {
+    setShowApprovalCelebration(false);
+    try {
+      sessionStorage.removeItem('seller_upgrade_celebrating');
+      sessionStorage.setItem('seller_upgrade_relogin', '1');
+    } catch { }
+    window.dispatchEvent(new CustomEvent('unauthorized_session', { detail: { reason: 'seller_upgrade_complete' } }));
+  };
+
+  useEffect(() => {
+    return () => {
+      try { sessionStorage.removeItem('seller_upgrade_celebrating'); } catch { }
+    };
+  }, []);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isFaceScannerOpen, setIsFaceScannerOpen] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -191,15 +289,34 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
   // 3-step registration wizard state
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
 
+  const getShopNameValidationError = (rawName: string): string | null => {
+    const cleanShop = rawName.trim();
+    if (!cleanShop) {
+      return lang === 'vi' ? 'Vui lòng nhập tên gian hàng / cửa hàng.' : 'Please enter store name.';
+    }
+    if (cleanShop.length < SHOP_NAME_MIN_LENGTH) {
+      return lang === 'vi'
+        ? `Tên gian hàng phải có tối thiểu ${SHOP_NAME_MIN_LENGTH} ký tự.`
+        : `Store name must be at least ${SHOP_NAME_MIN_LENGTH} characters.`;
+    }
+    if (cleanShop.length > SHOP_NAME_MAX_LENGTH) {
+      return lang === 'vi'
+        ? `Tên gian hàng tối đa ${SHOP_NAME_MAX_LENGTH} ký tự.`
+        : `Store name must be at most ${SHOP_NAME_MAX_LENGTH} characters.`;
+    }
+    if (!SHOP_NAME_VALID_REGEX.test(cleanShop)) {
+      return lang === 'vi'
+        ? 'Tên gian hàng không được chứa ký tự đặc biệt (chỉ gồm chữ cái, số và khoảng trắng).'
+        : 'Store name cannot contain special characters (letters, numbers, and spaces only).';
+    }
+    return null;
+  };
+
   const validateStep1 = (): boolean => {
     setErrorMsg(null);
-    const cleanShop = shopName.trim();
-    if (!cleanShop) {
-      setErrorMsg(lang === 'vi' ? 'Vui lòng nhập tên gian hàng / cửa hàng.' : 'Please enter store name.');
-      return false;
-    }
-    if (cleanShop.length < 3) {
-      setErrorMsg(lang === 'vi' ? 'Tên gian hàng tối thiểu 3 ký tự.' : 'Store name must be at least 3 characters.');
+    const shopError = getShopNameValidationError(shopName);
+    if (shopError) {
+      setErrorMsg(shopError);
       return false;
     }
 
@@ -225,7 +342,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
       return false;
     }
 
-    if (!isEmailVerifiedForOnboarding) {
+    if (!isShopEmailReady) {
       setErrorMsg(
         lang === 'vi'
           ? 'Email gian hàng chưa được xác thực OTP. Vui lòng bấm "Gửi mã OTP" và hoàn thành xác thực trước khi sang Bước 2.'
@@ -252,9 +369,19 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
     if ((!isApprovedSeller && !isWarehouseConfirmed) || !pickupLatitude || !pickupLongitude) {
       setErrorMsg(
         lang === 'vi'
-          ? 'Vui lòng ghim vị trí kho trên bản đồ (hoặc bấm "Dùng Vị Trí Hiện Tại Của Tôi") để hoàn tất Bước 2.'
+          ? 'Vui lòng ghim vị trí kho trên bản đồ (hoặc bấm "Dùng vị trí hiện tại của tôi") để hoàn tất Bước 2.'
           : 'Please pin warehouse location on map to complete Step 2.'
       );
+      return false;
+    }
+    const bankError = validateBankAccountFields({
+      bankName: sellerBankName,
+      accountNumber: sellerAccountNumber,
+      accountHolder: sellerAccountHolder,
+      lang,
+    });
+    if (bankError) {
+      setErrorMsg(bankError);
       return false;
     }
     return true;
@@ -296,21 +423,38 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
   const [isLoadingAddressFromBe, setIsLoadingAddressFromBe] = useState(false);
   const [isLoadingWards, setIsLoadingWards] = useState(false);
   const [isDetectingLocation, setIsDetectingLocation] = useState(false);
+  const [pickupLockReason, setPickupLockReason] = useState<string | null>(null);
 
   // Fetch address and catalogue from Backend
   const fetchAddressFromBackend = async (showNotification = false) => {
     setIsLoadingAddressFromBe(true);
     try {
-      const onboardingData = await Promise.resolve(shippingService.getSellerOnboarding()).catch(() => null);
+      const [onboardingData, savedPickup, pickupStatus] = await Promise.all([
+        shippingService.getSellerOnboarding().catch(() => null),
+        isApprovedSeller ? shippingService.getPickupAddress() : Promise.resolve(null),
+        isApprovedSeller ? shippingService.getPickupAddressUpdateStatus() : Promise.resolve(null),
+      ]);
+      if (pickupStatus) {
+        setPickupLockReason(
+          pickupStatus.updatable
+            ? null
+            : (pickupStatus.reason || 'Không thể thay đổi địa chỉ lấy hàng lúc này.')
+        );
+      }
 
       let addressFound = false;
 
       if (onboardingData) {
         const ob = onboardingData;
-        if (ob.shopName) setShopName((prev) => (prev && prev.trim() !== '' ? prev : ob.shopName));
+        if (ob.shopName) {
+          const cleanObShop = sanitizeShopName(ob.shopName);
+          if (cleanObShop.trim().length >= SHOP_NAME_MIN_LENGTH) {
+            setShopName((prev) => (prev && prev.trim() !== '' ? prev : cleanObShop));
+          }
+        }
         if (ob.phone) setSellerPhone((prev) => (prev && prev.trim() !== '' ? prev : ob.phone));
         if (ob.email) setShopEmail((prev) => (prev && prev.trim() !== '' ? prev : ob.email));
-        if (ob.emailVerified) setIsEmailVerifiedForOnboarding(true);
+        setIsEmailVerifiedForOnboarding(Boolean(ob.emailVerified));
 
         if (ob.pickupAddress) {
           const pa = ob.pickupAddress;
@@ -339,7 +483,15 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
         }
       }
 
-      if (!addressFound && currentUser?.address) {
+      if (savedPickup?.address) {
+        setPickupAddress(savedPickup.address);
+        setStreetAddress(savedPickup.address);
+        setPickupLatitude(savedPickup.latitude ?? null);
+        setPickupLongitude(savedPickup.longitude ?? null);
+        addressFound = true;
+      }
+
+      if (!addressFound && !isApprovedSeller && currentUser?.address) {
         setPickupAddress((prev) => (prev && prev.trim() !== '' ? prev : currentUser.address));
         setStreetAddress((prev) => (prev && prev.trim() !== '' ? prev : currentUser.address));
       }
@@ -574,39 +726,82 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
     );
   };
 
-  // Load provinces and saved pickup address on open
+  // Load provinces, saved pickup address, and authoritative verification state on open
   useEffect(() => {
-    if (isOpen) {
-      shippingService.getProvinces()
-        .then((pList) => {
-          if (Array.isArray(pList) && pList.length > 0) {
-            setProvinces(pList);
-          }
-        })
-        .catch((err) => console.warn('Load provinces fallback:', err));
-      fetchAddressFromBackend(false);
-
-      sellerService.getMyVerification()
-        .then((verif) => {
-          if (verif) {
-            setExistingVerification(verif);
-            if (verif.status === 'APPROVED') {
-              setShowForm(false);
-            } else if (verif.status === 'RESUBMIT_REQUIRED' || verif.status === 'REJECTED') {
-              setShowForm(false);
-            } else if (['SUBMITTED', 'EKYC_PENDING', 'NEEDS_REVIEW', 'PENDING'].includes(verif.status)) {
-              setShowForm(false);
-            }
-          } else {
-            setExistingVerification(null);
-            setShowForm(currentUser.role !== 'seller');
-          }
-        })
-        .catch(() => {
-          setExistingVerification(null);
-          setShowForm(currentUser.role !== 'seller');
-        });
+    if (!isOpen) {
+      setIsCheckingVerification(false);
+      return;
     }
+
+    let isSubscribed = true;
+    setIsCheckingVerification(!isAlreadySeller);
+
+    shippingService.getProvinces()
+      .then((pList) => {
+        if (isSubscribed && Array.isArray(pList) && pList.length > 0) {
+          setProvinces(pList);
+        }
+      })
+      .catch((err) => console.warn('Load provinces fallback:', err));
+    fetchAddressFromBackend(false);
+
+    (async () => {
+      try {
+        const verif = await sellerService.getMyVerification();
+        if (!isSubscribed) return;
+
+        if (verif) {
+          setExistingVerification(verif);
+          if (verif.documentNumber) setIdCardNumber((prev) => prev?.trim() ? prev : verif.documentNumber);
+          if (verif.documentFrontUrl) {
+            setDocFrontUrl((prev) => prev || verif.documentFrontUrl);
+            setFrontPreview((prev) => prev || verif.documentFrontUrl);
+          }
+          if (verif.documentBackUrl) {
+            setDocBackUrl((prev) => prev || verif.documentBackUrl);
+            setBackPreview((prev) => prev || verif.documentBackUrl);
+          }
+          if (verif.selfieUrl) {
+            setSelfieUrl((prev) => prev || verif.selfieUrl);
+            setSelfiePreview((prev) => prev || verif.selfieUrl);
+          }
+
+          await syncRejectionCooldown(verif.status);
+          if (!isSubscribed) return;
+
+          if (verif.status === 'RESUBMIT_REQUIRED') {
+            setShowForm(true);
+            setCurrentStep(3);
+          } else {
+            setShowForm(false);
+          }
+
+          if (['APPROVED', 'SUBMITTED', 'EKYC_PENDING', 'NEEDS_REVIEW', 'PENDING'].includes(verif.status)) {
+            if (currentUser?.id) localStorage.setItem(`seller_registered_${currentUser.id}`, 'true');
+            if (currentUser?.email) localStorage.setItem(`seller_registered_${currentUser.email}`, 'true');
+          }
+        } else {
+          setExistingVerification(null);
+          await syncRejectionCooldown(null);
+          if (!isSubscribed) return;
+          setShowForm(currentUser.role !== 'seller');
+        }
+      } catch {
+        if (!isSubscribed) return;
+        setExistingVerification(null);
+        await syncRejectionCooldown(null);
+        if (!isSubscribed) return;
+        setShowForm(currentUser.role !== 'seller');
+      } finally {
+        if (isSubscribed) {
+          setIsCheckingVerification(false);
+        }
+      }
+    })();
+
+    return () => {
+      isSubscribed = false;
+    };
   }, [isOpen]);
 
   const DRAFT_KEY = `seller_reg_draft_${currentUser?.id || 'default'}`;
@@ -622,15 +817,14 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
     isInitializedRef.current = true;
     setCurrentStep(1);
 
-    // 1. First check if a saved draft exists
-    let hasDraft = false;
+    // 1. First check if a saved draft exists (restore field values without overriding server verification status)
     try {
       const saved = localStorage.getItem(DRAFT_KEY);
       if (saved) {
         const d = JSON.parse(saved);
-        if (d.shopName) { setShopName(d.shopName); hasDraft = true; }
-        if (d.sellerPhone) { setSellerPhone(d.sellerPhone); hasDraft = true; }
-        if (d.pickupAddress) { setPickupAddress(d.pickupAddress); hasDraft = true; }
+        if (d.shopName) setShopName(sanitizeShopName(d.shopName));
+        if (d.sellerPhone) setSellerPhone(d.sellerPhone);
+        if (d.pickupAddress) setPickupAddress(d.pickupAddress);
         if (d.streetAddress) setStreetAddress(d.streetAddress);
         if (d.selectedProvinceId) {
           setSelectedProvinceId(d.selectedProvinceId);
@@ -639,35 +833,28 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
             .catch(() => { });
         }
         if (d.selectedWardId) setSelectedWardId(d.selectedWardId);
-        if (d.idCardNumber) { setIdCardNumber(d.idCardNumber); hasDraft = true; }
+        if (d.idCardNumber) setIdCardNumber(d.idCardNumber);
         if (d.sellerBankName) setSellerBankName(d.sellerBankName);
-        if (d.sellerAccountNumber) setSellerAccountNumber(d.sellerAccountNumber);
-        if (d.sellerAccountHolder) setSellerAccountHolder(d.sellerAccountHolder);
+        if (d.sellerAccountNumber) setSellerAccountNumber(sanitizeBankAccountNumber(d.sellerAccountNumber));
+        if (d.sellerAccountHolder) setSellerAccountHolder(sanitizeBankAccountHolder(d.sellerAccountHolder));
         if (d.docFrontUrl) {
           setDocFrontUrl(d.docFrontUrl);
           setFrontPreview(d.docFrontUrl);
-          hasDraft = true;
         } else if (d.frontPreview) {
           setFrontPreview(d.frontPreview);
-          hasDraft = true;
         }
         if (d.docBackUrl) {
           setDocBackUrl(d.docBackUrl);
           setBackPreview(d.docBackUrl);
-          hasDraft = true;
         } else if (d.backPreview) {
           setBackPreview(d.backPreview);
-          hasDraft = true;
         }
         if (d.selfieUrl && /^https?:\/\//i.test(d.selfieUrl)) {
           setSelfieUrl(d.selfieUrl);
           setSelfiePreview(d.selfieUrl);
-          hasDraft = true;
         } else if (d.selfiePreview || d.selfieUrl) {
           setSelfiePreview(d.selfiePreview || d.selfieUrl);
-          hasDraft = true;
         }
-        if (d.isEmailVerifiedForOnboarding) setIsEmailVerifiedForOnboarding(true);
       }
     } catch (e) {
       console.warn('Error restoring seller draft:', e);
@@ -675,26 +862,17 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
 
     // 2. Initial values from currentUser for any remaining empty fields
     if (currentUser) {
-      setShopName((prev) => prev?.trim() ? prev : (currentUser.shopName || (currentUser.name ? `Gian Hàng ${currentUser.name}` : 'SecondLife Shop')));
+      setShopName((prev) => prev?.trim() ? prev : getDefaultShopName(currentUser));
       setSellerPhone((prev) => prev?.trim() ? prev : (currentUser.phone || ''));
       setPickupAddress((prev) => prev?.trim() ? prev : (currentUser.pickupAddress || currentUser.address || ''));
       if (currentUser.idCardNumber) setIdCardNumber((prev) => prev?.trim() ? prev : currentUser.idCardNumber);
       if (currentUser.bankAccount?.bankName) setSellerBankName((prev) => prev?.trim() ? prev : currentUser.bankAccount.bankName);
-      if (currentUser.bankAccount?.accountNumber) setSellerAccountNumber((prev) => prev?.trim() ? prev : currentUser.bankAccount.accountNumber);
-      if (currentUser.bankAccount?.accountHolder) setSellerAccountHolder((prev) => prev?.trim() ? prev : currentUser.bankAccount.accountHolder);
-    }
-
-    // 3. Set showForm: if user has a draft in progress, keep form open. Otherwise open form if not already a registered seller.
-    if (hasDraft) {
-      setShowForm(true);
-      // Silently restored draft
-    } else {
-      const isAlreadySellerOrRegistered = Boolean(
-        currentUser?.isSellerRegistered ||
-        currentUser?.role === 'seller' ||
-        (currentUser?.id && localStorage.getItem(`seller_registered_${currentUser.id}`) === 'true')
-      );
-      setShowForm(!isAlreadySellerOrRegistered);
+      if (currentUser.bankAccount?.accountNumber) {
+        setSellerAccountNumber((prev) => prev?.trim() ? prev : sanitizeBankAccountNumber(currentUser.bankAccount.accountNumber));
+      }
+      if (currentUser.bankAccount?.accountHolder) {
+        setSellerAccountHolder((prev) => prev?.trim() ? prev : sanitizeBankAccountHolder(currentUser.bankAccount.accountHolder));
+      }
     }
   }, [isOpen, DRAFT_KEY]);
 
@@ -744,44 +922,6 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
     isEmailVerifiedForOnboarding,
     DRAFT_KEY
   ]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    let isSubscribed = true;
-    sellerService.getMyVerification()
-      .then((verif) => {
-        if (!isSubscribed) return;
-        if (verif) {
-          setExistingVerification(verif);
-          if (verif.documentNumber) setIdCardNumber((prev) => prev?.trim() ? prev : verif.documentNumber);
-          if (verif.documentFrontUrl) {
-            setDocFrontUrl((prev) => prev || verif.documentFrontUrl);
-            setFrontPreview((prev) => prev || verif.documentFrontUrl);
-          }
-          if (verif.documentBackUrl) {
-            setDocBackUrl((prev) => prev || verif.documentBackUrl);
-            setBackPreview((prev) => prev || verif.documentBackUrl);
-          }
-          if (verif.selfieUrl) {
-            setSelfieUrl((prev) => prev || verif.selfieUrl);
-            setSelfiePreview((prev) => prev || verif.selfieUrl);
-          }
-          if (verif.status === 'RESUBMIT_REQUIRED') {
-            setShowForm(true);
-          }
-          if (['APPROVED', 'SUBMITTED', 'EKYC_PENDING', 'NEEDS_REVIEW', 'PENDING'].includes(verif.status)) {
-            if (currentUser?.id) localStorage.setItem(`seller_registered_${currentUser.id}`, 'true');
-            if (currentUser?.email) localStorage.setItem(`seller_registered_${currentUser.email}`, 'true');
-          }
-        }
-      })
-      .catch(() => {
-        if (isSubscribed) setExistingVerification(null);
-      });
-    return () => {
-      isSubscribed = false;
-    };
-  }, [isOpen]);
 
   // Helper to convert an image file to a compressed base64 data URL for preview and draft persistence
   const createCompressedDataUrl = (file: File, maxWidth = 1200, quality = 0.8): Promise<string> => {
@@ -994,20 +1134,20 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
     setUploadProgressMsg(null);
 
     // If user presses Enter in Step 1 or Step 2, advance to next step
-    if (currentStep === 1) {
+    if (!isApprovedSeller && currentStep === 1) {
       if (validateStep1()) setCurrentStep(2);
       return;
     }
-    if (currentStep === 2) {
+    if (!isApprovedSeller && currentStep === 2) {
       if (validateStep2()) setCurrentStep(3);
       return;
     }
 
-    if (!validateStep1()) {
+    if (!isApprovedSeller && !validateStep1()) {
       setCurrentStep(1);
       return;
     }
-    if (!validateStep2()) {
+    if (!isApprovedSeller && !validateStep2()) {
       setCurrentStep(2);
       return;
     }
@@ -1021,8 +1161,9 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
       return;
     }
 
-    if (!shopName.trim()) {
-      setErrorMsg(lang === 'vi' ? 'Vui lòng nhập tên gian hàng / cửa hàng.' : 'Please enter store name.');
+    const shopError = getShopNameValidationError(shopName);
+    if (shopError) {
+      setErrorMsg(shopError);
       return;
     }
     if (!sellerPhone.trim()) {
@@ -1035,9 +1176,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
     }
 
     const isAlreadySeller = Boolean(
-      isRegistered ||
-      currentUser?.role === 'seller' ||
-      currentUser?.kycStatus === 'verified' ||
+      isApprovedSeller ||
       existingVerification?.status === 'APPROVED' ||
       (existingVerification?.status as any) === 'VERIFIED'
     );
@@ -1048,29 +1187,24 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
         const cleanPhone = (sellerPhone || '').replace(/\s+/g, '').trim();
         const cleanShop = (shopName || '').trim().slice(0, 30);
 
-        if (pickupLatitude && pickupLongitude) {
-          try {
-            await shippingService.savePickupAddress({
-              name: cleanShop,
-              phone: cleanPhone,
-              latitude: pickupLatitude,
-              longitude: pickupLongitude,
-            });
-          } catch (_) { }
+        if (pickupLockReason) {
+          throw new Error(pickupLockReason);
         }
-
-        if (pickupLatitude && pickupLongitude) {
-          try { await saveConfirmedWarehouse(); } catch (_) { }
+        if (!isWarehouseConfirmed || pickupLatitude == null || pickupLongitude == null) {
+          throw new Error(lang === 'vi' ? 'Vui lòng xác nhận vị trí kho trên bản đồ.' : 'Confirm the pickup location on the map.');
         }
-
-        try {
-          await userService.updateMyProfile({
-            fullName: (currentUser?.name || '').trim(),
-            phone: cleanPhone || undefined,
-            latitude: pickupLatitude ?? null,
-            longitude: pickupLongitude ?? null,
-          });
-        } catch (_) { }
+        const savedPickup = await shippingService.savePickupAddress({
+          name: cleanShop,
+          phone: cleanPhone,
+          latitude: pickupLatitude,
+          longitude: pickupLongitude,
+        });
+        const savedPickupAddress = savedPickup.address || pickupAddress;
+        const savedPickupLat = savedPickup.latitude ?? pickupLatitude;
+        const savedPickupLng = savedPickup.longitude ?? pickupLongitude;
+        setPickupAddress(savedPickupAddress);
+        setPickupLatitude(savedPickupLat);
+        setPickupLongitude(savedPickupLng);
 
         if (currentUser?.id) localStorage.setItem(`seller_registered_${currentUser.id}`, 'true');
         if (currentUser?.email) localStorage.setItem(`seller_registered_${currentUser.email}`, 'true');
@@ -1081,10 +1215,9 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
           role: 'seller',
           kycStatus: 'verified',
           shopName: cleanShop,
-          pickupAddress: pickupAddress.trim(),
-          latitude: pickupLatitude ?? currentUser.latitude,
-          longitude: pickupLongitude ?? currentUser.longitude,
-          phone: cleanPhone,
+          pickupAddress: savedPickupAddress,
+          latitude: savedPickupLat,
+          longitude: savedPickupLng,
           idCardNumber: idCardNumber.trim(),
           bankAccount: {
             bankName: sellerBankName.trim(),
@@ -1097,8 +1230,8 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
         onUpdateProfile(updated);
         setSuccessMsg(
           lang === 'vi'
-            ? '🎉 Cập nhật hồ sơ gian hàng thành công!'
-            : '🎉 Store profile updated successfully!'
+            ? 'Đã cập nhật địa chỉ kho lấy hàng.'
+            : 'Warehouse pickup address saved.'
         );
         setTimeout(() => setSuccessMsg(null), 6000);
         return;
@@ -1137,7 +1270,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
       return;
     }
 
-    if (!isEmailVerifiedForOnboarding) {
+    if (!isShopEmailReady) {
       setErrorMsg(
         lang === 'vi'
           ? 'Vui lòng xác thực email gian hàng trước khi thực hiện eKYC (Bấm "Gửi mã OTP" và nhập mã xác thực bên dưới).'
@@ -1201,6 +1334,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
       const obStatus = await saveConfirmedWarehouse();
 
       if (!obStatus?.emailVerified) {
+        setIsEmailVerifiedForOnboarding(false);
         setUploadProgressMsg(
           lang === 'vi' ? 'Đang gửi mã OTP xác thực về email gian hàng...' : 'Sending OTP to shop email...'
         );
@@ -1295,9 +1429,22 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
             verifErr?.response?.status === 409 ||
             verifErr?.status === 409 ||
             (verifErr?.message && verifErr.message.includes('409'));
+          const is429 =
+            verifErr?.response?.status === 429 ||
+            verifErr?.status === 429 ||
+            (verifErr?.message && verifErr.message.includes('429'));
           if (is409) {
             console.log('Seller verification already exists (409 Conflict), treating as approved');
             verificationResponse = { status: 'APPROVED' } as any;
+          } else if (is429) {
+            setCooldownServerMsg(
+              verifErr?.message ||
+              (lang === 'vi'
+                ? 'Bạn đã gửi hồ sơ thất bại quá nhiều lần trong 24 giờ qua. Vui lòng thử lại sau.'
+                : 'Too many rejected submissions in the last 24 hours. Please try again later.')
+            );
+            void syncRejectionCooldown('REJECTED');
+            throw verifErr;
           } else {
             throw verifErr;
           }
@@ -1309,43 +1456,48 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
 
       if (status === 'APPROVED') {
         try {
+          // Hold off automatic 401 re-login redirect while the 30s fireworks celebration is visible
+          sessionStorage.setItem('seller_upgrade_celebrating', '1');
           sessionStorage.setItem('seller_upgrade_relogin', '1');
-          setTimeout(() => {
-            try { sessionStorage.removeItem('seller_upgrade_relogin'); } catch { }
-          }, 10000);
         } catch { }
-        const updated: UserProfile = {
-          ...currentUser,
-          isSellerRegistered: true,
-          role: 'seller',
-          kycStatus: 'verified',
-          shopName: shopName.trim(),
-          phone: sellerPhone.trim(),
-          pickupAddress: pickupAddress.trim(),
-          idCardNumber: idCardNumber.trim(),
-          bankAccount: {
-            bankName: sellerBankName,
-            accountNumber: sellerAccountNumber,
-            accountHolder: sellerAccountHolder,
-          },
-        };
-        onUpdateProfile(updated);
+        setExistingVerification(verificationResponse);
+        setShowApprovalCelebration(true);
         setSuccessMsg(
           lang === 'vi'
-            ? '🎉 Chúc mừng bạn đã đăng ký Người Bán thành công! Bạn đã chính thức trở thành Người Bán trên SecondLife.'
+            ? '🎉 Chúc mừng bạn đã đăng ký người bán thành công! Bạn đã chính thức trở thành người bán trên SecondLife.'
             : '🎉 Congratulations! You have successfully registered as a Seller on SecondLife.'
         );
         try {
           localStorage.removeItem(DRAFT_KEY);
         } catch { }
-        onRoleChange('seller');
       } else if (status === 'RESUBMIT_REQUIRED') {
         setExistingVerification(verificationResponse);
-        setErrorMsg(
-          lang === 'vi'
-            ? `Hồ sơ cần nộp lại hình ảnh: "${verificationResponse.rejectionReason || 'Ảnh chụp giấy tờ chưa đạt tiêu chuẩn'}". Vui lòng kiểm tra lại.`
-            : `Resubmission required: "${verificationResponse.rejectionReason || 'Document images not accepted'}".`
-        );
+        setShowForm(true);
+        setCurrentStep(3);
+        // Lý do yêu cầu nộp lại đã hiển thị tập trung trong hộp cảnh báo ở đầu Bước 3.
+        setErrorMsg(null);
+      } else if (status === 'REJECTED') {
+        setExistingVerification(verificationResponse);
+        void syncRejectionCooldown('REJECTED');
+        onUpdateProfile({
+          ...currentUser,
+          kycStatus: 'unverified',
+        });
+        // Lý do từ chối và nút Đăng ký lại được hiển thị tập trung trong thẻ trạng thái isRejected bên dưới.
+        setErrorMsg(null);
+        try {
+          localStorage.removeItem(DRAFT_KEY);
+        } catch { }
+      } else if (status === 'EKYC_PENDING' && verificationResponse?.ekycStatus === 'PROVIDER_ERROR') {
+        setExistingVerification(verificationResponse);
+        onUpdateProfile({
+          ...currentUser,
+          kycStatus: 'pending',
+        });
+        setErrorMsg(null);
+        try {
+          localStorage.removeItem(DRAFT_KEY);
+        } catch { }
       } else {
         try {
           sessionStorage.setItem('seller_upgrade_relogin', '1');
@@ -1369,21 +1521,22 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
         };
         onUpdateProfile(updated);
         setExistingVerification(verificationResponse);
-        setSuccessMsg(
-          lang === 'vi'
-            ? '🎉 Chúc mừng bạn đã đăng ký Người Bán thành công! Hồ sơ đã được gửi và sẽ được thẩm định trong vòng 24 - 48 giờ.'
-            : '🎉 Congratulations! Seller registration submitted and will be reviewed in 24 - 48 hours.'
-        );
+        // Trạng thái chờ duyệt đã được hiển thị rõ trong thẻ isPendingReview bên dưới, không lặp banner chúc mừng phía trên.
+        setSuccessMsg(null);
+        setErrorMsg(null);
         try {
           localStorage.removeItem(DRAFT_KEY);
         } catch { }
       }
 
+      const immediateSummary = status === 'APPROVED' || status === 'REJECTED' || (status === 'EKYC_PENDING' && verificationResponse?.ekycStatus === 'PROVIDER_ERROR');
       setTimeout(() => {
         setIsSubmitting(false);
         setUploadProgressMsg(null);
-        setShowForm(false);
-      }, 1500);
+        if (status !== 'RESUBMIT_REQUIRED') {
+          setShowForm(false);
+        }
+      }, status === 'RESUBMIT_REQUIRED' || immediateSummary ? 0 : 1500);
     } catch (err: any) {
       setIsSubmitting(false);
       setUploadProgressMsg(null);
@@ -1448,25 +1601,33 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                 <h3 className="text-sm sm:text-base font-black text-[#24263e]">
                   {lang === 'vi' ? 'ĐĂNG KÝ THÀNH NGƯỜI BÁN' : 'Seller Hub Onboarding'}
                 </h3>
-                <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${isApprovedSeller
-                  ? 'bg-white text-emerald-900 border-emerald-500'
-                  : isResubmitRequired
-                    ? 'bg-amber-100 text-amber-900 border-amber-500 animate-pulse'
-                    : isRejected
-                      ? 'bg-rose-100 text-rose-900 border-rose-500'
-                      : isPendingReview
-                        ? 'bg-white text-amber-900 border-amber-500'
-                        : 'bg-white text-rose-900 border-rose-500'
-                  }`}>
-                  {isApprovedSeller
-                    ? (lang === 'vi' ? 'Đã Kích Hoạt Người Bán' : 'Seller Active')
+                <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${isCheckingVerification
+                  ? 'bg-white/90 text-slate-600 border-slate-300'
+                  : isApprovedSeller
+                    ? 'bg-white text-emerald-900 border-emerald-500'
                     : isResubmitRequired
-                      ? (lang === 'vi' ? 'Cần Chụp Lại Ảnh eKYC' : 'Resubmission Required')
+                      ? 'bg-amber-100 text-amber-900 border-amber-500 animate-pulse'
                       : isRejected
-                        ? (lang === 'vi' ? 'Hồ Sơ Bị Từ Chối' : 'Rejected')
-                        : isPendingReview
-                          ? (lang === 'vi' ? 'Đang Chờ Duyệt eKYC' : 'Pending Review')
-                          : (lang === 'vi' ? 'Chưa Kích Hoạt' : 'Not Registered')}
+                        ? 'bg-rose-100 text-rose-900 border-rose-500'
+                        : isProviderErrorPending
+                          ? 'bg-rose-50 text-rose-900 border-rose-400'
+                          : isPendingReview
+                            ? 'bg-white text-amber-900 border-amber-500'
+                            : 'bg-white text-rose-900 border-rose-500'
+                  }`}>
+                  {isCheckingVerification
+                    ? (lang === 'vi' ? 'Đang kiểm tra...' : 'Checking...')
+                    : isApprovedSeller
+                      ? (lang === 'vi' ? 'Đã kích hoạt người bán' : 'Seller Active')
+                      : isResubmitRequired
+                        ? (lang === 'vi' ? 'Cần chụp lại ảnh eKYC' : 'Resubmission Required')
+                        : isRejected
+                          ? (lang === 'vi' ? 'Hồ sơ bị từ chối' : 'Rejected')
+                          : isProviderErrorPending
+                            ? (lang === 'vi' ? 'Lỗi kết nối eKYC' : 'eKYC Provider Issue')
+                            : isPendingReview
+                              ? (lang === 'vi' ? 'Đang chờ duyệt eKYC' : 'Pending Review')
+                              : (lang === 'vi' ? 'Chưa kích hoạt' : 'Not Registered')}
                 </span>
               </div>
               <p className="text-[11px] text-[#24263e]/80 font-bold mt-0.5">
@@ -1493,7 +1654,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
               <ShieldCheck className="w-4 h-4 text-[#24263e] shrink-0" />
               <div>
                 <span className="font-bold block text-[11px] text-slate-900">{lang === 'vi' ? 'Xác minh CCCD' : 'National ID'}</span>
-                <span className="text-[10px] text-slate-500 hidden sm:block">{lang === 'vi' ? 'Định danh eKYC 48h' : 'eKYC Verified'}</span>
+                <span className="text-[10px] text-slate-500 hidden sm:block">{lang === 'vi' ? 'Định danh eKYC' : 'eKYC Verified'}</span>
               </div>
             </div>
             <div className="flex items-center gap-2 p-2.5 rounded-2xl bg-amber-50/70 border border-amber-100 text-slate-700">
@@ -1507,20 +1668,29 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
               <Wallet className="w-4 h-4 text-emerald-600 shrink-0" />
               <div>
                 <span className="font-bold block text-[11px] text-slate-900">{lang === 'vi' ? 'Giải ngân Escrow' : 'Escrow Payout'}</span>
-                <span className="text-[10px] text-slate-500 hidden sm:block">{lang === 'vi' ? 'Bảo lãnh an toàn 100%' : '100% Protected'}</span>
+                <span className="text-[10px] text-slate-500 hidden sm:block">{lang === 'vi' ? 'Bảo lãnh an toàn' : 'Protected'}</span>
               </div>
             </div>
           </div>
 
+          {isCheckingVerification && (
+            <div className="p-8 rounded-3xl bg-slate-50 border border-gray-200 flex flex-col items-center justify-center gap-2.5 text-slate-600 animate-in fade-in">
+              <Loader2 className="w-6 h-6 animate-spin text-[#c34c36]" />
+              <p className="text-xs font-semibold">
+                {lang === 'vi' ? 'Đang kiểm tra trạng thái hồ sơ người bán...' : 'Checking seller verification status...'}
+              </p>
+            </div>
+          )}
+
           {/* Notification when viewing registered store profile */}
-          {!showForm && successMsg && (
+          {!isCheckingVerification && !showForm && successMsg && (
             <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium flex items-center gap-3 animate-in fade-in">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
               <div className="flex-1">{successMsg}</div>
             </div>
           )}
 
-          {!showForm && errorMsg && (
+          {!isCheckingVerification && !showForm && errorMsg && !(hasRegistered && (isRejected || isProviderErrorPending || isResubmitRequired)) && (
             <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2.5 animate-in fade-in">
               <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
               <span>{errorMsg}</span>
@@ -1528,7 +1698,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
           )}
 
           {/* VIEW: THÔNG TIN GIAN HÀNG ĐÃ ĐĂNG KÝ */}
-          {!showForm && hasRegistered && (
+          {!isCheckingVerification && !showForm && hasRegistered && (
             <div className="p-5 rounded-3xl bg-slate-50 border border-gray-200 space-y-4 animate-in fade-in">
               {/* Active Role Status Notification Banner */}
               <div className={`p-3.5 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${currentUser.role === 'seller'
@@ -1594,42 +1764,45 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                 <div className="flex items-center gap-2.5">
                   <Store className="w-4 h-4 text-[#24263e]" />
                   <span className="text-xs font-bold text-slate-900">
-                    {lang === 'vi' ? 'Hồ Sơ Gian Hàng Của Bạn' : 'Your Seller Store Profile'}
+                    {lang === 'vi' ? 'Hồ sơ gian hàng của bạn' : 'Your Seller Store Profile'}
                   </span>
-                  <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${isApprovedSeller
-                    ? 'bg-emerald-100 text-emerald-800'
-                    : isRejected
-                      ? 'bg-rose-100 text-rose-800'
+                  {!isRejected && !isPendingReview && (
+                    <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${isApprovedSeller
+                      ? 'bg-emerald-100 text-emerald-800'
                       : isResubmitRequired
                         ? 'bg-orange-100 text-orange-800'
-                        : 'bg-amber-100 text-amber-800 border border-amber-200'
-                    }`}>
-                    {isApprovedSeller
-                      ? (lang === 'vi' ? 'Đã Kích Hoạt' : 'Active')
-                      : isRejected
-                        ? (lang === 'vi' ? 'Đã Bị Từ Chối' : 'Rejected')
+                        : isProviderErrorPending
+                          ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                          : 'bg-amber-100 text-amber-800 border border-amber-200'
+                      }`}>
+                      {isApprovedSeller
+                        ? (lang === 'vi' ? 'Đã kích hoạt' : 'Active')
                         : isResubmitRequired
-                          ? (lang === 'vi' ? 'Yêu Cầu Nộp Lại' : 'Resubmit Required')
-                          : (lang === 'vi' ? 'Đang Chờ Quản Trị Viên Duyệt' : 'Pending Review')}
-                  </span>
+                          ? (lang === 'vi' ? 'Yêu cầu nộp lại' : 'Resubmit Required')
+                          : isProviderErrorPending
+                            ? (lang === 'vi' ? 'Tạm gián đoạn cổng eKYC' : 'eKYC Provider Pending Retry')
+                            : (lang === 'vi' ? 'Đang chờ quản trị viên duyệt' : 'Pending Review')}
+                    </span>
+                  )}
                 </div>
 
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setShowForm(true)}
-                    className="inline-flex items-center gap-1.5 text-xs font-bold text-[#24263e] hover:underline cursor-pointer"
-                  >
-                    <Edit3 className="w-3.5 h-3.5" />
-                    <span>
-                      {isResubmitRequired
-                        ? (lang === 'vi' ? 'Cập nhật & Nộp lại' : 'Update & Resubmit')
-                        : isRejected
-                          ? (lang === 'vi' ? 'Đăng ký lại hồ sơ mới' : 'Reapply')
-                          : (lang === 'vi' ? 'Chỉnh sửa thông tin' : 'Edit Info')}
-                    </span>
-                  </button>
-                </div>
+                {isApprovedSeller && (
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setErrorMsg(null);
+                        setShowForm(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 text-xs font-bold text-[#24263e] hover:underline cursor-pointer"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>
+                        {lang === 'vi' ? 'Chỉnh sửa thông tin' : 'Edit Info'}
+                      </span>
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
@@ -1672,7 +1845,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                         className="px-4 py-2 bg-gradient-to-r from-[#c34c36] to-[#fce5da] hover:opacity-95 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
                       >
                         <Sparkles className="w-3.5 h-3.5" />
-                        <span>{lang === 'vi' ? 'Đến Trang Đăng Bán' : 'Post Listing'}</span>
+                        <span>{lang === 'vi' ? 'Đến trang đăng bán' : 'Post Listing'}</span>
                       </button>
                     )}
                   </div>
@@ -1688,10 +1861,14 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                     <div className="pt-1 pl-6">
                       <button
                         type="button"
-                        onClick={() => setShowForm(true)}
+                        onClick={() => {
+                          setErrorMsg(null);
+                          setCurrentStep(3);
+                          setShowForm(true);
+                        }}
                         className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-bold text-xs transition cursor-pointer shadow-xs"
                       >
-                        {lang === 'vi' ? 'Cập Nhật Ảnh & Nộp Lại Ngay' : 'Update & Resubmit Now'}
+                        {lang === 'vi' ? 'Cập nhật ảnh & nộp lại ngay' : 'Update & Resubmit Now'}
                       </button>
                     </div>
                   </div>
@@ -1704,26 +1881,71 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                     <p className="text-[11px] leading-relaxed pl-6 text-slate-800 font-medium">
                       {existingVerification?.rejectionReason || (lang === 'vi' ? 'Hồ sơ không đáp ứng điều kiện định danh của SecondLife.' : 'Application does not meet identification criteria.')}
                     </p>
+                    {isCooldownLocked && (
+                      <div className="ml-6 p-2.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 text-[11px] leading-relaxed font-medium">
+                        {cooldownServerMsg ||
+                          (lang === 'vi'
+                            ? `Bạn đã gửi hồ sơ bị từ chối ${MAX_DAILY_REJECTED_SUBMISSIONS} lần trong ${SUBMISSION_COOLDOWN_HOURS} giờ qua. Hệ thống tạm khóa gửi mới để tránh spam, vui lòng thử lại sau ${cooldownUnlockAt ? formatCooldownUnlockTime(cooldownUnlockAt) : '24 giờ'}.`
+                            : `You have reached ${MAX_DAILY_REJECTED_SUBMISSIONS} rejected submissions within ${SUBMISSION_COOLDOWN_HOURS} hours. Please try again after ${cooldownUnlockAt ? formatCooldownUnlockTime(cooldownUnlockAt) : '24 hours'}.`)}
+                      </div>
+                    )}
                     <div className="pt-1 pl-6">
                       <button
                         type="button"
-                        onClick={() => setShowForm(true)}
-                        className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-xs transition cursor-pointer shadow-xs"
+                        disabled={isCooldownLocked}
+                        onClick={() => {
+                          if (isCooldownLocked) return;
+                          setErrorMsg(null);
+                          setCurrentStep(1);
+                          setShowForm(true);
+                        }}
+                        className={`px-4 py-2 rounded-xl font-bold text-xs transition shadow-xs ${isCooldownLocked
+                          ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                          : 'bg-rose-600 hover:bg-rose-700 text-white cursor-pointer'
+                          }`}
                       >
-                        {lang === 'vi' ? 'Đăng Ký Lại Hồ Sơ Mới' : 'Reapply With New Details'}
+                        {isCooldownLocked
+                          ? (lang === 'vi' ? 'Tạm khóa nộp lại (24 giờ)' : 'Temporarily Locked (24h)')
+                          : (lang === 'vi' ? 'Đăng ký lại hồ sơ mới' : 'Reapply With New Details')}
                       </button>
                     </div>
+                  </div>
+                ) : isProviderErrorPending ? (
+                  <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-950 space-y-1.5">
+                    <div className="flex items-center gap-2 font-bold text-rose-800">
+                      <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                      <span>
+                        {lang === 'vi'
+                          ? (existingVerification?.reasonCode === 'PROVIDER_REQUEST_REJECTED'
+                            ? 'Cổng VNPT từ chối xử lý hồ sơ eKYC'
+                            : 'Cổng xác thực eKYC đang tạm gián đoạn')
+                          : 'eKYC Provider Error'}
+                      </span>
+                    </div>
+                    {existingVerification?.rejectionReason && (
+                      <p className="text-[11px] leading-relaxed font-semibold text-rose-900 pl-6">
+                        {lang === 'vi' ? 'Chi tiết lỗi: ' : 'Error detail: '}
+                        {existingVerification.rejectionReason}
+                      </p>
+                    )}
+                    <p className="text-[11px] leading-relaxed text-slate-700 pl-6">
+                      {lang === 'vi'
+                        ? (existingVerification?.rejectionReason
+                          ? `Hồ sơ của bạn đã được lưu lại (${existingVerification.reasonCodeDescription || existingVerification.reasonCode || 'Lỗi cổng VNPT'}). Hệ thống hoặc quản trị viên sẽ kiểm tra và xử lý giúp bạn, bạn chưa cần gửi lại hồ sơ mới.`
+                          : `Hồ sơ của bạn đã được lưu lại (${existingVerification?.reasonCodeDescription || existingVerification?.reasonCode || 'Lỗi kết nối cổng VNPT'}). Hệ thống hoặc quản trị viên sẽ kiểm tra và thử lại giúp bạn, bạn chưa cần gửi lại hồ sơ mới.`)
+                        : `Your application was saved (${existingVerification?.rejectionReason || existingVerification?.reasonCodeDescription || existingVerification?.reasonCode || 'VNPT connection error'}). The system or admin will review/retry it for you.`}
+                    </p>
                   </div>
                 ) : isPendingReview ? (
                   <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200 text-amber-900 space-y-1.5">
                     <div className="flex items-center gap-2 font-bold text-amber-800">
                       <Clock className="w-4 h-4 text-amber-600 shrink-0 animate-spin" />
-                      <span>{lang === 'vi' ? 'Đang Chờ Phê Duyệt Hồ Sơ eKYC' : 'Awaiting eKYC Approval'}</span>
+                      <span>{lang === 'vi' ? 'Đang chờ phê duyệt hồ sơ eKYC' : 'Awaiting eKYC Approval'}</span>
                     </div>
                     <p className="text-[11px] leading-relaxed text-slate-700 pl-6">
                       {lang === 'vi'
-                        ? 'Hồ sơ của bạn đang được Ban Quản trị SecondLife đối soát CCCD và địa chỉ kho. Vui lòng chờ phê duyệt trong 24 giờ làm việc. Trong thời gian này, bạn không thể chỉnh sửa hoặc gửi lại yêu cầu.'
-                        : 'Your profile is awaiting review by SecondLife administrators. Please wait for approval within 24 working hours. You cannot edit or resubmit during this time.'}
+                        ? 'Hồ sơ của bạn đang được Ban Quản trị SecondLife đối soát CCCD và địa chỉ kho. Vui lòng chờ phê duyệt. Trong thời gian này, bạn không thể chỉnh sửa hoặc gửi lại yêu cầu.'
+                        : 'Your profile is awaiting review by SecondLife administrators. Please wait for approval. You cannot edit or resubmit during this time.'}
                     </p>
                   </div>
                 ) : null}
@@ -1732,7 +1954,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
           )}
 
           {/* VIEW: FORM ĐĂNG KÝ NGƯỜI BÁN */}
-          {showForm && (
+          {!isCheckingVerification && showForm && (
             <form
               onSubmit={handleSubmit}
               className="p-4 sm:p-5 rounded-3xl bg-gradient-to-b from-white to-slate-50 border-2 border-[#c34c36]/30 shadow-md space-y-4 animate-in fade-in"
@@ -1745,13 +1967,13 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                   <div>
                     <h5 className="text-xs font-black text-slate-900 uppercase tracking-wide">
                       {isRegistered
-                        ? (lang === 'vi' ? 'Cập Nhật Thông Tin Gian Hàng' : 'Update Store Information')
-                        : (lang === 'vi' ? 'Đơn Đăng Ký Chuyển Tài Khoản Người Bán' : 'Seller Registration Form')}
+                        ? (lang === 'vi' ? 'Cập nhật thông tin gian hàng' : 'Update Store Information')
+                        : (lang === 'vi' ? 'Đơn đăng ký chuyển tài khoản người bán' : 'Seller Registration Form')}
                     </h5>
                     <p className="text-[11px] text-slate-500">
                       {lang === 'vi'
-                        ? 'Điền thông tin để Kỹ sư Hub và đơn vị vận chuyển (Lalamove) đến nhận thiết bị giám định'
-                        : 'Fill in details so Hub inspectors and couriers (Lalamove) can collect devices for inspection'}
+                        ? 'Điền thông tin để Kỹ sư Hub và đơn vị vận chuyển đến nhận thiết bị giám định'
+                        : 'Fill in details so Hub inspectors and couriers can collect devices for inspection'}
                     </p>
                   </div>
                 </div>
@@ -1767,7 +1989,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                 )}
               </div>
               {/* 3-Step Wizard Navigation */}
-              <div className="grid grid-cols-3 gap-2 p-1.5 bg-slate-100/80 rounded-2xl border border-slate-200 text-xs">
+              {!isApprovedSeller && <div className="grid grid-cols-3 gap-2 p-1.5 bg-slate-100/80 rounded-2xl border border-slate-200 text-xs">
                 {/* Step 1 Pill */}
                 <button
                   type="button"
@@ -1829,8 +2051,8 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                     <span className="block text-[9px] uppercase tracking-wider text-slate-400 font-bold">
                       {lang === 'vi' ? 'Bước 2' : 'Step 2'}
                     </span>
-                    <span className="block text-[11px] truncate">
-                      {lang === 'vi' ? 'Kho lấy hàng' : 'Pickup Location'}
+                    <span className="block text-[11px] leading-tight">
+                      {lang === 'vi' ? 'Kho & ngân hàng' : 'Pickup & Bank'}
                     </span>
                   </div>
                 </button>
@@ -1862,30 +2084,42 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                       {lang === 'vi' ? 'Bước 3' : 'Step 3'}
                     </span>
                     <span className="block text-[11px] truncate">
-                      {lang === 'vi' ? 'eKYC & Ngân hàng' : 'eKYC & Bank'}
+                      {lang === 'vi' ? 'Xác thực eKYC' : 'eKYC Verification'}
                     </span>
                   </div>
                 </button>
-              </div>
+              </div>}
 
               {/* BƯỚC 1: THÔNG TIN GIAN HÀNG & EMAIL OTP */}
-              {currentStep === 1 && (
+              {!isApprovedSeller && currentStep === 1 && (
                 <div className="space-y-3.5 animate-in fade-in duration-200">
                   {/* Form Inputs */}
                   {/* Resubmission Alert if status is RESUBMIT_REQUIRED */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                        {lang === 'vi' ? 'Tên Gian Hàng / Cửa Hàng' : 'Store / Shop Name'} <span className="text-red-500">*</span>
-                      </label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[11px] font-bold text-slate-700 block">
+                          {lang === 'vi' ? 'Tên gian hàng / cửa hàng' : 'Store / Shop Name'} <span className="text-red-500">*</span>
+                        </label>
+                        <span className="text-[10px] font-semibold text-slate-400 tabular-nums">
+                          {shopName.length}/{SHOP_NAME_MAX_LENGTH}
+                        </span>
+                      </div>
                       <input
                         type="text"
                         required
+                        minLength={SHOP_NAME_MIN_LENGTH}
+                        maxLength={SHOP_NAME_MAX_LENGTH}
                         value={shopName}
-                        onChange={(e) => setShopName(e.target.value)}
-                        placeholder={lang === 'vi' ? 'VD: Cửa Hàng Điện Gia Dụng...' : 'e.g., Home Appliances Store'}
+                        onChange={(e) => setShopName(sanitizeShopName(e.target.value))}
+                        placeholder={lang === 'vi' ? 'VD: Cửa hàng điện gia dụng' : 'e.g., Home Appliances Store'}
                         className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none text-xs bg-white text-slate-900"
                       />
+                      <p className="mt-1 text-[10px] text-slate-500">
+                        {lang === 'vi'
+                          ? `Từ ${SHOP_NAME_MIN_LENGTH} đến ${SHOP_NAME_MAX_LENGTH} ký tự, không chứa ký tự đặc biệt.`
+                          : `${SHOP_NAME_MIN_LENGTH}–${SHOP_NAME_MAX_LENGTH} characters, letters/numbers/spaces only.`}
+                      </p>
                     </div>
 
                     <div>
@@ -1908,18 +2142,26 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                     </div>
                   </div>
 
-                  {/* Email Gian Hàng & Xác Thực Mã OTP Bắt Buộc Trước Khi eKYC */}
+                  {/* Email Gian Hàng (tự kế thừa xác thực từ tài khoản nếu dùng email đăng ký) */}
                   <div className="p-3.5 bg-gradient-to-br from-[#faf8f5] to-orange-50/20 border border-slate-200 rounded-2xl space-y-2.5">
                     <div className="flex items-center justify-between flex-wrap gap-2">
                       <label className="text-[11px] font-bold text-slate-800 flex items-center gap-1.5">
                         <Mail className="w-3.5 h-3.5 text-[#c34c36]" />
-                        <span>{lang === 'vi' ? 'Email Gian Hàng (Bắt buộc xác thực OTP trước khi eKYC)' : 'Shop Email (OTP Verification Required)'}</span>
+                        <span>
+                          {isUsingVerifiedAccountEmail
+                            ? (lang === 'vi' ? 'Email gian hàng' : 'Shop Email')
+                            : (lang === 'vi' ? 'Email gian hàng (Bắt buộc xác thực OTP nếu khác email tài khoản)' : 'Shop Email (OTP Verification Required)')}
+                        </span>
                         <span className="text-red-500">*</span>
                       </label>
-                      {isEmailVerifiedForOnboarding ? (
+                      {isShopEmailReady ? (
                         <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100/90 px-2 py-0.5 rounded-full border border-emerald-300">
                           <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                          <span>{lang === 'vi' ? 'Đã xác thực OTP' : 'Verified'}</span>
+                          <span>
+                            {isUsingVerifiedAccountEmail && !isEmailVerifiedForOnboarding
+                              ? (lang === 'vi' ? 'Đã xác thực theo tài khoản' : 'Account Email Verified')
+                              : (lang === 'vi' ? 'Đã xác thực OTP' : 'Verified')}
+                          </span>
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-100/90 px-2 py-0.5 rounded-full border border-amber-300">
@@ -1940,6 +2182,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                           if (isEmailVerifiedForOnboarding) return;
                           setShopEmail(e.target.value);
                           setIsEmailVerifiedForOnboarding(false);
+                          setHasSentOtp(false);
                           setOtpSentSuccess(null);
                           setOtpError(null);
                         }}
@@ -1950,41 +2193,43 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                           }`}
                       />
 
-                      <button
-                        type="button"
-                        onClick={handleSendOtpInline}
-                        disabled={isSendingOtp || otpCountdown > 0 || isEmailVerifiedForOnboarding}
-                        className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer ${isEmailVerifiedForOnboarding
-                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-not-allowed'
-                          : 'bg-[#24263e] hover:bg-black text-white disabled:opacity-50'
-                          }`}
-                      >
-                        {isSendingOtp ? (
-                          <>
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            <span>{lang === 'vi' ? 'Đang gửi...' : 'Sending...'}</span>
-                          </>
-                        ) : otpCountdown > 0 ? (
-                          <>
-                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                            <span>{lang === 'vi' ? `Gửi lại (${otpCountdown}s)` : `Resend (${otpCountdown}s)`}</span>
-                          </>
-                        ) : isEmailVerifiedForOnboarding ? (
-                          <>
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>{lang === 'vi' ? 'Đã Xác Thực' : 'Verified'}</span>
-                          </>
-                        ) : (
-                          <>
-                            <Mail className="w-3.5 h-3.5" />
-                            <span>{hasSentOtp ? (lang === 'vi' ? 'Gửi lại OTP' : 'Resend OTP') : (lang === 'vi' ? 'Gửi mã OTP' : 'Send OTP')}</span>
-                          </>
-                        )}
-                      </button>
+                      {!isUsingVerifiedAccountEmail && (
+                        <button
+                          type="button"
+                          onClick={handleSendOtpInline}
+                          disabled={isSendingOtp || otpCountdown > 0 || isEmailVerifiedForOnboarding}
+                          className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer ${isEmailVerifiedForOnboarding
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-not-allowed'
+                            : 'bg-[#24263e] hover:bg-black text-white disabled:opacity-50'
+                            }`}
+                        >
+                          {isSendingOtp ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              <span>{lang === 'vi' ? 'Đang gửi...' : 'Sending...'}</span>
+                            </>
+                          ) : otpCountdown > 0 ? (
+                            <>
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                              <span>{lang === 'vi' ? `Gửi lại (${otpCountdown}s)` : `Resend (${otpCountdown}s)`}</span>
+                            </>
+                          ) : isEmailVerifiedForOnboarding ? (
+                            <>
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>{lang === 'vi' ? 'Đã xác thực' : 'Verified'}</span>
+                            </>
+                          ) : (
+                            <>
+                              <Mail className="w-3.5 h-3.5" />
+                              <span>{hasSentOtp ? (lang === 'vi' ? 'Gửi lại OTP' : 'Resend OTP') : (lang === 'vi' ? 'Gửi mã OTP' : 'Send OTP')}</span>
+                            </>
+                          )}
+                        </button>
+                      )}
                     </div>
 
                     {/* Trạng thái xác thực email gian hàng */}
-                    {!isEmailVerifiedForOnboarding && hasSentOtp && (
+                    {!isShopEmailReady && hasSentOtp && (
                       <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 animate-in fade-in">
                         <div className="flex items-start gap-2">
                           <Mail className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
@@ -2012,17 +2257,21 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                       </div>
                     )}
 
-                    {otpSentSuccess && (
+                    {otpSentSuccess && !isShopEmailReady && (
                       <p className="text-[11px] text-emerald-600 font-medium flex items-center gap-1">
                         <CheckCircle2 className="w-3 h-3 shrink-0" />
                         <span>{otpSentSuccess}</span>
                       </p>
                     )}
 
-                    {isEmailVerifiedForOnboarding && (
+                    {isShopEmailReady && (
                       <div className="p-2 rounded-xl bg-emerald-50 text-emerald-800 text-[11px] font-medium flex items-center gap-1.5">
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                        <span>{lang === 'vi' ? 'Email gian hàng đã được xác thực thành công. Bạn đủ điều kiện nộp eKYC.' : 'Shop email verified. You may proceed with eKYC.'}</span>
+                        <span>
+                          {isUsingVerifiedAccountEmail && !isEmailVerifiedForOnboarding
+                            ? (lang === 'vi' ? 'Email tài khoản đã xác thực trước đó. Bạn không cần nhập lại OTP.' : 'Account email already verified. No OTP required.')
+                            : (lang === 'vi' ? 'Email gian hàng đã được xác thực thành công. Bạn đủ điều kiện nộp eKYC.' : 'Shop email verified. You may proceed with eKYC.')}
+                        </span>
                       </div>
                     )}
                   </div>
@@ -2065,18 +2314,26 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                       }}
                       className="px-5 py-2.5 rounded-xl bg-[#24263e] hover:bg-black text-white text-xs font-black shadow-sm transition flex items-center gap-2 cursor-pointer ml-auto"
                     >
-                      <span>{lang === 'vi' ? 'Tiếp tục' : 'Next: Pickup Location'}</span>
+                      <span>{lang === 'vi' ? 'Tiếp tục' : 'Continue'}</span>
                       <ArrowRight className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
               )}
 
-              {/* BƯỚC 2: ĐỊA CHỈ KHO LẤY HÀNG LALAMOVE */}
-              {currentStep === 2 && (
+              {/* BƯỚC 2: KHO LẤY HÀNG & TÀI KHOẢN NGÂN HÀNG */}
+              {(isApprovedSeller || currentStep === 2) && (
                 <div className="space-y-3.5 animate-in fade-in duration-200">
+                  {pickupLockReason && (
+                    <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <span>{pickupLockReason}</span>
+                    </div>
+                  )}
                   {/* Lalamove Warehouse Pickup Address Section */}
                   <LalamoveAddressPicker
+                    key={`${!pickupLockReason ? 'edit' : 'locked'}-seller-reg-warehouse`}
+                    readOnly={Boolean(pickupLockReason)}
                     initialName={shopName}
                     initialPhone={sellerPhone}
                     initialLatitude={pickupLatitude ?? undefined}
@@ -2089,18 +2346,68 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                       setPickupLongitude(data.longitude);
                       setPickupAddress(data.address);
                       setStreetAddress(data.address);
-                      if (data.name && !shopName) setShopName(data.name);
-                      if (data.phone && !sellerPhone) setSellerPhone(data.phone);
+                      if (data.name && (isApprovedSeller || !shopName)) {
+                        const cleanPickedShop = sanitizeShopName(data.name);
+                        if (cleanPickedShop.trim().length >= SHOP_NAME_MIN_LENGTH) {
+                          setShopName(cleanPickedShop);
+                        }
+                      }
+                      if (data.phone && (isApprovedSeller || !sellerPhone)) setSellerPhone(data.phone);
                     }}
                     lang={lang}
-                    title={lang === 'vi' ? 'Địa Chỉ Kho Lấy Hàng Lalamove' : 'Lalamove Pickup Location'}
+                    title={lang === 'vi' ? 'Địa chỉ kho lấy hàng:' : 'Pickup Location'}
                     description={
                       currentUser.address || currentUser.pickupAddress || currentUser.streetAddress
-                        ? (lang === 'vi' ? 'Đã tự động đồng bộ từ địa chỉ hồ sơ của bạn. Có thể kéo ghim nếu kho lấy hàng ở vị trí khác.' : 'Synced from your profile. Drag pin if warehouse location is different.')
-                        : (lang === 'vi' ? 'Hồ sơ chưa có địa chỉ. Bấm "Dùng Vị Trí Hiện Tại" hoặc nhấp vào bản đồ để định vị kho lấy hàng.' : 'No profile address. Click "Use Current Location" or pick on map.')
+                        ? (lang === 'vi' ? '' : 'Synced from your profile. Drag pin if warehouse location is different.')
+                        : (lang === 'vi' ? 'Hồ sơ chưa có địa chỉ. Bấm "Dùng vị trí hiện tại" hoặc nhấp vào bản đồ để định vị kho lấy hàng.' : 'No profile address. Click "Use Current Location" or pick on map.')
                     }
                   />
 
+                  {!isApprovedSeller && (
+                    <section className="space-y-2.5 rounded-2xl border border-gray-200 bg-white p-3">
+                      <h6 className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                        <CreditCard aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-[#24263e]" />
+                        {lang === 'vi' ? 'Tài khoản ngân hàng nhận tiền bán (Giải ngân Escrow)' : 'Bank Account for Escrow Payout'}
+                      </h6>
+                      <VietQrBankPicker value={sellerBankName} onChange={setSellerBankName} lang={lang} />
+                      <div className="grid gap-2.5 sm:grid-cols-2">
+                        <label className="block">
+                          <span className="mb-1 flex items-center justify-between text-[10px] font-bold text-slate-600">
+                            <span>{lang === 'vi' ? 'Số tài khoản' : 'Account number'}</span>
+                            <span className="font-semibold text-slate-400 tabular-nums">
+                              {sellerAccountNumber.length}/{BANK_ACCOUNT_NUMBER_MAX_LENGTH}
+                            </span>
+                          </span>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            minLength={BANK_ACCOUNT_NUMBER_MIN_LENGTH}
+                            maxLength={BANK_ACCOUNT_NUMBER_MAX_LENGTH}
+                            value={sellerAccountNumber}
+                            onChange={(e) => setSellerAccountNumber(sanitizeBankAccountNumber(e.target.value))}
+                            placeholder={lang === 'vi' ? 'Nhập 8–16 chữ số...' : '8–16 digits'}
+                            className="min-h-9 w-full rounded-lg border border-gray-200 px-2.5 py-1.5 font-mono text-xs outline-none focus:border-[#c34c36]"
+                          />
+                          <span className="mt-1 block text-[10px] text-slate-400">
+                            {lang === 'vi' ? 'Chỉ nhập số, từ 8 đến 16 chữ số.' : 'Digits only, 8 to 16 digits.'}
+                          </span>
+                        </label>
+                        <label className="block">
+                          <span className="mb-1 block text-[10px] font-bold text-slate-600">{lang === 'vi' ? 'Chủ tài khoản' : 'Account holder'}</span>
+                          <input
+                            type="text"
+                            value={sellerAccountHolder}
+                            onChange={(e) => setSellerAccountHolder(sanitizeBankAccountHolder(e.target.value))}
+                            placeholder={sanitizeBankAccountHolder(currentUser.name || '') || (lang === 'vi' ? 'NGUYEN VAN A' : 'ACCOUNT HOLDER NAME')}
+                            className="min-h-9 w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs uppercase outline-none focus:border-[#c34c36]"
+                          />
+                          <span className="mt-1 block text-[10px] text-slate-400">
+                            {lang === 'vi' ? 'Tự động in hoa, chỉ chữ không dấu, không ký tự đặc biệt.' : 'Auto uppercase, unaccented letters only.'}
+                          </span>
+                        </label>
+                      </div>
+                    </section>
+                  )}
 
                   {/* Inline Error & Success Feedback */}
                   {errorMsg && (
@@ -2123,33 +2430,43 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                       type="button"
                       onClick={() => {
                         setErrorMsg(null);
-                        setCurrentStep(1);
+                        if (isApprovedSeller) {
+                          setShowForm(false);
+                          setIsWarehouseConfirmed(false);
+                          void fetchAddressFromBackend();
+                        } else {
+                          setCurrentStep(1);
+                        }
                       }}
                       className="px-4 py-2 rounded-xl bg-white border border-gray-200 hover:bg-gray-100 text-slate-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
                     >
                       <ArrowLeft className="w-4 h-4" />
-                      <span>{lang === 'vi' ? 'Quay lại Bước 1' : 'Back to Step 1'}</span>
+                      <span>{isApprovedSeller ? (lang === 'vi' ? 'Hủy' : 'Cancel') : (lang === 'vi' ? 'Quay lại Bước 1' : 'Back to Step 1')}</span>
                     </button>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (validateStep2()) {
-                          setErrorMsg(null);
-                          setCurrentStep(3);
-                        }
-                      }}
-                      className="px-5 py-2.5 rounded-xl bg-[#24263e] hover:bg-black text-white text-xs font-black shadow-sm transition flex items-center gap-2 cursor-pointer"
-                    >
-                      <span>{lang === 'vi' ? 'Tiếp tục: eKYC & Ngân hàng' : 'Next: eKYC & Bank'}</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </button>
+                    {isApprovedSeller ? (
+                      <button
+                        type="submit"
+                        disabled={isSubmitting || isLoadingAddressFromBe}
+                        className="px-5 py-2.5 rounded-xl bg-[#24263e] text-white text-xs font-black shadow-sm disabled:opacity-50"
+                      >
+                        {isSubmitting ? (lang === 'vi' ? 'Đang lưu...' : 'Saving...') : (lang === 'vi' ? 'Lưu địa chỉ kho' : 'Save pickup address')}
+                      </button>
+                    ) : (
+                      <button
+                        type="submit"
+                        className="px-5 py-2.5 rounded-xl bg-[#24263e] hover:bg-black text-white text-xs font-black shadow-sm transition flex items-center gap-2 cursor-pointer"
+                      >
+                        <span>{lang === 'vi' ? 'Tiếp tục xác thực eKYC' : 'Continue to eKYC'}</span>
+                        <ArrowRight className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
 
-              {/* BƯỚC 3: ĐỊNH DANH eKYC & TÀI KHOẢN NGÂN HÀNG */}
-              {currentStep === 3 && (
+              {/* BƯỚC 3: ĐỊNH DANH eKYC */}
+              {!isApprovedSeller && currentStep === 3 && (
                 <div className="space-y-3.5 animate-in fade-in duration-200">
                   {existingVerification?.status === 'RESUBMIT_REQUIRED' && (
                     <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-300 text-amber-950 text-xs flex items-start gap-3 shadow-xs animate-in fade-in">
@@ -2165,7 +2482,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                         </div>
                         <p className="text-[11px] text-amber-800 leading-relaxed">
                           {lang === 'vi'
-                            ? `Lý do từ bên thứ 3: "${existingVerification.rejectionReason || 'Ảnh chụp CCCD bị mờ, lóa ánh sáng hoặc không nhận diện rõ'}". Vui lòng tải lên ảnh chụp mới rõ nét và bấm "Nộp Lại Chứng Từ eKYC" ở cuối form.`
+                            ? `Lý do từ bên thứ 3: "${existingVerification.rejectionReason || 'Ảnh chụp CCCD bị mờ, lóa ánh sáng hoặc không nhận diện rõ'}". Vui lòng tải lên ảnh chụp mới rõ nét và bấm "Nộp lại chứng từ eKYC" ở cuối form.`
                             : `Provider reason: "${existingVerification.rejectionReason || 'Blurry photos or glare'}". Please upload clear photos and submit again.`}
                         </p>
                       </div>
@@ -2175,7 +2492,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                        {lang === 'vi' ? 'Số Căn Cước Công Dân (CCCD/CMND)' : 'Citizen Identity Number (CCCD)'} <span className="text-red-500">*</span>
+                        {lang === 'vi' ? 'Số căn cước công dân (CCCD/CMND)' : 'Citizen Identity Number (CCCD)'} <span className="text-red-500">*</span>
                       </label>
                       <input
                         type="text"
@@ -2189,7 +2506,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
 
                     <div>
                       <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                        {lang === 'vi' ? 'Loại Thiết Bị Bán Chủ Yếu' : 'Primary Product Category'}
+                        {lang === 'vi' ? 'Loại thiết bị bán chủ yếu' : 'Primary Product Category'}
                       </label>
                       <input
                         type="text"
@@ -2206,7 +2523,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-bold text-slate-800">
                       <div className="flex items-center gap-1.5">
                         <FileCheck className="w-4 h-4 text-[#24263e]" />
-                        <span>{lang === 'vi' ? 'Ảnh Tải Lên Xác Thực eKYC (Mặt Trước, Mặt Sau, Chân Dung)' : 'eKYC Verification Photo Uploads'}</span>
+                        <span>{lang === 'vi' ? 'Ảnh tải lên xác thực eKYC (Mặt trước, mặt sau, chân dung)' : 'eKYC Verification Photo Uploads'}</span>
                         <span className="text-red-500">*</span>
                       </div>
 
@@ -2225,7 +2542,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                       <div className="space-y-1">
                         <div className="flex items-center justify-between h-5">
                           <label className="text-[10px] font-bold text-slate-700 block truncate">
-                            {lang === 'vi' ? '1. Ảnh CCCD Mặt Trước' : '1. Front ID Card'} <span className="text-red-500">*</span>
+                            {lang === 'vi' ? '1. Ảnh CCCD mặt trước' : '1. Front ID Card'} <span className="text-red-500">*</span>
                           </label>
                           <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 shrink-0">
                             {lang === 'vi' ? 'Mặt trước' : 'Front'}
@@ -2281,7 +2598,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                       <div className="space-y-1">
                         <div className="flex items-center justify-between h-5">
                           <label className="text-[10px] font-bold text-slate-700 block truncate">
-                            {lang === 'vi' ? '2. Ảnh CCCD Mặt Sau' : '2. Back ID Card'} <span className="text-red-500">*</span>
+                            {lang === 'vi' ? '2. Ảnh CCCD mặt sau' : '2. Back ID Card'} <span className="text-red-500">*</span>
                           </label>
                           <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 shrink-0">
                             {lang === 'vi' ? 'Mặt sau' : 'Back'}
@@ -2337,7 +2654,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                       <div className="space-y-1">
                         <div className="flex items-center justify-between h-5">
                           <label className="text-[10px] font-bold text-slate-700 block truncate">
-                            {lang === 'vi' ? '3. Ảnh Chân Dung Selfie' : '3. Selfie Photo'} <span className="text-red-500">*</span>
+                            {lang === 'vi' ? '3. Ảnh chân dung selfie' : '3. Selfie Photo'} <span className="text-red-500">*</span>
                           </label>
 
                         </div>
@@ -2389,7 +2706,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                                 className="w-full py-2 px-2 bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-slate-900 rounded-xl text-[10px] font-bold shadow-xs hover:opacity-95 transition flex items-center justify-center gap-1 cursor-pointer"
                               >
                                 <Camera className="w-3.5 h-3.5 text-slate-900 shrink-0" />
-                                <span className="truncate">{lang === 'vi' ? 'Mở Camera Quét Mặt' : 'Live Camera Scan'}</span>
+                                <span className="truncate">{lang === 'vi' ? 'Mở camera quét mặt' : 'Live Camera Scan'}</span>
                               </button>
                               <span className="text-[9px] text-slate-500 font-medium block text-center">
                                 {lang === 'vi' ? 'Bắt buộc quét camera trực tiếp' : 'Live camera scan required'}
@@ -2397,47 +2714,6 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                             </div>
                           )}
                         </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Bank Information for Payout */}
-                  <div className="p-3 rounded-2xl bg-white border border-gray-200 space-y-2.5">
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
-                      <CreditCard className="w-3.5 h-3.5 text-[#24263e]" />
-                      <span>{lang === 'vi' ? 'Tài Khoản Ngân Hàng Nhận Tiền Bán (Giải Ngân Escrow)' : 'Bank Account for Escrow Payout'}</span>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                      <div>
-                        <label className="text-[10px] font-bold text-slate-500 block mb-0.5">{lang === 'vi' ? 'Ngân hàng' : 'Bank name'}</label>
-                        <input
-                          type="text"
-                          value={sellerBankName}
-                          onChange={(e) => setSellerBankName(e.target.value)}
-                          placeholder={lang === 'vi' ? 'VD: Vietcombank, MB Bank...' : 'e.g. Vietcombank'}
-                          className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs outline-none focus:border-[#c34c36]"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold text-slate-500 block mb-0.5">{lang === 'vi' ? 'Số tài khoản' : 'Account number'}</label>
-                        <input
-                          type="text"
-                          value={sellerAccountNumber}
-                          onChange={(e) => setSellerAccountNumber(e.target.value)}
-                          placeholder={lang === 'vi' ? 'Nhập số tài khoản...' : 'Account number'}
-                          className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs outline-none focus:border-[#c34c36]"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold text-slate-500 block mb-0.5">{lang === 'vi' ? 'Chủ tài khoản' : 'Account holder'}</label>
-                        <input
-                          type="text"
-                          value={sellerAccountHolder}
-                          onChange={(e) => setSellerAccountHolder(e.target.value.toUpperCase())}
-                          placeholder={currentUser?.name ? currentUser.name.toUpperCase() : (lang === 'vi' ? 'HỌ VÀ TÊN CHỦ TÀI KHOẢN' : 'ACCOUNT HOLDER NAME')}
-                          className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs outline-none focus:border-[#c34c36]"
-                        />
                       </div>
                     </div>
                   </div>
@@ -2452,7 +2728,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                     />
                     <span className="text-[11px] text-slate-600 leading-relaxed">
                       {lang === 'vi'
-                        ? 'Tôi cam kết mọi thiết bị đăng bán là chính hãng, đúng tình trạng; sẵn sàng giao hàng cho tài xế Lalamove để Kỹ sư Hub kiểm định dán tem NFC và tuân thủ quy chế giải ngân qua quỹ tín thác Escrow của SecondLife.'
+                        ? 'Tôi cam kết mọi thiết bị đăng bán là đúng tình trạng, tuân thủ quy chế giải ngân qua quỹ tín thác Escrow của SecondLife.'
                         : 'I commit that all listed appliances are authentic and match condition; ready for Lalamove pickup and Hub inspection.'}
                     </span>
                   </label>
@@ -2495,12 +2771,12 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                       <CheckCircle2 className="w-4 h-4" />
                       <span>
                         {isSubmitting
-                          ? (lang === 'vi' ? 'Đang Gửi Hồ Sơ...' : 'Submitting...')
+                          ? (lang === 'vi' ? 'Đang gửi hồ sơ...' : 'Submitting...')
                           : existingVerification?.status === 'RESUBMIT_REQUIRED'
-                            ? (lang === 'vi' ? 'Nộp Lại Chứng Từ eKYC' : 'Resubmit eKYC Documents')
+                            ? (lang === 'vi' ? 'Nộp lại chứng từ eKYC' : 'Resubmit eKYC Documents')
                             : isRegistered
-                              ? (lang === 'vi' ? 'Cập Nhật Hồ Sơ Gian Hàng' : 'Update Store Profile')
-                              : (lang === 'vi' ? 'Xác Nhận Đăng Ký & Gửi Duyệt eKYC' : 'Confirm Registration & Submit eKYC')}
+                              ? (lang === 'vi' ? 'Cập nhật hồ sơ gian hàng' : 'Update Store Profile')
+                              : (lang === 'vi' ? 'Xác nhận đăng ký & gửi duyệt eKYC' : 'Confirm Registration & Submit eKYC')}
                       </span>
                     </button>
                   </div>
@@ -2513,12 +2789,12 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
         {/* Footer */}
         <div className="px-6 py-3.5 bg-slate-50 border-t border-gray-100 flex items-center justify-between text-xs text-slate-500">
           <span>{lang === 'vi' ? 'Đăng ký người bán được bảo lãnh bởi SecondLife Hub' : 'Seller registration secured by SecondLife Hub'}</span>
-          <button
+          {/* <button
             onClick={onClose}
             className="px-4 py-1.5 rounded-xl bg-white border border-gray-200 hover:bg-gray-100 text-slate-700 text-xs font-bold transition cursor-pointer"
           >
             {lang === 'vi' ? 'Đóng' : 'Close'}
-          </button>
+          </button> */}
         </div>
       </div>
 
@@ -2531,7 +2807,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
             </div>
             <div>
               <h3 className="text-base font-black text-slate-900">
-                {lang === 'vi' ? 'Xác Thực Email Gian Hàng' : 'Verify Shop Email'}
+                {lang === 'vi' ? 'Xác thực email gian hàng' : 'Verify Shop Email'}
               </h3>
               <p className="text-xs text-slate-500 mt-1">
                 {lang === 'vi'
@@ -2637,8 +2913,8 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                   <ShieldCheck className="w-4 h-4 text-emerald-400" />
                   <span>
                     {isVerifyingBeforeSubmit
-                      ? (lang === 'vi' ? 'Xác Thực OTP & Nộp eKYC' : 'Verify OTP & Submit eKYC')
-                      : (lang === 'vi' ? 'Xác Nhận & Tiếp Tục' : 'Verify & Continue Form')}
+                      ? (lang === 'vi' ? 'Xác thực OTP & nộp eKYC' : 'Verify OTP & Submit eKYC')
+                      : (lang === 'vi' ? 'Xác nhận & tiếp tục' : 'Verify & Continue Form')}
                   </span>
                 </>
               )}
@@ -2653,6 +2929,16 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
         onClose={() => setIsFaceScannerOpen(false)}
         onFaceCaptured={handleFaceCapturedFromCamera}
         lang={lang}
+      />
+
+      {/* Pháo hoa chúc mừng + đếm ngược 30s hướng dẫn thao tác tiếp theo sau khi đăng ký thành công */}
+      <SellerCelebrationOverlay
+        isOpen={showApprovalCelebration}
+        shopName={shopName.trim()}
+        lang={lang}
+        countdownSeconds={30}
+        onProceedNext={finishCelebrationAndRelogin}
+        onGoToDashboard={finishCelebrationAndRelogin}
       />
     </div>
   );

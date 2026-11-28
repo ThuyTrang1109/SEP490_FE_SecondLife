@@ -405,7 +405,7 @@ export function useCenterChecklists({ catalogItems, categories, getPendingPropos
 
     const confirmed = await dialogService.confirm(
       lang === 'vi' ? `Bạn có chắc muốn rút đề xuất bộ tiêu chuẩn "${chk.title}"?` : `Withdraw proposal "${chk.title}"?`,
-      { title: lang === 'vi' ? 'Xác Nhận Rút Đề Xuất' : 'Confirm Withdrawal', type: 'warning' }
+      { title: lang === 'vi' ? 'Xác nhận rút đề xuất' : 'Confirm Withdrawal', type: 'warning' }
     );
     if (!confirmed) return;
 

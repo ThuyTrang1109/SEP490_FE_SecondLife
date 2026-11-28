@@ -9,17 +9,17 @@ export const translations = {
     // Roles
     roleBuyer: 'Người Mua (Buyer)',
     roleSeller: 'Người Bán (Seller)',
-    roleInspector: 'Trung Tâm Giám Định (Inspector)',
-    roleAdmin: 'Quản Trị Viên (Admin)',
+    roleInspector: 'Trung tâm giám định (Inspector)',
+    roleAdmin: 'Quản trị viên (Admin)',
     switchRole: 'Chuyển vai trò thử nghiệm',
 
     // Nav
-    navMarketplace: 'Sàn Đồ Cũ',
-    navCreateListing: 'Đăng Bán & Định Giá AI',
-    navMyOrders: 'Đơn Hàng & Escrow',
-    navInspectionHub: 'Trung Tâm Kiểm Định',
+    navMarketplace: 'Sàn đồ cũ',
+    navCreateListing: 'Đăng bán & định giá AI',
+    navMyOrders: 'Đơn hàng & Escrow',
+    navInspectionHub: 'Trung tâm kiểm định',
     navAdminDashboard: 'Admin Control Center',
-    navChat: 'Đàm Phán & Tin Nhắn',
+    navChat: 'Đàm phán & tin nhắn',
 
     // Marketplace & Filters
     searchPlaceholder: 'Tìm iPhone 15 Pro, MacBook M2, máy ảnh Sony, túi hiệu...',
@@ -41,7 +41,7 @@ export const translations = {
     contactSeller: 'Nhắn tin',
 
     // Listing Creation
-    createListingTitle: 'Đăng Bán Có AI Trợ Lực',
+    createListingTitle: 'Đăng bán có AI trợ lực',
     createListingSubtitle: 'Hệ thống AI tự động phân tích ảnh, ước tính giá thị trường chuẩn và kiểm tra gian lận',
     stepInfo: '1. Thông tin cơ bản',
     stepPhotos: '2. Bộ ảnh chuẩn 5 góc',
@@ -103,23 +103,23 @@ export const translations = {
     stageHandover: '3. Ảnh lúc đóng gói & bàn giao',
 
     // Inspector
-    inspectorTitle: 'Cổng Thao Tác Kiểm Định Viên (Inspector Portal)',
+    inspectorTitle: 'Cổng thao tác kiểm định viên (Inspector Portal)',
     inspectorQueue: 'Hàng đợi kiểm định cần xử lý',
     scanQrItem: 'Quét mã QR / Nhập mã đơn',
     executeChecklist: 'Thực thi checklist tiêu chuẩn',
     attachInspectorPhotos: 'Tải ảnh soi kính & tem niêm phong',
-    issueReport: 'Ký số & Xuất Báo Cáo Giám Định',
+    issueReport: 'Ký số & xuất báo cáo giám định',
 
     // Admin
-    adminDashboardTitle: 'Trung Tâm Điều Hành & Giám Sát Rủi Ro',
+    adminDashboardTitle: 'Trung tâm điều hành & giám sát rủi ro',
     totalGmv: 'Tổng GMV Giao Dịch',
     heldInEscrow: 'Tiền đang giữ trong Escrow',
     inspectionPassRate: 'Tỷ lệ kiểm định đạt chuẩn',
     disputeRate: 'Tỷ lệ tranh chấp',
-    disputeWorkbench: 'Bàn Trọng Tài Tranh Chấp (Arbitration)',
+    disputeWorkbench: 'Bàn trọng tài tranh chấp (Arbitration)',
     fraudAlerts: 'Cảnh báo chống gian lận & Ảnh trùng lặp',
-    modelPerformance: 'Hiệu năng mô hình AI Định Giá',
-    exportReport: 'Xuất Báo Cáo Thống Kê (CSV/PDF)'
+    modelPerformance: 'Hiệu năng mô hình AI định giá',
+    exportReport: 'Xuất báo cáo thống kê (CSV/PDF)'
   },
   en: {
     brandName: 'SecondLife',

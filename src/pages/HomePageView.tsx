@@ -56,7 +56,7 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
             </div>
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/80 border border-[#24263e]/15 text-[#24263e] text-xs font-bold backdrop-blur-md shadow-xs">
               <ShieldCheck className="w-4 h-4 text-[#c34c36]" />
-              <span className="text-[#24263e] font-bold">{lang === 'vi' ? 'Sàn Thương Mại Đồ Cũ Thế Hệ Mới • Đạt Chuẩn Kiểm Định' : 'Next-Gen Certified Recommerce Platform'}</span>
+              <span className="text-[#24263e] font-bold">{lang === 'vi' ? 'Sàn thương mại đồ cũ thế hệ mới • Đạt chuẩn kiểm định' : 'Next-Gen Certified Recommerce Platform'}</span>
             </div>
           </div>
 
@@ -72,7 +72,7 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
                 : 'text-[#24263e]/80 hover:text-[#24263e] hover:bg-white/60'
                 }`}
             >
-              {lang === 'vi' ? 'Tủ Lạnh Hitachi' : 'Hitachi Fridge'}
+              {lang === 'vi' ? 'Tủ lạnh Hitachi' : 'Hitachi Fridge'}
             </button>
             <button
               onClick={() => {
@@ -84,7 +84,7 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
                 : 'text-[#24263e]/80 hover:text-[#24263e] hover:bg-white/60'
                 }`}
             >
-              {lang === 'vi' ? 'Máy Giặt Electrolux' : 'Electrolux Washer'}
+              {lang === 'vi' ? 'Máy giặt Electrolux' : 'Electrolux Washer'}
             </button>
             <button
               onClick={() => {
@@ -96,7 +96,7 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
               title={lang === 'vi' ? 'Bật / tắt tự động xoay' : 'Toggle auto-rotate'}
             >
               <RefreshCw className={`w-3 h-3 ${autoRotate ? 'animate-spin' : ''}`} style={{ animationDuration: '6s' }} />
-              <span>{lang === 'vi' ? 'Tự Động' : 'Auto'}</span>
+              <span>{lang === 'vi' ? 'Tự động' : 'Auto'}</span>
             </button>
           </div>
         </div>
@@ -108,9 +108,9 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
             <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight leading-[1.15] text-[#24263e]">
               {lang === 'vi' ? (
                 <>
-                  Mua Bán Đồ Cũ <br />
+                  Mua bán đồ cũ <br />
                   <span className="text-[#c34c36] font-black drop-shadow-xs">
-                    AI Định Giá & Kiểm Định Thật.
+                    AI định giá & kiểm định thật.
                   </span>
                 </>
               ) : (
@@ -138,7 +138,7 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#24263e] hover:bg-[#1a1b2d] text-white font-black text-xs sm:text-sm shadow-xl shadow-black/10 transition-all cursor-pointer"
               >
                 <ShoppingBag className="w-4 h-4 text-[#fce5da]" />
-                <span>{lang === 'vi' ? 'Khám Phá Sàn Sản Phẩm' : 'Explore Marketplace'}</span>
+                <span>{lang === 'vi' ? 'Khám phá sàn sản phẩm' : 'Explore Marketplace'}</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
 
@@ -157,7 +157,7 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
                 ) : (
                   <>
                     <Sparkles className="w-4 h-4 text-[#c34c36]" />
-                    <span>{lang === 'vi' ? 'Đăng Bán' : 'Post Listing'}</span>
+                    <span>{lang === 'vi' ? 'Đăng bán' : 'Post Listing'}</span>
                   </>
                 )}
               </button>
@@ -166,7 +166,7 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
             <div className="pt-4 border-t border-[#24263e]/15 grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div>
                 <div className="text-lg sm:text-xl font-black text-[#24263e]">
-                  {lang === 'vi' ? 'Bảo Đảm' : 'Protected'}
+                  {lang === 'vi' ? 'Bảo đảm' : 'Protected'}
                 </div>
                 <div className="text-[11px] text-[#24263e]/70 font-semibold mt-0.5">
                   {lang === 'vi' ? 'Cơ chế Escrow' : 'Escrow Protection'}
@@ -219,8 +219,8 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
                   <span className="text-[#24263e]/70 font-semibold">{lang === 'vi' ? 'Thiết bị:' : 'Appliance:'}</span>
                   <span className="text-[#24263e] font-bold">
                     {heroAppliance === 'fridge'
-                      ? (lang === 'vi' ? 'Tủ Lạnh Hitachi 540L' : 'Hitachi Refrigerator 540L')
-                      : (lang === 'vi' ? 'Máy Giặt Electrolux 10kg' : 'Electrolux Washer 10kg')}
+                      ? (lang === 'vi' ? 'Tủ lạnh Hitachi 540L' : 'Hitachi Refrigerator 540L')
+                      : (lang === 'vi' ? 'Máy giặt Electrolux 10kg' : 'Electrolux Washer 10kg')}
                   </span>
                 </div>
                 <div className="flex justify-between">
@@ -245,7 +245,7 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
                 </div>
               </div>
               <div className="pt-2 border-t border-[#24263e]/10 flex items-center justify-between">
-                <span className="text-[#24263e]/70 font-bold">{lang === 'vi' ? 'AI Định Giá:' : 'AI Valuation:'}</span>
+                <span className="text-[#24263e]/70 font-bold">{lang === 'vi' ? 'AI định giá:' : 'AI Valuation:'}</span>
                 <span className="text-[#c34c36] font-black font-mono text-sm">
                   {heroAppliance === 'fridge' ? '14.800.000đ' : '7.950.000đ'}
                 </span>
@@ -265,10 +265,10 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
         <div className="text-center max-w-2xl mx-auto space-y-2">
           <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-[#FFFFFF] text-[#24263e] text-xs font-semibold border border-slate-200 shadow-xs">
             <Award className="w-3.5 h-3.5 text-[#24263e]" />
-            <span>{lang === 'vi' ? 'Nền Tảng Công Nghệ Đột Phá' : 'Breakthrough Architecture'}</span>
+            <span>{lang === 'vi' ? 'Nền tảng công nghệ đột phá' : 'Breakthrough Architecture'}</span>
           </div>
           <h2 className="text-2xl sm:text-3xl font-bold text-[#24263e] tracking-tight">
-            {lang === 'vi' ? '3 Trụ Cột Xây Dựng Niềm Tin Tuyệt Đối' : '3 Pillars of Absolute Trust'}
+            {lang === 'vi' ? '3 trụ cột xây dựng niềm tin tuyệt đối' : '3 Pillars of Absolute Trust'}
           </h2>
           <p className="text-xs sm:text-sm text-[#24263e]/70">
             {lang === 'vi'
@@ -311,7 +311,7 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
               <Lock className="w-5 h-5" />
             </div>
             <h3 className="font-bold text-[#24263e] text-base">
-              {lang === 'vi' ? '3. Quỹ Tín Thác Escrow' : 'Escrow Fund Protection'}
+              {lang === 'vi' ? '3. Quỹ tín thác Escrow' : 'Escrow Fund Protection'}
             </h3>
             <p className="text-xs text-[#24263e]/70 leading-relaxed">
               {lang === 'vi'
@@ -326,10 +326,10 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
       <section className="bg-[#FFFFFF] rounded-3xl p-6 sm:p-10 border border-slate-200 shadow-sm space-y-8">
         <div className="text-center max-w-xl mx-auto space-y-2">
           <div className="text-xs uppercase font-bold text-[#24263e] tracking-wider">
-            {lang === 'vi' ? 'Quy Trình Chuẩn Hóa' : 'Standard Workflow'}
+            {lang === 'vi' ? 'Quy trình chuẩn hóa' : 'Standard Workflow'}
           </div>
           <h2 className="text-2xl sm:text-3xl font-bold text-[#24263e]">
-            {lang === 'vi' ? 'Cách Thức Giao Dịch Tại SecondLife' : 'How SecondLife Works'}
+            {lang === 'vi' ? 'Cách thức giao dịch tại secondLife' : 'How SecondLife Works'}
           </h2>
           <p className="text-xs sm:text-sm text-[#24263e]/70">
             {lang === 'vi' ? 'Minh bạch, bảo vệ tối đa lợi ích của cả người mua và người bán.' : 'Transparent and safe for both buyers and sellers.'}
@@ -342,7 +342,7 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
               1
             </div>
             <h4 className="font-bold text-[#24263e] text-sm">
-              {lang === 'vi' ? 'Người Bán Đăng Tin + AI' : 'Seller Posts with AI'}
+              {lang === 'vi' ? 'Người bán đăng tin + AI' : 'Seller Posts with AI'}
             </h4>
             <p className="text-xs text-[#24263e]/70 leading-relaxed">
               {lang === 'vi'
@@ -356,7 +356,7 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
               2
             </div>
             <h4 className="font-bold text-[#24263e] text-sm">
-              {lang === 'vi' ? 'Người Mua Đặt Cọc Escrow' : 'Buyer Funds Escrow'}
+              {lang === 'vi' ? 'Người mua đặt cọc Escrow' : 'Buyer Funds Escrow'}
             </h4>
             <p className="text-xs text-[#24263e]/70 leading-relaxed">
               {lang === 'vi'
@@ -370,11 +370,11 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
               3
             </div>
             <h4 className="font-bold text-[#24263e] text-sm">
-              {lang === 'vi' ? 'Kiểm Định Tại SecondLife Hub' : 'Hub Hardware Inspection'}
+              {lang === 'vi' ? 'Kiểm định tại secondLife Hub' : 'Hub Hardware Inspection'}
             </h4>
             <p className="text-xs text-[#24263e]/70 leading-relaxed">
               {lang === 'vi'
-                ? 'Kỹ sư Hub mở hộp, kiểm tra tính năng, test pin và màn hình. Đạt chuẩn sẽ dán tem niêm phong NFC trước khi giao tới người mua.'
+                ? 'Kỹ sư Hub mở hộp, kiểm tra tính năng, test pin và màn hình.'
                 : 'Hub technicians verify hardware integrity, screen, and battery health, sealing with anti-tamper NFC tags.'}
             </p>
           </div>
@@ -384,11 +384,11 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
               4
             </div>
             <h4 className="font-bold text-[#24263e] text-sm">
-              {lang === 'vi' ? 'Nhận Hàng & Giải Ngân' : 'Delivery & Escrow Release'}
+              {lang === 'vi' ? 'Nhận hàng & giải ngân' : 'Delivery & Escrow Release'}
             </h4>
             <p className="text-xs text-[#24263e]/70 leading-relaxed">
               {lang === 'vi'
-                ? 'Người mua có 48 giờ đối soát sản phẩm. Khi xác nhận hài lòng, Escrow lập tức giải ngân 100% tiền cho người bán.'
+                ? 'Người mua có 48 giờ đối soát sản phẩm. Khi xác nhận hài lòng, Escrow lập tức giải ngân tiền cho người bán.'
                 : 'Buyer inspects delivered item with 48h protection window. Escrow releases funds to seller upon approval.'}
             </p>
           </div>
@@ -399,7 +399,7 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
       <section className="space-y-6">
         <div className="text-center max-w-xl mx-auto space-y-2">
           <h2 className="text-2xl sm:text-3xl font-bold text-[#24263e]">
-            {lang === 'vi' ? 'Tại Sao Nên Chọn SecondLife?' : 'Why Choose SecondLife?'}
+            {lang === 'vi' ? 'Tại sao nên chọn secondLife?' : 'Why Choose SecondLife?'}
           </h2>
           <p className="text-xs sm:text-sm text-[#24263e]/70">
             {lang === 'vi' ? 'Bảng so sánh trải nghiệm giao dịch thực tế' : 'Comparison against traditional second-hand classifieds'}
@@ -521,7 +521,7 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
           <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-white/40 rounded-full blur-3xl pointer-events-none" />
           <div className="max-w-2xl mx-auto space-y-3 relative z-10">
             <h2 className="text-2xl sm:text-3xl font-black text-[#24263e]">
-              {lang === 'vi' ? 'Sẵn Sàng Mua Bán Đồ Cũ Không Rủi Ro?' : 'Ready for Risk-Free Recommerce?'}
+              {lang === 'vi' ? 'Sẵn sàng mua bán đồ cũ không rủi ro?' : 'Ready for Risk-Free Recommerce?'}
             </h2>
             <p className="text-[#24263e]/80 text-xs sm:text-sm leading-relaxed max-w-lg mx-auto font-medium">
               {lang === 'vi'
@@ -536,13 +536,13 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
                 }}
                 className="px-6 py-3 rounded-xl bg-[#c34c36] hover:bg-[#a83d2a] text-white font-black text-xs sm:text-sm shadow-md transition cursor-pointer"
               >
-                {lang === 'vi' ? 'Vào Sàn Mua Sắm Ngay' : 'Browse Marketplace'}
+                {lang === 'vi' ? 'Vào sàn mua sắm ngay' : 'Browse Marketplace'}
               </button>
               <button
                 onClick={() => onOpenAuth('register')}
                 className="px-6 py-3 rounded-xl bg-white text-[#24263e] border border-[#24263e]/20 hover:bg-[#faf8f5] font-bold text-xs sm:text-sm transition cursor-pointer shadow-xs"
               >
-                {lang === 'vi' ? 'Đăng Ký Tài Khoản Miễn Phí' : 'Create Free Account'}
+                {lang === 'vi' ? 'Đăng ký tài khoản miễn phí' : 'Create Free Account'}
               </button>
             </div>
           </div>

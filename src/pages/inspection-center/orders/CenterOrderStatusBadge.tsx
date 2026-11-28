@@ -58,7 +58,7 @@ export function CenterOrderStatusBadge({ order, buyerShipments, currentUser, den
     return (
       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-300 whitespace-nowrap shadow-2xs">
         <XCircle className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-        <span>Đã Hủy</span>
+        <span>Đã hủy</span>
       </span>
     );
   }
@@ -67,7 +67,7 @@ export function CenterOrderStatusBadge({ order, buyerShipments, currentUser, den
     return (
       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 whitespace-nowrap shadow-2xs">
         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-        <span>Đạt Nghiệm Thu</span>
+        <span>Đạt nghiệm thu</span>
       </span>
     );
   }
@@ -76,7 +76,7 @@ export function CenterOrderStatusBadge({ order, buyerShipments, currentUser, den
     return (
       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800 border border-rose-300 whitespace-nowrap shadow-2xs">
         <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-        <span>Từ Chối / Fail</span>
+        <span>Từ chối / fail</span>
       </span>
     );
   }
@@ -85,7 +85,7 @@ export function CenterOrderStatusBadge({ order, buyerShipments, currentUser, den
     return (
       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-purple-100 text-purple-800 border border-purple-200 whitespace-nowrap shadow-2xs">
         <Clock className="w-3.5 h-3.5 text-purple-600 shrink-0" />
-        <span>Chờ Bán Duyệt</span>
+        <span>Chờ bán duyệt</span>
       </span>
     );
   }
@@ -94,7 +94,7 @@ export function CenterOrderStatusBadge({ order, buyerShipments, currentUser, den
     return (
       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-purple-100 text-purple-800 border border-purple-200 whitespace-nowrap shadow-2xs">
         <Clock className="w-3.5 h-3.5 text-purple-600 shrink-0" />
-        <span>Chờ Mua Duyệt</span>
+        <span>Chờ mua duyệt</span>
       </span>
     );
   }
@@ -103,7 +103,7 @@ export function CenterOrderStatusBadge({ order, buyerShipments, currentUser, den
     return (
       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300 whitespace-nowrap shadow-2xs">
         <CreditCard className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-        <span>Chờ Đóng Phí KĐ</span>
+        <span>Chờ đóng phí KĐ</span>
       </span>
     );
   }
@@ -112,7 +112,7 @@ export function CenterOrderStatusBadge({ order, buyerShipments, currentUser, den
     return (
       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-300 whitespace-nowrap shadow-2xs">
         <AlertCircle className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-        <span>Hết Hạn Nộp Phí</span>
+        <span>Hết hạn nộp phí</span>
       </span>
     );
   }
@@ -122,7 +122,7 @@ export function CenterOrderStatusBadge({ order, buyerShipments, currentUser, den
       return (
         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 whitespace-nowrap shadow-2xs">
           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-          <span>Đạt Nghiệm Thu • Người Bán Tự Giao</span>
+          <span>Đạt nghiệm thu • Người bán tự giao</span>
         </span>
       );
     }
@@ -133,7 +133,7 @@ export function CenterOrderStatusBadge({ order, buyerShipments, currentUser, den
         <span>{order && isPaidHubBuyerDelivery(order)
           ? canBookHubBuyerDelivery(delivery) ? 'Chờ tạo vận đơn giao người mua'
             : delivery ? getHubBuyerShipmentLabel(delivery) : 'Đã thanh toán · Đang kiểm tra vận đơn'
-          : 'Đang Giao Cho Người Mua'}</span>
+          : 'Đang giao cho người mua'}</span>
       </span>
     );
   }
@@ -142,7 +142,7 @@ export function CenterOrderStatusBadge({ order, buyerShipments, currentUser, den
     return (
       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-yellow-100 text-yellow-800 border border-yellow-300 whitespace-nowrap shadow-2xs">
         <AlertTriangle className="w-3.5 h-3.5 text-yellow-600 shrink-0" />
-        <span>Đang Khiếu Nại</span>
+        <span>Đang khiếu nại</span>
       </span>
     );
   }
@@ -306,7 +306,7 @@ export function CenterOrderStatusBadge({ order, buyerShipments, currentUser, den
       return (
         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-300 whitespace-nowrap shadow-2xs">
           <Clock className="w-3.5 h-3.5 text-amber-600 animate-spin" />
-          <span>Chờ Người Bán Hẹn Lịch</span>
+          <span>Chờ người bán hẹn lịch</span>
         </span>
       );
     }
@@ -323,7 +323,7 @@ export function CenterOrderStatusBadge({ order, buyerShipments, currentUser, den
       return (
         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-950 border border-amber-300 whitespace-nowrap shadow-2xs" title={`Người bán đề xuất: ${formattedAppt} • Chờ Trung tâm xem và duyệt`}>
           <Clock className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-          <span>Chờ Duyệt Lịch Hẹn</span>
+          <span>Chờ duyệt lịch hẹn</span>
         </span>
       );
     }
@@ -339,7 +339,7 @@ export function CenterOrderStatusBadge({ order, buyerShipments, currentUser, den
       return (
         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-sky-100 text-sky-950 border border-sky-300 whitespace-nowrap shadow-2xs" title={`Trung tâm đã gửi đề xuất: ${formattedCounter} • Chờ người bán đồng ý`}>
           <CalendarSync className="w-3.5 h-3.5 text-sky-700 shrink-0" />
-          <span>Đã Đề Xuất Lại • Chờ Seller</span>
+          <span>Đã đề xuất lại • Chờ Seller</span>
         </span>
       );
     }
@@ -349,7 +349,7 @@ export function CenterOrderStatusBadge({ order, buyerShipments, currentUser, den
       return (
         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-orange-100 text-orange-950 border border-orange-300 animate-pulse whitespace-nowrap shadow-2xs" title={`Lịch hẹn đã chốt: ${formattedAppt} • Cần phân công KTV`}>
           <CalendarCheck className="w-3.5 h-3.5 text-orange-700 shrink-0" />
-          <span>Đã Chốt Lịch • Cần Giao KTV</span>
+          <span>Đã chốt lịch • Cần giao KTV</span>
         </span>
       );
     }
@@ -358,7 +358,7 @@ export function CenterOrderStatusBadge({ order, buyerShipments, currentUser, den
     return (
       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-900 border border-emerald-300 whitespace-nowrap shadow-2xs" title={`Lịch hẹn đã chốt: ${formattedAppt}`}>
         <CalendarCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-        <span>Đã Phân Công KTV</span>
+        <span>Đã phân công KTV</span>
       </span>
     );
   }
@@ -392,7 +392,7 @@ export function CenterOrderStatusBadge({ order, buyerShipments, currentUser, den
     return (
       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-orange-100 text-orange-900 border border-orange-300 animate-pulse whitespace-nowrap shadow-2xs">
         <PackageCheck className="w-3.5 h-3.5 text-orange-700 shrink-0" />
-        <span>Đã Nhận Hàng • Chờ Giao KTV</span>
+        <span>Đã nhận hàng • Chờ giao KTV</span>
       </span>
     );
   }
@@ -402,7 +402,7 @@ export function CenterOrderStatusBadge({ order, buyerShipments, currentUser, den
     return (
       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-300 whitespace-nowrap shadow-2xs">
         <Clock className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-        <span>Đã Phân Công • Chờ KTV Nhận Đơn</span>
+        <span>Đã phân công • Chờ KTV nhận đơn</span>
       </span>
     );
   }

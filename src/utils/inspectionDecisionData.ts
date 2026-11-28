@@ -23,7 +23,7 @@ export function getInspectionApprovalMessage(status: string, isSeller: boolean) 
       return {
         title: 'Chờ người bán duyệt đề xuất kiểm định',
         description: isSeller
-          ? 'Người mua đã gửi đề xuất kiểm định. Bạn có thể chọn Đồng Ý hoặc Từ Chối ở mục Đề Xuất Kiểm Định Từ Người Mua.'
+          ? 'Người mua đã gửi đề xuất kiểm định. Bạn có thể chọn Đồng Ý hoặc Từ Chối ở mục đề xuất kiểm định từ người mua.'
           : 'Đề xuất kiểm định đã được gửi. Bạn có thể theo dõi phản hồi của người bán tại đây.',
       };
     case 'WAITING_BUYER_APPROVAL':

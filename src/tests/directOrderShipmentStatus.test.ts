@@ -38,9 +38,9 @@ test('direct order badge uses the supplied shipment response instead of stale br
       true,
     );
 
-    assert.match(render([]), /Đã Xác Nhận • Đang Chuẩn Bị Giao Hàng/);
+    assert.match(render([]), /Đã xác nhận • Đang chuẩn bị giao hàng/);
     assert.match(render([{ shipmentId: 'new', leg: 'SELLER_TO_BUYER', status: 'READY_TO_PICK' }]), /Đã tạo vận đơn • Chờ tài xế lấy hàng/);
-    assert.match(render([{ shipmentId: 'new', leg: 'SELLER_TO_BUYER', status: 'IN_TRANSIT' }]), /Đang Giao Tới Người Mua/);
+    assert.match(render([{ shipmentId: 'new', leg: 'SELLER_TO_BUYER', status: 'IN_TRANSIT' }]), /Đang giao tới người mua/);
   } finally {
     (globalThis as any).window = previousWindow;
     (globalThis as any).localStorage = previousStorage;
@@ -119,8 +119,8 @@ test('seller can rebook a cancelled direct shipment and tracks an existing retur
   const afterRebooking = { ...order, shipments: upsertShipment(afterCancel.shipments, replacement) };
   assert.match(renderBadge(afterRebooking, true), /Chờ tài xế lấy hàng/);
   assert.doesNotMatch(renderActions(afterRebooking), /Tạo lại vận đơn/);
-  assert.match(renderActions(afterRebooking, true), /Theo Dõi Lalamove/);
-  assert.doesNotMatch(renderActions(afterRebooking, false), /Theo Dõi Lalamove/);
+  assert.match(renderActions(afterRebooking, true), /Theo dõi Lalamove/);
+  assert.doesNotMatch(renderActions(afterRebooking, false), /Theo dõi Lalamove/);
 
   const awaitingReturn: EscrowOrder = {
     ...afterRebooking,
@@ -131,12 +131,12 @@ test('seller can rebook a cancelled direct shipment and tracks an existing retur
     shipments: [{ ...replacement, status: 'DELIVERED', providerStatus: 'COMPLETED' }],
     orderReturn: { orderId: order.id, reportId: 'approved-report' },
   };
-  assert.match(renderActions(awaitingReturn), /Theo Dõi Lalamove/);
+  assert.match(renderActions(awaitingReturn), /Theo dõi Lalamove/);
   const approvedReturn = { orderId: order.id, reportId: 'approved-report', shipmentStatus: 'READY_TO_PICK' };
   for (const reference of [{ shipmentId: 'return' }, { orderCode: 'return-waybill' }]) {
     const withReturn = { ...awaitingReturn, orderReturn: { ...approvedReturn, ...reference } };
     const sellerCard = renderCard(withReturn, true);
-    assert.doesNotMatch(sellerCard, /Theo Dõi Lalamove/);
+    assert.doesNotMatch(sellerCard, /Theo dõi Lalamove/);
     assert.match(sellerCard, /Theo dõi vận đơn hoàn/);
   }
 });
@@ -171,7 +171,7 @@ test('a purchase with frozen escrow shows its carrier status unless the order ha
     assert.match(renderBadge(expired, isSeller), /Vận đơn đã hết hạn/);
     assert.match(renderBadge(delivered, isSeller), /Đã giao/);
     const disputed = { ...delivered, hasActiveDispute: true };
-    assert.match(renderBadge(disputed, isSeller), /Đang Tranh Chấp/);
+    assert.match(renderBadge(disputed, isSeller), /Đang tranh chấp/);
     assert.equal(getOrderEscrowHoldNotice(disputed, 'vi'), null);
   }
 

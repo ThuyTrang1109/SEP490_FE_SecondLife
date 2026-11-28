@@ -27,7 +27,7 @@ export function createOrderCancellationActions({
     setConfirmDialog({
       isOpen: true,
       title: lang === 'vi'
-        ? (hasInsp ? 'Xác Nhận Hủy Yêu Cầu Kiểm Định' : 'Xác Nhận Hủy Đơn Hàng')
+        ? (hasInsp ? 'Xác nhận hủy yêu cầu kiểm định' : 'Xác nhận hủy đơn hàng')
         : (hasInsp ? 'Confirm Cancel Inspection Request' : 'Confirm Cancel Order'),
       message: lang === 'vi'
         ? (isSeller
@@ -52,8 +52,8 @@ export function createOrderCancellationActions({
       reasonPlaceholder: lang === 'vi'
         ? 'Nhập lý do cụ thể (bắt buộc trên 10 ký tự và dưới 100 ký tự)...'
         : 'Enter specific reason (required between 11 and 99 characters)...',
-      confirmText: lang === 'vi' ? (hasInsp ? 'Xác Nhận Hủy Yêu Cầu' : 'Xác Nhận Hủy') : 'Confirm Cancel',
-      cancelText: lang === 'vi' ? (hasInsp ? 'Giữ Yêu Cầu' : 'Giữ Đơn') : 'Keep',
+      confirmText: lang === 'vi' ? (hasInsp ? 'Xác nhận hủy yêu cầu' : 'Xác nhận hủy') : 'Confirm Cancel',
+      cancelText: lang === 'vi' ? (hasInsp ? 'Giữ yêu cầu' : 'Giữ đơn') : 'Keep',
       variant: 'warning',
       iconType: 'alert',
       onConfirm: async (customReason?: string) => {
@@ -83,7 +83,7 @@ export function createOrderCancellationActions({
     const isSeller = isOrderSeller(ord);
     setConfirmDialog({
       isOpen: true,
-      title: lang === 'vi' ? 'Xác Nhận Hủy Yêu Cầu Kiểm Định' : 'Confirm Cancel Inspection Request',
+      title: lang === 'vi' ? 'Xác nhận hủy yêu cầu kiểm định' : 'Confirm Cancel Inspection Request',
       message: lang === 'vi'
         ? (isSeller
           ? 'Bạn có chắc chắn muốn hủy yêu cầu kiểm định cho đơn hàng này không? Tiền hàng và các chi phí kiểm định tạm giữ sẽ được hoàn lại 100% cho người mua.'
@@ -97,8 +97,8 @@ export function createOrderCancellationActions({
       reasonPlaceholder: lang === 'vi'
         ? 'Nhập lý do cụ thể (bắt buộc trên 10 ký tự và dưới 100 ký tự)...'
         : 'Enter specific reason (required between 11 and 99 characters)...',
-      confirmText: lang === 'vi' ? 'Xác Nhận Hủy Kiểm Định' : 'Cancel Inspection',
-      cancelText: lang === 'vi' ? 'Giữ Yêu Cầu' : 'Keep Request',
+      confirmText: lang === 'vi' ? 'Xác nhận hủy kiểm định' : 'Cancel Inspection',
+      cancelText: lang === 'vi' ? 'Giữ yêu cầu' : 'Keep Request',
       variant: 'danger',
       iconType: 'alert',
       onConfirm: async (customReason?: string) => {

@@ -547,12 +547,12 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
 
     // Real platform commission revenue from System Wallet DB or sum of positive revenueDelta in ledger
     const ledgerRevenueSum = filteredWalletTxs.reduce(
-      (sum, tx) => sum + (Number(tx.revenueDelta || 0) > 0 ? Number(tx.revenueDelta) : 0),
+      (sum, tx) => sum + (tx.type !== 'PACKAGE_REVENUE' ? Math.max(0, Number(tx.revenueDelta || 0)) : 0),
       0
     );
     const platformRevenue =
       allTime && systemWallet?.revenueBalance !== undefined
-        ? Number(systemWallet.revenueBalance)
+        ? Number(systemWallet.revenueBalance) - Number(systemWallet.packageRevenueBalance ?? 0)
         : ledgerRevenueSum;
 
     const totalSystemBalance =
@@ -939,7 +939,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
       ['THÔNG TIN CHUNG', 'Thời điểm xuất báo cáo', nowStr, `Kỳ lọc: ${periodLabel}`],
       ['THÔNG TIN CHUNG', 'Phạm vi dữ liệu', hasPartialData ? 'Một phần dữ liệu chưa tải đủ' : 'Dữ liệu báo cáo', 'Số dư ví và ký quỹ là số dư hiện tại'],
       ['TÀI CHÍNH & DOANH THU', 'Tổng giá trị giao dịch toàn sàn (GMV)', String(financialAnalytics.totalGmv), 'VND'],
-      ['TÀI CHÍNH & DOANH THU', 'Số dư hiện tại của Ví Hệ Thống (System Wallet)', String(financialAnalytics.totalSystemBalance), 'VND'],
+      ['TÀI CHÍNH & DOANH THU', 'Số dư hiện tại của ví hệ thống (System Wallet)', String(financialAnalytics.totalSystemBalance), 'VND'],
       ['TÀI CHÍNH & DOANH THU', 'Tiền ký quỹ đang giữ hiện tại (Escrow Held)', String(financialAnalytics.heldEscrow), 'VND'],
       ['TÀI CHÍNH & DOANH THU', 'Số dư hiện tại của quỹ vận chuyển (Shipping Balance)', String(financialAnalytics.shippingPoolBalance), 'VND'],
       ['TÀI CHÍNH & DOANH THU', 'Doanh thu hoa hồng sàn (Platform Revenue)', String(financialAnalytics.platformRevenue), `Tỷ lệ cấu hình: ${financialAnalytics.effectiveRatePercent}%`],
@@ -1168,7 +1168,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
               className="px-4 py-2 rounded-xl bg-[#c34c36] hover:bg-[#a83e2b] text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>{lang === 'vi' ? 'Xuất Báo Cáo CSV' : 'Export CSV'}</span>
+              <span>{lang === 'vi' ? 'Xuất báo cáo CSV' : 'Export CSV'}</span>
             </button>
           </div>
         </div>
@@ -1923,7 +1923,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
                 <div className="space-y-2.5">
                   <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
                     <div className="flex items-center justify-between text-xs font-bold text-slate-800">
-                      <span>Tại Trạm Kiểm định</span>
+                      <span>Tại trạm kiểm định</span>
                       <span className="font-mono text-[#24263e]">{inspectionAnalytics.atCenterCount} đơn</span>
                     </div>
                     <div className="w-full h-2 rounded-full bg-slate-200 mt-1.5 overflow-hidden">
@@ -1942,7 +1942,7 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
 
                   <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
                     <div className="flex items-center justify-between text-xs font-bold text-slate-800">
-                      <span>Tại Nhà</span>
+                      <span>Tại nhà</span>
                       <span className="font-mono text-[#c34c36]">{inspectionAnalytics.atHomeCount} đơn</span>
                     </div>
                     <div className="w-full h-2 rounded-full bg-slate-200 mt-1.5 overflow-hidden">
@@ -2253,16 +2253,16 @@ export const SystemOverviewReportTab: React.FC<SystemOverviewReportTabProps> = (
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50/90 text-slate-600 text-[11px] font-extrabold uppercase tracking-wider">
-                <th className="py-3 px-4">Phân Khu Nghiệp Vụ</th>
-                <th className="py-3 px-4">Chỉ Số Trọng Yếu</th>
-                <th className="py-3 px-4 text-right">Giá Trị Hiện Hành</th>
-                <th className="py-3 px-4 text-center">Trạng Thái Vận Hành</th>
-                <th className="py-3 px-4 text-right">Điều Hướng Nhanh</th>
+                <th className="py-3 px-4">Phân khu nghiệp vụ</th>
+                <th className="py-3 px-4">Chỉ số trọng yếu</th>
+                <th className="py-3 px-4 text-right">Giá trị hiện hành</th>
+                <th className="py-3 px-4 text-center">Trạng thái vận hành</th>
+                <th className="py-3 px-4 text-right">Điều hướng nhanh</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               <tr className="hover:bg-slate-50/70 transition">
-                <td className="py-3 px-4 font-bold text-slate-800">Tài chính & Ví Hệ Thống</td>
+                <td className="py-3 px-4 font-bold text-slate-800">Tài chính & ví hệ thống</td>
                 <td className="py-3 px-4 text-slate-600">Số dư ví / Ký quỹ đang giữ hiện tại</td>
                 <td className="py-3 px-4 text-right font-mono font-black text-slate-900">
                   {formatVND(financialAnalytics.totalSystemBalance)} / {formatVND(financialAnalytics.heldEscrow)}

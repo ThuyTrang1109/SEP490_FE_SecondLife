@@ -26,7 +26,6 @@ import type {
 } from '../services/postService';
 import { ShowroomLobby3D } from '../components/3d/ShowroomLobby3D';
 import { ProductCard3D } from '../components/3d/ProductCard3D';
-import { getBoughtListingIds, isPostUnderInspectionOrReturning } from '../utils/orderUtils';
 
 interface MarketplaceViewProps {
   mapListing: (post: MarketplacePost, alreadyAvailable?: boolean) => Listing;
@@ -35,7 +34,7 @@ interface MarketplaceViewProps {
   refreshVersion: number;
 }
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 10;
 const INITIAL_QUERY: MarketplaceSearchQuery = { sort: 'newest', page: 0, size: PAGE_SIZE };
 const SLIDER_MIN = 0;
 const SLIDER_MAX = 100_000_000;
@@ -77,11 +76,8 @@ export function MarketplaceView({ mapListing, onSelectListing, lang, refreshVers
 
   const productCards = useMemo(() => {
     if (!result) return [];
-    const boughtIds = getBoughtListingIds();
     return result.content
-      .filter((post) => String(post.status || '').toUpperCase() === 'ACTIVE'
-        && !boughtIds.has(String(post.postId || post.id))
-        && !isPostUnderInspectionOrReturning(post))
+      .filter((post) => post.status === 'ACTIVE')
       .map((post) => ({
         post,
         listing: mapListing(post, true),
@@ -126,10 +122,12 @@ export function MarketplaceView({ mapListing, onSelectListing, lang, refreshVers
     window.addEventListener('storage', refreshFromStorage);
     window.addEventListener('secondlife_listing_status_changed', refresh);
     window.addEventListener('secondlife_inspection_completed', refresh);
+    window.addEventListener('secondlife_shipment_updated', refresh);
     return () => {
       window.removeEventListener('storage', refreshFromStorage);
       window.removeEventListener('secondlife_listing_status_changed', refresh);
       window.removeEventListener('secondlife_inspection_completed', refresh);
+      window.removeEventListener('secondlife_shipment_updated', refresh);
     };
   }, []);
 

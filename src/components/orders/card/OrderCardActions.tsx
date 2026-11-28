@@ -177,7 +177,7 @@ export function OrderCardActions({
           className="px-3.5 py-1.5 rounded-xl bg-white border border-gray-300 hover:border-[#c34c36] text-slate-700 hover:text-[#24263e] text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
         >
           <Eye className="w-3.5 h-3.5" />
-          <span>{orderIsSeller ? (lang === 'vi' ? 'Chi tiết đơn ' : 'Order Details') : (lang === 'vi' ? 'Xem Chi Tiết' : 'View Details')}</span>
+          <span>{orderIsSeller ? (lang === 'vi' ? 'Chi tiết đơn ' : 'Order Details') : (lang === 'vi' ? 'Xem chi tiết' : 'View Details')}</span>
         </button>
 
         {onOpenChat && (
@@ -203,7 +203,7 @@ export function OrderCardActions({
             hasInspection ? null : (
               <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200 whitespace-nowrap shrink-0">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                <span>{lang === 'vi' ? 'Đã Nhận Tiền Vào Ví' : 'Funds Credited to Wallet'}</span>
+                <span>{lang === 'vi' ? 'Đã nhận tiền vào ví' : 'Funds Credited to Wallet'}</span>
               </span>
             )
           ) : isOrderCancelledOrRefunded(ord) ? (
@@ -226,11 +226,11 @@ export function OrderCardActions({
                             title={lang === 'vi' ? 'Xem trao đổi trong phòng chat' : 'View chat'}
                           >
                             <MessageSquare className="w-3.5 h-3.5 text-purple-600" />
-                            <span>{lang === 'vi' ? 'Đang Chờ Người Mua Duyệt' : 'Awaiting Buyer Approval'}</span>
+                            <span>{lang === 'vi' ? 'Đang chờ người mua duyệt' : 'Awaiting Buyer Approval'}</span>
                           </button>
                         ) : (
                           <span className="px-3.5 py-1.5 rounded-xl bg-purple-50 text-purple-800 border border-purple-200 text-xs font-bold whitespace-nowrap shrink-0">
-                            {lang === 'vi' ? 'Đang Chờ Người Mua Duyệt' : 'Awaiting Buyer Approval'}
+                            {lang === 'vi' ? 'Đang chờ người mua duyệt' : 'Awaiting Buyer Approval'}
                           </span>
                         )
                       ) : (
@@ -302,7 +302,7 @@ export function OrderCardActions({
                         <span>
                           {orderActionLoading === ord.id
                             ? (lang === 'vi' ? 'Đang xác nhận...' : 'Confirming...')
-                            : (lang === 'vi' ? 'Xác Nhận Đơn Hàng' : 'Confirm Order')}
+                            : (lang === 'vi' ? 'Xác nhận đơn hàng' : 'Confirm Order')}
                         </span>
                       </button>
 
@@ -318,7 +318,7 @@ export function OrderCardActions({
                           <X className="w-3.5 h-3.5" />
                           <span>{Boolean(hasInspection || ord.hasInspectionService || (ord.inspectionFeeVnd && ord.inspectionFeeVnd > 0) || ord.inspectionCenterId || ord.inspectionStatus)
                             ? (lang === 'vi' ? 'Từ chối yêu cầu' : 'Decline request')
-                            : (lang === 'vi' ? 'Hủy Đơn' : 'Cancel')}</span>
+                            : (lang === 'vi' ? 'Hủy đơn' : 'Cancel')}</span>
                         </button>
                       )}
                     </>
@@ -346,7 +346,7 @@ export function OrderCardActions({
                                 lang === 'vi'
                                   ? `Đơn hàng đã quá hạn nộp phí kiểm định (${formatInspectionDeadline(deadline, lang)}). Vui lòng tải lại đơn hàng.`
                                   : `Inspection fee payment deadline has expired (${formatInspectionDeadline(deadline, lang)}).`,
-                                'Đã Hết Hạn'
+                                'Đã hết hạn'
                               );
                               onRefreshOrders?.();
                               return;
@@ -367,7 +367,7 @@ export function OrderCardActions({
                             {orderActionLoading === ord.id
                               ? (lang === 'vi' ? 'Đang nộp...' : 'Processing...')
                               : isFeeExpired
-                                ? (lang === 'vi' ? 'Đã Hết Hạn Đóng Phí' : 'Fee Payment Expired')
+                                ? (lang === 'vi' ? 'Đã hết hạn đóng phí' : 'Fee Payment Expired')
                                 : (lang === 'vi' ? `Nộp phí kiểm định (${formatVND(sellerFee)})` : `Pay Inspection Fee (${formatVND(sellerFee)})`)}
                           </span>
                         </button>
@@ -432,7 +432,7 @@ export function OrderCardActions({
                   title={lang === 'vi' ? 'Theo dõi hành trình Lalamove' : 'Track Lalamove shipment'}
                 >
                   <Truck className="w-3.5 h-3.5 text-blue-600" />
-                  <span>{lang === 'vi' ? 'Theo Dõi Lalamove' : 'Lalamove Tracking'}</span>
+                  <span>{lang === 'vi' ? 'Theo dõi Lalamove' : 'Lalamove Tracking'}</span>
                 </button>
               )}
 
@@ -509,15 +509,15 @@ export function OrderCardActions({
                             <Calendar className="w-3.5 h-3.5 text-orange-600" />
                             <span>
                               {appointmentRejection
-                                ? (lang === 'vi' ? 'Đặt Lại Lịch Hẹn KTV' : 'Reschedule Visit')
-                                : (lang === 'vi' ? 'Hẹn Lịch Đón KTV' : 'Schedule Visit')}
+                                ? (lang === 'vi' ? 'Đặt lại lịch hẹn KTV' : 'Reschedule Visit')
+                                : (lang === 'vi' ? 'Hẹn lịch đón KTV' : 'Schedule Visit')}
                             </span>
                           </button>
                         ) : null
                       ) : (
                         <span className="px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold flex items-center gap-1.5 shadow-2xs whitespace-nowrap shrink-0">
                           <Wrench className="w-3.5 h-3.5 text-emerald-600 animate-spin" />
-                          <span>{lang === 'vi' ? 'KTV Đang Kiểm Tra Máy' : 'Inspecting Device'}</span>
+                          <span>{lang === 'vi' ? 'KTV đang kiểm tra máy' : 'Inspecting Device'}</span>
                         </span>
                       )
                     )}
@@ -528,7 +528,7 @@ export function OrderCardActions({
               {!hasInspection && ord.escrowStatus === 'COMPLETED_RELEASED' && (
                 <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-xl border border-emerald-200 whitespace-nowrap shrink-0">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>{lang === 'vi' ? 'Đã Giải Ngân Vào Ví' : 'Funds Credited to Wallet'}</span>
+                  <span>{lang === 'vi' ? 'Đã giải ngân vào ví' : 'Funds Credited to Wallet'}</span>
                 </span>
               )}
             </>
@@ -596,7 +596,7 @@ export function OrderCardActions({
                         title={lang === 'vi' ? 'Hủy đơn hàng (Chỉ khả dụng khi người bán chưa xác nhận đơn)' : 'Cancel order (Available while seller has not confirmed)'}
                       >
                         <X className="w-3.5 h-3.5" />
-                        <span>{lang === 'vi' ? 'Hủy Đơn' : 'Cancel'}</span>
+                        <span>{lang === 'vi' ? 'Hủy đơn' : 'Cancel'}</span>
                       </button>
                     );
                   }
@@ -616,7 +616,7 @@ export function OrderCardActions({
                     className="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
                   >
                     <Truck className="w-3.5 h-3.5 text-blue-600" />
-                    <span>{lang === 'vi' ? 'Theo Dõi Lalamove' : 'Lalamove Tracking'}</span>
+                    <span>{lang === 'vi' ? 'Theo dõi Lalamove' : 'Lalamove Tracking'}</span>
                   </button>
                 )}
 
@@ -628,10 +628,10 @@ export function OrderCardActions({
                     setCertificateModalOrder(ord);
                   }}
                   className="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
-                  title="Xem Giấy Chứng Nhận & Biên Bản Nghiệm Thu Kỹ Thuật Số"
+                  title="Xem giấy chứng nhận & biên bản nghiệm thu kỹ thuật số"
                 >
                   <Award className="w-3.5 h-3.5 text-amber-600" />
-                  <span>{lang === 'vi' ? 'Xem Chứng Nhận Kiểm Định' : 'Inspection Certificate'}</span>
+                  <span>{lang === 'vi' ? 'Xem chứng nhận kiểm định' : 'Inspection Certificate'}</span>
                 </button>
               )}
 
@@ -646,7 +646,7 @@ export function OrderCardActions({
                   title={lang === 'vi' ? 'Vào phòng chat để xem và phản hồi đề xuất mới của người bán' : 'Open chat to review seller counter-proposal'}
                 >
                   <MessageSquare className="w-3.5 h-3.5 text-purple-600" />
-                  <span>{lang === 'vi' ? 'Vào Chat Xem Đề Xuất Mới' : 'Review Proposal in Chat'}</span>
+                  <span>{lang === 'vi' ? 'Vào chat xem đề xuất mới' : 'Review Proposal in Chat'}</span>
                 </button>
               )}
 
@@ -672,7 +672,7 @@ export function OrderCardActions({
                     title={lang === 'vi' ? 'Chọn lại khung giờ hoặc ngày khác gửi lại cho Hub' : 'Reschedule to another time'}
                   >
                     <Calendar className="w-3.5 h-3.5 text-amber-600" />
-                    <span>{lang === 'vi' ? 'Hẹn Lại Lịch Khác' : 'Reschedule'}</span>
+                    <span>{lang === 'vi' ? 'Hẹn lại lịch khác' : 'Reschedule'}</span>
                   </button>
                 </div>
               )}
@@ -694,7 +694,7 @@ export function OrderCardActions({
                     ) : (
                       <QrCode className="w-3.5 h-3.5 text-amber-400" />
                     )}
-                    <span>{lang === 'vi' ? 'Quét Mã VietQR Ký Quỹ' : 'VietQR Escrow Deposit'}</span>
+                    <span>{lang === 'vi' ? 'Quét mã vietQR ký quỹ' : 'VietQR Escrow Deposit'}</span>
                   </button>
                 </div>
               )}
@@ -716,7 +716,7 @@ export function OrderCardActions({
                               lang === 'vi'
                                 ? `Đơn hàng đã quá hạn nộp phí kiểm định (${formatInspectionDeadline(ord.paymentDeadline || (ord as any)?.inspectionOrder?.paymentDeadline, lang)}). Vui lòng tải lại đơn hàng.`
                                 : `Inspection fee payment deadline has expired (${formatInspectionDeadline(ord.paymentDeadline || (ord as any)?.inspectionOrder?.paymentDeadline, lang)}).`,
-                              'Đã Hết Hạn'
+                              'Đã hết hạn'
                             );
                             onRefreshOrders?.();
                             return;
@@ -737,8 +737,8 @@ export function OrderCardActions({
                           {orderActionLoading === ord.id
                             ? (lang === 'vi' ? 'Đang nộp...' : 'Processing...')
                             : isFeeExpired
-                              ? (lang === 'vi' ? 'Đã Hết Hạn Đóng Phí' : 'Fee Payment Expired')
-                              : (lang === 'vi' ? `Nộp Phí Kiểm Định (${formatVND(buyerFee)})` : `Pay Fee (${formatVND(buyerFee)})`)}
+                              ? (lang === 'vi' ? 'Đã hết hạn đóng phí' : 'Fee Payment Expired')
+                              : (lang === 'vi' ? `Nộp phí kiểm định (${formatVND(buyerFee)})` : `Pay Fee (${formatVND(buyerFee)})`)}
                         </span>
                       </button>
                     </div>
@@ -754,14 +754,14 @@ export function OrderCardActions({
                     if (confirmingReceiptIds.has(ord.id) || isOrderReceiptConfirmed(ord)) return;
                     setConfirmDialog({
                       isOpen: true,
-                      title: lang === 'vi' ? 'Xác Nhận Đã Nhận Hàng' : 'Confirm Delivery Receipt',
+                      title: lang === 'vi' ? 'Xác nhận đã nhận hàng' : 'Confirm Delivery Receipt',
                       message: lang === 'vi'
                         ? 'Xác nhận bạn đã nhận hàng đầy đủ và nghiệm thu sản phẩm?'
                         : 'Confirm you have received and inspected the item?',
                       subMessage: lang === 'vi'
                         ? 'Tiền ký quỹ trong Escrow sẽ được giải ngân an toàn cho người bán. Hành động này không thể hoàn tác.'
                         : 'Escrow funds will be released to the seller immediately.',
-                      confirmText: lang === 'vi' ? 'Đã Nhận Hàng' : 'Confirm Receipt',
+                      confirmText: lang === 'vi' ? 'Đã nhận hàng' : 'Confirm Receipt',
                       cancelText: lang === 'vi' ? 'Đóng' : 'Cancel',
                       variant: 'success',
                       iconType: 'check',
@@ -794,7 +794,7 @@ export function OrderCardActions({
                   title="Bưu tá đang giao hàng, bạn có thể kiểm tra định vị bưu kiện"
                 >
                   <Truck className="w-3.5 h-3.5 text-amber-600" />
-                  <span>{lang === 'vi' ? 'Kiểm Tra Giao Hàng' : 'In Transit'}</span>
+                  <span>{lang === 'vi' ? 'Kiểm tra giao hàng' : 'In Transit'}</span>
                 </button>
               ) : null}
 
@@ -841,9 +841,9 @@ export function OrderCardActions({
                     <span>
                       {isReviewed
                         ? (isDelivered48hExpired
-                          ? (lang === 'vi' ? 'Xem Đánh Giá' : 'View Review')
-                          : (lang === 'vi' ? 'Xem / Sửa Đánh Giá' : 'Edit Review'))
-                        : (lang === 'vi' ? 'Đánh Giá Người Bán' : 'Review Seller')}
+                          ? (lang === 'vi' ? 'Xem đánh giá' : 'View Review')
+                          : (lang === 'vi' ? 'Xem / sửa đánh giá' : 'Edit Review'))
+                        : (lang === 'vi' ? 'Đánh giá người bán' : 'Review Seller')}
                     </span>
                   </button>
                 );

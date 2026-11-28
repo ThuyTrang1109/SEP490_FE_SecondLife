@@ -151,7 +151,7 @@ export const CommissionRulesTab: React.FC = () => {
 
   const handleOpenCreateModal = () => {
     setEditingRule(null);
-    setFormName('Chính Sách Hoa Hồng Tiêu Chuẩn');
+    setFormName('Chính sách hoa hồng tiêu chuẩn');
     setFormRatePercent('5.0');
     setFormMinCommission('10000');
     setFormMaxCommission('500000');
@@ -271,7 +271,7 @@ export const CommissionRulesTab: React.FC = () => {
           <div className="flex items-center gap-2">
             <Percent className="w-5 h-5 text-[#c34c36]" />
             <h2 className="text-xl font-black text-[#24263e]">
-              Quản Lý Chính Sách & Tỷ Lệ Hoa Hồng Sàn
+              Quản lý chính sách & tỷ lệ hoa hồng sàn
             </h2>
           </div>
           <p className="text-xs text-slate-500 mt-1 max-w-2xl">
@@ -297,7 +297,7 @@ export const CommissionRulesTab: React.FC = () => {
             className="px-4 py-2 text-xs font-black bg-[#24263e] hover:bg-[#1a1c2e] text-white rounded-xl shadow-xs hover:shadow-md transition flex items-center gap-1.5 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            <span>Thiết Lập Quy Tắc Mới</span>
+            <span>Thiết lập quy tắc mới</span>
           </button>
         </div>
       </div>
@@ -332,7 +332,7 @@ export const CommissionRulesTab: React.FC = () => {
         {/* Metric 1 */}
         <div className="bg-gradient-to-br from-[#24263e] to-[#363854] text-white p-4 rounded-2xl shadow-sm relative overflow-hidden">
           <div className="flex items-center justify-between text-xs text-white/80 font-bold mb-1">
-            <span>Tỷ Lệ Chiết Khấu Sàn</span>
+            <span>Tỷ lệ chiết khấu sàn</span>
             <Percent className="w-4 h-4 text-[#fce5da]" />
           </div>
           <div className="text-2xl font-black text-white mt-1">
@@ -347,7 +347,7 @@ export const CommissionRulesTab: React.FC = () => {
         {/* Metric 2 */}
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
           <div className="flex items-center justify-between text-xs text-slate-500 font-bold mb-1">
-            <span>Mức Thu Sàn Tối Thiểu</span>
+            <span>Mức thu sàn tối thiểu</span>
             <TrendingUp className="w-4 h-4 text-emerald-600" />
           </div>
           <div className="text-2xl font-black text-slate-900 mt-1">
@@ -361,7 +361,7 @@ export const CommissionRulesTab: React.FC = () => {
         {/* Metric 3 */}
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
           <div className="flex items-center justify-between text-xs text-slate-500 font-bold mb-1">
-            <span>Trần Hoa Hồng Tối Đa</span>
+            <span>Trần hoa hồng tối đa</span>
             <ShieldCheck className="w-4 h-4 text-[#c34c36]" />
           </div>
           <div className="text-2xl font-black text-slate-900 mt-1">
@@ -375,7 +375,7 @@ export const CommissionRulesTab: React.FC = () => {
         {/* Metric 4 */}
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
           <div className="flex items-center justify-between text-xs text-slate-500 font-bold mb-1">
-            <span>Tổng Quy Tắc Cấu Hình</span>
+            <span>Tổng quy tắc cấu hình</span>
             <FileText className="w-4 h-4 text-blue-600" />
           </div>
           <div className="text-2xl font-black text-slate-900 mt-1">
@@ -392,7 +392,7 @@ export const CommissionRulesTab: React.FC = () => {
         <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
           <div className="flex items-center gap-2">
             <span className="font-black text-xs text-[#24263e] uppercase tracking-wider">
-              Danh Sách Quy Tắc Hoa Hồng
+              Danh sách quy tắc hoa hồng
             </span>
             <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-[#c34c36]/10 text-[#c34c36]">
               {rules.length} mục
@@ -407,14 +407,14 @@ export const CommissionRulesTab: React.FC = () => {
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
               <tr>
-                <th className="px-4 py-3">Tên Chính Sách</th>
-                <th className="px-4 py-3 text-center">Tỷ Lệ (%)</th>
-                <th className="px-4 py-3 text-right">Phí Tối Thiểu</th>
-                <th className="px-4 py-3 text-right">Trần Tối Đa</th>
-                <th className="px-4 py-3 text-center">Trạng Thái</th>
+                <th className="px-4 py-3">Tên chính sách</th>
+                <th className="px-4 py-3 text-center">Tỷ lệ (%)</th>
+                <th className="px-4 py-3 text-right">Phí tối thiểu</th>
+                <th className="px-4 py-3 text-right">Trần tối đa</th>
+                <th className="px-4 py-3 text-center">Trạng thái</th>
                 <th className="px-4 py-3 text-center">Revision</th>
-                <th className="px-4 py-3">Cập Nhật Gần Nhất</th>
-                <th className="px-4 py-3 text-center">Hành Động</th>
+                <th className="px-4 py-3">Cập nhật gần nhất</th>
+                <th className="px-4 py-3 text-center">Hành động</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
@@ -430,7 +430,7 @@ export const CommissionRulesTab: React.FC = () => {
                   <td colSpan={8} className="px-4 py-10 text-center text-slate-400">
                     <Info className="w-8 h-8 mx-auto text-slate-300 mb-2" />
                     <p className="font-bold text-slate-600">Chưa có chính sách hoa hồng nào được tạo.</p>
-                    <p className="text-[11px] text-slate-400 mt-1">Bấm "Thiết Lập Quy Tắc Mới" để tạo tỷ lệ mặc định cho sàn.</p>
+                    <p className="text-[11px] text-slate-400 mt-1">Bấm "Thiết lập quy tắc mới" để tạo tỷ lệ mặc định cho sàn.</p>
                   </td>
                 </tr>
               ) : (
@@ -461,12 +461,12 @@ export const CommissionRulesTab: React.FC = () => {
                         {rule.active ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
-                            <span>Đang Dùng</span>
+                            <span>Đang dùng</span>
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-600 border border-slate-300">
                             <PowerOff className="w-3 h-3 text-slate-400" />
-                            <span>Đã Tắt</span>
+                            <span>Đã tắt</span>
                           </span>
                         )}
                       </td>
@@ -583,7 +583,7 @@ export const CommissionRulesTab: React.FC = () => {
               <div className="flex items-center gap-2">
                 <Percent className="w-5 h-5 text-[#c34c36]" />
                 <h3 className="font-bold text-sm text-slate-900">
-                  {editingRule ? `Cập Nhật Chính Sách #${editingRule.id.slice(0, 8)}` : 'Thiết Lập Quy Tắc Hoa Hồng Mới'}
+                  {editingRule ? `Cập nhật chính sách #${editingRule.id.slice(0, 8)}` : 'Thiết lập quy tắc hoa hồng mới'}
                 </h3>
               </div>
               <button
@@ -604,14 +604,14 @@ export const CommissionRulesTab: React.FC = () => {
             <form onSubmit={handleSaveRule} noValidate className="space-y-3.5 text-xs">
               <div>
                 <label className="block font-bold text-slate-700 mb-1">
-                  Tên Chính Sách <span className="text-rose-500">*</span>
+                  Tên chính sách <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"
                   required
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
-                  placeholder="Ví dụ: Hoa Hồng Tiêu Chuẩn 5%"
+                  placeholder="Ví dụ: Hoa hồng tiêu chuẩn 5%"
                   className="w-full px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:border-[#c34c36]"
                 />
               </div>
@@ -619,7 +619,7 @@ export const CommissionRulesTab: React.FC = () => {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">
-                    Tỷ Lệ (%) <span className="text-rose-500">*</span>
+                    Tỷ lệ (%) <span className="text-rose-500">*</span>
                   </label>
                   <div className="relative">
                     <input
@@ -640,7 +640,7 @@ export const CommissionRulesTab: React.FC = () => {
 
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">
-                    Trạng Thái Kích Hoạt
+                    Trạng thái kích hoạt
                   </label>
                   <label className="flex items-center gap-2 mt-2 cursor-pointer select-none">
                     <input
@@ -659,7 +659,7 @@ export const CommissionRulesTab: React.FC = () => {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">
-                    Mức Tối Thiểu (VND) <span className="text-rose-500">*</span>
+                    Mức tối thiểu (VND) <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="number"
@@ -676,7 +676,7 @@ export const CommissionRulesTab: React.FC = () => {
 
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">
-                    Trần Tối Đa (VND)
+                    Trần tối đa (VND)
                   </label>
                   <input
                     type="number"
@@ -695,7 +695,7 @@ export const CommissionRulesTab: React.FC = () => {
 
               <div>
                 <label className="block font-bold text-slate-700 mb-1">
-                  Lý Do Cập Nhật / Khởi Tạo <span className="text-rose-500">*</span>
+                  Lý do cập nhật / khởi tạo <span className="text-rose-500">*</span>
                 </label>
                 <textarea
                   required
@@ -713,7 +713,7 @@ export const CommissionRulesTab: React.FC = () => {
                   onClick={() => setIsFormModalOpen(false)}
                   className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 cursor-pointer font-bold"
                 >
-                  Hủy Bỏ
+                  Hủy bỏ
                 </button>
                 <button
                   type="submit"
@@ -721,7 +721,7 @@ export const CommissionRulesTab: React.FC = () => {
                   className="px-5 py-2 bg-[#24263e] hover:bg-[#1a1c2e] text-white rounded-xl font-black cursor-pointer shadow-xs disabled:opacity-60 flex items-center gap-1.5"
                 >
                   {isSubmitting && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
-                  <span>{editingRule ? 'Lưu Thay Đổi (Revision Mới)' : 'Tạo Chính Sách'}</span>
+                  <span>{editingRule ? 'Lưu thay đổi (Revision Mới)' : 'Tạo chính sách'}</span>
                 </button>
               </div>
             </form>
@@ -816,7 +816,7 @@ export const CommissionRulesTab: React.FC = () => {
                   <Percent className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-sm text-slate-900">Chi Tiết Chính Sách Hoa Hồng</h3>
+                  <h3 className="font-bold text-sm text-slate-900">Chi tiết chính sách hoa hồng</h3>
                   <p className="text-[11px] text-slate-400 font-mono">Endpoint: GET /api/v1/admin/commission-rules/{detailRule?.id || '...'}</p>
                 </div>
               </div>
@@ -850,11 +850,11 @@ export const CommissionRulesTab: React.FC = () => {
                     <span className="text-slate-400 font-medium">Trạng thái vận hành:</span>
                     {detailRule.active ? (
                       <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                        Đang Kích Hoạt
+                        Đang kích hoạt
                       </span>
                     ) : (
                       <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-300">
-                        Đã Vô Hiệu Hóa
+                        Đã vô hiệu hóa
                       </span>
                     )}
                   </div>
@@ -931,7 +931,7 @@ export const CommissionRulesTab: React.FC = () => {
                 </div>
                 <div>
                   <h4 className="font-extrabold text-sm text-slate-900">
-                    Bổ Sung Snapshot Hoa Hồng Đơn Cũ
+                    Bổ sung snapshot hoa hồng đơn cũ
                   </h4>
                   <p className="text-[11px] text-slate-500">
                     POST /api/v1/admin/orders/{'{orderId}'}/commission-snapshot
@@ -1021,7 +1021,7 @@ export const CommissionRulesTab: React.FC = () => {
                       <span>Đang chụp...</span>
                     </>
                   ) : (
-                    <span>Chốt Snapshot</span>
+                    <span>Chốt snapshot</span>
                   )}
                 </button>
               </div>

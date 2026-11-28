@@ -114,7 +114,7 @@ export function getCancellationReasonDisplay(ord: EscrowOrder | null | undefined
   const resolved = formatOrderCancellationReason(rawResolved, currentLang) || rawResolved;
 
   return {
-    title: currentLang === 'vi' ? 'Đơn Hàng Đã Bị Hủy & Hoàn Tiền' : 'Order Cancelled & Refunded',
+    title: currentLang === 'vi' ? 'Đơn hàng đã bị hủy & hoàn tiền' : 'Order Cancelled & Refunded',
     reason: resolved,
     code: reasonCode ? formatCancellationReasonCode(reasonCode, currentLang) : '',
   };

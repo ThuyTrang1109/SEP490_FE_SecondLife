@@ -465,13 +465,13 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       case 'APPROVED':
         return {
           bg: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-          label: lang === 'vi' ? 'Đã Phê Duyệt' : 'Approved',
+          label: lang === 'vi' ? 'Đã phê duyệt' : 'Approved',
           icon: CheckCircle2,
         };
       case 'NEEDS_REVIEW':
         return {
           bg: 'bg-blue-50 text-blue-700 border-blue-200',
-          label: lang === 'vi' ? 'Chờ Thẩm Định' : 'Needs Review',
+          label: lang === 'vi' ? 'Chờ thẩm định' : 'Needs Review',
           icon: Clock,
         };
       case 'SUBMITTED':
@@ -479,19 +479,19 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       case 'PENDING':
         return {
           bg: 'bg-amber-50 text-amber-700 border-amber-200',
-          label: lang === 'vi' ? 'Đang Xử Lý eKYC' : 'eKYC Pending',
+          label: lang === 'vi' ? 'Đang xử lý eKYC' : 'eKYC Pending',
           icon: Loader2,
         };
       case 'RESUBMIT_REQUIRED':
         return {
           bg: 'bg-orange-50 text-orange-700 border-orange-200',
-          label: lang === 'vi' ? 'Yêu Cầu Nộp Lại' : 'Resubmit Required',
+          label: lang === 'vi' ? 'Yêu cầu nộp lại' : 'Resubmit Required',
           icon: AlertCircle,
         };
       case 'REJECTED':
         return {
           bg: 'bg-rose-50 text-rose-700 border-rose-200',
-          label: lang === 'vi' ? 'Bị Từ Chối' : 'Rejected',
+          label: lang === 'vi' ? 'Bị từ chối' : 'Rejected',
           icon: XCircle,
         };
       default:
@@ -560,9 +560,9 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
           const loc = extractWardAndCity(sellerAddr);
 
           const isDraft = p.status === 'DRAFT';
-          const returnStatus = getPostReturnStatus(p, orders, sellerDisputes);
-          const isReturning = Boolean(returnStatus?.isReturning);
-          const isReturned = Boolean(returnStatus?.isReturned);
+          const returnStatus = p.status === 'ACTIVE' ? null : getPostReturnStatus(p, orders, sellerDisputes);
+          const isReturning = p.status === 'RETURNING' || Boolean(returnStatus?.isReturning);
+          const isReturned = p.status === 'RETURNED' || (!isReturning && Boolean(returnStatus?.isReturned));
           const isSold = !isReturning && !isReturned && String(p.status || '').toUpperCase() === 'SOLD';
           const isAwaitingInspectionPublication = p.status === 'PENDING_INSPECTION' || p.status === 'READY_TO_PUBLISH';
           const draftTitle = p.title || (isDraft ? 'Bản nháp sản phẩm' : 'Thiết bị gia dụng SecondLife');
@@ -701,7 +701,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       else if (type === 'back') setResubmitBackUrl(res.url);
       else setResubmitSelfieUrl(res.url);
     } catch (err: any) {
-      dialogService.error('Tải ảnh thất bại: ' + (err.message || 'Lỗi hệ thống'), 'Lỗi Tải Ảnh');
+      dialogService.error('Tải ảnh thất bại: ' + (err.message || 'Lỗi hệ thống'), 'Lỗi tải ảnh');
     } finally {
       setIsUploading(false);
     }
@@ -1071,13 +1071,13 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
 
     // 1. Kiểm định đạt chuẩn
     if (stage === 'passed') {
-      let label = vi ? '● Đã Kiểm Định' : '● Inspected';
+      let label = vi ? '● Đã kiểm định' : '● Inspected';
       if (canPublish) {
         label = vi ? '● Sẵn sàng đăng bán' : '● Ready to publish';
       } else if (item.status === 'active' || item.backendStatus === 'ACTIVE') {
         label = vi ? '● Đang bán' : '● Active';
       } else if (item.backendStatus === 'RESERVED' || item.backendStatus === 'PAYMENT_PENDING') {
-        label = vi ? '● Đã Cọc Ký Quỹ' : '● Escrow Deposited';
+        label = vi ? '● Đã cọc ký quỹ' : '● Escrow Deposited';
       } else if (item.backendStatus === 'RETURNING') {
         label = vi ? '● Đang hoàn trả' : '● Returning';
       } else if (item.backendStatus === 'RETURNED') {
@@ -1097,7 +1097,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
     // 2. Kiểm định không đạt
     if (stage === 'failed') {
       return {
-        label: vi ? '● Không Đạt Tiêu Chuẩn' : '● Inspection Failed',
+        label: vi ? '● Không đạt tiêu chuẩn' : '● Inspection Failed',
         colorClass: 'bg-rose-600 text-white shadow-2xs',
       };
     }
@@ -1118,7 +1118,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
         };
       }
       return {
-        label: vi ? '● Chờ Nộp Phí & Đặt Lịch' : '● Awaiting Fee / Schedule',
+        label: vi ? '● Chờ nộp phí & đặt lịch' : '● Awaiting Fee / Schedule',
         colorClass: 'bg-amber-600 text-white shadow-2xs',
       };
     }
@@ -1129,7 +1129,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
 
     if (isUnpaid) {
       return {
-        label: vi ? '● Chờ Nộp Phí & Đặt Lịch' : '● Awaiting Fee / Schedule',
+        label: vi ? '● Chờ nộp phí & đặt lịch' : '● Awaiting Fee / Schedule',
         colorClass: 'bg-amber-600 text-white shadow-2xs',
       };
     }
@@ -1208,7 +1208,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
               title="Xem lịch sử các lần nộp hồ sơ eKYC"
             >
               <History className="w-3.5 h-3.5 text-blue-600" />
-              <span>{lang === 'vi' ? 'Lịch Sử eKYC' : 'eKYC History'}</span>
+              <span>{lang === 'vi' ? 'Lịch sử eKYC' : 'eKYC History'}</span>
             </button>
 
             {myVerification.status === 'RESUBMIT_REQUIRED' && (
@@ -1218,7 +1218,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                 className="px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs transition cursor-pointer flex items-center gap-1.5 shadow-xs"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
-                <span>{lang === 'vi' ? 'Chụp / Nộp Lại Ảnh' : 'Resubmit Photos'}</span>
+                <span>{lang === 'vi' ? 'Chụp / nộp lại ảnh' : 'Resubmit Photos'}</span>
               </button>
             )}
 
@@ -1229,7 +1229,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                 className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition cursor-pointer flex items-center gap-1.5 shadow-xs"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
-                <span>{lang === 'vi' ? 'Tạo Hồ Sơ Xác Thực Mới' : 'Create New Verification'}</span>
+                <span>{lang === 'vi' ? 'Tạo hồ sơ xác thực mới' : 'Create New Verification'}</span>
               </button>
             )}
           </div>
@@ -1265,7 +1265,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             <div className="space-y-1.5 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="text-lg sm:text-xl font-black text-[#24263e] truncate">
-                  {currentUser?.name || currentUser?.email?.split('@')[0] || 'Người Bán SecondLife'}
+                  {currentUser?.name || currentUser?.email?.split('@')[0] || 'Người bán secondLife'}
                 </h1>
                 <button
                   type="button"
@@ -1292,7 +1292,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                           ? `${currentUser.trustScore}/100`
                           : '—'}
                   </span>
-                  <span>Uy Tín</span>
+                  <span>Uy tín</span>
                   {myReputation?.sellingRestricted && (
                     <span className="px-1.5 py-0.2 rounded text-[9px] bg-rose-500 text-white font-bold animate-pulse">
                       Hạn chế
@@ -1332,7 +1332,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
               className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-[#c34c36] hover:bg-[#a83d2a] text-white font-black text-xs shadow-sm hover:shadow transition cursor-pointer"
             >
               <PlusCircle className="w-4 h-4" />
-              <span>{lang === 'vi' ? 'Đăng Bán Đồ Gia Dụng Mới (AI)' : 'Post New Appliance (AI)'}</span>
+              <span>{lang === 'vi' ? 'Đăng bán đồ gia dụng mới (AI)' : 'Post New Appliance (AI)'}</span>
             </button>
 
             <div className="flex items-center gap-1.5 flex-wrap">
@@ -1342,7 +1342,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/90 hover:bg-white text-[#24263e] border border-[#24263e]/15 font-bold text-xs transition cursor-pointer shadow-2xs"
                 >
                   <Clock className="w-3.5 h-3.5 text-emerald-800" />
-                  <span>{lang === 'vi' ? 'Quản Lý Đơn' : 'Orders'}</span>
+                  <span>{lang === 'vi' ? 'Quản lý đơn' : 'Orders'}</span>
                 </button>
               )}
               <button
@@ -1350,14 +1350,14 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/90 hover:bg-white text-[#24263e] border border-[#24263e]/15 font-bold text-xs transition cursor-pointer shadow-2xs"
               >
                 <Wallet className="w-3.5 h-3.5 text-[#24263e]" />
-                <span>{lang === 'vi' ? 'Rút Tiền Ví' : 'Withdraw'}</span>
+                <span>{lang === 'vi' ? 'Rút tiền ví' : 'Withdraw'}</span>
               </button>
               <button
                 onClick={() => setIsSellerReviewsOpen(true)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/90 hover:bg-white text-[#24263e] border border-[#24263e]/15 font-bold text-xs transition cursor-pointer shadow-2xs"
               >
                 <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
-                <span>{lang === 'vi' ? `Đánh Giá (${sellerReviewCount})` : `Reviews (${sellerReviewCount})`}</span>
+                <span>{lang === 'vi' ? `Đánh giá (${sellerReviewCount})` : `Reviews (${sellerReviewCount})`}</span>
               </button>
             </div>
           </div>
@@ -1460,7 +1460,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
 
           <div className="bg-[#FFFFFF] text-[#24263e] rounded-xl p-3 border border-gray-200 shadow-xs flex flex-col justify-between space-y-1">
             <div className="text-[11px] text-[#24263e]/70 flex items-center justify-between font-medium">
-              <span>{lang === 'vi' ? 'Điểm Tín Dụng' : 'Active Credits'}</span>
+              <span>{lang === 'vi' ? 'Điểm tín dụng' : 'Active Credits'}</span>
               <Coins className="w-3.5 h-3.5 text-amber-500" />
             </div>
             <div className="flex flex-wrap items-baseline gap-1.5">
@@ -1489,7 +1489,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             <div className="text-[11px] text-[#24263e]/70 flex items-center justify-between font-medium">
               <span className="font-bold flex items-center gap-1">
                 <Award className="w-3.5 h-3.5 text-amber-500" />
-                <span>{lang === 'vi' ? 'Uy Tín Giao Dịch' : 'Seller Reputation'}</span>
+                <span>{lang === 'vi' ? 'Uy tín giao dịch' : 'Seller Reputation'}</span>
               </span>
               {(() => {
                 const statusMeta = getAssessmentStatusMeta(myReputation?.assessmentStatus);
@@ -1550,7 +1550,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             }`}
         >
           <Tag className="w-4 h-4" />
-          <span>{lang === 'vi' ? 'Tin Đăng Bán & Bản Nháp' : 'Listings & Drafts'}</span>
+          <span>{lang === 'vi' ? 'Tin đăng bán & bản nháp' : 'Listings & Drafts'}</span>
           <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${sellerActiveTab === 'listings' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
             }`}>
             {normalListings.length}
@@ -1572,7 +1572,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             }`}
         >
           <ShieldCheck className="w-4 h-4 text-amber-500" />
-          <span>{lang === 'vi' ? 'Kiểm Định Giá Trị Cao' : 'High-Value Inspections'}</span>
+          <span>{lang === 'vi' ? 'Kiểm định giá trị cao' : 'High-Value Inspections'}</span>
           <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${sellerActiveTab === 'high_value_inspections' ? 'bg-amber-400 text-slate-900' : 'bg-amber-100 text-amber-800'
             }`}>
             {highValueListings.length}
@@ -1592,7 +1592,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                   <ShieldCheck className="w-5 h-5 text-amber-500" />
                   <span>
                     {lang === 'vi'
-                      ? `Sản Phẩm Kiểm Định Giá Trị Cao (${filteredHighValueListings.length})`
+                      ? `Sản phẩm kiểm định giá trị cao (${filteredHighValueListings.length})`
                       : `High-Value Inspected Items (${filteredHighValueListings.length})`}
                   </span>
                 </h2>
@@ -1899,7 +1899,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                   <Tag className="w-5 h-5 text-[#24263e]" />
                   <span>
                     {lang === 'vi'
-                      ? `Quản Lý Tin Đăng & Bản Nháp (${filteredNormalListings.length})`
+                      ? `Quản lý tin đăng & bản nháp (${filteredNormalListings.length})`
                       : `My Listings & Drafts (${filteredNormalListings.length})`}
                   </span>
                 </h2>
@@ -2038,18 +2038,18 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                                     : 'bg-[#c34c36] text-white'
                           }`}>
                           {item.backendStatus === 'REJECTED'
-                            ? (lang === 'vi' ? '● Bị Từ Chối' : '● Rejected')
+                            ? (lang === 'vi' ? '● Bị từ chối' : '● Rejected')
                             : item.backendStatus === 'RETURNING'
                               ? (lang === 'vi' ? '● Đang hoàn trả' : '● Returning')
                               : item.backendStatus === 'RETURNED'
                                 ? (lang === 'vi' ? '● Đã hoàn trả' : '● Returned')
                                 : item.backendStatus === 'DRAFT' || item.status === 'draft'
-                                  ? (lang === 'vi' ? '● Bản Nháp' : '● Draft')
+                                  ? (lang === 'vi' ? '● Bản nháp' : '● Draft')
                                   : item.status === 'sold' || item.backendStatus === 'SOLD'
                                     ? (lang === 'vi' ? '● Đã bán' : '● Sold')
                                     : item.status === 'active'
                                       ? (lang === 'vi' ? '● Đang bán' : '● Active')
-                                      : (lang === 'vi' ? '● Đã Cọc Ký Quỹ' : '● Escrow Deposited')}
+                                      : (lang === 'vi' ? '● Đã cọc ký quỹ' : '● Escrow Deposited')}
                         </span>
                         {sellerInspectionState.passed && (
                           <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-600 text-white shadow-2xs">
@@ -2238,7 +2238,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                   <Sliders className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-base font-black text-[#24263e]">Chọn Lại Loại Thiết Bị</h3>
+                  <h3 className="text-base font-black text-[#24263e]">Chọn lại loại thiết bị</h3>
                   <p className="text-[11px] text-slate-500">Cập nhật phân loại cho bài viết theo danh mục mới</p>
                 </div>
               </div>
@@ -2266,7 +2266,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
 
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-700">
-                  Chọn Loại Thiết Bị Mới *
+                  Chọn loại thiết bị mới *
                 </label>
                 {isLoadingReclassifyItems ? (
                   <div className="flex items-center justify-center py-4 text-xs text-slate-500 gap-2">
@@ -2311,7 +2311,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                 className="px-4 py-2 rounded-xl text-xs font-bold bg-[#c34c36] hover:bg-[#a63f2d] text-white disabled:opacity-50 cursor-pointer flex items-center gap-1.5 shadow-sm"
               >
                 {isSubmittingReclassify && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                <span>Cập Nhật Loại Thiết Bị</span>
+                <span>Cập nhật loại thiết bị</span>
               </button>
             </div>
           </div>
@@ -2328,7 +2328,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
               <div className="flex items-center gap-2">
                 <RefreshCw className="w-5 h-5 text-rose-600" />
                 <h3 className="font-bold text-sm text-slate-900">
-                  Nộp Lại Hồ Sơ Xác Minh Định Danh (eKYC)
+                  Nộp lại hồ sơ xác minh định danh (eKYC)
                 </h3>
               </div>
               <button
@@ -2348,7 +2348,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
               )}
 
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Số Căn Cước Công Dân (CCCD):</label>
+                <label className="block text-slate-700 font-bold mb-1">Số căn cước công dân (CCCD):</label>
                 <input
                   type="text"
                   required
@@ -2362,7 +2362,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {/* Front Image Upload */}
                 <div className="space-y-1.5">
-                  <label className="block text-slate-700 font-bold text-[11px]">Ảnh CCCD Mặt Trước *</label>
+                  <label className="block text-slate-700 font-bold text-[11px]">Ảnh CCCD mặt trước *</label>
                   <div className="relative border-2 border-dashed border-slate-200 rounded-xl p-3 text-center bg-slate-50 hover:bg-slate-100 transition">
                     {resubmitFrontUrl ? (
                       <div className="relative group">
@@ -2392,7 +2392,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
 
                 {/* Back Image Upload */}
                 <div className="space-y-1.5">
-                  <label className="block text-slate-700 font-bold text-[11px]">Ảnh CCCD Mặt Sau *</label>
+                  <label className="block text-slate-700 font-bold text-[11px]">Ảnh CCCD mặt sau *</label>
                   <div className="relative border-2 border-dashed border-slate-200 rounded-xl p-3 text-center bg-slate-50 hover:bg-slate-100 transition">
                     {resubmitBackUrl ? (
                       <div className="relative group">
@@ -2423,7 +2423,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
 
               {/* Selfie Image Upload */}
               <div className="space-y-1.5">
-                <label className="block text-slate-700 font-bold text-[11px]">Ảnh Chân Dung Selfie (Tùy chọn)</label>
+                <label className="block text-slate-700 font-bold text-[11px]">Ảnh chân dung selfie (Tùy chọn)</label>
                 <div className="relative border-2 border-dashed border-slate-200 rounded-xl p-3 text-center bg-slate-50 hover:bg-slate-100 transition">
                   {resubmitSelfieUrl ? (
                     <div className="relative group">
@@ -2457,14 +2457,14 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                   onClick={() => setIsResubmitModalOpen(false)}
                   className="px-4 py-2 rounded-xl border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
                 >
-                  Hủy Bỏ
+                  Hủy bỏ
                 </button>
                 <button
                   type="submit"
                   disabled={isUploading || !resubmitDocNum || !resubmitFrontUrl || !resubmitBackUrl}
                   className="px-5 py-2 rounded-xl bg-[#24263e] hover:bg-black disabled:opacity-50 text-white font-bold text-xs shadow-md transition cursor-pointer"
                 >
-                  {isUploading ? 'Đang Tải / Đang Xử Lý...' : 'Cập Nhật & Nộp Lại'}
+                  {isUploading ? 'Đang tải / đang xử lý...' : 'Cập nhật & nộp lại'}
                 </button>
               </div>
             </form>
@@ -2633,7 +2633,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div>
                     <span className="text-xs uppercase tracking-wider text-slate-300 font-bold block">
-                      Điểm Uy Tín Tổng Kết
+                      Điểm uy tín tổng kết
                     </span>
                     <div className="flex items-baseline gap-2 mt-1">
                       <span className="text-4xl sm:text-5xl font-black text-amber-300 font-mono">
@@ -2872,7 +2872,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                 </div>
                 <div>
                   <h4 className="font-extrabold text-base text-slate-900">
-                    {lang === 'vi' ? 'Lịch Sử Nộp Hồ Sơ Xác Minh eKYC' : 'Seller eKYC Verification History'}
+                    {lang === 'vi' ? 'Lịch sử nộp hồ sơ xác minh eKYC' : 'Seller eKYC Verification History'}
                   </h4>
                   <p className="text-[11px] text-slate-500">
                     {lang === 'vi'
@@ -2893,11 +2893,11 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             {/* Filter Tabs */}
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 shrink-0 text-xs font-bold">
               {[
-                { id: 'ALL', label: lang === 'vi' ? 'Tất Cả' : 'All' },
-                { id: 'APPROVED', label: lang === 'vi' ? 'Đã Duyệt' : 'Approved' },
-                { id: 'NEEDS_REVIEW', label: lang === 'vi' ? 'Chờ Thẩm Định' : 'Pending' },
-                { id: 'RESUBMIT_REQUIRED', label: lang === 'vi' ? 'Yêu Cầu Nộp Lại' : 'Resubmit' },
-                { id: 'REJECTED', label: lang === 'vi' ? 'Bị Từ Chối' : 'Rejected' },
+                { id: 'ALL', label: lang === 'vi' ? 'Tất cả' : 'All' },
+                { id: 'APPROVED', label: lang === 'vi' ? 'Đã duyệt' : 'Approved' },
+                { id: 'NEEDS_REVIEW', label: lang === 'vi' ? 'Chờ thẩm định' : 'Pending' },
+                { id: 'RESUBMIT_REQUIRED', label: lang === 'vi' ? 'Yêu cầu nộp lại' : 'Resubmit' },
+                { id: 'REJECTED', label: lang === 'vi' ? 'Bị từ chối' : 'Rejected' },
               ].map((tab) => (
                 <button
                   key={tab.id}
@@ -2988,12 +2988,12 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                             <div className="flex items-center gap-2 mt-0.5">
                               {item.faceMatchScore !== undefined && (
                                 <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-mono font-bold text-[11px]">
-                                  Match: {Math.round(item.faceMatchScore * 100)}%
+                                  {lang === 'vi' ? 'Khớp mặt' : 'Match'}: {Math.round(item.faceMatchScore * 100)}%
                                 </span>
                               )}
                               {item.livenessScore !== undefined && (
                                 <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-mono font-bold text-[11px]">
-                                  Liveness: {Math.round(item.livenessScore * 100)}%
+                                  {lang === 'vi' ? 'Thực thể sống' : 'Liveness'}: {Math.round(item.livenessScore * 100)}%
                                 </span>
                               )}
                             </div>
@@ -3040,7 +3040,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                             className="px-3 py-1.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs transition cursor-pointer flex items-center gap-1 shadow-xs"
                           >
                             <RefreshCw className="w-3.5 h-3.5" />
-                            <span>{lang === 'vi' ? 'Nộp Lại Ngay' : 'Resubmit Now'}</span>
+                            <span>{lang === 'vi' ? 'Nộp lại ngay' : 'Resubmit Now'}</span>
                           </button>
                         )}
                       </div>

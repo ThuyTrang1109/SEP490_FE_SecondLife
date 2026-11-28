@@ -45,13 +45,13 @@ test('the center queue follows the saved proposal through a stale browser cache 
   };
 
   assert.equal(getCenterDispatchStage(countered, false), 'WAITING_SELLER_APPROVAL');
-  assert.match(renderBadge(countered), /Đã Đề Xuất Lại • Chờ Seller/);
-  assert.doesNotMatch(renderBadge(countered), /Chờ Duyệt Lịch Hẹn/);
+  assert.match(renderBadge(countered), /Đã đề xuất lại • Chờ Seller/);
+  assert.doesNotMatch(renderBadge(countered), /Chờ duyệt lịch hẹn/);
 
   cache.set('order_appointment_inspection', JSON.stringify({
     status: countered.appointmentStatus, scheduledAt: sellerTime, counterScheduledAt: proposedTime,
   }));
   const rescheduled = { ...originalOrder, appointmentScheduledAt: '2026-11-21T02:30:00Z' };
-  assert.match(renderBadge(rescheduled), /Chờ Duyệt Lịch Hẹn/);
+  assert.match(renderBadge(rescheduled), /Chờ duyệt lịch hẹn/);
   assert.equal(getCenterDispatchStage(rescheduled, false), 'WAITING_CENTER_APPROVAL');
 });

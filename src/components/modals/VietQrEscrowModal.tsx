@@ -193,7 +193,7 @@ export const VietQrEscrowModal: React.FC<VietQrEscrowModalProps> = ({
             </div>
             <div>
               <h3 className="font-extrabold text-base text-[#24263e]">
-                {lang === 'vi' ? 'Ký Quỹ Escrow Qua Ngân Hàng VietQR (SePay)' : 'Escrow Deposit via VietQR'}
+                {lang === 'vi' ? 'Ký quỹ Escrow qua ngân hàng vietQR (SePay)' : 'Escrow Deposit via VietQR'}
               </h3>
               <p className="text-[11px] text-slate-600 font-bold">
                 Đơn hàng: #{order.id} • Ký quỹ để đóng băng tiền bảo vệ giao dịch
@@ -216,7 +216,7 @@ export const VietQrEscrowModal: React.FC<VietQrEscrowModalProps> = ({
             <div className="p-3.5 bg-emerald-50 border border-emerald-300 rounded-2xl text-emerald-900 font-semibold flex items-center gap-3 animate-fadeIn">
               <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
               <div>
-                <h5 className="font-bold text-sm text-emerald-800">🎉 Đã Ký Quỹ Escrow Thành Công!</h5>
+                <h5 className="font-bold text-sm text-emerald-800">🎉 đã ký quỹ Escrow thành công!</h5>
                 <p className="text-[11px] text-emerald-700">
                   Số tiền {formatVND(remainingToPay)} đã được hệ thống đóng băng an toàn tại Quỹ Escrow. Đang chuyển hướng...
                 </p>
@@ -226,7 +226,7 @@ export const VietQrEscrowModal: React.FC<VietQrEscrowModalProps> = ({
             <div className="p-3.5 bg-rose-50 border border-rose-300 rounded-2xl text-rose-900 font-semibold flex items-center gap-3">
               <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
               <div>
-                <h5 className="font-bold text-sm text-rose-800">⚠️ Mã Ký Quỹ Đã Quá Hạn (15 Phút Backend)</h5>
+                <h5 className="font-bold text-sm text-rose-800">⚠️ Mã ký quỹ đã quá hạn (15 Phút Backend)</h5>
                 <p className="text-[11px] text-rose-700">
                   Thời hạn ký quỹ theo dữ liệu Backend đã kết thúc. Vui lòng không chuyển khoản vào mã này nữa để tránh đơn bị tự động hủy.
                 </p>
@@ -355,10 +355,10 @@ export const VietQrEscrowModal: React.FC<VietQrEscrowModalProps> = ({
           <div className="p-3.5 bg-blue-50/80 border border-blue-200 rounded-2xl text-[11px] text-blue-950 space-y-1.5">
             <div className="font-extrabold flex items-center gap-1.5 text-blue-900">
               <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0" />
-              <span>Cơ Chế Ký Quỹ Đóng Băng Tiền (Escrow Protection):</span>
+              <span>Cơ chế ký quỹ đóng băng tiền (Escrow Protection):</span>
             </div>
             <p className="text-slate-600 leading-snug">
-              Khoản tiền này sẽ được cổng SePay đối soát và <strong>đóng băng an toàn tại Quỹ Ký Quỹ Escrow</strong> của SecondLife. Người bán <strong>hoàn toàn CHƯA nhận được tiền</strong> cho đến khi bạn nhận được hàng, kiểm tra 48h và bấm xác nhận hài lòng.
+              Khoản tiền này sẽ được cổng SePay đối soát và <strong>đóng băng an toàn tại quỹ ký quỹ Escrow</strong> của SecondLife. Người bán <strong>hoàn toàn CHƯA nhận được tiền</strong> cho đến khi bạn nhận được hàng, kiểm tra 48h và bấm xác nhận hài lòng.
             </p>
             <div className="flex items-center gap-2 pt-1 text-[10px] font-bold text-emerald-700">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping shrink-0" />
@@ -385,8 +385,8 @@ export const VietQrEscrowModal: React.FC<VietQrEscrowModalProps> = ({
               className="px-5 py-2.5 rounded-xl bg-[#c34c36] hover:bg-[#dc4729] text-white font-black text-xs cursor-pointer shadow-md transition disabled:opacity-50"
             >
               {isSuccess
-                ? 'Xem Đơn Hàng Ngay'
-                : 'Tôi Đã Chuyển Khoản • Kiểm Tra Ngay'}
+                ? 'Xem đơn hàng ngay'
+                : 'Tôi đã chuyển khoản • Kiểm tra ngay'}
             </button>
           </div>
         </div>

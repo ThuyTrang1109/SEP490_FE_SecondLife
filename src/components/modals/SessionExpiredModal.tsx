@@ -36,7 +36,7 @@ export const SessionExpiredModal: React.FC<SessionExpiredModalProps> = ({
 
           <div className="space-y-2">
             <h3 className="text-lg font-black text-[#24263e] tracking-tight">
-              {lang === 'vi' ? 'Phiên Đăng Nhập Hết Hạn' : 'Session Expired'}
+              {lang === 'vi' ? 'Phiên đăng nhập hết hạn' : 'Session Expired'}
             </h3>
             <p className="text-sm text-gray-500 leading-relaxed max-w-[280px] mx-auto">
               {lang === 'vi'

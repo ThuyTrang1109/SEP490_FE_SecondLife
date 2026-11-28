@@ -5,18 +5,37 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { SystemWalletTab } from '../components/admin/SystemWalletTab';
 import { systemWalletService } from '../services/systemWalletService';
 import type { SystemWalletTransaction } from '../types';
-import { toSystemWalletHistoryItem, getSystemWalletBreakdownLines } from '../utils/systemWalletHistory';
+import {
+  toSystemWalletHistoryItem,
+  getSystemWalletBreakdownLines,
+  isInternalCommissionTransfer,
+} from '../utils/systemWalletHistory';
+
+test('package revenue shows the receipt and is separate from order commission', () => {
+  const item = toSystemWalletHistoryItem({
+    id: 21, orderId: null, topupPackagePurchaseId: '49f94f53-5f9e-421a-b4aa-2000df43baa6',
+    type: 'PACKAGE_REVENUE', fundCategory: 'PACKAGE_REVENUE',
+    heldDelta: 0, shippingDelta: 0, revenueDelta: 79_000,
+    heldBalanceAfter: 0, shippingBalanceAfter: 0, revenueBalanceAfter: 79_000,
+    createdAt: '2026-11-27T01:54:36Z',
+  });
+  assert.equal(item.source, 'PACKAGE');
+  assert.equal(item.orderId, '');
+  assert.equal(item.displayId, '49f94f53...baa6');
+  assert.deepEqual(item.breakdownItems, [{ label: 'Doanh thu bán gói', delta: 79_000 }]);
+  assert.equal(item.signedDelta, 79_000);
+});
 
 test('systemWalletService.getTransactions builds correct query string with filters', async (t) => {
   assert.equal(typeof systemWalletService.getSystemWallet, 'function');
   assert.equal(typeof systemWalletService.getTransactions, 'function');
 });
 
-test('SystemWalletTab renders shipping balance card with holding status and filter shortcut', () => {
+test('SystemWalletTab exposes current balance details separately from transaction history', () => {
   const html = renderToStaticMarkup(createElement(SystemWalletTab));
 
   // Verify Header
-  assert.match(html, /Ví Hệ Thống/);
+  assert.match(html, /Ví hệ thống/);
 
   // Verify Total System Balance Card
   assert.match(html, /Ví tổng hệ thống/);
@@ -33,10 +52,10 @@ test('SystemWalletTab renders shipping balance card with holding status and filt
   assert.match(html, /Phí kiểm định đang giữ bảo chứng cho Hub/);
 
   // Verify Shipping Balance Card
-  assert.match(html, /Phí vận chuyển đã thu/);
-  assert.match(html, /Đang giữ/);
-  assert.match(html, /Tiền ship hệ thống lưu giữ bảo chứng/);
-  assert.match(html, /Lọc cước ship →/);
+  assert.match(html, /Số dư quỹ cước vận chuyển/);
+  assert.match(html, /Cước ròng/);
+  assert.match(html, /Xem đối soát cước →/);
+  assert.match(html, /Xem đơn đang giữ tiền →/);
 
   // Verify Filter Toolbar
   assert.match(html, /Bộ lọc:/);
@@ -55,10 +74,10 @@ test('SystemWalletTab renders shipping balance card with holding status and filt
 
   // Verify Table Headers
   assert.match(html, /Mã GD/);
-  assert.match(html, /Mã Đơn Hàng \(Order ID\)/);
-  assert.match(html, /Phân Loại/);
-  assert.match(html, /Số Tiền Biến Động/);
-  assert.doesNotMatch(html, /Tổng Cước Ship Người Dùng/i);
+  assert.match(html, /Mã đơn hàng \(Order ID\)/);
+  assert.match(html, /Phân loại/);
+  assert.match(html, /Số tiền biến động/);
+  assert.doesNotMatch(html, /Tổng cước ship người dùng/i);
 });
 
 test('SystemWalletTransaction types support all required categories including RETURN_SHIPPING_FEE', () => {
@@ -391,4 +410,49 @@ test('getSystemWalletBreakdownLines falls back cleanly when description has no a
 
   const lines = getSystemWalletBreakdownLines(item);
   assert.equal(lines.length, 0);
+});
+
+test('internal commission transfers from escrow held funds are flagged and formatted without plus sign', () => {
+  const commissionItem = toSystemWalletHistoryItem({
+    id: 15,
+    entryId: '15-4',
+    orderId: 'cc15f2cc-1526',
+    type: 'SETTLEMENT',
+    fundCategory: 'COMMISSION',
+    totalDelta: 17_000,
+    deltaAction: 'PLUS',
+    heldDelta: -17_000,
+    shippingDelta: 0,
+    revenueDelta: 17_000,
+    heldBalanceAfter: 0,
+    shippingBalanceAfter: 6_682_800,
+    revenueBalanceAfter: 17_000,
+    createdAt: '2026-11-28T23:01:43Z',
+    breakdownDescription: 'Ghi nhận doanh thu hoa hồng sàn',
+  });
+
+  assert.equal(isInternalCommissionTransfer(commissionItem), true);
+  const lines = getSystemWalletBreakdownLines(commissionItem);
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0].label, 'Hoa hồng sàn');
+  assert.doesNotMatch(lines[0].formattedText, /^\+/);
+  assert.match(lines[0].formattedText, /17\.000/);
+
+  const holdItem = toSystemWalletHistoryItem({
+    id: 14,
+    entryId: '14-1',
+    orderId: 'cc15f2cc-1526',
+    type: 'PAYMENT_HOLD',
+    fundCategory: 'PRODUCT_ESCROW',
+    totalDelta: 7_022_800,
+    deltaAction: 'PLUS',
+    heldDelta: 340_000,
+    shippingDelta: 6_682_800,
+    revenueDelta: 0,
+    heldBalanceAfter: 340_000,
+    shippingBalanceAfter: 6_682_800,
+    revenueBalanceAfter: 0,
+    createdAt: '2026-11-26T22:49:09Z',
+  });
+  assert.equal(isInternalCommissionTransfer(holdItem), false);
 });

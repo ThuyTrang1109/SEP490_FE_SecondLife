@@ -167,7 +167,7 @@ export const AiListingAssistant: React.FC<AiListingAssistantProps> = ({
           </div>
           <div>
             <h3 className="font-black text-base flex items-center gap-2 text-[#24263e]">
-              <span>{lang === 'vi' ? 'Trợ Lý AI Soạn Thảo Bài Đăng' : 'AI Listing Description Assistant'}</span>
+              <span>{lang === 'vi' ? 'Trợ lý AI soạn thảo bài đăng' : 'AI Listing Description Assistant'}</span>
               <span className="text-[10px] uppercase font-black tracking-wider px-2 py-0.5 rounded-full bg-white text-emerald-900 border border-emerald-500/40">
                 Ollama LLM
               </span>

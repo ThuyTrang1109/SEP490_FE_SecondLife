@@ -17,6 +17,7 @@ const transactionLabels: Record<string, string> = {
   INSPECTION_SETTLEMENT: 'Quyết toán kiểm định',
   INSPECTION_REFUND: 'Hoàn phí kiểm định',
   INSPECTION_RETURN_SHIPPING: 'Cước trả hàng kiểm định',
+  PACKAGE_REVENUE: 'Doanh thu bán gói',
 };
 
 export function parseMoneyString(valStr: string): number {
@@ -94,11 +95,13 @@ export function parseBreakdownDescription(
 export function toSystemWalletHistoryItem(transaction: SystemWalletTransaction) {
   const { heldDelta, shippingDelta, revenueDelta, type, inspectionOrderId } = transaction;
   const isInspection = Boolean(inspectionOrderId) || type.startsWith('INSPECTION_');
-  const source = isInspection ? 'INSPECTION' as const : 'ESCROW' as const;
+  const isPackage = type === 'PACKAGE_REVENUE';
+  const source = isPackage ? 'PACKAGE' as const : isInspection ? 'INSPECTION' as const : 'ESCROW' as const;
   const orderId = inspectionOrderId || transaction.orderId || '';
+  const referenceId = transaction.topupPackagePurchaseId || orderId;
   const entryId = transaction.entryId || String(transaction.id);
   const fundCategory = transaction.fundCategory ?? (
-    revenueDelta !== 0 && (heldDelta === 0 || heldDelta === -revenueDelta) && shippingDelta === 0 ? 'COMMISSION'
+    isPackage ? 'PACKAGE_REVENUE' : revenueDelta !== 0 && (heldDelta === 0 || heldDelta === -revenueDelta) && shippingDelta === 0 ? 'COMMISSION'
       : isInspection || (heldDelta === 0 && shippingDelta !== 0) ? 'USER_SHIPPING' : 'PRODUCT_ESCROW'
   );
   const isCommission = fundCategory === 'COMMISSION';
@@ -122,7 +125,7 @@ export function toSystemWalletHistoryItem(transaction: SystemWalletTransaction) 
     breakdownItems.push({ label: 'Cước vận chuyển', delta: shippingDelta });
   }
   if (revenueDelta !== 0) {
-    breakdownItems.push({ label: 'Hoa hồng sàn', delta: revenueDelta });
+    breakdownItems.push({ label: isPackage ? 'Doanh thu bán gói' : 'Hoa hồng sàn', delta: revenueDelta });
   }
 
   // Parse breakdown from description if breakdownItems is empty (e.g. inspection transactions)
@@ -150,9 +153,9 @@ export function toSystemWalletHistoryItem(transaction: SystemWalletTransaction) 
   }
 
   return {
-    transaction, entryId, orderId, source, type, typeLabel, fundCategory, sellerPayout,
+    transaction, entryId, orderId, referenceId, source, type, typeLabel, fundCategory, sellerPayout,
     signedDelta,
-    displayId: orderId ? `${orderId.slice(0, 8)}...${orderId.slice(-4)}` : '—',
+    displayId: referenceId ? `${referenceId.slice(0, 8)}...${referenceId.slice(-4)}` : '—',
     actionLabel: isInspection ? 'Đối soát' : 'Xem chi tiết',
     breakdownSummary: transaction.breakdownDescription || typeLabel,
     breakdownItems,
@@ -160,6 +163,29 @@ export function toSystemWalletHistoryItem(transaction: SystemWalletTransaction) 
     isShipping: shippingDelta !== 0 || fundCategory === 'USER_SHIPPING',
     createdAt: transaction.createdAt,
   };
+}
+
+export function isInternalCommissionTransfer(
+  item: {
+    fundCategory?: string | null;
+    transaction?: {
+      heldDelta?: number;
+      shippingDelta?: number;
+      revenueDelta?: number;
+    } | null;
+  } | null | undefined
+): boolean {
+  const tx = item?.transaction;
+  if (!tx) return false;
+  const heldDelta = Number(tx.heldDelta ?? 0);
+  const shippingDelta = Number(tx.shippingDelta ?? 0);
+  const revenueDelta = Number(tx.revenueDelta ?? 0);
+  return (
+    item?.fundCategory === 'COMMISSION' &&
+    revenueDelta > 0 &&
+    shippingDelta === 0 &&
+    heldDelta + revenueDelta === 0
+  );
 }
 
 export interface FormattedBreakdownLine {
@@ -170,7 +196,13 @@ export interface FormattedBreakdownLine {
 
 export function getSystemWalletBreakdownLines(
   item: {
-    transaction?: { breakdownDescription?: string | null };
+    fundCategory?: string | null;
+    transaction?: {
+      breakdownDescription?: string | null;
+      heldDelta?: number;
+      shippingDelta?: number;
+      revenueDelta?: number;
+    };
     signedDelta?: number;
     breakdownItems?: SystemWalletBreakdownItem[];
     breakdownSummary?: string | null;
@@ -180,6 +212,7 @@ export function getSystemWalletBreakdownLines(
 
   const signedDelta = item.signedDelta ?? 0;
   const descToParse = item.transaction?.breakdownDescription || item.breakdownSummary;
+  const internalCommission = isInternalCommissionTransfer(item);
 
   // 1. Try parsing description first if available
   if (descToParse) {
@@ -212,7 +245,9 @@ export function getSystemWalletBreakdownLines(
     return item.breakdownItems.map((b) => {
       let text = b.formattedText;
       if (!text) {
-        if (b.delta > 0) {
+        if (internalCommission && b.label === 'Hoa hồng sàn' && b.delta > 0) {
+          text = formatVND(b.delta);
+        } else if (b.delta > 0) {
           text = `+${formatVND(b.delta)}`;
         } else if (b.delta < 0) {
           text = formatVND(b.delta);

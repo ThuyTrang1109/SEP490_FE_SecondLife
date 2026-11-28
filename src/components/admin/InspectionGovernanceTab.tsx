@@ -489,10 +489,10 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
 
       if (isKnownHanoi) {
         return {
-          name: hanoiCenter?.name || 'Trung Tâm Kiểm Định SecondLife Hà Nội',
+          name: hanoiCenter?.name || 'Trung tâm kiểm định secondLife Hà Nội',
           email: proposal.proposedByEmail || (proposal.proposedByName?.includes('@') ? proposal.proposedByName : 'center2@secondlife.com'),
           areaBadge: 'Hà Nội',
-          address: hanoiCenter?.address || 'Khu Công nghệ cao Hòa Lạc, Km29 Đại lộ Thăng Long, Hà Nội',
+          address: hanoiCenter?.address || 'Khu Công nghệ cao hòa lạc, km29 Đại lộ Thăng Long, Hà Nội',
           isHcm: false,
           isHanoi: true,
           branchKey: 'HANOI' as const,
@@ -500,10 +500,10 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
       }
       if (isKnownHcm) {
         return {
-          name: hcmCenter?.name || 'Trung Tâm Kiểm Định SecondLife TP. Hồ Chí Minh',
+          name: hcmCenter?.name || 'Trung tâm kiểm định secondLife TP. Hồ Chí Minh',
           email: proposal.proposedByEmail || (proposal.proposedByName?.includes('@') ? proposal.proposedByName : 'center@secondlife.com'),
           areaBadge: 'TP. HCM',
-          address: hcmCenter?.address || 'Công Ty TNHH Gianty, Đường B4, Phường An Khánh, TP. Thủ Đức, TP. HCM',
+          address: hcmCenter?.address || 'Công Ty TNHH Gianty, Đường B4, phường an khánh, TP. Thủ Đức, TP. HCM',
           isHcm: true,
           isHanoi: false,
           branchKey: 'HCM' as const,
@@ -556,7 +556,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
       const rawEmail = (proposal.proposedByEmail || proposal.proposedByName || '').toLowerCase();
       if (rawEmail.includes('hanoi') || rawEmail.includes('center2') || rawEmail.includes('hn')) {
         return {
-          name: hanoiCenter?.name || 'Trung Tâm Kiểm Định SecondLife Hà Nội',
+          name: hanoiCenter?.name || 'Trung tâm kiểm định secondLife Hà Nội',
           email: proposal.proposedByEmail || proposal.proposedByName || '',
           areaBadge: 'Hà Nội',
           address: hanoiCenter?.address,
@@ -568,7 +568,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
 
       if (hcmCenter || rawEmail.includes('hcm') || rawEmail.includes('center@') || rawEmail.includes('sg')) {
         return {
-          name: hcmCenter?.name || 'Trung Tâm Kiểm Định SecondLife TP. Hồ Chí Minh',
+          name: hcmCenter?.name || 'Trung tâm kiểm định secondLife TP. Hồ Chí Minh',
           email: proposal.proposedByEmail || proposal.proposedByName || '',
           areaBadge: 'TP. HCM',
           address: hcmCenter?.address,
@@ -593,7 +593,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
       }
 
       return {
-        name: 'Trung Tâm Kiểm Định SecondLife',
+        name: 'Trung tâm kiểm định secondLife',
         email: proposal.proposedByEmail || proposal.proposedByName || '',
         areaBadge: '',
         address: undefined as string | null | undefined,
@@ -645,23 +645,23 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
       if (isHcm) {
         areaTitle = 'Thành phố HCM';
         areaBadge = 'TP. HCM';
-        fullName = matchedCenter?.name || centerNameFromPricing || 'Trung Tâm Kiểm Định SecondLife TP. Hồ Chí Minh';
+        fullName = matchedCenter?.name || centerNameFromPricing || 'Trung tâm kiểm định secondLife TP. Hồ Chí Minh';
         const norm = normalizeVN(fullName);
         if (norm === 'trung tam kiem dinh' || norm === 'trung tam tac gia' || !fullName) {
-          fullName = 'Trung Tâm Kiểm Định SecondLife TP. Hồ Chí Minh';
+          fullName = 'Trung tâm kiểm định secondLife TP. Hồ Chí Minh';
         }
       } else if (isHanoi) {
         areaTitle = 'Hà Nội';
         areaBadge = 'Hà Nội';
-        fullName = matchedCenter?.name || centerNameFromPricing || 'Trung Tâm Kiểm Định SecondLife Hà Nội';
+        fullName = matchedCenter?.name || centerNameFromPricing || 'Trung tâm kiểm định secondLife Hà Nội';
         const norm = normalizeVN(fullName);
         if (norm === 'trung tam kiem dinh' || norm === 'trung tam tac gia' || !fullName) {
-          fullName = 'Trung Tâm Kiểm Định SecondLife Hà Nội';
+          fullName = 'Trung tâm kiểm định secondLife Hà Nội';
         }
       } else {
         areaTitle = matchedCenter?.city || matchedCenter?.name || centerNameFromPricing || 'Trung tâm';
         areaBadge = matchedCenter?.city || 'Khác';
-        fullName = matchedCenter?.name || centerNameFromPricing || 'Trung Tâm Kiểm Định';
+        fullName = matchedCenter?.name || centerNameFromPricing || 'Trung tâm kiểm định';
       }
 
       return {
@@ -706,7 +706,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
             ...chk,
             pricing: {
               inspectionCenterId: centerId,
-              inspectionCenterName: centerName || 'Trung Tâm Kiểm Định Chính',
+              inspectionCenterName: centerName || 'Trung tâm kiểm định chính',
               complexityLevel: level,
               baseInspectionFee: null,
               pendingBaseInspectionFee: null,
@@ -765,7 +765,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
 
         const pricing: InspectionChecklistPricingResponse = {
           inspectionCenterId: centerId,
-          inspectionCenterName: centerName || 'Trung Tâm Kiểm Định Chính',
+          inspectionCenterName: centerName || 'Trung tâm kiểm định chính',
           complexityLevel: level,
           baseInspectionFee: approved ? approved.baseInspectionFee : null,
           feeProposalId: approved?.id,
@@ -1410,8 +1410,8 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
     const centerName =
       center?.name ||
       (isHcm
-        ? 'Trung Tâm Kiểm Định SecondLife TP. Hồ Chí Minh'
-        : 'Trung Tâm Kiểm Định SecondLife Hà Nội');
+        ? 'Trung tâm kiểm định secondLife TP. Hồ Chí Minh'
+        : 'Trung tâm kiểm định secondLife Hà Nội');
     const centerEmail = isHcm ? 'center@secondlife.com' : 'center2@secondlife.com';
     const centerBadge = isHcm ? 'TP. HCM' : 'Hà Nội';
     const activeFees = getActiveLevelFees(branchKey);
@@ -1548,8 +1548,8 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
     const centerName =
       center?.name ||
       (isHcm
-        ? 'Trung Tâm Kiểm Định SecondLife TP. Hồ Chí Minh'
-        : 'Trung Tâm Kiểm Định SecondLife Hà Nội');
+        ? 'Trung tâm kiểm định secondLife TP. Hồ Chí Minh'
+        : 'Trung tâm kiểm định secondLife Hà Nội');
     const centerEmail = isHcm ? 'center@secondlife.com' : 'center2@secondlife.com';
     const centerBadge = isHcm ? 'TP. HCM' : 'Hà Nội';
     const activeData = getActiveTravelTiers(branchKey);
@@ -1981,14 +1981,14 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                   ? 'bg-amber-600 text-white border-amber-600 shadow-2xs'
                   : 'bg-white text-slate-700 hover:bg-amber-50/50 border-slate-200/80'
                   }`}
-                title={hanoiCenter?.name || 'Trung Tâm Kiểm Định SecondLife Hà Nội'}
+                title={hanoiCenter?.name || 'Trung tâm kiểm định secondLife Hà Nội'}
               >
                 <div className="flex items-center gap-1 text-xs font-extrabold">
                   <MapPin className={`w-3 h-3 shrink-0 ${isHanoiActive ? 'text-amber-200' : 'text-amber-600'}`} />
                   <span>Hà Nội</span>
                 </div>
                 <div className={`text-[10px] font-medium leading-tight mt-0.5 ${isHanoiActive ? 'text-amber-100' : 'text-slate-500'}`}>
-                  {hanoiCenter?.name || 'Trung Tâm Kiểm Định SecondLife Hà Nội'}
+                  {hanoiCenter?.name || 'Trung tâm kiểm định secondLife Hà Nội'}
                 </div>
               </button>
 
@@ -1999,14 +1999,14 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                   ? 'bg-orange-600 text-white border-orange-600 shadow-2xs'
                   : 'bg-white text-slate-700 hover:bg-orange-50/50 border-slate-200/80'
                   }`}
-                title={hcmCenter?.name || 'Trung Tâm Kiểm Định SecondLife TP. Hồ Chí Minh'}
+                title={hcmCenter?.name || 'Trung tâm kiểm định secondLife TP. Hồ Chí Minh'}
               >
                 <div className="flex items-center gap-1 text-xs font-extrabold">
                   <MapPin className={`w-3 h-3 shrink-0 ${isHcmActive ? 'text-orange-200' : 'text-orange-600'}`} />
                   <span>Thành phố HCM</span>
                 </div>
                 <div className={`text-[10px] font-medium leading-tight mt-0.5 ${isHcmActive ? 'text-orange-100' : 'text-slate-500'}`}>
-                  {hcmCenter?.name || 'Trung Tâm Kiểm Định SecondLife TP. Hồ Chí Minh'}
+                  {hcmCenter?.name || 'Trung tâm kiểm định secondLife TP. Hồ Chí Minh'}
                 </div>
               </button>
 
@@ -2119,10 +2119,10 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                   >
                     <option value="ALL">-- Tất cả trung tâm --</option>
                     <option value={hanoiCenter?.id || 'HANOI'}>
-                      Trung Tâm Kiểm Định SecondLife Hà Nội (Hà Nội)
+                      Trung tâm kiểm định secondLife Hà Nội (Hà Nội)
                     </option>
                     <option value={hcmCenter?.id || 'HCM'}>
-                      Trung Tâm Kiểm Định SecondLife TP. Hồ Chí Minh (TP. HCM)
+                      Trung tâm kiểm định secondLife TP. Hồ Chí Minh (TP. HCM)
                     </option>
                     {otherCenters.map((c) => (
                       <option key={c.id} value={c.id}>

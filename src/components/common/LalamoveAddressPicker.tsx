@@ -38,7 +38,7 @@ export const ALLOWED_CITIES = [
     name: 'Hà Nội',
     lat: 21.0285,
     lng: 105.8542,
-    label: 'Hà Nội & khu vực lân cận (Bắc Ninh, Hải Phòng, Hưng Yên, Ninh Bình)',
+    label: 'Hà Nội & khu vực lân cận (Bắc Ninh, Hải Phòng, hưng yên, ninh bình)',
   },
   {
     name: 'TP. Hồ Chí Minh',
@@ -567,7 +567,7 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
     if (cityKey === 'OTHER') {
       setLookupError(
         lang === 'vi'
-          ? 'Hệ thống hiện chỉ hỗ trợ giao hàng tại khu vực Hà Nội và TP. Hồ Chí Minh (kèm các khu vực lân cận được Lalamove hỗ trợ: Bắc Ninh, Hải Phòng, Hưng Yên, Ninh Bình, Đồng Nai, Bình Dương, Vũng Tàu). Vui lòng chọn địa chỉ trong khu vực hỗ trợ.'
+          ? 'Hệ thống hiện chỉ hỗ trợ giao hàng tại khu vực Hà Nội và TP. Hồ Chí Minh (kèm các khu vực lân cận được Lalamove hỗ trợ: Bắc Ninh, Hải Phòng, hưng yên, ninh bình, đồng nai, bình dương, Vũng Tàu). Vui lòng chọn địa chỉ trong khu vực hỗ trợ.'
           : 'Service is only available in Hanoi and Ho Chi Minh City (& nearby regions supported by Lalamove). Please select an address within supported regions.'
       );
       return;
@@ -594,16 +594,12 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
         <div>
           <h4 className="font-extrabold text-[#24263e] text-sm flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-orange-600 animate-pulse"></span>
-            {title || (lang === 'vi' ? 'Địa Điểm Lấy / Nhận Hàng Lalamove' : 'Lalamove Pickup / Delivery Address')}
+            {title || (lang === 'vi' ? 'Địa điểm lấy / nhận hàng Lalamove' : 'Lalamove Pickup / Delivery Address')}
           </h4>
-          <p className="text-[11px] text-slate-500 mt-0.5">
-            {description || (lang === 'vi' ? 'Hệ thống dùng GPS để tài xế Lalamove định vị chính xác và giao hàng tận nơi.' : 'Accurate GPS coordinates for Lalamove couriers.')}
-          </p>
+
         </div>
         <div className="flex items-center gap-1.5 self-start sm:self-auto">
-          <span className="px-2 py-0.5 bg-orange-100 text-orange-800 font-bold rounded-lg text-[10px] uppercase tracking-wider">
-            Lalamove GPS
-          </span>
+
           {isConfirmed && (
             <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-bold rounded-lg text-[10px] flex items-center gap-1">
               <CheckCircle2 className="w-3 h-3 text-emerald-600" />
@@ -831,7 +827,7 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
       <div className="p-3.5 bg-white rounded-2xl border border-gray-200 space-y-2 shadow-2xs">
         <div className="flex items-center justify-between">
           <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
-            {lang === 'vi' ? 'Địa chỉ nhận hàng (có thể chỉnh sửa bổ sung số nhà/tầng)' : 'Delivery Address (Editable details)'}
+            {lang === 'vi' ? 'Địa chỉ bạn đã chọn trên bản đồ' : 'Delivery Address (Editable details)'}
           </span>
           {latitude && longitude && (
             <span className="text-[10px] font-mono font-bold text-slate-400">

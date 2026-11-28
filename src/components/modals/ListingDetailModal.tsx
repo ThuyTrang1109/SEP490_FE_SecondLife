@@ -25,7 +25,7 @@ import { translations, formatConditionGrade, formatVND } from '../../utils/trans
 import { cleanFullAddress, extractWardAndCity } from '../../utils/addressUtils';
 import { getBoughtListingIds, getResolvedPostParcel, isPostUnderInspectionOrReturning } from '../../utils/orderUtils';
 import { soundFx } from '../../utils/soundEffects';
-import { reputationService, postService, SellerReputationDto, getStoredUser, getAssessmentStatusMeta, orderReviewService } from '../../services';
+import { reputationService, postService, SellerReputationDto, getStoredUser, getAssessmentStatusMeta, orderReviewService, SellerReviewSummaryDto } from '../../services';
 import { UserReportModal } from './UserReportModal';
 import { isListingInspectionPassed, getListingInspectionBadgeText } from '../../utils/listingInspection';
 import { formatInspectionFailureReason } from '../../utils/inspectionPurchase';
@@ -79,7 +79,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
   const effectiveTitle = activeDetail?.title || listing.title;
   const declaredCondition = activeDetail?.itemCondition || listing.declaredConditionText;
   const conditionLabel = declaredCondition === 'NEW'
-    ? (lang === 'vi' ? 'Hàng Mới / Nguyên Bản' : 'Brand New')
+    ? (lang === 'vi' ? 'Hàng mới / nguyên bản' : 'Brand New')
     : formatConditionGrade(declaredCondition, lang);
 
   const isOwnListing = Boolean(
@@ -200,6 +200,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
     return {
       ...listing,
       priceVnd: effectivePrice,
+      ...(activeDetail.status === 'ACTIVE' && { status: 'active' as const, backendStatus: 'ACTIVE' }),
       shippingWeight: effectiveWeight,
       shippingLength: effectiveLength,
       shippingWidth: effectiveWidth,
@@ -233,20 +234,43 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
 
   // Load verified reviews & reputation from Backend (bỏ hoàn toàn mock data)
   const [realReputation, setRealReputation] = useState<SellerReputationDto | null>(null);
+  const [sellerReviewSummary, setSellerReviewSummary] = useState<SellerReviewSummaryDto | null>(null);
   const [realSellerReviews, setRealSellerReviews] = useState<ProductReview[]>([]);
+  const [reviewsTotalElements, setReviewsTotalElements] = useState<number>(0);
+  const [reviewsTotalPages, setReviewsTotalPages] = useState<number>(1);
   const [isLoadingReviews, setIsLoadingReviews] = useState<boolean>(true);
   const [latestEstimate, setLatestEstimate] = useState<AiPriceEstimationResponse | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setSellerReviewPage(1);
+    if (listing.sellerId) {
+      Promise.all([
+        reputationService.getSellerReputation(listing.sellerId).catch(() => null),
+        orderReviewService.getSellerSummary(listing.sellerId).catch(() => null),
+      ]).then(([rep, summary]) => {
+        if (cancelled) return;
+        if (rep) setRealReputation(rep);
+        if (summary) setSellerReviewSummary(summary);
+      });
+    } else {
+      setRealReputation(null);
+      setSellerReviewSummary(null);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [listing.sellerId]);
+
   useEffect(() => {
     let cancelled = false;
     if (listing.sellerId) {
       setIsLoadingReviews(true);
-      reputationService.getSellerReputation(listing.sellerId).then((rep) => {
-        if (!cancelled && rep) setRealReputation(rep);
-      });
-      orderReviewService.getSellerReviews(listing.sellerId, 0, 50)
+      orderReviewService.getSellerReviews(listing.sellerId, Math.max(0, sellerReviewPage - 1), REVIEWS_PER_PAGE)
         .then((res) => {
           if (cancelled) return;
-          const mapped: ProductReview[] = ((res as any)?.items || []).map((r: any) => ({
+          const items = Array.isArray((res as any)?.items) ? (res as any).items : [];
+          const mapped: ProductReview[] = items.map((r: any) => ({
             id: r.id,
             orderId: r.orderId,
             listingId: r.postId || '',
@@ -266,9 +290,17 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
             conditionGrade: r.conditionGrade,
           }));
           setRealSellerReviews(mapped);
+          const totalEl = Number((res as any)?.totalElements ?? mapped.length);
+          const totalPg = Number((res as any)?.totalPages ?? Math.ceil(totalEl / REVIEWS_PER_PAGE));
+          setReviewsTotalElements(Number.isFinite(totalEl) ? totalEl : mapped.length);
+          setReviewsTotalPages(Math.max(1, Number.isFinite(totalPg) ? totalPg : 1));
         })
         .catch(() => {
-          if (!cancelled) setRealSellerReviews([]);
+          if (!cancelled) {
+            setRealSellerReviews([]);
+            setReviewsTotalElements(0);
+            setReviewsTotalPages(1);
+          }
         })
         .finally(() => {
           if (!cancelled) setIsLoadingReviews(false);
@@ -276,11 +308,13 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
     } else {
       setIsLoadingReviews(false);
       setRealSellerReviews([]);
+      setReviewsTotalElements(0);
+      setReviewsTotalPages(1);
     }
     return () => {
       cancelled = true;
     };
-  }, [listing.sellerId]);
+  }, [listing.sellerId, sellerReviewPage]);
 
   const listingId = listing.id;
   const isPublicListing = ['ACTIVE', 'RESERVED'].includes(
@@ -335,26 +369,17 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
   const maxEstimate = latestEstimate?.fairPriceMax ?? listing.aiPriceEstimation?.maxVnd
     ?? Math.round(suggestedPrice * 1.1);
 
-  // Dữ liệu đánh giá thật 100% từ Database backend qua orderReviewService (bỏ hoàn toàn mock data)
-  const totalReviewPages = Math.max(1, Math.ceil(realSellerReviews.length / REVIEWS_PER_PAGE));
-  const currentSellerPageReviews = realSellerReviews.slice(
-    (sellerReviewPage - 1) * REVIEWS_PER_PAGE,
-    sellerReviewPage * REVIEWS_PER_PAGE
-  );
-
-  const totalSellerEvaluated = realSellerReviews.length;
+  // Dữ liệu đánh giá thật 100% từ Database backend qua orderReviewService (5 đánh giá / trang)
+  const totalSellerEvaluated = Math.max(sellerReviewSummary?.totalReviews ?? 0, reviewsTotalElements);
+  const totalReviewPages = Math.max(1, reviewsTotalPages || Math.ceil(totalSellerEvaluated / REVIEWS_PER_PAGE));
+  const currentSellerPageReviews = realSellerReviews;
 
   const realSellerRating = (() => {
+    if (sellerReviewSummary && Number(sellerReviewSummary.totalReviews) > 0) {
+      return Number(sellerReviewSummary.averageRating ?? 0).toFixed(1);
+    }
     if (realSellerReviews.length > 0) {
       return (realSellerReviews.reduce((sum, r) => sum + r.rating, 0) / realSellerReviews.length).toFixed(1);
-    }
-    const evaluated = Number(realReputation?.evaluatedOrders ?? 0);
-    if (evaluated > 0) {
-      const txScore =
-        realReputation?.transactionScore !== undefined && realReputation?.transactionScore !== null
-          ? Number(realReputation.transactionScore)
-          : (Number(realReputation?.goodTransactions ?? 0) / evaluated) * 100;
-      return Math.max(0, Math.min(5, txScore / 20)).toFixed(1);
     }
     return listing.sellerRating && listing.sellerRating > 0 ? String(listing.sellerRating) : null;
   })();
@@ -370,7 +395,12 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
     : (publicDetail ?? listing);
   const isInspected = isListingInspectionPassed(inspectionSource);
   const inspectedMethod = String(inspectionSource?.inspectionMethod || '').trim().toUpperCase();
-  const isUnderInspectionOrReturning = isPostUnderInspectionOrReturning(listing);
+  const isUnderInspectionOrReturning = effectiveStatus !== 'ACTIVE'
+    && (effectiveStatus === 'RETURNING' || isPostUnderInspectionOrReturning(listing));
+  const isUnavailableForPurchase = effectiveStatus !== 'ACTIVE' && (isUnderInspectionOrReturning
+    || ['RESERVED', 'PAYMENT_PENDING', 'SOLD', 'RETURNED'].includes(effectiveStatus)
+    || (localStorage.getItem(`listing_available_${listing.id}`) !== 'true'
+      && getBoughtListingIds().has(String(listing.id))));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/75 backdrop-blur-md overflow-y-auto animate-fadeIn">
@@ -408,7 +438,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
             <div className="flex items-center gap-2 text-xs font-extrabold text-[#24263e]">
               <div className="flex items-center gap-1.5 bg-[#24263e] text-white px-2.5 py-1 rounded-lg shadow-xs text-[11px]">
                 <Camera className="w-3 h-3 text-white" />
-                <span>{lang === 'vi' ? `Ảnh Thực Tế Sản Phẩm (${galleryImages.length} ảnh)` : `Real Photos (${galleryImages.length} photos)`}</span>
+                <span>{lang === 'vi' ? `Ảnh thực tế sản phẩm (${galleryImages.length} ảnh)` : `Real Photos (${galleryImages.length} photos)`}</span>
               </div>
             </div>
 
@@ -528,10 +558,10 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                         <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
                         <span>
                           {inspectedMethod === 'AT_HOME'
-                            ? (lang === 'vi' ? 'Sản Phẩm Đã Đạt Kiểm Định Tại Nhà' : 'On-site Inspected & Passed Product')
+                            ? (lang === 'vi' ? 'Sản phẩm đã đạt kiểm định tại nhà' : 'On-site Inspected & Passed Product')
                             : inspectedMethod === 'AT_CENTER'
-                              ? (lang === 'vi' ? 'Sản Phẩm Đã Đạt Kiểm Định Tại Hub' : 'Hub Inspected & Passed Product')
-                              : (lang === 'vi' ? 'Sản Phẩm Đã Được Kiểm Định Đạt Chuẩn' : 'Inspected & Passed Product')}
+                              ? (lang === 'vi' ? 'Sản phẩm đã đạt kiểm định tại Hub' : 'Hub Inspected & Passed Product')
+                              : (lang === 'vi' ? 'Sản phẩm đã được kiểm định đạt chuẩn' : 'Inspected & Passed Product')}
                         </span>
                       </div>
                       <span className="px-2 py-0.5 rounded-md bg-emerald-600 text-white font-extrabold text-[9px] shadow-2xs">
@@ -559,7 +589,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                     <div className="flex items-center justify-between text-[10px]">
                       <span className="font-extrabold text-purple-900 flex items-center gap-1">
                         <Sparkles className="w-3 h-3 text-purple-600" />
-                        <span>Khoảng Giá Gợi Ý Bởi AI:</span>
+                        <span>Khoảng giá gợi Ý Bởi AI:</span>
                       </span>
                     </div>
                     <div className="text-xs font-black text-purple-950 font-mono">
@@ -678,20 +708,20 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                             : effectiveStatus === 'RETURNED'
                               ? (lang === 'vi' ? '● Đã hoàn trả' : '● Returned')
                               : effectiveStatus === 'RESERVED' || effectiveStatus === 'PAYMENT_PENDING'
-                                ? (lang === 'vi' ? '● Đã Đặt Mua / Ký Quỹ' : '● Reserved')
+                                ? (lang === 'vi' ? '● Đã đặt mua / ký quỹ' : '● Reserved')
                                 : effectiveStatus === 'SOLD'
-                                  ? (lang === 'vi' ? '● Đã Bán' : '● Sold')
+                                  ? (lang === 'vi' ? '● Đã bán' : '● Sold')
                                   : effectiveStatus === 'REJECTED'
-                                    ? (lang === 'vi' ? '● Bị Từ Chối' : '● Rejected')
+                                    ? (lang === 'vi' ? '● Bị từ chối' : '● Rejected')
                                     : effectiveStatus === 'DRAFT'
-                                      ? (lang === 'vi' ? '● Bản Nháp' : '● Draft')
+                                      ? (lang === 'vi' ? '● Bản nháp' : '● Draft')
                                       : effectiveStatus === 'READY_TO_PUBLISH'
                                         ? (lang === 'vi' ? '● Sẵn sàng đăng bán' : '● Ready to publish')
                                         : effectiveStatus === 'PENDING_INSPECTION'
                                           ? (isInspected
                                             ? (lang === 'vi' ? '● Đã kiểm định · Chờ nhận lại hàng' : '● Inspected · Awaiting return')
                                             : (lang === 'vi' ? '● Chờ kiểm định' : '● Pending Inspection'))
-                                          : (lang === 'vi' ? '● Chờ Duyệt Hub' : '● Pending')}
+                                          : (lang === 'vi' ? '● Chờ duyệt Hub' : '● Pending')}
                       </span>
                     </div>
 
@@ -745,7 +775,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                     {lang === 'vi' ? 'Quản trị viên không thể mua hàng hoặc chat' : 'Admin cannot purchase or chat'}
                   </div>
                 </div>
-              ) : (isUnderInspectionOrReturning || (localStorage.getItem(`listing_available_${listing.id}`) !== 'true' && (listing.status === 'RESERVED' || listing.backendStatus === 'RESERVED' || listing.status === 'reserved' || listing.status === 'sold' || listing.backendStatus === 'SOLD' || getBoughtListingIds().has(String(listing.id))))) ? (
+              ) : isUnavailableForPurchase ? (
                 <div className="space-y-1.5 pt-1">
                   <div className="w-full py-2.5 px-3 bg-amber-50 text-amber-800 rounded-xl font-bold text-xs text-center border border-amber-200">
                     {lang === 'vi' ? 'Sản phẩm đang trong quá trình kiểm định / hoàn trả về người bán' : 'Item is currently under inspection / returning to seller'}
@@ -758,7 +788,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                     className="w-full py-2.5 px-3 bg-gradient-to-r from-[#c34c36] to-[#24263e] hover:opacity-95 text-white rounded-xl font-black text-xs shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <ShieldCheck className="w-3.5 h-3.5 text-white" />
-                    <span>{lang === 'vi' ? 'Mua Hàng' : 'Buy Now'}</span>
+                    <span>{lang === 'vi' ? 'Mua hàng' : 'Buy Now'}</span>
                   </button>
 
                   <button
@@ -766,7 +796,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                     className="w-full py-2 px-3 bg-white hover:bg-slate-50 text-[#24263e] border border-slate-300 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
                   >
                     <MessageSquare className="w-3.5 h-3.5 text-[#c34c36]" />
-                    <span>{lang === 'vi' ? 'Chat & Đàm Phán Trả Giá Với Người Bán' : 'Chat & Make Counter Offer'}</span>
+                    <span>{lang === 'vi' ? 'Chat & đàm phán trả giá với người bán' : 'Chat & Make Counter Offer'}</span>
                   </button>
                 </div>
               )}
@@ -783,7 +813,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                   </div>
                   <div>
                     <h3 className="text-xs font-black text-[#24263e]">
-                      {lang === 'vi' ? 'Mô Hình AI Định Giá Thị Trường SecondLife' : 'SecondLife AI Market Valuation'}
+                      {lang === 'vi' ? 'Mô hình AI định giá thị trường secondLife' : 'SecondLife AI Market Valuation'}
                     </h3>
                   </div>
                 </div>
@@ -820,7 +850,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                   <Truck className="w-3.5 h-3.5" />
                 </div>
                 <h3 className="text-xs font-black text-[#24263e]">
-                  {lang === 'vi' ? 'Thông Số Kiện Hàng Vận Chuyển' : 'Shipping Package Specifications'}
+                  {lang === 'vi' ? 'Thông số kiện hàng vận chuyển' : 'Shipping Package Specifications'}
                 </h3>
               </div>
               <span className="text-[10px] text-slate-500 font-medium">
@@ -905,7 +935,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-200 pb-2">
               <div className="flex items-center gap-1.5 text-xs font-black text-[#24263e]">
                 <UserCheck className="w-4 h-4 text-[#c34c36]" />
-                <span>{lang === 'vi' ? `Đánh Giá Người Bán (${totalSellerEvaluated})` : `Seller Reviews (${totalSellerEvaluated})`}</span>
+                <span>{lang === 'vi' ? `Đánh giá người bán (${totalSellerEvaluated})` : `Seller Reviews (${totalSellerEvaluated})`}</span>
               </div>
 
               <div className="flex items-center gap-1.5">
@@ -1031,8 +1061,8 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                   <div className="flex items-center justify-between pt-2 px-1 text-xs text-slate-500 border-t border-gray-100">
                     <span className="text-[11px] font-medium text-slate-500">
                       {lang === 'vi'
-                        ? `Trang ${sellerReviewPage} / ${totalReviewPages} (${realSellerReviews.length} đánh giá)`
-                        : `Page ${sellerReviewPage} of ${totalReviewPages} (${realSellerReviews.length} reviews)`}
+                        ? `Trang ${sellerReviewPage} / ${totalReviewPages} (${totalSellerEvaluated} đánh giá)`
+                        : `Page ${sellerReviewPage} of ${totalReviewPages} (${totalSellerEvaluated} reviews)`}
                     </span>
                     <div className="flex items-center gap-1.5">
                       <button
@@ -1069,7 +1099,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
               </div>
               <div>
                 <div className="font-bold text-[#24263e] text-xs">
-                  {lang === 'vi' ? 'Dịch Vụ Kiểm Định Trung Tâm SecondLife Hub' : 'SecondLife Certified Inspection Service'}
+                  {lang === 'vi' ? 'Dịch vụ kiểm định trung tâm secondLife Hub' : 'SecondLife Certified Inspection Service'}
                 </div>
                 <div className="text-[10px] text-[#24263e]/70 font-medium">
                   {lang === 'vi'
@@ -1090,7 +1120,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                 className="text-[11px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-xl whitespace-nowrap shadow-xs flex items-center gap-1.5 cursor-pointer transition shrink-0"
               >
                 <MessageSquare className="w-3.5 h-3.5" />
-                <span>{lang === 'vi' ? 'Thương Lượng Kiểm Định' : 'Negotiate Inspection'}</span>
+                <span>{lang === 'vi' ? 'Thương lượng kiểm định' : 'Negotiate Inspection'}</span>
               </button>
             )}
           </div>

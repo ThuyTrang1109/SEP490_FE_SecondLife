@@ -128,14 +128,14 @@ export function OrderDeliveryJourney({
                   <span>Hành trình giao hàng trực tiếp (Người bán → Người mua)</span>
                 </div>
                 <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                  1 Chặng Giao Thẳng
+                  1 chặng giao thẳng
                 </span>
               </div>
 
               <div className="bg-[#faf8f5] rounded-2xl p-4 border border-gray-200 space-y-3">
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <span className="text-[11px] font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 px-2.5 py-0.5 rounded-md">
-                    Giao Thẳng Trực Tiếp
+                    Giao thẳng trực tiếp
                   </span>
                   {!isDirectCancelled && (
                     <span className="text-xs font-mono font-bold text-[#24263e]">
@@ -227,7 +227,7 @@ export function OrderDeliveryJourney({
                     <div className="flex items-center justify-between flex-wrap gap-2">
                       <span className="text-[11px] font-bold text-white bg-gradient-to-r from-indigo-600 to-purple-600 px-2.5 py-0.5 rounded-md flex items-center gap-1.5 shadow-2xs">
                         <RotateCcw className="w-3.5 h-3.5 text-white" />
-                        Chặng Hoàn Trả (Người Mua ➔ Người Bán)
+                        Chặng hoàn trả (Người Mua ➔ Người Bán)
                       </span>
                       <span className="text-xs font-mono font-bold text-indigo-950">
                         {directReturnShipment.orderCode ? (
@@ -318,7 +318,7 @@ export function OrderDeliveryJourney({
           (detailInspectionDto as any)?.inspectionCenterAddress ||
           detailModalOrder.inspectionCenterAddress ||
           centerData.address ||
-          'Giảng đường Phượng Vỹ, Đường số 8, Phường Linh Xuân, Thành phố Hồ Chí Minh';
+          'Giảng đường phượng vỹ, đường số 8, phường linh xuân, thành phố Hồ Chí Minh';
 
         const realBuyerAddress =
           detailInspectionDto?.buyerAddress ||
@@ -404,7 +404,7 @@ export function OrderDeliveryJourney({
                   <span>Quy trình Kiểm định tại nhà & Giao hàng</span>
                 </div>
                 <span className="text-[10px] font-bold text-orange-800 bg-orange-50 px-2 py-0.5 rounded-md border border-orange-200">
-                  Kiểm Định Tận Nhà
+                  Kiểm định tận nhà
                 </span>
               </div>
 
@@ -429,20 +429,20 @@ export function OrderDeliveryJourney({
                             : 'bg-amber-600'
                         }`}>
                         <Calendar className="w-3 h-3" />
-                        <span>Bước 1: Kiểm Định Tận Nhà</span>
+                        <span>Bước 1: Kiểm định tận nhà</span>
                       </span>
                       <span className="text-xs font-mono font-bold">
                         {isModalCancelled && !isModalInspPassed && !isModalInspFailed ? (
                           <span className="text-rose-700 font-bold bg-rose-100/90 px-2 py-0.5 rounded border border-rose-300">
-                            Đã Hủy Kiểm Định
+                            Đã hủy kiểm định
                           </span>
                         ) : isModalInspPassed ? (
                           <span className="text-emerald-700 font-bold bg-emerald-100/90 px-2 py-0.5 rounded border border-emerald-300">
-                            ✓ Đã Đạt Chuẩn
+                            ✓ Đã đạt chuẩn
                           </span>
                         ) : isModalInspFailed ? (
                           <span className="text-rose-700 font-bold bg-rose-100/90 px-2 py-0.5 rounded border border-rose-300">
-                            ✕ Không Đạt Chuẩn
+                            ✕ không đạt chuẩn
                           </span>
                         ) : missedAppointment ? (
                           <span className="text-rose-700 font-bold bg-rose-100/90 px-2 py-0.5 rounded border border-rose-300">
@@ -450,19 +450,19 @@ export function OrderDeliveryJourney({
                           </span>
                         ) : isInspectorArrivedForOrder(detailModalOrder.id, detailModalOrder) ? (
                           <span className="text-amber-800 font-bold bg-amber-100/90 px-2 py-0.5 rounded border border-amber-300 animate-pulse">
-                            KTV Đang Kiểm Tra
+                            KTV đang kiểm tra
                           </span>
                         ) : isModalWaitingBuyerApproval ? (
                           <span className="text-purple-800 font-bold bg-purple-100/90 px-2 py-0.5 rounded border border-purple-300">
-                            Chờ Duyệt Đề Xuất
+                            Chờ duyệt đề xuất
                           </span>
                         ) : isModalWaitingSellerApproval ? (
                           <span className="text-amber-800 font-bold bg-amber-100/90 px-2 py-0.5 rounded border border-amber-300">
-                            {isOrderSeller(detailModalOrder) ? 'Chờ Bạn Xác Nhận' : 'Chờ Người Bán Duyệt'}
+                            {isOrderSeller(detailModalOrder) ? 'Chờ bạn xác nhận' : 'Chờ người bán duyệt'}
                           </span>
                         ) : isModalWaitingFeePayment ? (
                           <span className="text-orange-800 font-bold bg-orange-100/90 px-2 py-0.5 rounded border border-orange-300">
-                            Chờ Đóng Phí
+                            Chờ đóng phí
                           </span>
                         ) : (
                           modalSavedAppointment?.status !== 'PENDING_CENTER_CONFIRMATION' &&
@@ -473,11 +473,11 @@ export function OrderDeliveryJourney({
                           )
                         ) ? (
                           <span className="text-amber-900 font-bold bg-amber-100/90 px-2 py-0.5 rounded border border-amber-300">
-                            {isOrderSeller(detailModalOrder) ? 'Hub Đề Xuất Lịch Mới' : (modalAppointmentScheduledAt ? 'Đang Chờ KTV' : (isOrderSeller(detailModalOrder) ? 'Chờ Bạn Hẹn Lịch' : 'Chờ Người Bán Hẹn Lịch'))}
+                            {isOrderSeller(detailModalOrder) ? 'Hub đề xuất lịch mới' : (modalAppointmentScheduledAt ? 'Đang chờ KTV' : (isOrderSeller(detailModalOrder) ? 'Chờ bạn hẹn lịch' : 'Chờ người bán hẹn lịch'))}
                           </span>
                         ) : (Boolean(getOrderAppointmentRejection(detailModalOrder)) || (detailModalOrder as any).appointmentStatus === 'REJECTED' || modalSavedAppointment?.status === 'REJECTED') ? (
                           <span className="text-rose-800 font-bold bg-rose-100/90 px-2 py-0.5 rounded border border-rose-300">
-                            Lịch Hẹn Bị Từ Chối
+                            Lịch hẹn bị từ chối
                           </span>
                         ) : (modalSavedAppointment?.status === 'CONFIRMED' || (detailModalOrder as any).appointmentStatus === 'CONFIRMED') ? (
                           <span className="text-emerald-800 font-bold bg-emerald-100/90 px-2 py-0.5 rounded border border-emerald-300">
@@ -490,12 +490,12 @@ export function OrderDeliveryJourney({
                                 return null;
                               })();
                               const effectiveInspectorName = detailModalOrder.inspectorName || (detailInspectionDto as any)?.inspectorName || modalAssignedInspector?.inspectorName;
-                              return effectiveInspectorName ? 'Đã Phân Công KTV' : 'Đã Chốt Lịch • Chờ Giao KTV';
+                              return effectiveInspectorName ? 'Đã phân công KTV' : 'Đã chốt lịch • Chờ giao KTV';
                             })()}
                           </span>
                         ) : ((modalSavedAppointment?.status === 'PENDING_CENTER_CONFIRMATION' || modalSavedAppointment?.status === 'PENDING_CONFIRMATION' || detailModalOrder.appointmentStatus === 'PENDING_CENTER_CONFIRMATION') && Boolean(modalAppointmentScheduledAt)) ? (
                           <span className="text-blue-800 font-bold bg-blue-100/90 px-2 py-0.5 rounded border border-blue-300">
-                            Chờ Trung Tâm Duyệt Lịch
+                            Chờ trung tâm duyệt lịch
                           </span>
                         ) : modalAppointmentScheduledAt ? (
                           <span className="text-amber-800 font-bold bg-amber-100/90 px-2 py-0.5 rounded border border-amber-300">
@@ -508,12 +508,12 @@ export function OrderDeliveryJourney({
                                 return null;
                               })();
                               const effectiveInspectorName = detailModalOrder.inspectorName || (detailInspectionDto as any)?.inspectorName || modalAssignedInspector?.inspectorName;
-                              return effectiveInspectorName ? 'Đã Phân Công KTV' : 'Đã Chốt Lịch • Chờ Giao KTV';
+                              return effectiveInspectorName ? 'Đã phân công KTV' : 'Đã chốt lịch • Chờ giao KTV';
                             })()}
                           </span>
                         ) : (
                           <span className="text-amber-800 font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                            {isOrderSeller(detailModalOrder) ? '' : 'Chờ Người Bán Hẹn Lịch'}
+                            {isOrderSeller(detailModalOrder) ? '' : 'Chờ người bán hẹn lịch'}
                           </span>
                         )}
                       </span>
@@ -568,7 +568,7 @@ export function OrderDeliveryJourney({
                                     {hasValidDate && validDate
                                       ? validDate.toLocaleString('vi-VN')
                                       : 'Theo đề xuất của Trung tâm'}
-                                    {detailCounterShift ? ` (${detailCounterShift === 'MORNING' ? 'Ca Sáng (08:00 - 12:00)' : 'Ca Chiều (13:00 - 17:00)'})` : ''}
+                                    {detailCounterShift ? ` (${detailCounterShift === 'MORNING' ? 'Ca sáng (08:00 - 12:00)' : 'Ca chiều (13:00 - 17:00)'})` : ''}
                                   </span>
                                 </div>
                                 {detailCounterNote && (
@@ -595,7 +595,7 @@ export function OrderDeliveryJourney({
                                   className="py-1.5 px-2 bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 rounded-lg font-bold text-[11px] transition flex items-center justify-center gap-1 cursor-pointer"
                                 >
                                   <Calendar className="w-3 h-3" />
-                                  <span>Hẹn Lại</span>
+                                  <span>Hẹn lại</span>
                                 </button>
                               </div>
                             </div>
@@ -619,7 +619,7 @@ export function OrderDeliveryJourney({
                                 <strong>Lý do:</strong> "{detailRej?.reason || (detailModalOrder as any).appointmentRejectionReason || (modalSavedAppointment as any)?.rejectionReason || 'KTV đã kín lịch trong khung giờ này, vui lòng chọn ca khác.'}"
                               </p>
                               <p className="text-[10px] text-rose-700">
-                                Vui lòng bấm "Đặt Lại Lịch Hẹn" để chọn lại ca làm việc phù hợp hơn.
+                                Vui lòng bấm "Đặt lại lịch hẹn" để chọn lại ca làm việc phù hợp hơn.
                               </p>
                             </div>
                           );
@@ -750,7 +750,7 @@ export function OrderDeliveryJourney({
                           return 'Đơn hàng đã bị hủy. Lịch hẹn và quy trình kiểm định đã kết thúc.';
                         }
                         return isOrderSeller(detailModalOrder)
-                          ? 'Vui lòng bấm nút "Hẹn Lịch Đón KTV" bên dưới để chọn ngày giờ làm việc trong khung giờ hành chính (8h-12h, 13h-17h).'
+                          ? 'Vui lòng bấm nút "Hẹn lịch đón KTV" bên dưới để chọn ngày giờ làm việc trong khung giờ hành chính (8h-12h, 13h-17h).'
                           : 'Chờ người bán hẹn lịch đón KTV trong khung giờ hành chính (8h-12h, 13h-17h).';
                       })()}
                     </span>
@@ -781,7 +781,7 @@ export function OrderDeliveryJourney({
                               : 'bg-emerald-700'
                         }`}>
                         <Truck className="w-3 h-3" />
-                        <span>Bước 2: Giao Hàng Người Mua</span>
+                        <span>Bước 2: Giao hàng người mua</span>
                       </span>
                       <span className="text-xs font-mono font-bold text-[#24263e]">
                         {isModalCompletedOrReleased ? (
@@ -1005,17 +1005,17 @@ export function OrderDeliveryJourney({
                       <Truck className="w-3 h-3" />
                       <span>
                         {isModalInspFailed
-                          ? 'Chặng 2: Hoàn Trả Người Bán'
+                          ? 'Chặng 2: Hoàn trả người bán'
                           : isModalRejected
-                            ? 'Chặng 2: Hoàn Trả Người Bán (Khách từ chối)'
+                            ? 'Chặng 2: Hoàn trả người bán (Khách từ chối)'
                             : isModalCancelled && !isModalInspPassed
-                              ? 'Chặng 2: Không Giao Hàng'
+                              ? 'Chặng 2: Không giao hàng'
                               : isModalPendingDecision
-                                ? 'Chặng 2: Hub Giao Người Mua (Chờ Quyết Định)'
+                                ? 'Chặng 2: Hub giao người mua (Chờ quyết định)'
                                 : isModalAccepted
-                                  ? 'Chặng 2: Hub Giao Người Mua (Đã Duyệt Mua)'
+                                  ? 'Chặng 2: Hub giao người mua (Đã duyệt mua)'
                                   : isModalInspPassed
-                                    ? 'Chặng 2: Hub Giao Người Mua (Đạt Chuẩn)'
+                                    ? 'Chặng 2: Hub giao người mua (Đạt Chuẩn)'
                                     : t.leg2}
                       </span>
                     </span>

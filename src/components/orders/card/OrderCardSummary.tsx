@@ -41,7 +41,7 @@ export function OrderCardSummary({
             <>
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
                 <Store className="w-3 h-3 text-indigo-600" />
-                <span>{lang === 'vi' ? 'Đơn Bạn Bán' : 'Your Sale'}</span>
+                <span>{lang === 'vi' ? 'Đơn bạn bán' : 'Your Sale'}</span>
               </span>
               <User className="w-4 h-4 text-blue-600" />
               <span className="text-xs font-bold text-slate-900">
@@ -55,7 +55,7 @@ export function OrderCardSummary({
             <>
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
                 <User className="w-3 h-3 text-blue-600" />
-                <span>{lang === 'vi' ? 'Đơn Bạn Mua' : 'Your Purchase'}</span>
+                <span>{lang === 'vi' ? 'Đơn bạn mua' : 'Your Purchase'}</span>
               </span>
               <Store className="w-4 h-4 text-slate-500" />
               <span className="text-xs font-bold text-slate-900">{ord.sellerName}</span>
@@ -200,8 +200,8 @@ export function OrderCardSummary({
                   <ShieldCheck className="w-3.5 h-3.5" />
                   <span>
                     {hasInspection
-                      ? (lang === 'vi' ? 'Bảo Đảm Kép: Escrow + Kiểm Định Hub' : 'Dual Protection: Escrow + Hub Inspected')
-                      : (lang === 'vi' ? 'Bảo Vệ Người Mua (Escrow)' : 'Buyer Protection (Escrow)')}
+                      ? (lang === 'vi' ? 'Bảo đảm kép: Escrow + kiểm định Hub' : 'Dual Protection: Escrow + Hub Inspected')
+                      : (lang === 'vi' ? 'Bảo vệ người mua (Escrow)' : 'Buyer Protection (Escrow)')}
                   </span>
                 </div>
               );
@@ -214,8 +214,8 @@ export function OrderCardSummary({
                   <ShieldCheck className="w-3 h-3 text-blue-600" />
                   <span>
                     {ord.inspectionMethod === 'AT_HOME'
-                      ? (lang === 'vi' ? 'Kiểm Định Tận Nhà' : 'At-Home Inspection')
-                      : (lang === 'vi' ? 'Kiểm Định Tại Hub SecondLife' : 'Hub Inspection')}
+                      ? (lang === 'vi' ? 'Kiểm định tận nhà' : 'At-Home Inspection')
+                      : (lang === 'vi' ? 'Kiểm định tại Hub secondLife' : 'Hub Inspection')}
                   </span>
                 </span>
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">

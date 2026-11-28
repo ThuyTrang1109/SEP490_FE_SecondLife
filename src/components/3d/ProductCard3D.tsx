@@ -6,8 +6,12 @@ import { soundFx } from '../../utils/soundEffects';
 import { extractWardAndCity } from '../../utils/addressUtils';
 import { extractSellerOriginalPrice } from '../../utils/catalogCache';
 import { isListingInspectionPassed, getListingInspectionBadgeText } from '../../utils/listingInspection';
-import { reviewService } from '../../data/mockReviews';
-import { reputationService, SellerReputationDto } from '../../services';
+import {
+  orderReviewService,
+  reputationService,
+  SellerReputationDto,
+  SellerReviewSummaryDto,
+} from '../../services';
 
 interface ProductCard3DProps {
   item: Listing;
@@ -69,12 +73,18 @@ export const ProductCard3D: React.FC<ProductCard3DProps> = ({
   };
 
   const [sellerRep, setSellerRep] = useState<SellerReputationDto | null>(null);
+  const [sellerReviewSummary, setSellerReviewSummary] = useState<SellerReviewSummaryDto | null>(null);
 
   useEffect(() => {
     let mounted = true;
     if (item.sellerId && item.sellerId !== 'me' && item.sellerId !== 'current-user') {
-      reputationService.getSellerReputation(item.sellerId).then((rep) => {
-        if (mounted && rep) setSellerRep(rep);
+      Promise.all([
+        reputationService.getSellerReputation(item.sellerId),
+        orderReviewService.getSellerSummary(item.sellerId),
+      ]).then(([rep, summary]) => {
+        if (!mounted) return;
+        if (rep) setSellerRep(rep);
+        if (summary) setSellerReviewSummary(summary);
       });
     }
     return () => {
@@ -82,37 +92,20 @@ export const ProductCard3D: React.FC<ProductCard3DProps> = ({
     };
   }, [item.sellerId]);
 
-  // Lấy dữ liệu đánh giá thực tế từ hệ thống uy tín BE & kho review thật
+  // Lấy dữ liệu đánh giá sao thực tế từ API reviews/summary của người bán
   const { realRating, reviewCount } = useMemo(() => {
-    const sellerReviews = item.sellerId ? reviewService.getReviewsBySeller(item.sellerId) : [];
-    const listingReviews = item.id ? reviewService.getReviewsByListing(item.id) : [];
-    const effectiveReviews = sellerReviews.length > 0 ? sellerReviews : listingReviews;
-    const evaluatedFromRep = Number(sellerRep?.evaluatedOrders ?? 0);
-
-    if (effectiveReviews.length > 0) {
-      const avg = effectiveReviews.reduce((sum, r) => sum + r.rating, 0) / effectiveReviews.length;
+    const totalFromSummary = Number(sellerReviewSummary?.totalReviews ?? 0);
+    if (totalFromSummary > 0) {
       return {
-        realRating: avg.toFixed(1),
-        reviewCount: Math.max(effectiveReviews.length, evaluatedFromRep)
-      };
-    }
-
-    if (evaluatedFromRep > 0) {
-      const txScore =
-        sellerRep?.transactionScore !== undefined && sellerRep?.transactionScore !== null
-          ? Number(sellerRep.transactionScore)
-          : (Number(sellerRep?.goodTransactions ?? 0) / evaluatedFromRep) * 100;
-      const starRating = Math.max(0, Math.min(5, txScore / 20));
-      return {
-        realRating: starRating.toFixed(1),
-        reviewCount: evaluatedFromRep
+        realRating: Number(sellerReviewSummary?.averageRating ?? 0).toFixed(1),
+        reviewCount: totalFromSummary
       };
     }
 
     if (item.sellerRating && item.sellerRating > 0) {
       return {
         realRating: Number(item.sellerRating).toFixed(1),
-        reviewCount: Number(item.sellerCompletedOrders ?? 0)
+        reviewCount: 0
       };
     }
 
@@ -120,7 +113,7 @@ export const ProductCard3D: React.FC<ProductCard3DProps> = ({
       realRating: null,
       reviewCount: 0
     };
-  }, [item.sellerId, item.id, item.sellerRating, item.sellerCompletedOrders, sellerRep]);
+  }, [sellerReviewSummary, item.sellerRating]);
 
   const effectiveTrustScore = useMemo(() => {
     if (sellerRep && sellerRep.score !== undefined && sellerRep.score !== null) {

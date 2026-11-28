@@ -12,7 +12,7 @@ export function getSellerHubShipmentBadge(
   const vi = lang === 'vi';
   const badge = (label: string, color: string) => ({ label: `● ${label}`, colorClass: `${color} text-white shadow-2xs` });
   const inspecting = ['INSPECTING', 'INSPECTION_IN_PROGRESS'].includes(inspectionStatus);
-  const inspectionBadge = () => badge(vi ? 'Đang Kiểm Định Tại Hub' : 'Inspecting at Hub', 'bg-indigo-600');
+  const inspectionBadge = () => badge(vi ? 'Đang kiểm định tại Hub' : 'Inspecting at Hub', 'bg-indigo-600');
   const arrivedBadge = () => badge(vi ? 'Đã đến Hub · Chờ kiểm định' : 'Delivered to Hub · Awaiting inspection', 'bg-indigo-600');
 
   if (shipment && shipment !== 'unavailable') {

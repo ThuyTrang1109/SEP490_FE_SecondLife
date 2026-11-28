@@ -248,7 +248,7 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang: _lang }) => {
   const handleDeleteCategory = async (id: string) => {
     const confirmed = await dialogService.confirm(
       'Bạn có chắc chắn muốn xóa danh mục này? Các sản phẩm thuộc danh mục cũng có thể bị ảnh hưởng.',
-      { title: 'Xác Nhận Xóa Danh Mục', type: 'warning' }
+      { title: 'Xác nhận xóa danh mục', type: 'warning' }
     );
     if (!confirmed) return;
     try {
@@ -294,7 +294,7 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang: _lang }) => {
   const handleDeleteItem = async (id: string) => {
     const confirmed = await dialogService.confirm(
       'Bạn có chắc chắn muốn xóa loại sản phẩm này?',
-      { title: 'Xác Nhận Xóa Loại Sản Phẩm', type: 'warning' }
+      { title: 'Xác nhận xóa loại sản phẩm', type: 'warning' }
     );
     if (!confirmed) return;
     try {
@@ -351,7 +351,7 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang: _lang }) => {
   const handleDeleteTemplate = async (id: string) => {
     const confirmed = await dialogService.confirm(
       'Bạn có chắc chắn muốn xóa kịch bản chính thức này khỏi cơ sở dữ liệu?',
-      { title: 'Xác Nhận Xóa Kịch Bản', type: 'warning' }
+      { title: 'Xác nhận xóa kịch bản', type: 'warning' }
     );
     if (!confirmed) return;
     try {
@@ -425,7 +425,7 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang: _lang }) => {
       const targetName = proposal.itemName || `Chung danh mục ${proposal.categoryName}`;
       const confirmed = await dialogService.confirm(
         `Duyệt và lưu chính thức kịch bản câu hỏi cho "${targetName}" xuống cơ sở dữ liệu? Từ các lần đăng bài tiếp theo, người bán sẽ nhận ngay kịch bản chuẩn này.`,
-        { title: 'Xác Nhận Duyệt Xuống DB', type: 'info' }
+        { title: 'Xác nhận duyệt xuống DB', type: 'info' }
       );
       if (!confirmed) return;
     }
@@ -491,7 +491,7 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang: _lang }) => {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h2 className="text-xl font-black text-[#24263e]">Quản Lý Catalog & Kịch Bản AI</h2>
+          <h2 className="text-xl font-black text-[#24263e]">Quản lý catalog & kịch bản AI</h2>
           <p className="text-sm text-gray-500 mt-1">
             Quản lý danh mục, loại thiết bị, kịch bản câu hỏi chuẩn trong DB và duyệt đề xuất câu hỏi AI tạm thời
           </p>
@@ -521,7 +521,7 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang: _lang }) => {
             }}
             className="px-4 py-2 bg-[#c34c36] hover:bg-[#a13b28] text-white text-xs font-bold rounded-xl transition shrink-0 flex items-center gap-1.5 shadow-sm"
           >
-            <Eye className="w-3.5 h-3.5" /> Xem & Duyệt Ngay
+            <Eye className="w-3.5 h-3.5" /> Xem & duyệt ngay
           </button>
         </div>
       )}
@@ -547,7 +547,7 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang: _lang }) => {
             }`}
         >
           <Tag className="w-4 h-4" />
-          Loại Sản Phẩm (Items)
+          Loại sản phẩm (Items)
         </button>
 
         <button
@@ -558,7 +558,7 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang: _lang }) => {
             }`}
         >
           <MessageSquareQuote className="w-4 h-4" />
-          Kịch Bản Chính Thức (DB)
+          Kịch bản chính thức (DB)
         </button>
 
         <button
@@ -569,7 +569,7 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang: _lang }) => {
             }`}
         >
           <Sparkles className="w-4 h-4" />
-          Đề Xuất AI Chờ Duyệt
+          Đề xuất AI chờ duyệt
           {pendingProposalsCount > 0 && (
             <span className="px-2 py-0.5 text-[11px] font-black rounded-full bg-rose-600 text-white">
               {pendingProposalsCount}
@@ -592,17 +592,17 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang: _lang }) => {
               onClick={() => openCategoryModal()}
               className="px-4 py-2 bg-[#24263e] hover:bg-black text-white text-sm font-bold rounded-xl flex items-center gap-2 transition"
             >
-              <Plus className="w-4 h-4" /> Thêm Danh Mục Mới
+              <Plus className="w-4 h-4" /> Thêm danh mục mới
             </button>
           </div>
           <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50 text-xs font-bold text-slate-500 uppercase tracking-wider border-b border-gray-200">
-                  <th className="p-4">Tên Danh Mục</th>
-                  <th className="p-4">Mô Tả</th>
+                  <th className="p-4">Tên danh mục</th>
+                  <th className="p-4">Mô tả</th>
                   <th className="p-4">ID Hệ Thống</th>
-                  <th className="p-4 text-right">Thao Tác</th>
+                  <th className="p-4 text-right">Thao tác</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -666,7 +666,7 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang: _lang }) => {
               onClick={() => openItemModal()}
               className="px-4 py-2 bg-[#24263e] hover:bg-black text-white text-sm font-bold rounded-xl flex items-center gap-2 transition shrink-0"
             >
-              <Plus className="w-4 h-4" /> Thêm Loại Sản Phẩm
+              <Plus className="w-4 h-4" /> Thêm loại sản phẩm
             </button>
           </div>
 
@@ -674,9 +674,9 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang: _lang }) => {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50 text-xs font-bold text-slate-500 uppercase tracking-wider border-b border-gray-200">
-                  <th className="p-4">Loại Sản Phẩm</th>
-                  <th className="p-4">Thuộc Danh Mục</th>
-                  <th className="p-4 text-right">Thao Tác</th>
+                  <th className="p-4">Loại sản phẩm</th>
+                  <th className="p-4">Thuộc danh mục</th>
+                  <th className="p-4 text-right">Thao tác</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -763,7 +763,7 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang: _lang }) => {
               onClick={() => openTemplateModal()}
               className="px-4 py-2 bg-[#24263e] hover:bg-black text-white text-sm font-bold rounded-xl flex items-center gap-2 transition shrink-0"
             >
-              <Plus className="w-4 h-4" /> Thêm Kịch Bản Chính Thức
+              <Plus className="w-4 h-4" /> Thêm kịch bản chính thức
             </button>
           </div>
 
@@ -889,17 +889,17 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang: _lang }) => {
                       <div className="flex flex-wrap items-center gap-2">
                         {isPending && (
                           <span className="px-2.5 py-0.5 bg-amber-100 text-amber-800 text-[10px] font-black rounded-full uppercase tracking-wider flex items-center gap-1">
-                            <Clock className="w-3 h-3" /> Chờ Admin Duyệt
+                            <Clock className="w-3 h-3" /> Chờ Admin duyệt
                           </span>
                         )}
                         {isApproved && (
                           <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-black rounded-full uppercase tracking-wider flex items-center gap-1">
-                            <CheckCircle2 className="w-3 h-3" /> Đã Lưu Xuống DB
+                            <CheckCircle2 className="w-3 h-3" /> Đã lưu xuống DB
                           </span>
                         )}
                         {proposal.status === 'REJECTED' && (
                           <span className="px-2.5 py-0.5 bg-rose-100 text-rose-800 text-[10px] font-black rounded-full uppercase tracking-wider flex items-center gap-1">
-                            <XCircle className="w-3 h-3" /> Đã Từ Chối
+                            <XCircle className="w-3 h-3" /> Đã từ chối
                           </span>
                         )}
 
@@ -943,21 +943,21 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang: _lang }) => {
                           disabled={isSubmittingProposalAction}
                           className="px-3.5 py-2 bg-[#24263e] hover:bg-black text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm disabled:opacity-50"
                         >
-                          <Edit2 className="w-3.5 h-3.5" /> Chỉnh Sửa & Duyệt
+                          <Edit2 className="w-3.5 h-3.5" /> Chỉnh sửa & duyệt
                         </button>
                         <button
                           onClick={() => handleApproveProposal(proposal)}
                           disabled={isSubmittingProposalAction}
                           className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm disabled:opacity-50"
                         >
-                          <Check className="w-3.5 h-3.5" /> Duyệt Nhanh
+                          <Check className="w-3.5 h-3.5" /> Duyệt nhanh
                         </button>
                         <button
                           onClick={() => openRejectProposalModal(proposal)}
                           disabled={isSubmittingProposalAction}
                           className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-xl transition flex items-center gap-1 disabled:opacity-50"
                         >
-                          <X className="w-3.5 h-3.5" /> Từ Chối
+                          <X className="w-3.5 h-3.5" /> Từ chối
                         </button>
                       </div>
                     )}
@@ -995,7 +995,7 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang: _lang }) => {
           <div className="relative bg-white rounded-3xl w-full max-w-md shadow-xl border border-gray-200 animate-slideUp overflow-hidden">
             <div className="p-5 border-b border-gray-100 flex justify-between items-center">
               <h3 className="font-black text-[#24263e] text-lg">
-                {editingCategory ? 'Sửa Danh Mục' : 'Thêm Danh Mục Mới'}
+                {editingCategory ? 'Sửa danh mục' : 'Thêm danh mục mới'}
               </h3>
               <button
                 onClick={() => setIsCategoryModalOpen(false)}
@@ -1037,7 +1037,7 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang: _lang }) => {
                 onClick={handleSaveCategory}
                 className="px-5 py-2.5 rounded-xl font-bold bg-[#c34c36] hover:bg-[#a13b28] text-white transition text-sm shadow-sm flex items-center gap-2"
               >
-                <Check className="w-4 h-4" /> {editingCategory ? 'Lưu Thay Đổi' : 'Tạo Danh Mục'}
+                <Check className="w-4 h-4" /> {editingCategory ? 'Lưu thay đổi' : 'Tạo danh mục'}
               </button>
             </div>
           </div>
@@ -1054,7 +1054,7 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang: _lang }) => {
           <div className="relative bg-white rounded-3xl w-full max-w-md shadow-xl border border-gray-200 animate-slideUp overflow-hidden">
             <div className="p-5 border-b border-gray-100 flex justify-between items-center">
               <h3 className="font-black text-[#24263e] text-lg">
-                {editingItem ? 'Sửa Loại Sản Phẩm' : 'Thêm Loại Sản Phẩm'}
+                {editingItem ? 'Sửa loại sản phẩm' : 'Thêm loại sản phẩm'}
               </h3>
               <button
                 onClick={() => setIsItemModalOpen(false)}
@@ -1088,7 +1088,7 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang: _lang }) => {
                   value={itemName}
                   onChange={e => setItemName(e.target.value)}
                   className="w-full p-3 bg-slate-50 border border-gray-200 rounded-xl text-sm font-medium focus:border-amber-400 focus:bg-white focus:outline-none transition"
-                  placeholder="VD: Smart Tivi, Máy lạnh Inverter..."
+                  placeholder="VD: Smart tivi, máy lạnh Inverter..."
                 />
               </div>
             </div>
@@ -1103,7 +1103,7 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang: _lang }) => {
                 onClick={handleSaveItem}
                 className="px-5 py-2.5 rounded-xl font-bold bg-[#c34c36] hover:bg-[#a13b28] text-white transition text-sm shadow-sm flex items-center gap-2"
               >
-                <Check className="w-4 h-4" /> {editingItem ? 'Lưu Thay Đổi' : 'Tạo Sản Phẩm'}
+                <Check className="w-4 h-4" /> {editingItem ? 'Lưu thay đổi' : 'Tạo sản phẩm'}
               </button>
             </div>
           </div>
@@ -1120,7 +1120,7 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang: _lang }) => {
           <div className="relative bg-white rounded-3xl w-full max-w-5xl shadow-xl border border-gray-200 animate-slideUp overflow-hidden flex flex-col max-h-[92vh]">
             <div className="p-5 border-b border-gray-100 flex justify-between items-center shrink-0">
               <h3 className="font-black text-[#24263e] text-lg">
-                {editingTemplate ? 'Sửa Kịch Bản Chính Thức (DB)' : 'Thêm Kịch Bản Chính Thức Mới'}
+                {editingTemplate ? 'Sửa kịch bản chính thức (DB)' : 'Thêm kịch bản chính thức mới'}
               </h3>
               <button
                 onClick={() => setIsTemplateModalOpen(false)}
@@ -1220,7 +1220,7 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang: _lang }) => {
                 onClick={handleSaveTemplate}
                 className="px-5 py-2.5 rounded-xl font-bold bg-[#c34c36] hover:bg-[#a13b28] text-white transition text-sm shadow-sm flex items-center gap-2"
               >
-                <Check className="w-4 h-4" /> {editingTemplate ? 'Lưu Kịch Bản' : 'Tạo Kịch Bản'}
+                <Check className="w-4 h-4" /> {editingTemplate ? 'Lưu kịch bản' : 'Tạo kịch bản'}
               </button>
             </div>
           </div>
@@ -1249,7 +1249,7 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang: _lang }) => {
                   </span>
                 </div>
                 <h3 className="font-black text-[#24263e] text-lg">
-                  Chỉnh Sửa Thủ Công & Duyệt Lưu Kịch Bản Xuống DB
+                  Chỉnh sửa thủ công & duyệt lưu kịch bản xuống DB
                 </h3>
               </div>
               <button
@@ -1263,7 +1263,7 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang: _lang }) => {
 
             <div className="p-5 space-y-4 overflow-y-auto grow">
               <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 leading-relaxed">
-                <strong>Hướng dẫn duyệt:</strong> Bạn có thể điều chỉnh lại câu chữ, thêm/bớt các gợi ý trả lời nhanh trong ngoặc <code>(Ví dụ: ...)</code> cho sát thực tế nhất trước khi bấm <strong>Duyệt & Lưu Xuống DB</strong>.
+                <strong>Hướng dẫn duyệt:</strong> Bạn có thể điều chỉnh lại câu chữ, thêm/bớt các gợi ý trả lời nhanh trong ngoặc <code>(Ví dụ: ...)</code> cho sát thực tế nhất trước khi bấm <strong>Duyệt & lưu xuống DB</strong>.
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -1306,7 +1306,7 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang: _lang }) => {
                 disabled={isSubmittingProposalAction}
                 className="px-4 py-2.5 rounded-xl font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 transition text-xs flex items-center gap-1.5"
               >
-                <XCircle className="w-4 h-4" /> Từ Chối Đề Xuất
+                <XCircle className="w-4 h-4" /> Từ chối đề xuất
               </button>
 
               <div className="flex flex-wrap items-center gap-2.5">
@@ -1324,7 +1324,7 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang: _lang }) => {
                   disabled={isSubmittingProposalAction}
                   className="px-4 py-2.5 rounded-xl font-bold bg-white border border-gray-300 hover:bg-gray-100 text-[#24263e] transition text-xs flex items-center gap-1.5"
                 >
-                  <Save className="w-3.5 h-3.5" /> Lưu Nháp Chỉnh Sửa
+                  <Save className="w-3.5 h-3.5" /> Lưu nháp chỉnh sửa
                 </button>
                 <button
                   type="button"
@@ -1337,7 +1337,7 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang: _lang }) => {
                   ) : (
                     <CheckCircle2 className="w-4 h-4" />
                   )}
-                  Duyệt & Lưu Xuống DB
+                  Duyệt & lưu xuống DB
                 </button>
               </div>
             </div>
@@ -1354,7 +1354,7 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang: _lang }) => {
           />
           <div className="relative bg-white rounded-3xl w-full max-w-md shadow-xl border border-gray-200 animate-slideUp overflow-hidden">
             <div className="p-5 border-b border-gray-100 flex justify-between items-center">
-              <h3 className="font-black text-[#24263e] text-lg">Từ Chối Đề Xuất Kịch Bản AI</h3>
+              <h3 className="font-black text-[#24263e] text-lg">Từ chối đề xuất kịch bản AI</h3>
               <button
                 onClick={() => setIsRejectModalOpen(false)}
                 disabled={isSubmittingProposalAction}

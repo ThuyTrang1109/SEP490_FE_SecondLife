@@ -623,8 +623,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       itmName.includes('giàn phơi')
     ) {
       return {
-        placeholder: 'VD: Hòa Phát, Xuân Hòa, IKEA, JYSK, An Cường, Hàng xưởng đặt đóng...',
-        brands: ['Hòa Phát', 'Xuân Hòa', 'IKEA', 'JYSK', 'An Cường', 'Nhà Xinh', 'Duy Tân', 'Hoàng Anh Gia Lai', 'Hàng xưởng / Tự đóng', 'Hàng nhập khẩu']
+        placeholder: 'VD: Hòa phát, xuân hòa, IKEA, JYSK, an cường, hàng xưởng đặt đóng...',
+        brands: ['Hòa phát', 'Xuân hòa', 'IKEA', 'JYSK', 'An cường', 'Nhà xinh', 'Duy tân', 'Hoàng anh gia lai', 'Hàng xưởng / Tự đóng', 'Hàng nhập khẩu']
       };
     }
 
@@ -1538,13 +1538,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     if (allAnswers.includes('mới 100%') || allAnswers.includes('nguyên hộp') || allAnswers.includes('chưa bóc')) {
       conditionHighlight = isFurnitureOrWood ? 'Mới 100% Nguyên Kiện' : 'Mới 100% Nguyên Hộp';
     } else if (allAnswers.includes('like-new') || allAnswers.includes('like new') || allAnswers.includes('hàng lướt') || allAnswers.includes('99%') || allAnswers.includes('vài lần')) {
-      conditionHighlight = 'Hàng Lướt Like New 99%';
+      conditionHighlight = 'Hàng lướt like new 99%';
     } else if (allAnswers.includes('hoạt động tốt') || allAnswers.includes('nguyên bản') || allAnswers.includes('chưa từng sửa') || allAnswers.includes('chắc chắn')) {
-      conditionHighlight = isFurnitureOrWood ? 'Nguyên Bản Chắc Chắn' : 'Nguyên Bản Chạy Tốt';
+      conditionHighlight = isFurnitureOrWood ? 'Nguyên bản chắc chắn' : 'Nguyên bản chạy tốt';
     } else if (allAnswers.includes('xước nhẹ') || allAnswers.includes('cấn móp nhẹ')) {
-      conditionHighlight = isFurnitureOrWood ? 'Bền Đẹp Giá Tốt' : 'Hoạt Động Tốt Giá Tốt';
+      conditionHighlight = isFurnitureOrWood ? 'Bền đẹp giá tốt' : 'Hoạt động tốt giá tốt';
     } else {
-      conditionHighlight = isFurnitureOrWood ? 'Bền Đẹp Chắc Chắn' : 'Chính Hãng Đẹp Bền';
+      conditionHighlight = isFurnitureOrWood ? 'Bền đẹp chắc chắn' : 'Chính hãng đẹp bền';
     }
 
     const mainParts = [itmName, brandName, modelName, keySpec].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
@@ -2357,13 +2357,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
     setStepTransitionWarning({
       targetStep: 2,
-      title: lang === 'vi' ? 'Xác Nhận Chuyển Sang Bước 2' : 'Confirm Move to Step 2',
-      stepName: lang === 'vi' ? 'Bước 2: Tự Nhập Tiêu Đề & Mô Tả Sản Phẩm' : 'Step 2: Title & Description',
+      title: lang === 'vi' ? 'Xác nhận chuyển sang bước 2' : 'Confirm Move to Step 2',
+      stepName: lang === 'vi' ? 'Bước 2: Tự nhập tiêu đề & mô tả sản phẩm' : 'Step 2: Title & Description',
       warningMessage:
         lang === 'vi'
           ? 'Sau khi chuyển sang Bước 2, bạn sẽ KHÔNG THỂ quay lại Bước 1 để thay đổi danh mục hoặc chọn lại ảnh sản phẩm. Bạn có chắc chắn thông tin và ảnh đã chính xác?'
           : 'Once you proceed to Step 2, you will NOT be able to go back to Step 1 to change categories or photos. Are you sure you want to proceed?',
-      confirmButtonText: lang === 'vi' ? 'Xác Nhận & Sang Bước 2' : 'Confirm & Go to Step 2',
+      confirmButtonText: lang === 'vi' ? 'Xác nhận & sang bước 2' : 'Confirm & Go to Step 2',
       onConfirm: () => {
         handleInitPost('manual');
       },
@@ -2376,13 +2376,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     if (postId || initialDraft?.id) {
       setStepTransitionWarning({
         targetStep: 2,
-        title: lang === 'vi' ? 'Xác Nhận Chuyển Sang Bước 2' : 'Confirm Move to Step 2',
-        stepName: lang === 'vi' ? 'Bước 2: Hoàn Thiện Mô Tả Cùng Trợ Lý AI' : 'Step 2: AI Description & Chat',
+        title: lang === 'vi' ? 'Xác nhận chuyển sang bước 2' : 'Confirm Move to Step 2',
+        stepName: lang === 'vi' ? 'Bước 2: Hoàn thiện mô tả cùng trợ lý AI' : 'Step 2: AI Description & Chat',
         warningMessage:
           lang === 'vi'
             ? 'Sau khi chuyển sang Bước 2, bạn sẽ KHÔNG THỂ quay lại Bước 1 để thay đổi danh mục hoặc chọn lại ảnh sản phẩm. Bạn có chắc chắn muốn tiếp tục?'
             : 'Once you proceed to Step 2, you will NOT be able to go back to Step 1 to change categories or photos. Are you sure you want to proceed?',
-        confirmButtonText: lang === 'vi' ? 'Xác Nhận & Sang Bước 2' : 'Confirm & Go to Step 2',
+        confirmButtonText: lang === 'vi' ? 'Xác nhận & sang bước 2' : 'Confirm & Go to Step 2',
         onConfirm: () => {
           handleInitPost('ai');
         },
@@ -2832,13 +2832,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
     setStepTransitionWarning({
       targetStep: 3,
-      title: lang === 'vi' ? 'Xác Nhận Chuyển Sang Bước 3' : 'Confirm Move to Step 3',
-      stepName: lang === 'vi' ? 'Bước 3: Xác Nhận Mô Tả & Vật Phẩm' : 'Step 3: Confirm Description & Item',
+      title: lang === 'vi' ? 'Xác nhận chuyển sang bước 3' : 'Confirm Move to Step 3',
+      stepName: lang === 'vi' ? 'Bước 3: Xác nhận mô tả & vật phẩm' : 'Step 3: Confirm Description & Item',
       warningMessage:
         lang === 'vi'
           ? 'Sau khi chuyển sang Bước 3, bạn sẽ KHÔNG THỂ quay lại Bước 2 để chỉnh sửa tiêu đề, mô tả, câu hỏi AI hay kích thước đóng gói vận chuyển. Bạn có chắc chắn muốn tiếp tục?'
           : 'Once you proceed to Step 3, you will NOT be able to return to Step 2 to edit title, description, or parcel dimensions. Are you sure you want to proceed?',
-      confirmButtonText: lang === 'vi' ? 'Xác Nhận & Sang Bước 3' : 'Confirm & Go to Step 3',
+      confirmButtonText: lang === 'vi' ? 'Xác nhận & sang bước 3' : 'Confirm & Go to Step 3',
       onConfirm: () => {
         setCurrentStep(3);
         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -2934,13 +2934,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
     setStepTransitionWarning({
       targetStep: isManualPricingInStep3 ? 5 : 4,
-      title: lang === 'vi' ? `Xác Nhận Mô Tả & Chuyển Sang Bước ${isManualPricingInStep3 ? 5 : 4}` : 'Confirm Description & Proceed',
-      stepName: lang === 'vi' ? (isManualPricingInStep3 ? 'Bước 5: Xem Lại & Gửi Đăng Bài' : 'Bước 4: Định Giá AI') : (isManualPricingInStep3 ? 'Step 5: Review & Submit' : 'Step 4: AI Valuation'),
+      title: lang === 'vi' ? `Xác nhận mô tả & chuyển sang bước ${isManualPricingInStep3 ? 5 : 4}` : 'Confirm Description & Proceed',
+      stepName: lang === 'vi' ? (isManualPricingInStep3 ? 'Bước 5: Xem lại & gửi đăng bài' : 'Bước 4: Định giá AI') : (isManualPricingInStep3 ? 'Step 5: Review & Submit' : 'Step 4: AI Valuation'),
       warningMessage:
         lang === 'vi'
           ? 'Sau khi xác nhận mô tả, nội dung bài đăng sẽ được lưu chính thức và bạn sẽ KHÔNG THỂ quay lại Bước 3 để thay đổi mô tả. Bạn có chắc chắn muốn tiếp tục?'
           : 'Once confirmed, description will be locked into this post. You will NOT be able to return to Step 3 to edit. Are you sure you want to proceed?',
-      confirmButtonText: lang === 'vi' ? 'Xác Nhận & Tiếp Tục' : 'Confirm & Proceed',
+      confirmButtonText: lang === 'vi' ? 'Xác nhận & tiếp tục' : 'Confirm & Proceed',
       onConfirm: async () => {
         await executeSaveAndAcceptDescription();
       },
@@ -3035,13 +3035,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     }
     setStepTransitionWarning({
       targetStep: 5,
-      title: lang === 'vi' ? 'Xác Nhận Chuyển Sang Bước 5' : 'Confirm Move to Step 5',
-      stepName: lang === 'vi' ? 'Bước 5: Xem Lại & Gửi Đăng Bài' : 'Step 5: Review & Submit Listing',
+      title: lang === 'vi' ? 'Xác nhận chuyển sang bước 5' : 'Confirm Move to Step 5',
+      stepName: lang === 'vi' ? 'Bước 5: Xem lại & gửi đăng bài' : 'Step 5: Review & Submit Listing',
       warningMessage:
         lang === 'vi'
           ? `Mức giá bạn đã chọn là ${finalPriceVnd.toLocaleString('vi-VN')} đ. Sau khi chuyển sang Bước 5 để xem lại và gửi đăng, bạn sẽ KHÔNG THỂ quay lại Bước 4 để thay đổi giá bán. Bạn có chắc chắn muốn tiếp tục?`
           : `Current selected price is ${finalPriceVnd.toLocaleString('vi-VN')} VND. Once you proceed to Step 5, you will NOT be able to return to Step 4 to change price. Are you sure you want to proceed?`,
-      confirmButtonText: lang === 'vi' ? 'Xác Nhận & Sang Bước 5' : 'Confirm & Go to Step 5',
+      confirmButtonText: lang === 'vi' ? 'Xác nhận & sang bước 5' : 'Confirm & Go to Step 5',
       onConfirm: () => {
         setCurrentStep(5);
         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -3412,7 +3412,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-base font-black tracking-wide">
-                {lang === 'vi' ? 'Hệ Thống Đăng Tin & Định Giá AI' : 'AI Listing & Valuation Pipeline'}
+                {lang === 'vi' ? 'Hệ thống đăng tin & định giá AI' : 'AI Listing & Valuation Pipeline'}
               </h2>
             </div>
             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-300 mt-1.5">
@@ -3490,10 +3490,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs font-bold">
           {[
             { step: 1, label: '1. Sản Phẩm & 3-6 Ảnh' },
-            { step: 2, label: '2. Mô Tả AI & Chat' },
-            { step: 3, label: '3. Xác Nhận Mô Tả' },
-            { step: 4, label: '4. Định Giá AI' },
-            { step: 5, label: '5. Gửi Đăng Bài' }
+            { step: 2, label: '2. Mô tả AI & chat' },
+            { step: 3, label: '3. Xác nhận mô tả' },
+            { step: 4, label: '4. Định giá AI' },
+            { step: 5, label: '5. Gửi đăng bài' }
           ].map((s) => {
             const isActive = currentStep === s.step;
             const isDone = currentStep > s.step;
@@ -3533,7 +3533,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             <div>
               <h3 className="text-lg font-black text-[#24263e] flex items-center gap-2">
                 <Camera className="w-5 h-5 text-[#c34c36]" />
-                <span>{lang === 'vi' ? 'Bước 1: Chọn Danh Mục Sản Phẩm & Tải 3-6 Ảnh' : 'Step 1: Select Category & Upload 3-6 Photos'}</span>
+                <span>{lang === 'vi' ? 'Bước 1: Chọn danh mục sản phẩm & tải 3-6 Ảnh' : 'Step 1: Select Category & Upload 3-6 Photos'}</span>
               </h3>
               <p className="text-xs text-slate-500 mt-1">
                 {lang === 'vi' ? 'Hệ thống kiểm tra bộ ảnh trước khi bạn tiếp tục.'
@@ -3698,7 +3698,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-[#24263e]">
-                {lang === 'vi' ? 'Danh Mục Sản Phẩm (Category) *' : 'Product Category *'}
+                {lang === 'vi' ? 'Danh mục sản phẩm (Category) *' : 'Product Category *'}
               </label>
               <select
                 id="category-select"
@@ -3731,7 +3731,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-[#24263e]">
-                {lang === 'vi' ? 'Loại Thiết Bị (Item/Model thuộc Category)' : 'Item Type'}
+                {lang === 'vi' ? 'Loại thiết bị (Item/Model thuộc Category)' : 'Item Type'}
               </label>
               <select
                 id="item-select"
@@ -4002,7 +4002,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   {hasPhotoServiceError && (
                     <p className="mt-1">
                       {lang === 'vi'
-                        ? 'Các ảnh đã chọn vẫn được giữ. Bấm lại Tự Đăng Bài hoặc Chat Với AI để thử kiểm duyệt.'
+                        ? 'Các ảnh đã chọn vẫn được giữ. Bấm lại tự đăng bài hoặc chat với AI để thử kiểm duyệt.'
                         : 'Your photos are still selected. Choose manual listing or AI chat again to retry the review.'}
                     </p>
                   )}
@@ -4106,7 +4106,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 ) : (
                   <>
                     <PenLine className="w-4 h-4 text-[#c34c36]" />
-                    <span>{postId || initialDraft?.id ? 'Tiếp Tục Soạn Bản Nháp' : 'Tự Đăng Bài'}</span>
+                    <span>{postId || initialDraft?.id ? 'Tiếp tục soạn bản nháp' : 'Tự đăng bài'}</span>
                     <ArrowRight className="w-3.5 h-3.5 opacity-60" />
                   </>
                 )}
@@ -4134,7 +4134,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 ) : (
                   <>
                     <Sparkles className="w-4 h-4 text-amber-300" />
-                    <span>{postId || initialDraft?.id ? 'Nhờ AI Bổ Sung Mô Tả' : 'Chat Với AI'}</span>
+                    <span>{postId || initialDraft?.id ? 'Nhờ AI bổ sung mô tả' : 'Chat với AI'}</span>
                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/20 text-amber-200 font-bold">
                       -1 credit ({credits?.chatCredits ?? 0})
                     </span>
@@ -4158,12 +4158,12 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 {postMode === 'ai' ? (
                   <>
                     <Bot className="w-5 h-5 text-[#c34c36]" />
-                    <span>{lang === 'vi' ? 'Bước 2: Hoàn Thiện Mô Tả Cùng Trợ Lý AI' : 'Step 2: AI Description & Chat'}</span>
+                    <span>{lang === 'vi' ? 'Bước 2: Hoàn thiện mô tả cùng trợ lý AI' : 'Step 2: AI Description & Chat'}</span>
                   </>
                 ) : (
                   <>
                     <PenLine className="w-5 h-5 text-[#c34c36]" />
-                    <span>{lang === 'vi' ? 'Bước 2: Tự Nhập Tiêu Đề & Mô Tả Sản Phẩm' : 'Step 2: Manual Title & Description'}</span>
+                    <span>{lang === 'vi' ? 'Bước 2: Tự nhập tiêu đề & mô tả sản phẩm' : 'Step 2: Manual Title & Description'}</span>
                   </>
                 )}
               </h3>
@@ -4207,7 +4207,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
               <div className="space-y-1 text-xs">
                 <div className="font-black text-amber-900 uppercase flex items-center gap-1.5 text-[11px]">
-                  <span>Nhận định từ AI Thị Giác (Llava Vision)</span>
+                  <span>Nhận định từ AI thị giác (Llava Vision)</span>
                   <span className="px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 font-bold text-[10px]">Ảnh catalog / quảng cáo</span>
                 </div>
                 <p className="leading-relaxed text-slate-700">
@@ -4271,7 +4271,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="px-3 py-1 rounded-full bg-gradient-to-r from-amber-500 to-[#c34c36] text-white font-black text-xs flex items-center gap-1.5 shadow-xs">
                       <Sparkles className="w-3.5 h-3.5 text-amber-200" />
-                      <span>{lang === 'vi' ? 'Khảo Sát Chi Tiết Sản Phẩm Cùng AI' : 'AI Product Questionnaire'}</span>
+                      <span>{lang === 'vi' ? 'Khảo sát chi tiết sản phẩm cùng AI' : 'AI Product Questionnaire'}</span>
                     </span>
                     <span className="text-xs font-extrabold text-[#24263e]">
                       {currentCategory?.name || 'Sản phẩm'} • {currentItem?.name || 'Thiết bị'}
@@ -4451,7 +4451,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                     ) : (
                       <>
                         <Sparkles className="w-4 h-4 text-amber-200 shrink-0" />
-                        <span className="whitespace-nowrap">Gửi AI Hoàn Thiện Mô Tả</span>
+                        <span className="whitespace-nowrap">Gửi AI hoàn thiện mô tả</span>
                         <span className="px-1.5 py-0.5 rounded-md bg-black/30 text-[10px] font-bold text-amber-200 whitespace-nowrap shrink-0">
                           -1 credit (còn {credits?.chatCredits ?? 0})
                         </span>
@@ -4496,7 +4496,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="VD: Nồi Cơm Điện BlueStone 1.8L - Hàng Lướt Like New 99%"
+                placeholder="VD: Nồi cơm điện blueStone 1.8L - hàng lướt like new 99%"
                 className={`w-full px-4 py-2.5 bg-slate-50 border rounded-xl text-xs font-bold text-[#24263e] focus:outline-none transition ${hasSubmittedStep2 && (!title || !title.trim())
                   ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
                   : 'border-gray-200 focus:border-[#c34c36]'
@@ -4528,7 +4528,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               {hasSubmittedStep2 && (!description || description.trim().length < 10) && (
                 <p className="text-[11px] text-rose-600 font-bold flex items-center gap-1 mt-1 animate-fadeIn">
                   <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                  <span>Vui lòng nhập mô tả chi tiết sản phẩm (tối thiểu 10 ký tự) hoặc trả lời các câu hỏi khảo sát phía trên rồi bấm 'Gửi AI Hoàn Thiện Mô Tả'.</span>
+                  <span>Vui lòng nhập mô tả chi tiết sản phẩm (tối thiểu 10 ký tự) hoặc trả lời các câu hỏi khảo sát phía trên rồi bấm 'gửi AI hoàn thiện mô tả'.</span>
                 </p>
               )}
               {postMode === 'manual' && (
@@ -4610,7 +4610,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   return (
                     <div className="space-y-1.5 flex flex-col justify-between">
                       <div className="h-7 flex items-center justify-between">
-                        <label className="text-[10px] font-bold text-slate-600 uppercase">Chiều Dài *</label>
+                        <label className="text-[10px] font-bold text-slate-600 uppercase">Chiều dài *</label>
                         <div className="flex items-center bg-gray-200/80 rounded-lg p-0.5 text-[10px] font-bold">
                           <button
                             type="button"
@@ -4667,7 +4667,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   return (
                     <div className="space-y-1.5 flex flex-col justify-between">
                       <div className="h-7 flex items-center justify-between">
-                        <label className="text-[10px] font-bold text-slate-600 uppercase">Chiều Rộng *</label>
+                        <label className="text-[10px] font-bold text-slate-600 uppercase">Chiều rộng *</label>
                         <div className="flex items-center bg-gray-200/80 rounded-lg p-0.5 text-[10px] font-bold">
                           <button
                             type="button"
@@ -4723,7 +4723,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   return (
                     <div className="space-y-1.5 flex flex-col justify-between">
                       <div className="h-7 flex items-center justify-between">
-                        <label className="text-[10px] font-bold text-slate-600 uppercase">Chiều Cao *</label>
+                        <label className="text-[10px] font-bold text-slate-600 uppercase">Chiều cao *</label>
                         <div className="flex items-center bg-gray-200/80 rounded-lg p-0.5 text-[10px] font-bold">
                           <button
                             type="button"
@@ -5110,7 +5110,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           <div>
             <h3 className="text-lg font-black text-[#24263e] flex items-center gap-2">
               <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-              <span>{lang === 'vi' ? 'Bước 3: Lưu Draft & Xác Nhận Nội Dung Mô Tả' : 'Step 3: Save Draft & Accept Description'}</span>
+              <span>{lang === 'vi' ? 'Bước 3: Lưu draft & xác nhận nội dung mô tả' : 'Step 3: Save Draft & Accept Description'}</span>
             </h3>
             <p className="text-xs text-slate-500 mt-1">
               Theo quy chuẩn hệ thống, mô tả phải được xác nhận trước khi bước vào quy trình định giá AI và đăng bài.
@@ -5164,7 +5164,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   onChange={() => setIsManualPricingInStep3(false)}
                   className="w-4 h-4 text-emerald-600 focus:ring-emerald-500"
                 />
-                <span className="text-sm font-bold text-slate-700">Dùng AI Định Giá (Đề xuất)</span>
+                <span className="text-sm font-bold text-slate-700">Dùng AI định giá (Đề xuất)</span>
               </label>
               <label className="flex items-center gap-2 cursor-pointer p-2 px-3 rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100/70 transition shadow-2xs">
                 <input
@@ -5256,7 +5256,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               ) : (
                 <>
                   <Check className="w-4 h-4" />
-                  <span>{isManualPricingInStep3 ? 'Lưu, Đặt Giá & Sang Bước Đăng Bài' : 'Xác Nhận Mô Tả & Tiếp Tục Định Giá AI'}</span>
+                  <span>{isManualPricingInStep3 ? 'Lưu, đặt giá & sang bước đăng bài' : 'Xác nhận mô tả & tiếp tục định giá AI'}</span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
@@ -5274,7 +5274,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             <div>
               <h3 className="text-lg font-black text-[#24263e] flex items-center gap-2">
                 <Sparkles className="w-5 h-5 text-amber-500" />
-                <span>{lang === 'vi' ? 'Bước 4: Định Giá Bằng AI & Chọn Giá Bán' : 'Step 4: AI Valuation & Set Price'}</span>
+                <span>{lang === 'vi' ? 'Bước 4: Định giá bằng AI & chọn giá bán' : 'Step 4: AI Valuation & Set Price'}</span>
               </h3>
               <p className="text-xs text-slate-500 mt-1">
                 Sử dụng 1 lượt VALUATION để AI phân tích khoảng giá thị trường và đề xuất mức giá thanh khoản tốt nhất.
@@ -5294,7 +5294,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           {/* Credit VALUATION Box & Trigger Button */}
           <div className="p-5 rounded-2xl bg-gradient-to-r from-slate-900 to-[#24263e] text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-md">
             <div>
-              <span className="text-[11px] font-bold text-slate-400 block uppercase tracking-wider">Tín dụng Định Giá AI</span>
+              <span className="text-[11px] font-bold text-slate-400 block uppercase tracking-wider">Tín dụng định giá AI</span>
               <div className="text-base font-black flex items-center gap-2 mt-0.5">
                 <span>Bạn đang có:</span>
                 <span className="px-2.5 py-0.5 rounded-lg bg-amber-400 text-slate-950 font-mono font-black text-sm">
@@ -5327,7 +5327,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 ) : (
                   <>
                     <Sparkles className="w-4 h-4" />
-                    <span>{valuationResult ? 'Định Giá Lại Bằng AI (-1 Credit)' : 'Định Giá Bằng AI (-1 Credit)'}</span>
+                    <span>{valuationResult ? 'Định giá lại bằng AI (-1 Credit)' : 'Định giá bằng AI (-1 Credit)'}</span>
                     <span className="text-[10px] opacity-80 font-bold bg-black/20 px-1.5 py-0.5 rounded">
                       Còn: {credits?.valuationCredits ?? 0}
                     </span>
@@ -5567,7 +5567,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           <div>
             <h3 className="text-lg font-black text-[#24263e] flex items-center gap-2">
               <ShieldCheck className="w-5 h-5 text-[#c34c36]" />
-              <span>{lang === 'vi' ? 'Bước 5: Xem Lại Thông Tin & Gửi Đăng Bài' : 'Step 5: Review & Submit Listing'}</span>
+              <span>{lang === 'vi' ? 'Bước 5: Xem lại thông tin & gửi đăng bài' : 'Step 5: Review & Submit Listing'}</span>
             </h3>
             <p className="text-xs text-slate-500 mt-1">
               Kiểm tra toàn bộ thông tin lần cuối trước khi nộp duyệt bài đăng lên hệ thống SecondLife.
@@ -5659,7 +5659,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 </div>
 
                 <div className={`p-2 rounded-lg ${isLengthLessThanWidth ? 'bg-rose-50 border border-rose-200' : 'bg-slate-50/50'}`}>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase">Chiều Dài</label>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Chiều dài</label>
                   <div className="mt-1 text-xs font-bold text-[#24263e]">
                     {displayLength}
                   </div>
@@ -5671,7 +5671,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 </div>
 
                 <div className={`p-2 rounded-lg ${isLengthLessThanWidth ? 'bg-rose-50 border border-rose-200' : 'bg-slate-50/50'}`}>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase">Chiều Rộng</label>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Chiều rộng</label>
                   <div className="mt-1 text-xs font-bold text-[#24263e]">
                     {displayWidth}
                   </div>
@@ -5683,7 +5683,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 </div>
 
                 <div className="p-2 rounded-lg bg-slate-50/50">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase">Chiều Cao</label>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Chiều cao</label>
                   <div className="mt-1 text-xs font-bold text-[#24263e]">
                     {displayHeight}
                   </div>
@@ -6127,7 +6127,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 </div>
                 <div>
                   <h4 className="font-extrabold text-sm text-slate-900">
-                    {lang === 'vi' ? 'Tải Lại Bản Nháp Đã Lưu' : 'Load Saved Draft'}
+                    {lang === 'vi' ? 'Tải lại bản nháp đã lưu' : 'Load Saved Draft'}
                   </h4>
                   <p className="text-[11px] text-slate-500">
                     {lang === 'vi' ? 'Nhập mã bài đăng để khôi phục toàn bộ tiến trình' : 'Enter Post ID to restore draft progress'}
@@ -6146,7 +6146,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             <div className="space-y-3">
               <div>
                 <label className="text-xs font-bold text-slate-700 block mb-1">
-                  {lang === 'vi' ? 'Mã Bài Đăng Nháp (Post ID / Draft UUID)' : 'Draft Post ID'}
+                  {lang === 'vi' ? 'Mã bài đăng nháp (Post ID / Draft UUID)' : 'Draft Post ID'}
                 </label>
                 <input
                   type="text"
@@ -6159,7 +6159,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
               <div className="p-3 rounded-xl bg-slate-50 border border-slate-150 text-[11px] text-slate-600 space-y-1">
                 <span className="font-bold text-slate-800 block">💡 Mẹo tìm lại bản nháp:</span>
-                <p>Bạn có thể xem lại mã bài đăng nháp trong mục <strong>Kênh Người Bán &gt; Tin Đăng Của Tôi &gt; Bản Nháp</strong> hoặc trong URL làm việc trước đó.</p>
+                <p>Bạn có thể xem lại mã bài đăng nháp trong mục <strong>Kênh người bán &gt; tin đăng của tôi &gt; Bản Nháp</strong> hoặc trong URL làm việc trước đó.</p>
               </div>
             </div>
 
@@ -6185,7 +6185,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 ) : (
                   <>
                     <RotateCcw className="w-3.5 h-3.5" />
-                    <span>{lang === 'vi' ? 'Tải Bản Nháp' : 'Load Draft'}</span>
+                    <span>{lang === 'vi' ? 'Tải bản nháp' : 'Load Draft'}</span>
                   </>
                 )}
               </button>
@@ -6221,7 +6221,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                     className="w-full py-3 px-4 rounded-xl font-bold text-sm bg-gradient-to-r from-[#c34c36] to-[#dc4729] text-white hover:opacity-95 transition flex items-center justify-center gap-2 cursor-pointer shadow-md"
                   >
                     <Plus className="w-4 h-4" />
-                    <span>{lang === 'vi' ? 'Mua Thêm Lượt Đăng Tin Ngay' : 'Buy Listing Credits Now'}</span>
+                    <span>{lang === 'vi' ? 'Mua thêm lượt đăng tin ngay' : 'Buy Listing Credits Now'}</span>
                   </button>
                 )}
                 <button
@@ -6249,7 +6249,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 Chi Phí: 1 Credit AI Chat
               </span>
               <h3 className="text-lg font-black text-slate-900 mb-2">
-                {lang === 'vi' ? 'Xác Nhận Quét Hình Ảnh Bằng AI?' : 'Confirm AI Visual Scan?'}
+                {lang === 'vi' ? 'Xác nhận quét hình ảnh bằng AI?' : 'Confirm AI Visual Scan?'}
               </h3>
 
               {/* Bảng rà soát thông tin trước khi quét */}
@@ -6305,7 +6305,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   onClick={() => setShowAiScanConfirmModal(false)}
                   className="flex-1 py-3 px-4 rounded-xl font-bold text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
                 >
-                  {lang === 'vi' ? 'Kiểm Tra Lại' : 'Review Again'}
+                  {lang === 'vi' ? 'Kiểm tra lại' : 'Review Again'}
                 </button>
                 <button
                   type="button"
@@ -6316,7 +6316,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   className="flex-1 py-3 px-4 rounded-xl font-black text-xs bg-gradient-to-r from-[#c34c36] to-[#24263e] hover:opacity-95 text-white transition shadow-sm cursor-pointer flex items-center justify-center gap-1.5"
                 >
                   <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                  {lang === 'vi' ? 'Xác Nhận & Quét (-1)' : 'Confirm & Scan (-1)'}
+                  {lang === 'vi' ? 'Xác nhận & quét (-1)' : 'Confirm & Scan (-1)'}
                 </button>
               </div>
             </div>
@@ -6335,7 +6335,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               </div>
               <span className={`px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider mb-2 inline-block ${mismatchType === 'brand' ? 'bg-amber-100 text-amber-800' : 'bg-rose-100 text-rose-800'
                 }`}>
-                {mismatchType === 'brand' ? 'AI Vision Phát Hiện Khác Thương Hiệu' : 'AI Vision Phát Hiện Khác Loại Thiết Bị'}
+                {mismatchType === 'brand' ? 'AI vision phát hiện khác thương hiệu' : 'AI vision phát hiện khác loại thiết bị'}
               </span>
               <h3 className="text-lg font-black text-slate-900 mb-2">
                 {mismatchType === 'brand'
@@ -6411,7 +6411,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                       }}
                       className="flex-1 py-3 px-4 rounded-xl font-bold text-xs bg-[#24263e] hover:bg-black text-white transition shadow-sm cursor-pointer"
                     >
-                      {lang === 'vi' ? 'Nhập Lại Thương Hiệu' : 'Change Brand'}
+                      {lang === 'vi' ? 'Nhập lại thương hiệu' : 'Change Brand'}
                     </button>
                   ) : (
                     <button
@@ -6423,7 +6423,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                       }}
                       className="flex-1 py-3 px-4 rounded-xl font-bold text-xs bg-[#24263e] hover:bg-black text-white transition shadow-sm cursor-pointer"
                     >
-                      {lang === 'vi' ? 'Chọn Lại Loại Thiết Bị' : 'Change Product Type'}
+                      {lang === 'vi' ? 'Chọn lại loại thiết bị' : 'Change Product Type'}
                     </button>
                   )}
 
@@ -6435,7 +6435,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                     }}
                     className="flex-1 py-3 px-4 rounded-xl font-bold text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
                   >
-                    {lang === 'vi' ? 'Tải Lại Ảnh Khác' : 'Upload Other Photos'}
+                    {lang === 'vi' ? 'Tải lại ảnh khác' : 'Upload Other Photos'}
                   </button>
                 </div>
               </div>
@@ -6470,7 +6470,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                     className="w-full py-3 px-4 rounded-xl font-bold text-sm bg-gradient-to-r from-amber-500 to-amber-600 text-white hover:opacity-95 transition flex items-center justify-center gap-2 cursor-pointer shadow-md"
                   >
                     <Plus className="w-4 h-4" />
-                    <span>{lang === 'vi' ? 'Mua Thêm Gói Định Giá Ngay' : 'Buy Valuation Credits Now'}</span>
+                    <span>{lang === 'vi' ? 'Mua thêm gói định giá ngay' : 'Buy Valuation Credits Now'}</span>
                   </button>
                 )}
                 <button
@@ -6689,7 +6689,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   onClick={() => setStepTransitionWarning(null)}
                   className="flex-1 py-3 px-4 rounded-xl font-bold text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
                 >
-                  {lang === 'vi' ? 'Kiểm Tra Lại' : 'Review Again'}
+                  {lang === 'vi' ? 'Kiểm tra lại' : 'Review Again'}
                 </button>
                 <button
                   type="button"
@@ -6700,7 +6700,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   }}
                   className="flex-1 py-3 px-4 rounded-xl font-black text-xs bg-gradient-to-r from-amber-600 to-[#c34c36] hover:opacity-95 text-white transition shadow-sm cursor-pointer flex items-center justify-center gap-1.5"
                 >
-                  <span>{stepTransitionWarning.confirmButtonText || (lang === 'vi' ? 'Xác Nhận & Tiếp Tục' : 'Confirm & Proceed')}</span>
+                  <span>{stepTransitionWarning.confirmButtonText || (lang === 'vi' ? 'Xác nhận & tiếp tục' : 'Confirm & Proceed')}</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               </div>

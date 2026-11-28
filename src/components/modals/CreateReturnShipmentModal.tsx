@@ -215,7 +215,7 @@ export const CreateReturnShipmentModal: React.FC<CreateReturnShipmentModalProps>
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-sm sm:text-base font-black text-white tracking-tight">
-                  {vi ? 'Tạo Vận Đơn Hoàn Hàng • Lalamove' : 'Create Return Shipment • Lalamove'}
+                  {vi ? 'Tạo vận đơn hoàn hàng • Lalamove' : 'Create Return Shipment • Lalamove'}
                 </h3>
                 <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-400/30">
                   {vi ? 'Người mua ➔ Người bán' : 'Buyer ➔ Seller'}
@@ -290,7 +290,7 @@ export const CreateReturnShipmentModal: React.FC<CreateReturnShipmentModalProps>
             <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-gray-200">
               <span className="font-black uppercase text-[11px] text-slate-700 tracking-wider flex items-center gap-1.5">
                 <Truck className="w-4 h-4 text-indigo-600" />
-                {vi ? 'Lộ Trình Vận Chuyển Hoàn Hàng Lalamove' : 'Lalamove Return Logistics Route'}
+                {vi ? 'Lộ trình vận chuyển hoàn hàng Lalamove' : 'Lalamove Return Logistics Route'}
               </span>
               <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200">
                 {vi ? 'Giao Thẳng (Người mua ➔ Người bán)' : 'Direct Return'}
@@ -415,7 +415,7 @@ export const CreateReturnShipmentModal: React.FC<CreateReturnShipmentModalProps>
             ) : (
               <>
                 <Truck className="w-4 h-4 text-white" />
-                <span>{vi ? 'Xác Nhận Tạo Vận Đơn Hoàn' : 'Confirm & Book Return'}</span>
+                <span>{vi ? 'Xác nhận tạo vận đơn hoàn' : 'Confirm & Book Return'}</span>
               </>
             )}
           </button>

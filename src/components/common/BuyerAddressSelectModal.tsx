@@ -238,7 +238,7 @@ export function BuyerAddressSelectModal({
             <div className="px-6 py-4.5 border-b border-slate-100 flex items-center justify-between">
               <h3 className="font-extrabold text-base text-slate-900 flex items-center gap-2">
                 <MapPin className="w-5 h-5 text-[#c34c36]" />
-                {lang === 'vi' ? 'Địa Chỉ Của Tôi' : 'My Addresses'}
+                {lang === 'vi' ? 'Địa chỉ của tôi' : 'My Addresses'}
               </h3>
               <button
                 type="button"
@@ -285,7 +285,7 @@ export function BuyerAddressSelectModal({
                           </span>
                         )}
                         <span className="px-1.5 py-0.5 text-[10px] font-medium text-slate-600 bg-slate-100 rounded">
-                          {addr.addressType === 'office' ? (lang === 'vi' ? 'Văn Phòng' : 'Office') : (lang === 'vi' ? 'Nhà Riêng' : 'Home')}
+                          {addr.addressType === 'office' ? (lang === 'vi' ? 'Văn phòng' : 'Office') : (lang === 'vi' ? 'Nhà riêng' : 'Home')}
                         </span>
                       </div>
                       <p className="text-xs text-slate-700 font-medium leading-relaxed break-words">
@@ -341,7 +341,7 @@ export function BuyerAddressSelectModal({
                 className="w-full py-3 px-4 rounded-xl border border-dashed border-slate-300 hover:border-[#c34c36] hover:bg-[#fdf8f6]/40 text-slate-700 hover:text-[#c34c36] font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
-                <span>{lang === 'vi' ? 'Thêm Địa Chỉ Mới' : 'Add New Address'}</span>
+                <span>{lang === 'vi' ? 'Thêm địa chỉ mới' : 'Add New Address'}</span>
               </button>
             </div>
 
@@ -359,7 +359,7 @@ export function BuyerAddressSelectModal({
                 onClick={handleConfirmSelection}
                 className="px-5 py-2 rounded-xl bg-[#c34c36] hover:bg-[#a83824] text-white text-xs font-bold shadow-xs transition cursor-pointer"
               >
-                {lang === 'vi' ? 'Xác Nhận' : 'Confirm'}
+                {lang === 'vi' ? 'Xác nhận' : 'Confirm'}
               </button>
             </div>
           </div>
@@ -374,8 +374,8 @@ export function BuyerAddressSelectModal({
             <div className="px-6 py-4.5 border-b border-slate-100 flex items-center justify-between">
               <h3 className="font-extrabold text-base text-slate-900">
                 {editingAddress
-                  ? (lang === 'vi' ? 'Cập Nhật Địa Chỉ Nhận Hàng' : 'Edit Delivery Address')
-                  : (lang === 'vi' ? 'Thêm Địa Chỉ Nhận Hàng Mới' : 'New Delivery Address')}
+                  ? (lang === 'vi' ? 'Cập nhật địa chỉ nhận hàng' : 'Edit Delivery Address')
+                  : (lang === 'vi' ? 'Thêm địa chỉ nhận hàng mới' : 'New Delivery Address')}
               </h3>
               <button
                 type="button"
@@ -482,7 +482,7 @@ export function BuyerAddressSelectModal({
                       }`}
                   >
                     <Home className="w-3.5 h-3.5" />
-                    <span>{lang === 'vi' ? 'Nhà Riêng' : 'Home'}</span>
+                    <span>{lang === 'vi' ? 'Nhà riêng' : 'Home'}</span>
                   </button>
                   <button
                     type="button"
@@ -493,7 +493,7 @@ export function BuyerAddressSelectModal({
                       }`}
                   >
                     <Building2 className="w-3.5 h-3.5" />
-                    <span>{lang === 'vi' ? 'Văn Phòng' : 'Office'}</span>
+                    <span>{lang === 'vi' ? 'Văn phòng' : 'Office'}</span>
                   </button>
                 </div>
               </div>
@@ -519,14 +519,14 @@ export function BuyerAddressSelectModal({
                 onClick={() => setIsFormOpen(false)}
                 className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition cursor-pointer"
               >
-                {lang === 'vi' ? 'Trở Lại' : 'Back'}
+                {lang === 'vi' ? 'Trở lại' : 'Back'}
               </button>
               <button
                 type="button"
                 onClick={handleSaveForm}
                 className="px-5 py-2 rounded-xl bg-[#c34c36] hover:bg-[#a83824] text-white text-xs font-bold shadow-xs transition cursor-pointer"
               >
-                {lang === 'vi' ? 'Hoàn Thành' : 'Save Address'}
+                {lang === 'vi' ? 'Hoàn thành' : 'Save Address'}
               </button>
             </div>
           </div>

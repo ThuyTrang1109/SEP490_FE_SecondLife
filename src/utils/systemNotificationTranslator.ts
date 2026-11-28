@@ -93,13 +93,13 @@ export function translateSystemNotification(rawMsg: string | null | undefined): 
 
   // 3. Phân quyền và tài khoản người dùng
   if (lower.includes('admin account only accesses admin portal')) {
-    return 'Tài khoản Quản trị viên chỉ có quyền truy cập trang Quản Trị Hệ Thống.';
+    return 'Tài khoản Quản trị viên chỉ có quyền truy cập trang quản trị hệ thống.';
   }
   if (lower.includes('inspection center account only accesses center management portal')) {
-    return 'Tài khoản Trưởng trung tâm kiểm định chỉ truy cập Bàn Điều Phối & Quản Trị.';
+    return 'Tài khoản Trưởng trung tâm kiểm định chỉ truy cập bàn điều phối & quản trị.';
   }
   if (lower.includes('inspection account only accesses inspection hub')) {
-    return 'Tài khoản Kiểm định viên chỉ truy cập Trung Tâm Kiểm Định.';
+    return 'Tài khoản Kiểm định viên chỉ truy cập trung tâm kiểm định.';
   }
   if (lower.includes('please log in to purchase with escrow protection')) {
     return 'Vui lòng đăng nhập để tiến hành mua hàng bảo đảm Escrow và kiểm định Hub.';

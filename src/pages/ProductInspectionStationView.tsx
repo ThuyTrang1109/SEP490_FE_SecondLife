@@ -625,7 +625,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
       id: `REP-${activeOrder.id.slice(0, 8)}`,
       orderId: activeOrder.id,
       centerId: activeOrder.inspectionCenterId || 'center-hcm-01',
-      centerName: activeOrder.inspectionCenterName || 'Trung Tâm Kiểm Định SecondLife',
+      centerName: activeOrder.inspectionCenterName || 'Trung tâm kiểm định secondLife',
       inspectorName: inspectorName,
       inspectedAt: new Date().toISOString(),
       completedAt: new Date().toISOString(),
@@ -788,7 +788,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
       setCurrentStep('intake');
 
       notify(
-        `[Đã Tìm Thấy Đơn Hàng] #${match.id.slice(0, 8)} - "${match.listing?.title || 'Thiết bị'}". Vui lòng kiểm tra và bấm "Xác Nhận Đơn" để tiếp nhận!`
+        `[Đã tìm thấy đơn hàng] #${match.id.slice(0, 8)} - "${match.listing?.title || 'Thiết bị'}". Vui lòng kiểm tra và bấm "Xác nhận đơn" để tiếp nhận!`
       );
     } else {
       setBarcodeScanInput(code);
@@ -1085,12 +1085,12 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
     }
 
     if (overallVerdict === 'PASS' && conditionScore <= 75) {
-      notify(`Để kết luận ĐẠT CHUẨN (PASS), Điểm Đánh Giá Chất Lượng Tổng Thể phải lớn hơn 75 điểm (hiện tại: ${conditionScore}/100).`, true);
+      notify(`Để kết luận ĐẠT CHUẨN (PASS), điểm đánh giá chất lượng tổng thể phải lớn hơn 75 điểm (hiện tại: ${conditionScore}/100).`, true);
       return;
     }
 
     if (overallVerdict === 'FAIL' && conditionScore > 75) {
-      notify(`Để kết luận TỪ CHỐI (REJECTED), Điểm Đánh Giá Chất Lượng Tổng Thể phải nhỏ hơn hoặc bằng 75 điểm (hiện tại: ${conditionScore}/100).`, true);
+      notify(`Để kết luận TỪ CHỐI (REJECTED), điểm đánh giá chất lượng tổng thể phải nhỏ hơn hoặc bằng 75 điểm (hiện tại: ${conditionScore}/100).`, true);
       return;
     }
 
@@ -1273,16 +1273,16 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
   };
 
   const stepsList: { key: InspectionStep; title: string; desc: string; icon: any }[] = [
-    { key: 'intake', title: '1. Tiếp Nhận', desc: 'Đối chiếu hồ sơ máy', icon: QrCode },
-    { key: 'exterior', title: '2. Ngoại Quan', desc: 'Phân hạng ngoại quan vỏ máy', icon: Layers },
-    { key: 'technical', title: '3. Kỹ Thuật', desc: 'Đo đạc & Test chức năng', icon: Wrench },
+    { key: 'intake', title: '1. tiếp nhận', desc: 'Đối chiếu hồ sơ máy', icon: QrCode },
+    { key: 'exterior', title: '2. ngoại quan', desc: 'Phân hạng ngoại quan vỏ máy', icon: Layers },
+    { key: 'technical', title: '3. kỹ thuật', desc: 'Đo đạc & Test chức năng', icon: Wrench },
     {
       key: 'proofs',
-      title: '4. Ảnh Bằng Chứng',
+      title: '4. Ảnh bằng chứng',
       desc: isAtCenterOrder ? 'Ảnh chụp hiện trạng máy' : 'Ảnh hiện trạng & vi mạch',
       icon: Camera,
     },
-    { key: 'verdict', title: '5. Kết Luận', desc: 'Ký số & Xuất chứng thư', icon: ShieldCheck },
+    { key: 'verdict', title: '5. kết luận', desc: 'Ký số & Xuất chứng thư', icon: ShieldCheck },
   ];
 
   // Thứ tự bắt buộc tuần tự 5 bước
@@ -1401,7 +1401,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                 className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer border border-white/15"
               >
                 <Building2 className="w-3.5 h-3.5 text-[#fce5da]" />
-                <span>Về Hub Quản Lý</span>
+                <span>Về Hub quản lý</span>
               </button>
             )}
 
@@ -1413,12 +1413,12 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
               {isFocusMode ? (
                 <>
                   <Minimize2 className="w-3.5 h-3.5 text-[#c34c36]" />
-                  <span>Thoát Toàn Màn Hình</span>
+                  <span>Thoát toàn màn hình</span>
                 </>
               ) : (
                 <>
                   <Maximize2 className="w-3.5 h-3.5 text-[#c34c36]" />
-                  <span>Chế Độ Tập Trung (Focus)</span>
+                  <span>Chế độ tập trung (Focus)</span>
                 </>
               )}
             </button>
@@ -1451,7 +1451,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs font-black uppercase tracking-wider text-[#24263e] flex items-center gap-1.5">
                 <Search className="w-4 h-4 text-[#c34c36]" />
-                <span>Tìm Kiếm Đơn Hàng / Quét Barcode</span>
+                <span>Tìm kiếm đơn hàng / quét barcode</span>
               </span>
               <span className="text-[10px] bg-red-50 text-[#c34c36] border border-red-100 px-2 py-0.5 rounded-full font-mono font-bold flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#c34c36] animate-pulse"></span>
@@ -1529,7 +1529,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                 }}
                 className="text-[#c34c36] hover:underline font-bold text-[11px] cursor-pointer"
               >
-                Mở Camera
+                Mở camera
               </button>
             </div>
           </div>
@@ -1544,7 +1544,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
               </div>
               <div className="space-y-1.5 max-w-md">
                 <h3 className="text-lg font-black text-[#24263e]">
-                  Sẵn Sàng Tiếp Nhận Thiết Bị Đo Kiểm
+                  Sẵn sàng tiếp nhận thiết bị đo kiểm
                 </h3>
                 <p className="text-xs text-slate-500 leading-relaxed">
                   Vui lòng quét Barcode hoặc nhập mã đơn hàng ở khung phía trên để bắt đầu đo kiểm 5 bước.
@@ -1560,7 +1560,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                   className="px-4 py-2.5 bg-[#c34c36] hover:bg-[#a83b27] text-white text-xs font-bold rounded-xl flex items-center gap-2 shadow-xs transition cursor-pointer"
                 >
                   <Camera className="w-4 h-4" />
-                  <span>Mở Camera Quét Mã</span>
+                  <span>Mở camera quét mã</span>
                 </button>
               </div>
             </div>
@@ -1575,7 +1575,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-bold text-purple-700 bg-purple-50 border border-purple-200 px-2.5 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1">
                       <Navigation className="w-3.5 h-3.5 text-purple-600" />
-                      Kiểm Định Tại Nhà Khách Hàng (On-site)
+                      Kiểm định tại nhà khách hàng (On-site)
                     </span>
                     <span className="text-xs font-mono font-bold text-gray-500">
                       Mã: #{activeOrder?.id}
@@ -1596,7 +1596,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                       title="Xác nhận tiếp nhận đơn hàng và bắt đầu kiểm định"
                     >
                       <CheckCircle2 className="w-3.5 h-3.5 stroke-[2.5]" />
-                      <span>{checkingInOrderId === activeOrder.id ? 'Đang xác nhận…' : 'Xác Nhận Đơn'}</span>
+                      <span>{checkingInOrderId === activeOrder.id ? 'Đang xác nhận…' : 'Xác nhận đơn'}</span>
                     </button>
                   )}
                   {isInspectorArrived && (
@@ -1610,7 +1610,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                       title="Mở bàn kiểm tra trực tiếp (Bắt đầu từ Bước 1: Tiếp nhận)"
                     >
                       <Wrench className="w-3.5 h-3.5" />
-                      <span>Đến Bàn Kiểm Tra</span>
+                      <span>Đến bàn kiểm tra</span>
                       <ArrowRight className="w-3.5 h-3.5" />
                     </button>
                   )}
@@ -1622,7 +1622,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                       title="Xem biên bản giám định & chứng thư số"
                     >
                       <Printer className="w-3.5 h-3.5 text-purple-200" />
-                      <span>Xem Biên Bản</span>
+                      <span>Xem biên bản</span>
                     </button>
                   )}
                   <button
@@ -1635,7 +1635,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                     title="Đóng đơn hiện tại và quay về màn hình chờ quét barcode"
                   >
                     <QrCode className="w-3.5 h-3.5 text-purple-600" />
-                    <span>Quét Đơn Khác</span>
+                    <span>Quét đơn khác</span>
                   </button>
                 </div>
               </div>
@@ -1663,9 +1663,9 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                     </div>
                     <div>
                       <div className="font-black text-amber-950 text-sm flex items-center gap-2 flex-wrap">
-                        <span>Hồ Sơ Đã Hoàn Tất Kiểm Định Tận Nơi (Đã Khóa)</span>
+                        <span>Hồ sơ đã hoàn tất kiểm định tận nơi (Đã Khóa)</span>
                         <span className={`text-[10px] px-2 py-0.5 rounded-full font-black uppercase ${overallVerdict === 'PASS' || activeOrder?.inspectionReport?.overallVerdict === 'PASS' || activeOrder?.inspectionReport?.verdict === 'PASS' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-rose-100 text-rose-800 border border-rose-300'}`}>
-                          {overallVerdict === 'PASS' || activeOrder?.inspectionReport?.overallVerdict === 'PASS' || activeOrder?.inspectionReport?.verdict === 'PASS' ? 'Đã Đạt Chuẩn' : 'Từ Chối'}
+                          {overallVerdict === 'PASS' || activeOrder?.inspectionReport?.overallVerdict === 'PASS' || activeOrder?.inspectionReport?.verdict === 'PASS' ? 'Đã đạt chuẩn' : 'Từ chối'}
                         </span>
                       </div>
                       <p className="text-[11px] text-amber-800 mt-0.5">
@@ -1681,7 +1681,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="flex items-center gap-2 font-bold text-purple-900 text-sm">
                     <Calendar className="w-4 h-4 text-purple-600" />
-                    <span>Thông Tin Lịch Hẹn & Địa Chỉ Người Bán Cần Đến Khảo Sát</span>
+                    <span>Thông tin lịch hẹn & địa chỉ người bán cần đến khảo sát</span>
                   </div>
 
                 </div>
@@ -1731,7 +1731,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
-                      Đang Đo Kiểm
+                      Đang đo kiểm
                     </span>
                   </div>
                 </div>
@@ -1744,7 +1744,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                   <div className="text-xs font-bold uppercase text-gray-500 flex items-center justify-between">
                     <span className="flex items-center gap-1">
                       <Camera className="w-3.5 h-3.5 text-[#c34c36]" />
-                      Ảnh Thiết Bị Bài Đăng
+                      Ảnh thiết bị bài đăng
                     </span>
                     {productImages.length > 0 && (
                       <span className="text-[10px] text-gray-400 font-mono">
@@ -1799,7 +1799,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                 <div className="space-y-4 text-xs">
                   <div className="p-4 sm:p-5 rounded-2xl bg-[#faf8f5] border border-gray-200 space-y-3 shadow-2xs">
                     <div className="font-bold text-gray-700 uppercase text-[11px] pb-2 border-b border-gray-200/80 flex items-center justify-between flex-wrap gap-1">
-                      <span>Thông Tin Sản Phẩm Bài Đăng</span>
+                      <span>Thông tin sản phẩm bài đăng</span>
                       {activeOrder?.listing?.id && (
                         <span className="font-mono text-gray-400 font-normal">
                           Mã bài đăng: #{String(activeOrder.listing.id).slice(0, 8)}
@@ -1903,7 +1903,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-bold text-[#c34c36] uppercase tracking-wider flex items-center gap-1">
                       <Wrench className="w-3.5 h-3.5" />
-                      Đang Kiểm Định Trực Tiếp
+                      Đang kiểm định trực tiếp
                     </span>
                     <span className="text-xs font-mono font-bold text-gray-500">
                       Mã: #{activeOrder?.id}
@@ -1923,7 +1923,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                       title="Xem lại thông tin lịch hẹn và địa chỉ khảo sát"
                     >
                       <Calendar className="w-3.5 h-3.5 text-purple-600" />
-                      <span>Xem Lịch Hẹn</span>
+                      <span>Xem lịch hẹn</span>
                     </button>
                   )}
                   {isCompletedOrder && (
@@ -1934,7 +1934,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                       title="Xem biên bản giám định & chứng thư số"
                     >
                       <Printer className="w-3.5 h-3.5 text-[#fce5da]" />
-                      <span>Xem Biên Bản</span>
+                      <span>Xem biên bản</span>
                     </button>
                   )}
                   <button
@@ -1947,7 +1947,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                     title="Đóng đơn hiện tại và quay về màn hình chờ quét barcode"
                   >
                     <QrCode className="w-3.5 h-3.5 text-gray-500" />
-                    <span>Quét Đơn Khác</span>
+                    <span>Quét đơn khác</span>
                   </button>
                 </div>
               </div>
@@ -1961,7 +1961,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                     </div>
                     <div>
                       <div className="font-black text-amber-950 text-sm flex items-center gap-2 flex-wrap">
-                        <span>Hồ Sơ Đã Hoàn Tất Kiểm Định (Chế Độ Khóa Chỉ Đọc)</span>
+                        <span>Hồ sơ đã hoàn tất kiểm định (Chế độ khóa chỉ đọc)</span>
                         <span className={`text-[10px] px-2 py-0.5 rounded-full font-black uppercase ${overallVerdict === 'PASS' || activeOrder?.inspectionReport?.overallVerdict === 'PASS' || activeOrder?.inspectionReport?.verdict === 'PASS' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-rose-100 text-rose-800 border border-rose-300'}`}>
                           {overallVerdict === 'PASS' || activeOrder?.inspectionReport?.overallVerdict === 'PASS' || activeOrder?.inspectionReport?.verdict === 'PASS' ? 'Đạt Chuẩn (PASS)' : 'Từ Chối (FAIL)'}
                         </span>
@@ -1977,7 +1977,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                     className="px-4 py-2 bg-[#24263e] hover:bg-black text-white text-xs font-bold rounded-xl shrink-0 flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer"
                   >
                     <Printer className="w-3.5 h-3.5 text-[#fce5da]" />
-                    <span>Xem Biên Bản</span>
+                    <span>Xem biên bản</span>
                   </button>
                 </div>
               )}
@@ -2047,7 +2047,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                   {/* Order Info & Method details */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="p-4 rounded-2xl bg-[#faf8f5] border border-gray-200 space-y-2 text-xs">
-                      <div className="font-bold text-gray-700 uppercase text-[11px]">Thông Tin Bài Đăng Người Bán</div>
+                      <div className="font-bold text-gray-700 uppercase text-[11px]">Thông tin bài đăng người bán</div>
                       <div><strong>Tên máy:</strong> {activeOrder?.listing?.title}</div>
                       <div><strong>Giá bán:</strong> <span className="font-mono text-[#c34c36] font-bold">{formatVND(activeOrder?.itemPriceVnd || 0)}</span></div>
                       <div><strong>Người bán:</strong> {activeOrder?.sellerName}</div>
@@ -2055,12 +2055,12 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                     </div>
 
                     <div className="p-4 rounded-2xl bg-[#faf8f5] border border-gray-200 space-y-2 text-xs">
-                      <div className="font-bold text-gray-700 uppercase text-[11px]">Hình Thức & Địa Chỉ Kiểm Định</div>
+                      <div className="font-bold text-gray-700 uppercase text-[11px]">Hình thức & địa chỉ kiểm định</div>
                       {isAtHomeOrder ? (
                         <>
                           <div className="text-purple-900 font-bold flex items-center gap-1">
                             <MapPin className="w-3.5 h-3.5 text-purple-600" />
-                            Khảo Sát & Đo Kiểm Tại Nhà Người Bán
+                            Khảo sát & đo kiểm tại nhà người bán
                           </div>
                           <div className="text-slate-800 font-bold leading-snug">
                             📍 {resolvedSellerAddress}
@@ -2073,7 +2073,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                         <>
                           <div className="text-blue-900 font-bold flex items-center gap-1">
                             <Building2 className="w-3.5 h-3.5 text-blue-600" />
-                            Bàn Giao Nhận Tại Phòng Lab Hub
+                            Bàn giao nhận tại phòng Lab Hub
                           </div>
                           <div className="text-gray-600">
                             Bưu tá giao hàng tới quầy tiếp nhận Hub.
@@ -2100,7 +2100,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                       <div className="flex items-center gap-2">
                         <Package className="w-4 h-4 text-[#c34c36]" />
                         <span className="font-bold text-gray-800 text-xs uppercase tracking-wide">
-                          Hiện Trạng Đóng Gói & Phụ Kiện Khi Tiếp Nhận
+                          Hiện trạng đóng gói & phụ kiện khi tiếp nhận
                         </span>
                       </div>
                     </div>
@@ -2125,7 +2125,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
 
                       <div className="space-y-1.5">
                         <label className="font-bold text-gray-700 flex items-center justify-between">
-                          <span>Phụ Kiện Đi Kèm & Ghi Chú Tiếp Nhận</span>
+                          <span>Phụ kiện đi kèm & ghi chú tiếp nhận</span>
                           <span className="text-[10px] text-gray-400 font-normal">(Tùy chọn)</span>
                         </label>
                         <input
@@ -2177,7 +2177,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                   <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-200 flex items-start gap-3 text-xs text-blue-900">
                     <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                     <div>
-                      <strong>Bước 2 - Kiểm tra Ngoại Quan & Phân Hạng:</strong> Đánh giá mức độ trầy xước, cấn móp, độ nguyên vẹn của khung vỏ, kính chịu lực và các khớp nối.
+                      <strong>Bước 2 - Kiểm tra ngoại quan & phân hạng:</strong> Đánh giá mức độ trầy xước, cấn móp, độ nguyên vẹn của khung vỏ, kính chịu lực và các khớp nối.
                     </div>
                   </div>
 
@@ -2185,7 +2185,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">
-                        Chọn Phân Hạng Ngoại Quan:
+                        Chọn phân hạng ngoại quan:
                       </label>
                       {selectedGrade && (
                         <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
@@ -2286,7 +2286,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                   <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-200 flex items-start gap-3 text-xs text-blue-900">
                     <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                     <div>
-                      <strong>Bước 3 - Kiểm Định Kỹ Thuật & Bo Mạch Phòng Lab:</strong> Thử tải điện áp, máy nén, cảm biến nhiệt, motor truyền động và đo đạc chỉ số vận hành thực tế.
+                      <strong>Bước 3 - kiểm định kỹ thuật & bo mạch phòng Lab:</strong> Thử tải điện áp, máy nén, cảm biến nhiệt, motor truyền động và đo đạc chỉ số vận hành thực tế.
                     </div>
                   </div>
 
@@ -2454,11 +2454,11 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                     <div>
                       {isAtCenterOrder ? (
                         <>
-                          <strong>Bước 4 - Ảnh Bằng Chứng Hiện Trạng Tại Hub:</strong> Chụp và tải lên từ 1 đến 10 ảnh hiện trạng máy (ảnh toàn cảnh, chi tiết linh kiện, số serial nếu có) trực tiếp tại Trạm kiểm định.
+                          <strong>Bước 4 - ảnh bằng chứng hiện trạng tại Hub:</strong> Chụp và tải lên từ 1 đến 10 ảnh hiện trạng máy (ảnh toàn cảnh, chi tiết linh kiện, số serial nếu có) trực tiếp tại Trạm kiểm định.
                         </>
                       ) : (
                         <>
-                          <strong>Bước 4 - Ảnh Bằng Chứng Hiện Trạng & Vi Mạch:</strong> Chụp ảnh hiện trạng máy, chi tiết linh kiện và ảnh chụp thực tế theo tiêu chuẩn SecondLife.
+                          <strong>Bước 4 - ảnh bằng chứng hiện trạng & vi mạch:</strong> Chụp ảnh hiện trạng máy, chi tiết linh kiện và ảnh chụp thực tế theo tiêu chuẩn SecondLife.
                         </>
                       )}
                     </div>
@@ -2468,7 +2468,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">
-                        {isAtCenterOrder ? 'Thư Viện Ảnh Hiện Trạng Thiết Bị (1 - 10 ảnh) *:' : 'Thư Viện Ảnh Bằng Chứng Kiểm Định:'}
+                        {isAtCenterOrder ? 'Thư viện ảnh hiện trạng thiết bị (1 - 10 ảnh) *:' : 'Thư viện ảnh bằng chứng kiểm định:'}
                       </span>
                       {proofPhotos.length > 0 ? (
                         <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
@@ -2623,7 +2623,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                   <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-200 flex items-start gap-3 text-xs text-blue-900">
                     <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                     <div>
-                      <strong>Bước 5 - Kết Luận, Ký Số & Phát Hành Chứng Thư:</strong> Hoàn tất thẩm định, chọn kết luận Đạt hoặc Từ chối và ký số điện tử để cấp Chứng thư giám định cho đơn hàng.
+                      <strong>Bước 5 - kết luận, ký số & phát hành chứng thư:</strong> Hoàn tất thẩm định, chọn kết luận Đạt hoặc Từ chối và ký số điện tử để cấp Chứng thư giám định cho đơn hàng.
                     </div>
                   </div>
 
@@ -2647,7 +2647,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">
-                        Kết Luận Thẩm Định Cuối Cùng *:
+                        Kết luận thẩm định cuối cùng *:
                       </label>
                       {overallVerdict && (
                         <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
@@ -2694,7 +2694,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                     }`}>
                     <div className="flex justify-between items-center">
                       <div>
-                        <span className="font-bold text-gray-700">Điểm Đánh Giá Chất Lượng Tổng Thể:</span>
+                        <span className="font-bold text-gray-700">Điểm đánh giá chất lượng tổng thể:</span>
                         <span className="block text-[11px] font-normal">
                           {overallVerdict === 'PASS' ? (
                             <span className="text-amber-700 font-semibold">Yêu cầu khi Đạt Chuẩn: Điểm số phải lớn hơn 75 (&gt; 75)</span>
@@ -2734,7 +2734,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                     />
 
                     <div className="flex justify-between text-[11px] text-gray-400 font-mono">
-                      <span>0 (Kém / Hỏng)</span>
+                      <span>0 (kém / hỏng)</span>
                       <span className="text-amber-600 font-bold">Ngưỡng đạt: &gt; 75</span>
                       <span>100 (Xuất sắc)</span>
                     </div>
@@ -2743,7 +2743,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                       <div className="flex flex-wrap items-center gap-1.5 pt-1">
                         <span className="text-[11px] text-gray-500 font-medium">Chọn nhanh:</span>
                         {(overallVerdict === 'FAIL' ? [
-                          { score: 0, label: '0 (Kém / Hỏng)' },
+                          { score: 0, label: '0 (kém / hỏng)' },
                           { score: 30, label: '30' },
                           { score: 50, label: '50' },
                           { score: 60, label: '60' },
@@ -2793,7 +2793,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
 
                   {/* Diagnostic notes */}
                   <div className="space-y-1.5 text-xs">
-                    <label className="font-bold text-gray-700">Ghi Chú Kết Luận Chi Tiết Của Kỹ Sư Giám Định:</label>
+                    <label className="font-bold text-gray-700">Ghi chú kết luận chi tiết của kỹ sư giám định:</label>
                     <textarea
                       value={inspectorNotes}
                       readOnly={isCompletedOrder}
@@ -2816,7 +2816,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                       </div>
                       <div>
                         <div className="font-bold text-slate-900 flex items-center gap-2">
-                          <span>Chữ Ký Số Kiểm Định Viên: {inspectorName}</span>
+                          <span>Chữ ký số kiểm định viên: {inspectorName}</span>
                           {!isDigitalSigned && (
                             <span className="text-[10px] text-amber-700 font-extrabold uppercase px-1.5 py-0.5 rounded bg-amber-100 border border-amber-300">
                               Bắt buộc
@@ -2872,7 +2872,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                           className="w-full sm:w-auto px-8 py-3 bg-[#24263e] hover:bg-black text-white text-sm font-black rounded-xl shadow-md flex items-center justify-center gap-2 cursor-pointer transition"
                         >
                           <Printer className="w-4 h-4 text-[#fce5da]" />
-                          <span>Xem Biên Bản Giám Định</span>
+                          <span>Xem biên bản giám định</span>
                         </button>
                       ) : (
                         <>
@@ -2882,7 +2882,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                             className="px-5 py-2.5 border border-gray-300 hover:bg-gray-50 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer"
                           >
                             <Eye className="w-4 h-4 text-gray-500" />
-                            <span>Xem Trước Chứng Thư</span>
+                            <span>Xem trước chứng thư</span>
                           </button>
 
                           <button
@@ -2903,7 +2903,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                             ) : (
                               <>
                                 <ShieldCheck className="w-4 h-4 text-[#fce5da]" />
-                                <span>Ký Số & Phát Hành Biên Bản Nghiệm Thu</span>
+                                <span>Ký số & phát hành biên bản nghiệm thu</span>
                               </>
                             )}
                           </button>

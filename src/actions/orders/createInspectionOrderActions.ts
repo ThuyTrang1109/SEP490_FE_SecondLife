@@ -29,9 +29,9 @@ export function createInspectionOrderActions({
     const ok = await dialogService.confirm(
       'Bạn xác nhận đồng ý với kết quả kiểm định KHÔNG ĐẠT. Hệ thống sẽ áp dụng khấu trừ điểm uy tín theo quy định. Phí kiểm định và vận chuyển được chia theo tỷ lệ đã thống nhất. Phần dư dự phòng cước trả hàng sẽ được hoàn theo tỷ lệ này sau khi trừ cước thực tế. Thao tác này không thể hoàn tác.',
       {
-        title: 'Xác Nhận Chấp Nhận Kết Quả Kiểm Định',
-        confirmText: 'Chấp Nhận & Trừ Điểm',
-        cancelText: 'Xem Lại',
+        title: 'Xác nhận chấp nhận kết quả kiểm định',
+        confirmText: 'Chấp nhận & trừ điểm',
+        cancelText: 'Xem lại',
       }
     );
     if (!ok) return;
@@ -165,7 +165,7 @@ export function createInspectionOrderActions({
       if (isBothPaid) {
         setInspectionActionNotice(
           lang === 'vi'
-            ? 'Đã nộp phí kiểm định vào Escrow thành công! Đơn chuyển sang trạng thái Sẵn Sàng Giao KTV / Hub.'
+            ? 'Đã nộp phí kiểm định vào Escrow thành công! Đơn chuyển sang trạng thái sẵn sàng giao KTV / Hub.'
             : 'Inspection fee paid into Escrow successfully! Ready for Hub/Technician dispatch.'
         );
       } else {
@@ -240,7 +240,7 @@ export function createInspectionOrderActions({
         onRefreshOrders?.();
         setTimeout(() => setInspectionActionNotice(null), 4000);
       } else {
-        dialogService.error(msg, 'Lỗi Thanh Toán');
+        dialogService.error(msg, 'Lỗi thanh toán');
         onRefreshOrders?.();
       }
     } finally {
@@ -251,14 +251,14 @@ export function createInspectionOrderActions({
   const handleConfirmInspectionPurchase = (orderId: string) => {
     setConfirmDialog({
       isOpen: true,
-      title: lang === 'vi' ? 'Nghiệm Thu & Mua Hàng' : 'Confirm Purchase',
+      title: lang === 'vi' ? 'Nghiệm thu & mua hàng' : 'Confirm Purchase',
       message: lang === 'vi'
         ? 'Xác nhận sản phẩm kiểm định đạt chuẩn và tiến hành thanh toán tiền hàng cuối cùng?'
         : 'Confirm passed inspection and proceed with final payment?',
       subMessage: lang === 'vi'
         ? 'Tiền hàng sẽ được giữ an toàn trong Escrow và đơn hàng sẽ được chuyển sang khâu giao hàng cho bạn.'
         : 'Funds will be securely held in Escrow and dispatched to the courier.',
-      confirmText: lang === 'vi' ? 'Xác Nhận Mua' : 'Confirm',
+      confirmText: lang === 'vi' ? 'Xác nhận mua' : 'Confirm',
       cancelText: lang === 'vi' ? 'Đóng' : 'Cancel',
       variant: 'success',
       iconType: 'check',

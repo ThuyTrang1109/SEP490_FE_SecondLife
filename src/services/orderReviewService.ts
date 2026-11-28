@@ -48,6 +48,10 @@ export interface SellerReviewSummaryDto {
   ratingCounts: Record<number, number>;
 }
 
+const SUMMARY_CACHE_TTL_MS = 60_000;
+const summaryCache = new Map<string, { data: SellerReviewSummaryDto | null; timestamp: number }>();
+const summaryInFlight = new Map<string, Promise<SellerReviewSummaryDto | null>>();
+
 export const orderReviewService = {
   /**
    * Tạo đánh giá cho đơn hàng (trong vòng 48h từ lúc bưu tá giao thành công)
@@ -116,16 +120,42 @@ export const orderReviewService = {
   /**
    * Lấy tóm tắt điểm đánh giá sao của người bán
    * GET /api/v1/sellers/{sellerId}/reviews/summary
+   * Tích hợp cache & deduplication in-flight tránh gọi trùng trên danh sách card.
    */
-  async getSellerSummary(sellerId: string): Promise<SellerReviewSummaryDto | null> {
-    try {
-      const res = await request<SellerReviewSummaryDto>(`/v1/sellers/${sellerId}/reviews/summary`, {
-        method: 'GET',
-      });
-      return ((res as any)?.data !== undefined && (res as any)?.data !== null ? (res as any).data : res) as SellerReviewSummaryDto;
-    } catch {
-      return null;
+  async getSellerSummary(sellerId: string, bypassCache = false): Promise<SellerReviewSummaryDto | null> {
+    if (!sellerId) return null;
+
+    if (!bypassCache) {
+      const cached = summaryCache.get(sellerId);
+      if (cached && Date.now() - cached.timestamp < SUMMARY_CACHE_TTL_MS) {
+        return cached.data;
+      }
+      if (summaryInFlight.has(sellerId)) {
+        return summaryInFlight.get(sellerId)!;
+      }
     }
+
+    const fetchPromise = (async () => {
+      try {
+        const res = await request<SellerReviewSummaryDto>(`/v1/sellers/${sellerId}/reviews/summary`, {
+          method: 'GET',
+          requiresAuth: false,
+        });
+        const data = ((res as any)?.data !== undefined && (res as any)?.data !== null ? (res as any).data : res) as SellerReviewSummaryDto;
+        const result = data || null;
+        summaryCache.set(sellerId, { data: result, timestamp: Date.now() });
+        return result;
+      } catch {
+        return null;
+      } finally {
+        summaryInFlight.delete(sellerId);
+      }
+    })();
+
+    if (!bypassCache) {
+      summaryInFlight.set(sellerId, fetchPromise);
+    }
+    return fetchPromise;
   },
 
   /**

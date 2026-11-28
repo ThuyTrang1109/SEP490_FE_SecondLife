@@ -94,7 +94,7 @@ export function CenterShipmentModal({ centerProfile, currentUser, shipmentModalO
             </div>
             <div>
               <h3 className="font-extrabold text-sm sm:text-base text-slate-900">
-                Vận Đơn Điều Phối Kiểm Định Lab Hub
+                Vận đơn điều phối kiểm định Lab Hub
               </h3>
               <p className="text-[11px] text-slate-400 font-mono">
                 Đơn kiểm định: #{shipmentModalOrder.id.slice(0, 8)} • {shipmentModalOrder.postTitle}
@@ -127,7 +127,7 @@ export function CenterShipmentModal({ centerProfile, currentUser, shipmentModalO
         <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 pb-2 shrink-0">
           <div className="inline-flex items-center gap-1.5 rounded-xl bg-[#24263e] px-3.5 py-1.5 text-xs font-bold text-white">
             <Package className="w-3.5 h-3.5" />
-            <span>Lộ Trình Vận Đơn ({effectiveShipments.length})</span>
+            <span>Lộ trình vận đơn ({effectiveShipments.length})</span>
           </div>
           {canBookReturn && !effectiveShipments.some((s) => s.leg === 'CENTER_TO_SELLER') && (
             <button
@@ -190,8 +190,8 @@ export function CenterShipmentModal({ centerProfile, currentUser, shipmentModalO
                   : isCenterToBuyer
                     ? 'Chặng 2: Lab Hub ➔ Người Mua (Đạt chuẩn)'
                     : isCenterToSeller
-                      ? 'Chặng 2: Lab Hub ➔ Hoàn Trả Người Bán'
-                      : `Chặng: ${s.leg || 'Điều Phối Lab Hub'}`;
+                      ? 'Chặng 2: Lab Hub ➔ hoàn trả người bán'
+                      : `Chặng: ${s.leg || 'Điều phối Lab Hub'}`;
 
                 const legColorClass = isSellerToCenter
                   ? 'bg-blue-50 text-blue-800 border-blue-200'
@@ -276,7 +276,7 @@ export function CenterShipmentModal({ centerProfile, currentUser, shipmentModalO
                         {!isInterrupted && (
                           <LalamoveProgress
                             title="Tiến trình hoàn trả Lalamove (Hub → Người bán)"
-                            routeBadge="Chặng Hoàn Trả: Hub ➔ Seller"
+                            routeBadge="Chặng hoàn trả: Hub ➔ Seller"
                             currentStep={progress.step}
                             completeCurrentStep={isDelivered}
                           />
@@ -317,9 +317,9 @@ export function CenterShipmentModal({ centerProfile, currentUser, shipmentModalO
                         inspectionCenterAddress: (currentUser as any)?.address || (shipmentModalOrder as any).inspectionCenterAddress,
                         inspectionCenterPhone: (currentUser as any)?.phone || (shipmentModalOrder as any).inspectionCenterPhone,
                       });
-                      const hubName = centerProfile?.name || resolvedCenter.name || 'Trung Tâm Kiểm Định SecondLife';
+                      const hubName = centerProfile?.name || resolvedCenter.name || 'Trung tâm kiểm định secondLife';
                       const hubPhone = centerProfile?.phone || resolvedCenter.phone || '1900 8899';
-                      const hubAddress = centerProfile?.address || resolvedCenter.address || 'Giảng đường Phượng Vỹ, Đường số 8, Phường Linh Xuân, Thành phố Hồ Chí Minh';
+                      const hubAddress = centerProfile?.address || resolvedCenter.address || 'Giảng đường phượng vỹ, đường số 8, phường linh xuân, thành phố Hồ Chí Minh';
 
                       const sellerName = shipmentModalOrder.sellerName || inboundRef?.senderName || 'Người bán';
                       const sellerPhone = shipmentModalOrder.sellerPhone || (shipmentModalOrder as any).phone || inboundRef?.senderPhone || '0912345678';
@@ -330,8 +330,8 @@ export function CenterShipmentModal({ centerProfile, currentUser, shipmentModalO
                       const buyerAddress = (shipmentModalOrder as any).buyerAddress || (shipmentModalOrder as any).deliveryAddress || (shipmentModalOrder as any).address || 'Địa chỉ nhận hàng của người mua';
 
                       const senderTitle = isSellerToCenter
-                        ? 'Điểm Lấy Hàng (Nhà Người Bán):'
-                        : 'Điểm Gửi Hàng (Phòng Lab Hub):';
+                        ? 'Điểm lấy hàng (Nhà người bán):'
+                        : 'Điểm gửi hàng (Phòng Lab Hub):';
                       const displaySenderName = isSellerToCenter
                         ? (s.senderName || sellerName)
                         : (s.senderName || hubName);
@@ -343,10 +343,10 @@ export function CenterShipmentModal({ centerProfile, currentUser, shipmentModalO
                         : (s.senderAddress || hubAddress);
 
                       const receiverTitle = isSellerToCenter
-                        ? 'Điểm Tiếp Nhận (Phòng Lab Hub):'
+                        ? 'Điểm tiếp nhận (Phòng Lab Hub):'
                         : isCenterToBuyer
-                          ? 'Điểm Giao Hàng (Khách Mua):'
-                          : 'Điểm Nhận Trả (Người Bán):';
+                          ? 'Điểm giao hàng (Khách Mua):'
+                          : 'Điểm nhận trả (Người Bán):';
                       const displayReceiverName = isSellerToCenter
                         ? (s.receiverName || hubName)
                         : isCenterToBuyer

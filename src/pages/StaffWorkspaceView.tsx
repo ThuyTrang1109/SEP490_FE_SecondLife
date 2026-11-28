@@ -181,7 +181,7 @@ const ReportEvidenceItem: React.FC<{
       setHasError(true);
       dialogService.error(
         `Không thể tải file bằng chứng: ${finalErr?.message || 'Vui lòng kiểm tra kết nối mạng hoặc thử lại.'}`,
-        'Lỗi Tải Bằng Chứng'
+        'Lỗi tải bằng chứng'
       );
     } finally {
       setLoading(false);
@@ -646,7 +646,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
   const handleSendEvidenceRequest = (e: React.FormEvent) => {
     e.preventDefault();
     if (!evidenceContent.trim()) {
-      dialogService.warning('Vui lòng nhập nội dung yêu cầu bổ sung bằng chứng', 'Thiếu Thông Tin');
+      dialogService.warning('Vui lòng nhập nội dung yêu cầu bổ sung bằng chứng', 'Thiếu thông tin');
       return;
     }
     triggerNotice(
@@ -725,7 +725,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
         <div className="flex items-center gap-3">
           <div className="hidden md:flex items-center gap-1.5 text-xs text-emerald-400 font-bold bg-emerald-950/40 px-2.5 py-1 rounded-full border border-emerald-500/20">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span>{lang === 'vi' ? 'Trực Tuyến' : 'Online'}</span>
+            <span>{lang === 'vi' ? 'Trực tuyến' : 'Online'}</span>
           </div>
 
           <div className="relative" ref={userDropdownRef}>
@@ -750,11 +750,11 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
               <div className="absolute right-0 mt-2 w-56 bg-white text-[#24263e] rounded-2xl shadow-2xl border border-gray-200 py-1.5 z-50 text-xs animate-in fade-in">
                 <div className="px-3.5 py-2.5 border-b border-gray-100">
                   <p className="font-black text-[#24263e] text-xs truncate">
-                    {currentUser?.name || (lang === 'vi' ? 'Nhân Viên Vận Hành' : 'Staff Operator')}
+                    {currentUser?.name || (lang === 'vi' ? 'Nhân viên vận hành' : 'Staff Operator')}
                   </p>
                   <p className="text-[11px] text-gray-500 font-medium truncate">{currentUser?.email || 'staff@secondlife.vn'}</p>
                   <span className="inline-block mt-1 px-2 py-0.5 rounded-md bg-[#c34c36]/10 text-[#c34c36] font-extrabold text-[10px]">
-                    {lang === 'vi' ? 'Quyền: Điều Phối & Kiểm Duyệt' : 'Role: Staff'}
+                    {lang === 'vi' ? 'Quyền: Điều phối & kiểm duyệt' : 'Role: Staff'}
                   </span>
                 </div>
                 <div className="p-1 space-y-0.5">
@@ -766,7 +766,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                     className="w-full text-left px-3 py-2 hover:bg-slate-100 rounded-xl flex items-center gap-2 text-[#24263e] font-bold cursor-pointer transition sm:hidden"
                   >
                     <ShoppingBag className="w-3.5 h-3.5 text-[#c34c36]" />
-                    <span>{lang === 'vi' ? 'Về Sàn Đồ Cũ' : 'Marketplace'}</span>
+                    <span>{lang === 'vi' ? 'Về sàn đồ cũ' : 'Marketplace'}</span>
                   </button>
                   <button
                     onClick={() => {
@@ -776,7 +776,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                     className="w-full text-left px-3 py-2 hover:bg-rose-50 rounded-xl text-rose-600 flex items-center gap-2 cursor-pointer font-bold transition"
                   >
                     <LogOut className="w-3.5 h-3.5" />
-                    <span>{lang === 'vi' ? 'Đăng Xuất' : 'Log Out'}</span>
+                    <span>{lang === 'vi' ? 'Đăng xuất' : 'Log Out'}</span>
                   </button>
                 </div>
               </div>
@@ -807,7 +807,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
             </div>
             {!isSidebarCollapsed && (
               <div className="overflow-hidden">
-                <h4 className="font-black text-xs sm:text-sm text-[#24263e] truncate">{currentUser?.name || 'Nhân Viên Vận Hành'}</h4>
+                <h4 className="font-black text-xs sm:text-sm text-[#24263e] truncate">{currentUser?.name || 'Nhân viên vận hành'}</h4>
               </div>
             )}
           </div>
@@ -893,10 +893,10 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
             <div className="flex items-baseline gap-2">
               <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
                 {activeTab === 'overview'
-                  ? 'Dashboard Tổng Quan'
+                  ? 'Dashboard tổng quan'
                   : navItems.find((n) => n.id === activeTab)?.label}
               </h1>
-              <span className="text-xs text-slate-500 font-normal">Khu Vực Vận Hành Nhân Viên</span>
+              <span className="text-xs text-slate-500 font-normal">Khu vực vận hành nhân viên</span>
             </div>
 
             <div className="flex items-center gap-1.5 text-xs text-slate-500">
@@ -905,7 +905,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                 onClick={() => setActiveTab('overview')}
                 className="hover:text-[#24263e] transition cursor-pointer"
               >
-                Trang Chủ
+                Trang chủ
               </button>
               <ChevronRight className="w-3 h-3 text-slate-400" />
               <span className="font-semibold text-slate-800 capitalize">
@@ -1026,19 +1026,19 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                   <table className="w-full text-left text-xs">
                     <thead>
                       <tr className="border-b border-slate-100 bg-slate-50/70 text-slate-600 text-[11px] font-bold">
-                        <th className="py-2.5 px-4">Loại Nghiệp Vụ</th>
-                        <th className="py-2.5 px-4">Mã Vụ Việc</th>
-                        <th className="py-2.5 px-4">Đối Tượng / Người Liên Quan</th>
-                        <th className="py-2.5 px-4">Nội Dung Cảnh Báo</th>
-                        <th className="py-2.5 px-4 text-center">Ưu Tiên</th>
-                        <th className="py-2.5 px-4 text-center">Thao Tác</th>
+                        <th className="py-2.5 px-4">Loại nghiệp vụ</th>
+                        <th className="py-2.5 px-4">Mã vụ việc</th>
+                        <th className="py-2.5 px-4">Đối tượng / người liên quan</th>
+                        <th className="py-2.5 px-4">Nội dung cảnh báo</th>
+                        <th className="py-2.5 px-4 text-center">Ưu tiên</th>
+                        <th className="py-2.5 px-4 text-center">Thao tác</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       <tr className="hover:bg-slate-50/70 transition">
-                        <td className="py-3 px-4 font-bold text-rose-700 whitespace-nowrap">Tranh Chấp Escrow</td>
+                        <td className="py-3 px-4 font-bold text-rose-700 whitespace-nowrap">Tranh chấp Escrow</td>
                         <td className="py-3 px-4 font-mono font-bold text-slate-900">#DSP-501</td>
-                        <td className="py-3 px-4 text-slate-700">Lê Văn An vs Hoàng Quốc Khang</td>
+                        <td className="py-3 px-4 text-slate-700">Lê văn an vs hoàng quốc khang</td>
                         <td className="py-3 px-4 text-slate-700 max-w-xs truncate">Tủ lạnh hỏng blốc nén khi giao tới nơi (14.500.000đ)</td>
                         <td className="py-3 px-4 text-center">
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-800">KHẨN CẤP</span>
@@ -1053,9 +1053,9 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                         </td>
                       </tr>
                       <tr className="hover:bg-slate-50/70 transition">
-                        <td className="py-3 px-4 font-bold text-amber-700 whitespace-nowrap">Tin Nghi Vấn AI</td>
+                        <td className="py-3 px-4 font-bold text-amber-700 whitespace-nowrap">Tin nghi vấn AI</td>
                         <td className="py-3 px-4 font-mono font-bold text-slate-900">#POST-8891</td>
-                        <td className="py-3 px-4 text-slate-700">Nguyễn Văn Đạt</td>
+                        <td className="py-3 px-4 text-slate-700">Nguyễn văn đạt</td>
                         <td className="py-3 px-4 text-slate-700 max-w-xs truncate">Giá rao 3.5Tr vs AI định giá 18.5Tr (lệch 81%)</td>
                         <td className="py-3 px-4 text-center">
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800">CAO</span>
@@ -1070,7 +1070,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                         </td>
                       </tr>
                       <tr className="hover:bg-slate-50/70 transition">
-                        <td className="py-3 px-4 font-bold text-sky-800 whitespace-nowrap">Cảnh Báo Gian Lận</td>
+                        <td className="py-3 px-4 font-bold text-sky-800 whitespace-nowrap">Cảnh báo gian lận</td>
                         <td className="py-3 px-4 font-mono font-bold text-slate-900">#FRD-501</td>
                         <td className="py-3 px-4 text-slate-700">TuanStore</td>
                         <td className="py-3 px-4 text-slate-700 max-w-xs truncate">Tin nhắn yêu cầu chuyển cọc ngoài Escrow qua ZaloPay</td>
@@ -1134,14 +1134,14 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                           }`}
                       >
                         <AlertTriangle className="w-3.5 h-3.5" />
-                        Nghi Vấn ({staffListings.filter((l) => l.isSuspicious).length})
+                        Nghi vấn ({staffListings.filter((l) => l.isSuspicious).length})
                       </button>
                       <button
                         onClick={() => setListingFilter('NORMAL')}
                         className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${listingFilter === 'NORMAL' ? 'bg-white text-[#24263e] shadow-xs font-black' : 'text-slate-600'
                           }`}
                       >
-                        Tin Bình Thường
+                        Tin bình thường
                       </button>
                     </div>
                   </div>
@@ -1164,13 +1164,13 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                   <table className="w-full text-left text-xs">
                     <thead>
                       <tr className="border-b border-slate-100 bg-slate-50/70 text-slate-600 text-[11px] font-bold">
-                        <th className="py-2.5 px-3">Mã Tin</th>
-                        <th className="py-2.5 px-3">Sản Phẩm</th>
-                        <th className="py-2.5 px-3">Người Bán</th>
-                        <th className="py-2.5 px-3">Giá Rao Bán</th>
+                        <th className="py-2.5 px-3">Mã tin</th>
+                        <th className="py-2.5 px-3">Sản phẩm</th>
+                        <th className="py-2.5 px-3">Người bán</th>
+                        <th className="py-2.5 px-3">Giá rao bán</th>
                         <th className="py-2.5 px-3">AI Gợi Ý & Tin Cậy</th>
-                        <th className="py-2.5 px-3">Tình Trạng Rủi Ro</th>
-                        <th className="py-2.5 px-3 text-center">Hành Động</th>
+                        <th className="py-2.5 px-3">Tình trạng rủi ro</th>
+                        <th className="py-2.5 px-3 text-center">Hành động</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -1308,14 +1308,14 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                       className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${reportSubTab === 'REPORTS' ? 'bg-white text-[#24263e] shadow-xs font-black' : 'text-slate-600'
                         }`}
                     >
-                      Báo Cáo Vi Phạm ({reports.length})
+                      Báo cáo vi phạm ({reports.length})
                     </button>
                     <button
                       onClick={() => setReportSubTab('TICKETS')}
                       className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${reportSubTab === 'TICKETS' ? 'bg-white text-[#24263e] shadow-xs font-black' : 'text-slate-600'
                         }`}
                     >
-                      Ticket Hỗ Trợ ({supportTickets.length})
+                      Ticket hỗ trợ ({supportTickets.length})
                     </button>
                   </div>
                 </div>
@@ -1370,7 +1370,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                                     className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold transition cursor-pointer flex items-center gap-1 shadow-xs"
                                   >
                                     <Lock className="w-3.5 h-3.5" />
-                                    <span>Bắt Đầu Xử Lý Khiếu Nại</span>
+                                    <span>Bắt đầu xử lý khiếu nại</span>
                                   </button>
                                 ) : (
                                   <>
@@ -1378,13 +1378,13 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                                       onClick={() => handleResolveBackendReport(rep.id, 'CONFIRMED')}
                                       className="px-3 py-1.5 bg-[#24263e] text-white rounded-lg font-bold hover:bg-[#c34c36] transition cursor-pointer shadow-xs"
                                     >
-                                      Xử Phạt & Khóa Tin
+                                      Xử phạt & khóa tin
                                     </button>
                                     <button
                                       onClick={() => handleResolveBackendReport(rep.id, 'DISMISSED')}
                                       className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 rounded-lg font-bold hover:bg-slate-100 transition cursor-pointer"
                                     >
-                                      Bác Bỏ Báo Cáo
+                                      Bác bỏ báo cáo
                                     </button>
                                   </>
                                 )}
@@ -1408,13 +1408,13 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                               onClick={() => triggerNotice(`Đã xử lý phạt đối tượng theo báo cáo ${rep.id}`)}
                               className="px-3 py-1.5 bg-[#24263e] text-white rounded-lg font-bold hover:bg-[#c34c36] transition cursor-pointer"
                             >
-                              Xử Phạt & Khóa Tin
+                              Xử phạt & khóa tin
                             </button>
                             <button
                               onClick={() => triggerNotice(`Đã bác bỏ báo cáo ${rep.id} do không đủ căn cứ`)}
                               className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 rounded-lg font-bold hover:bg-slate-100 transition cursor-pointer"
                             >
-                              Bác Bỏ Báo Cáo
+                              Bác bỏ báo cáo
                             </button>
                           </div>
                         </div>
@@ -1437,7 +1437,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                             onClick={() => triggerNotice(`Đã gửi phản hồi hướng dẫn tới email ${tck.user}`)}
                             className="px-3 py-1.5 bg-emerald-700 text-white rounded-lg font-bold hover:bg-emerald-800 transition cursor-pointer"
                           >
-                            Phản Hồi & Đóng Ticket
+                            Phản hồi & đóng ticket
                           </button>
                         </div>
                       </div>
@@ -1459,7 +1459,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                     GIẢI QUYẾT TRANH CHẤP & VẬN HÀNH HOÀN HÀNG
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Phân xử khiếu nại giữa Người Mua & Người Bán, đối chiếu bằng chứng hai bên, tạo chuyến hoàn Lalamove và quyết toán hoàn tiền/phí.
+                    Phân xử khiếu nại giữa người mua & người bán, đối chiếu bằng chứng hai bên, tạo chuyến hoàn Lalamove và quyết toán hoàn tiền/phí.
                   </p>
                 </div>
                 <StaffDisputeManagement currentUserId={currentUser?.id} canHandleReturns={canHandleReturns} initialReportId={initialReportId} />
@@ -1496,13 +1496,13 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                   <table className="w-full text-left text-xs">
                     <thead>
                       <tr className="border-b border-slate-100 bg-slate-50/70 text-slate-600 text-[11px] font-bold">
-                        <th className="py-2.5 px-3">Mã Chi Trả</th>
-                        <th className="py-2.5 px-3">Mã Đơn</th>
+                        <th className="py-2.5 px-3">Mã chi trả</th>
+                        <th className="py-2.5 px-3">Mã đơn</th>
                         <th className="py-2.5 px-3">Người Nhận (Seller)</th>
-                        <th className="py-2.5 px-3">Số Tiền Giải Ngân</th>
-                        <th className="py-2.5 px-3">Tài Khoản Ngân Hàng</th>
-                        <th className="py-2.5 px-3">Trạng Thái & Lý Do Giữ</th>
-                        <th className="py-2.5 px-3 text-center">Thao Tác</th>
+                        <th className="py-2.5 px-3">Số tiền giải ngân</th>
+                        <th className="py-2.5 px-3">Tài khoản ngân hàng</th>
+                        <th className="py-2.5 px-3">Trạng thái & lý do giữ</th>
+                        <th className="py-2.5 px-3 text-center">Thao tác</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -1532,7 +1532,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                                 : 'bg-rose-700 hover:bg-rose-800 text-white'
                                 }`}
                             >
-                              {item.status === 'HOLD' ? 'Gỡ Tạm Giữ' : 'Tạm Giữ (Hold)'}
+                              {item.status === 'HOLD' ? 'Gỡ tạm giữ' : 'Tạm Giữ (Hold)'}
                             </button>
                           </td>
                         </tr>
@@ -1564,15 +1564,15 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-                    <span className="text-[11px] font-bold text-slate-500 block">Tổng Escrow Đang Bảo Chứng</span>
+                    <span className="text-[11px] font-bold text-slate-500 block">Tổng Escrow đang bảo chứng</span>
                     <span className="text-xl font-black text-[#24263e]">{escrowStats.totalHeld}</span>
                   </div>
                   <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-                    <span className="text-[11px] font-bold text-slate-500 block">Giải Ngân Trong 24 Giờ</span>
+                    <span className="text-[11px] font-bold text-slate-500 block">Giải ngân trong 24 Giờ</span>
                     <span className="text-xl font-black text-emerald-700">{escrowStats.totalReleased}</span>
                   </div>
                   <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-                    <span className="text-[11px] font-bold text-slate-500 block">Tỷ Lệ Giao Dịch An Toàn</span>
+                    <span className="text-[11px] font-bold text-slate-500 block">Tỷ lệ giao dịch an toàn</span>
                     <span className="text-xl font-black text-indigo-900">{escrowStats.safeRate}</span>
                   </div>
                 </div>
@@ -1581,7 +1581,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                 <div className="overflow-x-auto">
                   <div className="flex items-center justify-between pb-2">
                     <span className="font-bold text-xs text-slate-800">
-                      Hàng Đợi Đơn Hàng Cần Người Bán Xác Nhận ({monitoredOrders.length})
+                      Hàng đợi đơn hàng cần người bán xác nhận ({monitoredOrders.length})
                     </span>
                     <button
                       onClick={loadMonitoredOrders}
@@ -1596,12 +1596,12 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                   <table className="w-full text-left text-xs">
                     <thead>
                       <tr className="border-b border-slate-100 bg-slate-50/70 text-slate-600 text-[11px] font-bold uppercase">
-                        <th className="py-2.5 px-3">Mã Đơn & Bài Đăng</th>
-                        <th className="py-2.5 px-3">Trạng Thái Đơn</th>
-                        <th className="py-2.5 px-3">Xác Nhận Của Seller</th>
-                        <th className="py-2.5 px-3">Hạn Chót Xác Nhận</th>
-                        <th className="py-2.5 px-3">Điểm Phạt Quá Hạn</th>
-                        <th className="py-2.5 px-3">Thời Điểm Trả Tiền</th>
+                        <th className="py-2.5 px-3">Mã đơn & bài đăng</th>
+                        <th className="py-2.5 px-3">Trạng thái đơn</th>
+                        <th className="py-2.5 px-3">Xác nhận của Seller</th>
+                        <th className="py-2.5 px-3">Hạn chót xác nhận</th>
+                        <th className="py-2.5 px-3">Điểm phạt quá hạn</th>
+                        <th className="py-2.5 px-3">Thời điểm trả tiền</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -1642,12 +1642,12 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                                   }`}
                               >
                                 {ord.confirmationStatus === 'CONFIRMED'
-                                  ? 'Đã Xác Nhận'
+                                  ? 'Đã xác nhận'
                                   : ord.confirmationStatus === 'PENDING'
-                                    ? 'Đang Chờ Seller'
+                                    ? 'Đang chờ Seller'
                                     : ord.confirmationStatus === 'CANCELLED'
-                                      ? 'Đã Hủy Đơn'
-                                      : 'Không Yêu Cầu'}
+                                      ? 'Đã hủy đơn'
+                                      : 'Không yêu cầu'}
                               </span>
                             </td>
                             <td className="py-3 px-3 font-mono text-slate-600 text-[11px]">
@@ -1694,13 +1694,13 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                   <table className="w-full text-left text-xs">
                     <thead>
                       <tr className="border-b border-slate-100 bg-slate-50/70 text-slate-600 text-[11px] font-bold">
-                        <th className="py-2.5 px-3">Mã User</th>
-                        <th className="py-2.5 px-3">Họ Tên</th>
+                        <th className="py-2.5 px-3">Mã user</th>
+                        <th className="py-2.5 px-3">Họ tên</th>
                         <th className="py-2.5 px-3">Email</th>
-                        <th className="py-2.5 px-3">Số Lần Vi Phạm</th>
-                        <th className="py-2.5 px-3">Mức Chế Tài</th>
-                        <th className="py-2.5 px-3">Lý Do</th>
-                        <th className="py-2.5 px-3">Thời Hạn Đến</th>
+                        <th className="py-2.5 px-3">Số lần vi phạm</th>
+                        <th className="py-2.5 px-3">Mức chế tài</th>
+                        <th className="py-2.5 px-3">Lý do</th>
+                        <th className="py-2.5 px-3">Thời hạn đến</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -1746,10 +1746,10 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                           onChange={(e) => setRestrictLevel(e.target.value as any)}
                           className="w-full p-2.5 bg-white border border-slate-300 rounded-lg text-xs font-bold focus:outline-none focus:border-[#24263e]"
                         >
-                          <option value="WARN">Gửi Cảnh Cáo Chính Thức</option>
-                          <option value="LOCK_POST">Tạm Khóa Đăng Tin (7 Ngày)</option>
-                          <option value="LOCK_ESCROW">Tạm Ngưng Rút Tiền Escrow</option>
-                          <option value="SUSPEND">Tạm Đình Chỉ Tài Khoản (14 Ngày)</option>
+                          <option value="WARN">Gửi cảnh cáo chính thức</option>
+                          <option value="LOCK_POST">Tạm khóa đăng tin (7 Ngày)</option>
+                          <option value="LOCK_ESCROW">Tạm ngưng rút tiền Escrow</option>
+                          <option value="SUSPEND">Tạm đình chỉ tài khoản (14 Ngày)</option>
                         </select>
                       </div>
                       <div>
@@ -1766,7 +1766,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                           type="submit"
                           className="px-5 py-2 bg-slate-900 hover:bg-[#c34c36] text-white rounded-xl text-xs font-bold transition cursor-pointer"
                         >
-                          Áp Dụng Hạn Chế & Gửi Thông Báo
+                          Áp dụng hạn chế & gửi thông báo
                         </button>
                       </div>
                     </form>
@@ -1866,13 +1866,13 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                   onClick={() => handleRejectListing(selectedListingModal.id)}
                   className="px-4 py-2 bg-rose-700 hover:bg-rose-800 text-white rounded-xl font-bold transition cursor-pointer"
                 >
-                  Từ Chối Tin
+                  Từ chối tin
                 </button>
                 <button
                   onClick={() => handleApproveListing(selectedListingModal.id)}
                   className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold transition cursor-pointer"
                 >
-                  Phê Duyệt Tin
+                  Phê duyệt tin
                 </button>
               </div>
             </div>

@@ -201,7 +201,7 @@ export function CenterDashboardLayout({
                 )}
               </div>
               <span className="text-xs font-black text-white hidden sm:inline">
-                {currentUser?.name || 'Trưởng Trung Tâm'}
+                {currentUser?.name || 'Trưởng trung tâm'}
               </span>
               <ChevronDown className="w-3.5 h-3.5 text-white hidden sm:inline" />
             </button>
@@ -211,13 +211,13 @@ export function CenterDashboardLayout({
               <div className="absolute right-0 mt-2 w-64 bg-white text-[#24263e] rounded-2xl shadow-2xl border border-gray-200 py-1.5 z-50 text-xs animate-in fade-in">
                 <div className="px-3.5 py-2.5 border-b border-gray-100">
                   <p className="font-black text-[#24263e] text-xs truncate">
-                    {currentUser?.name || 'Trưởng Trung Tâm Kiểm Định'}
+                    {currentUser?.name || 'Trưởng trung tâm kiểm định'}
                   </p>
                   <p className="text-[11px] text-gray-500 font-medium truncate">
                     {currentUser?.email || 'center@secondlife.com'}
                   </p>
                   <span className="inline-block mt-1 px-2 py-0.5 rounded-md bg-[#c34c36]/10 text-[#c34c36] font-extrabold text-[10px]">
-                    Vai trò: Trưởng Trung Tâm Kiểm Định
+                    Vai trò: Trưởng trung tâm kiểm định
                   </span>
                 </div>
                 <div className="p-1 space-y-0.5">
@@ -229,7 +229,7 @@ export function CenterDashboardLayout({
                     className="w-full text-left px-3 py-2 hover:bg-slate-100 rounded-xl flex items-center gap-2 text-[#24263e] font-bold cursor-pointer transition"
                   >
                     <Building2 className="w-3.5 h-3.5 text-[#c34c36]" />
-                    <span>Thông Tin Trung Tâm</span>
+                    <span>Thông tin trung tâm</span>
                   </button>
                   <button
                     onClick={() => {
@@ -239,7 +239,7 @@ export function CenterDashboardLayout({
                     className="w-full text-left px-3 py-2 hover:bg-rose-50 rounded-xl text-rose-600 flex items-center gap-2 cursor-pointer font-bold transition"
                   >
                     <LogOut className="w-3.5 h-3.5" />
-                    <span>Đăng Xuất</span>
+                    <span>Đăng xuất</span>
                   </button>
                 </div>
               </div>
@@ -276,11 +276,11 @@ export function CenterDashboardLayout({
             {!isSidebarCollapsed && (
               <div className="overflow-hidden">
                 <h4 className="font-black text-xs sm:text-sm text-[#24263e] truncate">
-                  {currentUser?.name || 'Trưởng Trung Tâm'}
+                  {currentUser?.name || 'Trưởng trung tâm'}
                 </h4>
                 <div className="flex items-center gap-1.5 text-[11px] text-emerald-800 font-bold">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
-                  <span>Trạm Đang Mở (Online)</span>
+                  <span>Trạm đang mở (Online)</span>
                 </div>
               </div>
             )}
@@ -409,7 +409,7 @@ export function CenterDashboardLayout({
                 className="px-3.5 py-1.5 rounded-lg bg-[#c34c36] hover:bg-[#a63f2d] text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition cursor-pointer"
               >
                 <UserPlus className="w-3.5 h-3.5" />
-                <span>+ Cấp Tài Khoản KTV Mới</span>
+                <span>+ cấp tài khoản KTV mới</span>
               </button>}
             </div>
           </div>

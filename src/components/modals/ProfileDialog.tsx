@@ -51,6 +51,7 @@ import {
   validateBankAccountFields,
 } from '../../utils/bankAccountValidation';
 import { WithdrawalModal } from './WithdrawalModal';
+import { SavedBankAccountsManager } from '../wallet/SavedBankAccountsManager';
 import { dialogService } from '../../utils/dialogService';
 import {
   userService,
@@ -150,6 +151,7 @@ interface ProfileDialogProps {
   onChangePassword?: () => void;
   onOpenVerifyEmail?: (email: string) => void;
   onOpenTopUp?: () => void;
+  onOpenWithdrawalHistory?: () => void;
   onOpenSellerRegister?: () => void;
   onOpenDisputes?: (reportId?: string) => void;
   lang?: Language;
@@ -167,6 +169,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   onChangePassword,
   onOpenVerifyEmail,
   onOpenTopUp,
+  onOpenWithdrawalHistory,
   onOpenSellerRegister,
   onOpenDisputes,
   lang = 'vi',
@@ -1848,7 +1851,11 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 md:p-6 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
-      onClick={onClose}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
     >
       <div
         className="relative w-full max-w-5xl lg:max-w-6xl xl:max-w-7xl h-[95vh] sm:h-[92vh] max-h-[96vh] overflow-hidden rounded-3xl bg-[#FFFFFF] border border-gray-200/80 shadow-2xl text-[#24263e] flex flex-col my-auto"
@@ -2907,6 +2914,19 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       <ArrowUpRight className="w-3.5 h-3.5 text-[#c34c36]" />
                       <span>{lang === 'vi' ? 'Rút tiền về ngân hàng' : 'Withdraw to Bank'}</span>
                     </button>
+                    {onOpenWithdrawalHistory && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onClose();
+                          onOpenWithdrawalHistory();
+                        }}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white hover:bg-slate-50 text-[#24263e] border border-[#24263e]/20 text-xs font-black shadow-sm transition cursor-pointer"
+                      >
+                        <Clock className="w-3.5 h-3.5 text-[#24263e]" />
+                        <span>{lang === 'vi' ? 'Lịch sử rút tiền' : 'Withdrawal History'}</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -2935,118 +2955,17 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 </div>
               </div>
 
-              {/* Linked Bank Account Section */}
-              <div className="p-5 rounded-2xl bg-slate-50 border border-gray-200 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Building className="w-4 h-4 text-slate-700" />
-                    <h3 className="font-bold text-sm text-slate-900">
-                      {lang === 'vi' ? 'Tài khoản ngân hàng nhận tiền bán' : 'Bank Account for Payouts'}
-                    </h3>
-                  </div>
-                  {bankName && accountNumber ? (
-                    <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                      {lang === 'vi' ? 'Đã liên kết 24/7' : 'Linked 24/7'}
-                    </span>
-                  ) : (
-                    <span className="text-[11px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                      {lang === 'vi' ? 'Chưa thiết lập' : 'Not Configured'}
-                    </span>
-                  )}
-                </div>
+              {/* Linked Bank Account Section (CRUD /api/v1/me/bank-accounts + Warning Popup) */}
+              <SavedBankAccountsManager
+                onDefaultChanged={(acc) => {
+                  if (acc) {
+                    setBankName(acc.bankName);
+                    setAccountNumber(acc.accountNumber);
+                    setAccountHolder(acc.accountHolderName);
+                  }
+                }}
+              />
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs pt-1">
-                  <div>
-                    <label className="text-slate-500 text-[11px] block">{lang === 'vi' ? 'Ngân hàng' : 'Bank name'}</label>
-                    {isCustomBank ? (
-                      <div className="relative mt-1 flex items-center gap-1.5">
-                        <input
-                          type="text"
-                          value={bankName}
-                          onChange={(e) => setBankName(e.target.value)}
-                          placeholder={lang === 'vi' ? 'Nhập tên ngân hàng...' : 'Enter bank name...'}
-                          autoFocus
-                          className="w-full p-2 bg-white rounded-lg border border-[#24263e] font-semibold text-slate-900 text-xs placeholder:text-slate-400 placeholder:font-normal focus:outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsCustomBank(false);
-                            setBankName(POPULAR_VIETNAM_BANKS[0].name);
-                          }}
-                          className="px-2.5 py-2 rounded-lg border border-gray-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100 text-[11px] font-semibold whitespace-nowrap cursor-pointer transition shadow-sm"
-                        >
-                          {lang === 'vi' ? 'Chọn lại' : 'Select'}
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="relative mt-1">
-                        <select
-                          value={getMatchedBankName(bankName)}
-                          onChange={(e) => {
-                            if (e.target.value === '__OTHER__') {
-                              setIsCustomBank(true);
-                              setBankName('');
-                            } else {
-                              setBankName(e.target.value);
-                            }
-                          }}
-                          className="w-full p-2 pr-9 bg-white rounded-lg border border-gray-200 font-semibold text-slate-900 text-xs appearance-none focus:outline-none focus:border-[#24263e] cursor-pointer"
-                        >
-                          <option value="">{lang === 'vi' ? '-- Chọn ngân hàng --' : '-- Select bank --'}</option>
-                          {POPULAR_VIETNAM_BANKS.map((b) => (
-                            <option key={b.code} value={b.name}>
-                              {b.name} - {b.fullName} ({b.code})
-                            </option>
-                          ))}
-                          {Boolean(bankName && !POPULAR_VIETNAM_BANKS.some((b) => b.name.toLowerCase() === bankName.trim().toLowerCase())) && (
-                            <option value={bankName}>{bankName}</option>
-                          )}
-                          <option value="__OTHER__">{lang === 'vi' ? '➕ Ngân hàng khác...' : '➕ Other bank...'}</option>
-                        </select>
-                        <ChevronDown className="w-4 h-4 text-slate-500 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    <label className="text-slate-500 text-[11px] flex items-center justify-between">
-                      <span>{lang === 'vi' ? 'Số tài khoản' : 'Account number'}</span>
-                      <span className="text-[10px] font-semibold text-slate-400 tabular-nums">
-                        {accountNumber.length}/{BANK_ACCOUNT_NUMBER_MAX_LENGTH}
-                      </span>
-                    </label>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      minLength={BANK_ACCOUNT_NUMBER_MIN_LENGTH}
-                      maxLength={BANK_ACCOUNT_NUMBER_MAX_LENGTH}
-                      value={accountNumber}
-                      onChange={(e) => setAccountNumber(sanitizeBankAccountNumber(e.target.value))}
-                      placeholder={lang === 'vi' ? 'Nhập 8–16 chữ số...' : '8–16 digits'}
-                      className="mt-1 w-full p-2 bg-white rounded-lg border border-gray-200 font-mono font-bold text-slate-900 placeholder:text-slate-400 placeholder:font-normal"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-slate-500 text-[11px] block">{lang === 'vi' ? 'Tên chủ tài khoản' : 'Account holder name'}</label>
-                    <input
-                      type="text"
-                      value={accountHolder}
-                      onChange={(e) => setAccountHolder(sanitizeBankAccountHolder(e.target.value))}
-                      placeholder={lang === 'vi' ? 'NGUYEN VAN A' : 'ACCOUNT HOLDER NAME'}
-                      className="mt-1 w-full p-2 bg-white rounded-lg border border-gray-200 font-bold uppercase text-slate-900 placeholder:text-slate-400 placeholder:font-normal"
-                    />
-                  </div>
-                </div>
-
-                <div className="pt-2 flex justify-end">
-                  <button
-                    onClick={handleSave}
-                    className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition cursor-pointer"
-                  >
-                    {lang === 'vi' ? 'Cập nhật tài khoản ngân hàng' : 'Update Bank Account'}
-                  </button>
-                </div>
-              </div>
             </div>
           )}
 

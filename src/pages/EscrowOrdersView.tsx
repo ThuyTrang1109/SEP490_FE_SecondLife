@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { EscrowOrder, Language, UserRole, UserProfile } from '../types';
 import { EscrowOrderFilters, EscrowOrderPagination } from '../components/orders/EscrowOrderFilters';
 import { ORDER_FILTER_TABS, orderFeedSearch, readOrderFeedQuery, type OrderFeedQuery, type OrderFilterTab } from '../utils/escrowOrderFilters';
@@ -302,35 +302,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     (detailModalOrder?.id === id ? detailModalOrder : userOrders.find((order) => order.id === id));
   const autoPaidOrderIdsRef = React.useRef<Set<string>>(new Set());
 
-  // Tự động nộp phí kiểm định vào Escrow cho Người mua nếu đơn ở trạng thái WAITING_FEE_PAYMENT
-  // (Người mua đã chọn thanh toán qua Ví Escrow tại checkout)
-  React.useEffect(() => {
-    if (!userOrders || userOrders.length === 0) return;
-
-    userOrders.forEach((ord) => {
-      const bStatus = String((ord as any)?.backendStatus || (ord as any)?.status || '').toUpperCase();
-      const isBuyer = !isOrderSeller(ord);
-      const hasInsp = Boolean(ord.hasInspectionService || (ord.inspectionFeeVnd && ord.inspectionFeeVnd > 0));
-
-      const deadline = ord.paymentDeadline || (ord as any)?.inspectionOrder?.paymentDeadline;
-      const isFeeExpired = isInspectionPaymentExpired(deadline);
-      const buyerFee = getPartyInspectionFee(ord, false);
-      const isSeller100 = ord.inspectionFeeSplit === 'SELLER_100' || buyerFee <= 0;
-
-      if (isBuyer && hasInsp && bStatus === 'WAITING_FEE_PAYMENT' && !isFeeExpired && !isSeller100 && buyerFee > 0 && !autoPaidOrderIdsRef.current.has(ord.id)) {
-        autoPaidOrderIdsRef.current.add(ord.id);
-        inspectorService.payInspectionFee(ord.id)
-          .then((res) => {
-            console.log('Auto payInspectionFee success for order:', ord.id, res);
-            onRefreshOrders?.();
-          })
-          .catch((err) => {
-            console.warn('Auto payInspectionFee notice:', err);
-            onRefreshOrders?.();
-          });
-      }
-    });
-  }, [userOrders]);
+  // Đã tắt tự động trừ ví kiểm định trong useEffect: Người mua phải chủ động bấm nút xác nhận thanh toán phí kiểm định.
   const [activePhotoStage, setActivePhotoStage] = useState<'listing' | 'inspector' | 'handover'>('listing');
   const [orderFinancialData, setOrderFinancialData] = useState<{
     orderId: string;

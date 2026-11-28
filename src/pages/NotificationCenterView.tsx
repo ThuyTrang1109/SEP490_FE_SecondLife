@@ -1,3 +1,4 @@
+import { observeResourceChanges } from '../services/observeResourceChanges';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Bell,
@@ -135,6 +136,8 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
   useEffect(() => {
     loadData(0);
   }, [loadData]);
+
+  useEffect(() => observeResourceChanges(["NOTIFICATIONS"], () => { void loadData(page); }), [loadData, page]);
 
   // Listen for real-time and storage updates
   useEffect(() => {

@@ -365,9 +365,9 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
   const suggestedPrice = Number(sellerDetail?.aiSuggestedPrice ?? publicDetail?.aiSuggestedPrice
     ?? listing.aiPriceEstimation?.suggestedVnd ?? listing.aiSuggestedPrice ?? 0);
   const minEstimate = latestEstimate?.fairPriceMin ?? listing.aiPriceEstimation?.minVnd
-    ?? Math.round(suggestedPrice * 0.9);
+    ?? 0;
   const maxEstimate = latestEstimate?.fairPriceMax ?? listing.aiPriceEstimation?.maxVnd
-    ?? Math.round(suggestedPrice * 1.1);
+    ?? 0;
 
   // Dữ liệu đánh giá thật 100% từ Database backend qua orderReviewService (5 đánh giá / trang)
   const totalSellerEvaluated = Math.max(sellerReviewSummary?.totalReviews ?? 0, reviewsTotalElements);
@@ -584,7 +584,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                   </div>
                 )}
 
-                {(minEstimate > 0 || maxEstimate > 0) && (
+                {(minEstimate > 0 && maxEstimate >= minEstimate) && (
                   <div className="p-2.5 rounded-xl bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200/80 space-y-1">
                     <div className="flex items-center justify-between text-[10px]">
                       <span className="font-extrabold text-purple-900 flex items-center gap-1">
@@ -813,15 +813,12 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                   </div>
                   <div>
                     <h3 className="text-xs font-black text-[#24263e]">
-                      {lang === 'vi' ? 'Mô hình AI định giá thị trường secondLife' : 'SecondLife AI Market Valuation'}
+                      {lang === 'vi' ? 'Khoảng giá AI tham khảo' : 'AI price estimate'}
                     </h3>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1 bg-[#24263e] text-white px-2 py-0.5 rounded-full text-[10px] font-bold">
-                  <Award className="w-3 h-3 text-white" />
-                  <span>{lang === 'vi' ? 'Độ tin cậy' : 'Confidence'}: {listing.aiPriceEstimation.confidence}%</span>
-                </div>
+
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">

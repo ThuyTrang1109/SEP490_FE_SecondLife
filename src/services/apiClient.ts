@@ -91,6 +91,9 @@ export function resolveApiUrl(endpoint: string): string {
   if (path === '/me/change-password') {
     return `${origin}/api/auth/change-password`;
   }
+  if (path === '/me/bank-accounts' || path.startsWith('/me/bank-accounts/')) {
+    return `${origin}/api/v1${path}`;
+  }
   if (path.startsWith('/me/')) {
     return `${origin}/api/v1/users${path.substring(3)}`;
   }

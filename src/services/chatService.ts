@@ -1,5 +1,4 @@
-import { Client } from '@stomp/stompjs';
-import SockJS from 'sockjs-client';
+import { notificationWsClient } from './notificationWsClient';
 import { request, requestGet, getAccessToken } from './apiClient';
 
 export interface ChatRoomDto {
@@ -83,130 +82,31 @@ export function parseSystemMessage(content: string): {
 
 // WebSocket Management
 class ChatWebSocketManager {
-  private client: Client | null = null;
   private messageListeners = new Set<(msg: ChatMessageDto) => void>();
   private connectionStatusListeners = new Set<(connected: boolean) => void>();
-  private isConnecting = false;
-
-  private getWsUrl(): string {
-    const rawEnv =
-      (import.meta as any).env?.VITE_API_BASE_URL ||
-      (import.meta as any).env?.VITE_API_ORIGIN ||
-      (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:8080');
-    const origin = rawEnv.replace(/\/api(\/v1)?\/?$/, '').replace(/\/+$/, '');
-    return `${origin}/ws`;
-  }
+  private detach?: () => void;
 
   public connect(): void {
     const token = getAccessToken();
-    if (!token) {
-      console.warn('[ChatWS] Cannot connect: No access token available');
-      return;
-    }
-
-    if (this.client?.active || this.isConnecting) {
-      return;
-    }
-
-    this.isConnecting = true;
-    const wsUrl = this.getWsUrl();
-    const createSockJS = (url: string) => {
-      const SockJSFactory = (SockJS as any)?.default || SockJS;
-      return new SockJSFactory(url);
-    };
-
-    this.client = new Client({
-      webSocketFactory: () => createSockJS(wsUrl),
-      beforeConnect: () => {
-        const currentToken = getAccessToken();
-        if (currentToken && this.client) {
-          this.client.connectHeaders = {
-            Authorization: `Bearer ${currentToken}`,
-          };
-        }
-      },
-      debug: (_str) => {
-        console.log('[STOMP]', _str);
-      },
-      reconnectDelay: 5000,
-      heartbeatIncoming: 0,
-      heartbeatOutgoing: 0,
-      onConnect: () => {
-        this.isConnecting = false;
-        this.notifyStatus(true);
-
-        // Subscribe to user personal queue
-        this.client?.subscribe('/user/queue/messages', (message) => {
-          try {
-            console.log('[ChatWS] Received raw STOMP message:', message.body);
-            const body: ChatMessageDto = JSON.parse(message.body);
-            this.notifyMessage(body);
-          } catch (err) {
-            console.error('[ChatWS] Failed to parse incoming message body:', err);
-          }
-        });
-      },
-      onStompError: (frame) => {
-        this.isConnecting = false;
-        console.error('[ChatWS] Broker reported error:', frame.headers['message'], frame.body);
-        this.notifyStatus(false);
-        const currentToken = getAccessToken();
-        if (currentToken) {
-          request('/users/me', { requiresAuth: true }).catch(() => {});
-        }
-      },
-      onWebSocketClose: () => {
-        this.isConnecting = false;
-        this.notifyStatus(false);
-        // Ping to trigger apiClient.ts 401 interceptors in case the close was due to token expiration
-        const currentToken = getAccessToken();
-        if (currentToken) {
-          request('/users/me', { requiresAuth: true }).catch(() => {});
-        }
-      },
-      onWebSocketError: (evt: Event) => {
-        this.isConnecting = false;
-        console.error('[ChatWS] WebSocket error:', evt);
-        const currentToken = getAccessToken();
-        if (currentToken) {
-          request('/users/me', { requiresAuth: true }).catch(() => {});
-        }
-      },
-    });
-
-    try {
-      this.client.activate();
-    } catch (err) {
-      this.isConnecting = false;
-      console.error('[ChatWS] Activation failed:', err);
-    }
+    if (!token) return;
+    this.detach ??= notificationWsClient.subscribeChat(
+      message => this.notifyMessage(message), connected => this.notifyStatus(connected)
+    );
+    notificationWsClient.connect(token);
   }
 
   public disconnect(): void {
-    if (this.client) {
-      try {
-        this.client.deactivate();
-      } catch (err) {
-        console.warn('[ChatWS] Error during deactivation:', err);
-      }
-      this.client = null;
-    }
-    this.isConnecting = false;
+    this.detach?.();
+    this.detach = undefined;
     this.notifyStatus(false);
   }
 
-  public isConnected(): boolean {
-    return !!this.client?.connected;
-  }
+  public isConnected(): boolean { return notificationWsClient.isConnected(); }
 
   public subscribe(listener: (msg: ChatMessageDto) => void): () => void {
     this.messageListeners.add(listener);
-    if (!this.client?.active && !this.isConnecting) {
-      this.connect();
-    }
-    return () => {
-      this.messageListeners.delete(listener);
-    };
+    this.connect();
+    return () => this.messageListeners.delete(listener);
   }
 
   public onStatusChange(listener: (connected: boolean) => void): () => void {

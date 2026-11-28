@@ -503,7 +503,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         serialOrReceipt: rawImages[4] || primaryImage,
       },
       photoGallery: rawImages.length > 0 ? rawImages : [primaryImage],
-      suggestedAiPriceVnd: p.aiSuggestedPrice,
+      aiSuggestedPrice: p.aiSuggestedPrice,
       aiPriceEstimation: p.aiSuggestedPrice && p.aiSuggestedPrice > 0 ? {
         minVnd: Math.round(Number(p.aiSuggestedPrice) * 0.9),
         maxVnd: Math.round(Number(p.aiSuggestedPrice) * 1.1),
@@ -2642,7 +2642,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           {/* TAB: WITHDRAWALS (DUYỆT YÊU CẦU RÚT TIỀN VÍ)             */}
           {/* ======================================================== */}
           {activeTab === 'withdrawals' && (
-            <WithdrawalsTab lang={lang} onNotice={triggerNotice} />
+            <WithdrawalsTab lang={lang} onNotice={triggerNotice} portalMode="admin" />
           )}
 
           {/* ======================================================== */}

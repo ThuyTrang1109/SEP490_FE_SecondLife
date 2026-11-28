@@ -25,10 +25,13 @@ import {
   Receipt,
 } from 'lucide-react';
 import { walletService } from '../../services/walletService';
+import { WithdrawalModal } from '../modals/WithdrawalModal';
+import { SavedBankAccountsManager } from '../wallet/SavedBankAccountsManager';
 import { notificationWsClient } from '../../services/notificationWsClient';
 import { isUserIdle } from '../../services/apiClient';
 import { inspectionCashConfirmedEvent } from '../../utils/inspectionCashShipping';
 import { formatVND } from '../../utils/translations';
+import { walletDateRange } from '../../utils/walletTransactions';
 import type {
   UserWallet,
   WalletTransaction,
@@ -136,6 +139,8 @@ export function CenterWalletTab({ lang: _lang = 'vi', onNavigateToOrder }: Cente
 
   // --- Detail Modal ---
   const [detailModalTx, setDetailModalTx] = useState<WalletTransaction | null>(null);
+  const [isWithdrawalOpen, setIsWithdrawalOpen] = useState(false);
+  const [showBankBook, setShowBankBook] = useState(false);
 
   // --- Clipboard feedback ---
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -190,12 +195,18 @@ export function CenterWalletTab({ lang: _lang = 'vi', onNavigateToOrder }: Cente
         setTxError(null);
       }
       try {
+        const range = walletDateRange(from || undefined, to || undefined);
+        if (range.error) {
+          setTxError(range.error);
+          setTxLoading(false);
+          return;
+        }
         const result = await walletService.getTransactions({
           page,
           size: PAGE_SIZE,
           type: type || undefined,
-          from: from || undefined,
-          to: to || undefined,
+          from: range.from,
+          to: range.to,
         }, controller.signal, { isBackground });
         if (controller.signal.aborted) return;
         setTxItems(result.items);
@@ -405,7 +416,22 @@ export function CenterWalletTab({ lang: _lang = 'vi', onNavigateToOrder }: Cente
           </div>
         </div>
 
-        <div className="flex items-center gap-2 self-start sm:self-auto">
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          <button
+            type="button"
+            onClick={() => setShowBankBook((prev) => !prev)}
+            className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition border border-slate-200 shadow-2xs cursor-pointer"
+          >
+            {showBankBook ? 'Ẩn danh bạ ngân hàng' : 'Tài khoản ngân hàng'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsWithdrawalOpen(true)}
+            className="px-4 py-2 rounded-xl bg-[#c34c36] hover:bg-[#a83d2a] text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+          >
+            <ArrowUpRight className="w-3.5 h-3.5" />
+            <span>Rút tiền về ngân hàng</span>
+          </button>
           <button
             type="button"
             onClick={handleRefreshAll}
@@ -418,6 +444,8 @@ export function CenterWalletTab({ lang: _lang = 'vi', onNavigateToOrder }: Cente
           </button>
         </div>
       </div>
+
+      {showBankBook && <SavedBankAccountsManager />}
 
       {/* ── 2. Top Stats Overview (4 Cards Grid) ─────────────────────────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -446,8 +474,15 @@ export function CenterWalletTab({ lang: _lang = 'vi', onNavigateToOrder }: Cente
                 <span className="truncate">{walletError}</span>
               </div>
             ) : (
-              <div className="text-2xl sm:text-3xl font-black text-emerald-400 tracking-tight font-mono">
-                {wallet ? formatVND(wallet.balance) : '0 ₫'}
+              <div className="space-y-1">
+                <div className="text-2xl sm:text-3xl font-black text-emerald-400 tracking-tight font-mono">
+                  {wallet ? formatVND(wallet.balance) : '0 ₫'}
+                </div>
+                {Number((wallet as any)?.reservedBalance ?? 0) > 0 && (
+                  <div className="text-[11px] text-amber-300 font-semibold">
+                    Đang chờ xử lý rút tiền: {formatVND(Number((wallet as any)?.reservedBalance ?? 0))}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1237,6 +1272,16 @@ export function CenterWalletTab({ lang: _lang = 'vi', onNavigateToOrder }: Cente
           </div>
         </div>
       )}
+
+      <WithdrawalModal
+        isOpen={isWithdrawalOpen}
+        onClose={() => setIsWithdrawalOpen(false)}
+        availableBalance={wallet?.balance ?? 0}
+        reservedBalance={Number((wallet as any)?.reservedBalance ?? 0)}
+        onSuccess={() => {
+          handleRefreshAll();
+        }}
+      />
     </div>
   );
 }

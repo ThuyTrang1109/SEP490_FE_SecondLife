@@ -42,7 +42,7 @@ test('resolveReturnReserveStatusLabel maps all expected reserve statuses and fal
   assert.equal(resolveReturnReserveStatusLabel('AWAITING_CASH_CONFIRMATION'), 'Đã giao về người bán · Chờ xác nhận chi cước');
   assert.equal(resolveReturnReserveStatusLabel('AWAITING_RECONCILIATION'), 'Chờ đối soát cước');
   assert.equal(resolveReturnReserveStatusLabel('EXCEEDS_RESERVE'), 'Cước thực tế vượt dự phòng');
-  assert.equal(resolveReturnReserveStatusLabel('SETTLED'), 'Đã quyết toán cước hoàn');
+  assert.equal(resolveReturnReserveStatusLabel('SETTLED'), 'Đã chốt cước thực tế · Đã quyết toán');
   assert.equal(resolveReturnReserveStatusLabel('UNKNOWN_RESERVE' as AdminReturnReserveStatus), 'Chưa xác định');
   assert.equal(resolveReturnReserveStatusLabel(null), 'Chưa xác định');
 });

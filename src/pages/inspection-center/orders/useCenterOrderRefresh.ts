@@ -1,3 +1,4 @@
+import { observeResourceChanges } from '../../../services/observeResourceChanges';
 import { useEffect } from 'react';
 import { isUserIdle } from '../../../services';
 import { INBOUND_SHIPMENT_REFRESH_MS } from './shipmentTrackingConfig';
@@ -37,6 +38,7 @@ export function useCenterOrderRefresh({
       }, 250);
     };
 
+    const stop = observeResourceChanges(['ORDER', 'INSPECTION', 'SHIPMENT'], debouncedSignal);
     window.addEventListener('secondlife_order_placed_signal', debouncedSignal);
     window.addEventListener('secondlife_inspection_task_created', debouncedSignal);
     window.addEventListener('secondlife_order_assigned_signal', debouncedSignal);
@@ -95,6 +97,7 @@ export function useCenterOrderRefresh({
     return () => {
       if (debounceTimer) clearTimeout(debounceTimer);
       channel?.close();
+      stop();
       window.removeEventListener('secondlife_order_placed_signal', debouncedSignal);
       window.removeEventListener('secondlife_inspection_task_created', debouncedSignal);
       window.removeEventListener('secondlife_order_assigned_signal', debouncedSignal);

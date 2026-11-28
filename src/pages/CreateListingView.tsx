@@ -1878,6 +1878,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   const [isFinalizingChat, setIsFinalizingChat] = useState(false);
 
   // AI Valuation in Step 4
+  const [valuationInputError, setValuationInputError] = useState(false);
   const [isEstimatingPrice, setIsEstimatingPrice] = useState(false);
   const [valuationResult, setValuationResult] = useState<AiPriceEstimationResponse | null>(null);
   const [valuationHistory, setValuationHistory] = useState<any[]>([]);
@@ -2662,18 +2663,6 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       if (finalizeRes?.description) {
         setDescription(cleanDescriptionFromQuestionTemplate(finalizeRes.description));
       }
-      if (finalizeRes?.suggestedPrice) {
-        const pNum = Number(finalizeRes.suggestedPrice);
-        setFinalPriceVnd(pNum);
-        setValuationResult({
-          fairPriceMin: Math.round(pNum * 0.85),
-          fairPriceMax: Math.round(pNum * 1.15),
-          suggestedPrice: pNum,
-          modelVersion: 'SecondLife-AI-v2.1',
-          expectedSellTime: '3-5 ngày',
-          createdAt: new Date().toISOString()
-        });
-      }
       setIsSessionCompleted(true);
       showToast(lang === 'vi' ? 'AI đã tổng hợp cuộc hội thoại và cập nhật mô tả thành công!' : 'AI summarized the chat into your description!');
     } catch (err: any) {
@@ -2724,18 +2713,6 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         if (finalizeRes?.description) {
           currentDesc = cleanDescriptionFromQuestionTemplate(finalizeRes.description);
           setDescription(currentDesc);
-        }
-        if (finalizeRes?.suggestedPrice) {
-          const pNum = Number(finalizeRes.suggestedPrice);
-          setFinalPriceVnd(pNum);
-          setValuationResult({
-            fairPriceMin: Math.round(pNum * 0.85),
-            fairPriceMax: Math.round(pNum * 1.15),
-            suggestedPrice: pNum,
-            modelVersion: 'SecondLife-AI-v2.1',
-            expectedSellTime: '3-5 ngày',
-            createdAt: new Date().toISOString()
-          });
         }
         setIsSessionCompleted(true);
       } catch (err) {
@@ -2836,8 +2813,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       stepName: lang === 'vi' ? 'Bước 3: Xác nhận mô tả & vật phẩm' : 'Step 3: Confirm Description & Item',
       warningMessage:
         lang === 'vi'
-          ? 'Sau khi chuyển sang Bước 3, bạn sẽ KHÔNG THỂ quay lại Bước 2 để chỉnh sửa tiêu đề, mô tả, câu hỏi AI hay kích thước đóng gói vận chuyển. Bạn có chắc chắn muốn tiếp tục?'
-          : 'Once you proceed to Step 3, you will NOT be able to return to Step 2 to edit title, description, or parcel dimensions. Are you sure you want to proceed?',
+          ? 'Kiểm tra tiêu đề, mô tả và thông tin đóng gói ở bước tiếp theo.'
+          : 'Review the title, description and parcel details in the next step.',
       confirmButtonText: lang === 'vi' ? 'Xác nhận & sang bước 3' : 'Confirm & Go to Step 3',
       onConfirm: () => {
         setCurrentStep(3);
@@ -2938,8 +2915,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       stepName: lang === 'vi' ? (isManualPricingInStep3 ? 'Bước 5: Xem lại & gửi đăng bài' : 'Bước 4: Định giá AI') : (isManualPricingInStep3 ? 'Step 5: Review & Submit' : 'Step 4: AI Valuation'),
       warningMessage:
         lang === 'vi'
-          ? 'Sau khi xác nhận mô tả, nội dung bài đăng sẽ được lưu chính thức và bạn sẽ KHÔNG THỂ quay lại Bước 3 để thay đổi mô tả. Bạn có chắc chắn muốn tiếp tục?'
-          : 'Once confirmed, description will be locked into this post. You will NOT be able to return to Step 3 to edit. Are you sure you want to proceed?',
+          ? 'Hệ thống sẽ lưu mô tả hiện tại vào bản nháp. Bạn muốn tiếp tục?'
+          : 'Save the current description to your draft and continue?',
       confirmButtonText: lang === 'vi' ? 'Xác nhận & tiếp tục' : 'Confirm & Proceed',
       onConfirm: async () => {
         await executeSaveAndAcceptDescription();
@@ -2957,6 +2934,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       return;
     }
 
+    setValuationInputError(false);
     setIsEstimatingPrice(true);
     const reqId = generateUUID();
     setValuationRequestId(reqId);
@@ -2980,8 +2958,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       } catch (firstErr: any) {
         // Nếu backend trả về 409 Conflict (yêu cầu accept description hoặc requestId bị trùng)
         if (
-          firstErr?.status === 409 ||
-          firstErr?.message?.includes('409') ||
+          
           firstErr?.message?.toLowerCase().includes('accept') ||
           firstErr?.message?.toLowerCase().includes('requestid')
         ) {
@@ -2996,13 +2973,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       }
 
       setValuationResult(res);
-      if (res.suggestedPrice) {
-        setFinalPriceVnd(res.suggestedPrice);
-      }
       // Re-fetch credits to reflect deduction of 1 VALUATION
       await loadCredits();
     } catch (err: any) {
-      if (err?.message?.includes('400') || err?.message?.toLowerCase().includes('insufficient') || err?.message?.toLowerCase().includes('không đủ lượt')) {
+      if (err?.status === 422) {
+        setValuationResult(null);
+        setValuationInputError(true);
+      } else if (/insufficient valuation credits|không đủ lượt/i.test(err?.message || '')) {
         setShowNoValuationModal(true);
       } else {
         showToast('Định giá AI thất bại: ' + (err?.message || 'Lỗi kết nối tới dịch vụ AI'));
@@ -3943,7 +3920,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               <p className="text-[10.5px] text-slate-400 italic mt-1 leading-tight">
                 {initialDraft
                   ? (lang === 'vi' ? 'Giá bán niêm yết hiện tại của sản phẩm trên sàn SecondLife.' : 'Current listed selling price of this product on SecondLife.')
-                  : (lang === 'vi' ? 'Giá mua gốc chỉ mang tính chất tham khảo. Trợ lý AI sẽ tự động đối chiếu với giá thị trường thực tế của sản phẩm để định giá cho bạn.' : 'Original purchase price is for reference only. AI will estimate fair market price.')}
+                  : (lang === 'vi' ? 'Giá mua là một dữ kiện tham khảo cùng với mô tả, hình ảnh và tình trạng sản phẩm.' : 'Original purchase price is for reference only. AI will estimate fair market price.')}
               </p>
             </div>
           </div>
@@ -5149,7 +5126,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
             <div>
               <span className="font-bold block mb-0.5">Quy định thẩm định nội dung:</span>
-              <span>Khi bạn xác nhận mô tả, hệ thống sẽ lưu snapshot và khóa dữ liệu để AI tính toán khoảng giá hợp lý. Nếu sau này bạn sửa mô tả, trạng thái sẽ tự động đặt lại và cần xác nhận lại.</span>
+              <span>Đối chiếu mô tả với ảnh và tình trạng thực tế. Sửa thông số, bảo hành hoặc tình trạng vận hành chưa được xác nhận trước khi định giá.</span>
             </div>
           </div>
 
@@ -5235,13 +5212,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
           {/* Navigation Buttons */}
           <div className="flex flex-col-reverse sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t border-gray-100">
-            <div
-              className="px-4 py-2.5 rounded-xl border border-gray-200 bg-slate-50 text-slate-400 text-xs font-bold flex items-center justify-center gap-1.5 cursor-not-allowed select-none opacity-70 w-full sm:w-auto"
-              title="Không thể quay lại bước trước sau khi đã chuyển bước"
-            >
-              <Lock className="w-3.5 h-3.5 text-slate-400" />
-              <span>Không thể quay lại Bước 2</span>
-            </div>
+            <button type="button" onClick={() => { setDescriptionAccepted(false); setCurrentStep(2); }}
+              className="px-4 py-2.5 rounded-xl border border-gray-200 text-xs font-bold">
+              {lang === 'vi' ? 'Chỉnh sửa nội dung' : 'Edit listing details'}
+            </button>
 
             <button
               onClick={handleSaveAndAcceptDescription}
@@ -5277,7 +5251,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 <span>{lang === 'vi' ? 'Bước 4: Định giá bằng AI & chọn giá bán' : 'Step 4: AI Valuation & Set Price'}</span>
               </h3>
               <p className="text-xs text-slate-500 mt-1">
-                Sử dụng 1 lượt VALUATION để AI phân tích khoảng giá thị trường và đề xuất mức giá thanh khoản tốt nhất.
+                AI ước tính khoảng giá dựa trên thông tin sản phẩm. Bạn có thể áp dụng mức gợi ý hoặc tự nhập giá bán.
               </p>
             </div>
 
@@ -5322,7 +5296,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 {isEstimatingPrice ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>AI đang phân tích thị trường...</span>
+                    <span>AI đang phân tích sản phẩm...</span>
                   </>
                 ) : (
                   <>
@@ -5337,13 +5311,24 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             </div>
           </div>
 
+          {valuationInputError && (
+            <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
+              <p>{lang === 'vi' ? 'Chưa đủ thông tin để định giá. Hãy bổ sung loại sản phẩm, tình trạng hoạt động hoặc lỗi đã biết.' : 'Add the product type, working condition or known defects to request an estimate.'}</p>
+              <button type="button" className="mt-2 font-semibold underline" onClick={() => {
+                setValuationInputError(false);
+                setDescriptionAccepted(false);
+                setCurrentStep(2);
+              }}>{lang === 'vi' ? 'Chỉnh sửa mô tả' : 'Edit description'}</button>
+            </div>
+          )}
+
           {/* Hộp trạng thái AI đang phân tích kèm tùy chọn Dùng giá gợi ý nhanh hoặc bỏ qua chờ */}
           {isEstimatingPrice && (
             <div className="p-4 sm:p-5 rounded-2xl bg-amber-50 border border-amber-300 space-y-3 animate-fadeIn shadow-2xs">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div className="flex items-center gap-2 text-amber-950 font-bold text-xs">
                   <Loader2 className="w-4 h-4 animate-spin text-amber-600 shrink-0" />
-                  <span>AI đang phân tích dữ liệu thị trường và đối chiếu hao mòn...</span>
+                  <span>AI đang xem xét mô tả và tình trạng sản phẩm...</span>
                 </div>
                 <span className="text-[10px] text-amber-800 bg-amber-100/90 border border-amber-300 px-2.5 py-0.5 rounded-full font-bold self-start sm:self-auto">
                   Đang xử lý (~5-8s)
@@ -5420,7 +5405,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   className="w-full py-3.5 bg-gradient-to-r from-[#c34c36] to-red-600 hover:from-red-600 hover:to-red-700 text-white rounded-xl text-sm font-black transition cursor-pointer flex items-center justify-center gap-2 shadow-md"
                 >
                   <Sparkles className="w-5 h-5" />
-                  <span>Sử dụng mức giá này để bán nhanh</span>
+                  <span>Áp dụng giá gợi ý</span>
                 </button>
                 <div className="flex items-start gap-2 bg-white/50 p-3 rounded-xl border border-emerald-100">
                   <span className="text-lg leading-none mt-0.5">💡</span>

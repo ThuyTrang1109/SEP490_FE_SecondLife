@@ -1,3 +1,4 @@
+import { observeResourceChanges } from '../../services/observeResourceChanges';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Package,
@@ -136,6 +137,7 @@ export const AdminOrdersTab: React.FC<AdminOrdersTabProps> = ({
   useEffect(() => {
     loadOrders();
     loadStats();
+    return observeResourceChanges(['ORDER'], () => { void loadOrders(); void loadStats(); }, 45000);
   }, [loadOrders, loadStats]);
 
   // Derived, 100% database-accurate counts from API or loaded orders

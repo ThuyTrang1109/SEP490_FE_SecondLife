@@ -29,6 +29,9 @@ export interface TokenResponseDto {
 export interface LoginRequestDto {
   email: string;
   password: string;
+  acceptTerms: boolean;
+  acceptedPolicyVersionId: string;
+  acceptanceSource?: string;
 }
 
 export interface RegisterRequestDto {
@@ -37,6 +40,9 @@ export interface RegisterRequestDto {
   fullName: string;
   phone?: string;
   gender?: 'MALE' | 'FEMALE' | 'OTHER' | null;
+  acceptTerms: boolean;
+  acceptedPolicyVersionId: string;
+  acceptanceSource?: string;
 }
 
 export interface VerifyEmailRequestDto {
@@ -59,6 +65,9 @@ export interface ResetPasswordRequestDto {
 
 export interface GoogleLoginRequestDto {
   idToken: string;
+  acceptTerms: boolean;
+  acceptedPolicyVersionId: string;
+  acceptanceSource?: string;
 }
 
 export const authService = {
@@ -158,10 +167,13 @@ export const authService = {
     });
   },
 
-  async googleLogin(idToken: string): Promise<AuthResponseDto> {
+  async googleLogin(data: GoogleLoginRequestDto): Promise<AuthResponseDto> {
     const res = await request<AuthResponseDto>('/auth/google', {
       method: 'POST',
-      body: JSON.stringify({ idToken }),
+      body: JSON.stringify({
+        ...data,
+        acceptanceSource: data.acceptanceSource || 'WEB',
+      }),
       requiresAuth: false,
     });
     if (res.data?.accessToken) {

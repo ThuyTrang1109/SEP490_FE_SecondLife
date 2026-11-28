@@ -2,6 +2,7 @@ import React from 'react';
 import { CheckCircle2, Copy, Lock, Mail, Phone, ShieldCheck, Sparkles, Truck } from 'lucide-react';
 import type { Language, UserRole } from '../../types';
 import type { PolicyTabKey } from '../modals/PolicyModal';
+import { navigatePath } from '../../app/router/browser';
 import logoImg from '../../assets/logo.png';
 
 interface FooterProps {
@@ -46,8 +47,6 @@ const features = [
 const policyLinks: { key: PolicyTabKey; label: Record<Language, string> }[] = [
   { key: 'about', label: { vi: 'Giới thiệu về SecondLife', en: 'About SecondLife' } },
   { key: 'lab', label: { vi: 'Kiểm định sản phẩm', en: 'Product inspection' } },
-  { key: 'rules', label: { vi: 'Quy chế hoạt động sàn', en: 'Operating rules' } },
-  { key: 'terms', label: { vi: 'Điều khoản dịch vụ', en: 'Terms of service' } },
   { key: 'privacy', label: { vi: 'Chính sách bảo mật dữ liệu', en: 'Data privacy policy' } },
 ];
 
@@ -58,6 +57,15 @@ export const Footer: React.FC<FooterProps> = ({ lang = 'vi', onOpenPolicy }) => 
     navigator.clipboard.writeText(supportEmail);
     setCopiedEmail(true);
     setTimeout(() => setCopiedEmail(false), 2000);
+  };
+
+  const handleOpenTermsPage = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) {
+      return;
+    }
+    e.preventDefault();
+    navigatePath('/terms-of-service');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   return (
@@ -117,6 +125,15 @@ export const Footer: React.FC<FooterProps> = ({ lang = 'vi', onOpenPolicy }) => 
                   </button>
                 </li>
               ))}
+              <li>
+                <a
+                  href="/terms-of-service"
+                  onClick={handleOpenTermsPage}
+                  className="inline-block rounded-sm font-semibold text-[#fce5da] transition hover:text-white hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#f18b77]"
+                >
+                  {lang === 'vi' ? 'Điều khoản sử dụng & Quy chế hoạt động' : 'Terms of Service & Operating Policy'}
+                </a>
+              </li>
             </ul>
           </nav>
 
@@ -171,7 +188,26 @@ export const Footer: React.FC<FooterProps> = ({ lang = 'vi', onOpenPolicy }) => 
       </div>
 
       <div className="border-t border-white/10 bg-[#1b1c2d]">
-        <p className={footerContainer + ' py-4 text-xs text-white/65'}>© 2026 SecondLife</p>
+        <div className={footerContainer + ' flex flex-col items-center justify-between gap-2 py-4 text-xs text-white/65 sm:flex-row'}>
+          <p>© 2026 SecondLife</p>
+          <div className="flex flex-wrap items-center gap-4">
+            <button
+              type="button"
+              onClick={() => onOpenPolicy?.('privacy')}
+              className="cursor-pointer transition hover:text-white hover:underline"
+            >
+              {lang === 'vi' ? 'Chính sách bảo mật' : 'Privacy Policy'}
+            </button>
+            <span aria-hidden="true">&bull;</span>
+            <a
+              href="/terms-of-service"
+              onClick={handleOpenTermsPage}
+              className="font-semibold text-white/85 transition hover:text-white hover:underline"
+            >
+              {lang === 'vi' ? 'Điều khoản sử dụng & Quy chế hoạt động' : 'Terms of Service & Operating Policy'}
+            </a>
+          </div>
+        </div>
       </div>
     </footer>
   );

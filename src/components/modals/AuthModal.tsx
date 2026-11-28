@@ -23,9 +23,11 @@ import {
 import { UserRole, Language } from '../../types';
 import { soundFx } from '../../utils/soundEffects';
 import { authService } from '../../services/authService';
+import { policyService, PolicyVersionDto } from '../../services/policyService';
 import { setAuthTokens } from '../../services/apiClient';
 import { navigatePath } from '../../app/router/browser';
 import { translateSystemNotification } from '../../utils/systemNotificationTranslator';
+import { PolicyModal } from './PolicyModal';
 import logoImg from '../../assets/logo.png';
 
 interface AuthModalProps {
@@ -80,10 +82,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onLoginSuccess,
   lang
 }) => {
-  const [mode, setModeState] = useState<'login' | 'register' | 'forgot' | 'verify-email'>(initialMode);
-  const setMode = (next: 'login' | 'register' | 'forgot' | 'verify-email') => {
+  const [mode, setModeState] = useState<'login' | 'register' | 'forgot' | 'verify-email' | 'google-policy'>(initialMode);
+  const setMode = (next: 'login' | 'register' | 'forgot' | 'verify-email' | 'google-policy') => {
     setModeState(next);
-    if (!isOpen || next === 'verify-email') return;
+    if (!isOpen || next === 'verify-email' || next === 'google-policy') return;
     const target = next === 'register' ? '/register' : next === 'forgot' ? '/forgot-password' : '/login';
     if (['/login', '/register', '/forgot-password'].includes(window.location.pathname)) {
       navigatePath(target + window.location.search, { replace: true, state: window.history.state });
@@ -94,6 +96,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [emailOrPhone, setEmailOrPhone] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [loginAgreedTerms, setLoginAgreedTerms] = useState(false);
 
   // Form states - Register
   const [fullName, setFullName] = useState('');
@@ -104,7 +107,41 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [showRegisterPassword, setShowRegisterPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [registerGender, setRegisterGender] = useState<'MALE' | 'FEMALE' | 'OTHER' | ''>('');
-  const [agreedTerms, setAgreedTerms] = useState(true);
+  const [agreedTerms, setAgreedTerms] = useState(false);
+
+  // Policy Single Source of Truth + Google deferred consent state
+  const [currentPolicy, setCurrentPolicy] = useState<PolicyVersionDto | null>(null);
+  const [policyLoading, setPolicyLoading] = useState(false);
+  const [policyLoadError, setPolicyLoadError] = useState<string | null>(null);
+  const [isTermsReaderOpen, setIsTermsReaderOpen] = useState(false);
+  const [pendingGoogleIdToken, setPendingGoogleIdToken] = useState<string | null>(null);
+  const [googleAgreedTerms, setGoogleAgreedTerms] = useState(false);
+
+  const modeRef = useRef(mode);
+  const loginAgreedTermsRef = useRef(loginAgreedTerms);
+  const agreedTermsRef = useRef(agreedTerms);
+  const currentPolicyRef = useRef(currentPolicy);
+  modeRef.current = mode;
+  loginAgreedTermsRef.current = loginAgreedTerms;
+  agreedTermsRef.current = agreedTerms;
+  currentPolicyRef.current = currentPolicy;
+
+  const loadActivePolicy = async (forceRefresh = false): Promise<PolicyVersionDto | null> => {
+    setPolicyLoading(true);
+    setPolicyLoadError(null);
+    try {
+      const data = await policyService.getCurrentPolicy(forceRefresh);
+      setCurrentPolicy(data);
+      currentPolicyRef.current = data;
+      return data;
+    } catch (err: any) {
+      const msg = err?.message || 'Không thể tải phiên bản Điều khoản sử dụng hiện hành. Vui lòng thử lại.';
+      setPolicyLoadError(msg);
+      return null;
+    } finally {
+      setPolicyLoading(false);
+    }
+  };
 
   // Form states - Email Verification (/auth/verify-email & /auth/resend-verification)
   const [verifyEmailAddress, setVerifyEmailAddress] = useState('');
@@ -218,8 +255,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     return null;
   };
 
+  const getLoginAgreedTermsError = () => {
+    if (!loginAgreedTerms) {
+      return lang === 'vi'
+        ? 'Bạn cần xác nhận đồng ý với Điều khoản sử dụng và Quy chế hoạt động hiện hành của SecondLife.'
+        : 'You must accept the current SecondLife Terms of Service and Operating Policy.';
+    }
+    return null;
+  };
+
   const getAgreedTermsError = () => {
-    if (!agreedTerms) return lang === 'vi' ? 'Bạn cần đồng ý với Quy chế hoạt động & Cam kết Escrow.' : 'You must accept the Terms & Escrow Guarantee.';
+    if (!agreedTerms) {
+      return lang === 'vi'
+        ? 'Bạn cần xác nhận đã đọc, hiểu và đồng ý với Điều khoản sử dụng và Quy chế hoạt động của SecondLife.'
+        : 'You must accept the SecondLife Terms of Service and Operating Policy.';
+    }
     return null;
   };
 
@@ -258,7 +308,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     return null;
   };
 
-  // Reset states on open or mode change
+  // Reset states on open or mode change (checkboxes ALWAYS default unchecked)
   useEffect(() => {
     if (isOpen) {
       setModeState(initialMode);
@@ -267,6 +317,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setTouched({});
       setSubmitted(false);
       setIsLoading(false);
+      setLoginAgreedTerms(false);
+      setAgreedTerms(false);
+      setGoogleAgreedTerms(false);
+      setPendingGoogleIdToken(null);
+      loadActivePolicy(false);
     }
   }, [isOpen, initialMode]);
 
@@ -289,24 +344,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const googleBtnLoginRef = useRef<HTMLDivElement | null>(null);
   const googleBtnRegisterRef = useRef<HTMLDivElement | null>(null);
 
-  // Callback when Google Identity Services returns credential (ID Token)
-  const handleGoogleCredentialResponse = async (response: any) => {
-    const idToken = response?.credential;
-    if (!idToken) {
-      soundFx.playCancel();
-      setErrorMsg(
-        lang === 'vi'
-          ? 'Không nhận được mã xác thực Google ID Token. Vui lòng thử lại.'
-          : 'Google ID Token not found. Please try again.'
-      );
-      setIsLoading(false);
-      return;
-    }
-
+  const completeGoogleLoginWithPolicy = async (idToken: string, policyId: string) => {
     setIsLoading(true);
     setErrorMsg(null);
     try {
-      const res = await authService.googleLogin(idToken);
+      const res = await authService.googleLogin({
+        idToken,
+        acceptTerms: true,
+        acceptedPolicyVersionId: policyId,
+        acceptanceSource: 'WEB',
+      });
+      setPendingGoogleIdToken(null);
+      setGoogleAgreedTerms(false);
       soundFx.playChime();
       const mappedRole = mapBackendRole(res.roles);
       let normalizedGender: 'male' | 'female' | 'other' | '' = '';
@@ -331,6 +380,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       });
     } catch (err: any) {
       soundFx.playCancel();
+      if (err?.status === 409) {
+        await loadActivePolicy(true);
+        setLoginAgreedTerms(false);
+        setAgreedTerms(false);
+        setGoogleAgreedTerms(false);
+        setPendingGoogleIdToken(idToken);
+        setModeState('google-policy');
+      }
       setErrorMsg(
         err.message ||
         (lang === 'vi'
@@ -340,6 +397,68 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Callback when Google Identity Services returns credential (ID Token)
+  const handleGoogleCredentialResponse = async (response: any) => {
+    const idToken = response?.credential;
+    if (!idToken) {
+      soundFx.playCancel();
+      setErrorMsg(
+        lang === 'vi'
+          ? 'Không nhận được mã xác thực Google ID Token. Vui lòng thử lại.'
+          : 'Google ID Token not found. Please try again.'
+      );
+      setIsLoading(false);
+      return;
+    }
+
+    const activePolicy = currentPolicyRef.current || (await loadActivePolicy(true));
+    if (!activePolicy) {
+      soundFx.playCancel();
+      setErrorMsg('Không thể tải phiên bản chính sách hiện hành. Vui lòng thử lại.');
+      return;
+    }
+
+    const alreadyChecked =
+      modeRef.current === 'register' ? agreedTermsRef.current : loginAgreedTermsRef.current;
+
+    if (!alreadyChecked) {
+      // Third-party sign-in before accepting Terms: require explicit confirmation step before issuing tokens
+      setPendingGoogleIdToken(idToken);
+      setGoogleAgreedTerms(false);
+      setErrorMsg(null);
+      setSuccessMsg(null);
+      setSubmitted(false);
+      setModeState('google-policy');
+      return;
+    }
+
+    await completeGoogleLoginWithPolicy(idToken, activePolicy.id);
+  };
+
+  const handleGoogleCredentialResponseRef = useRef(handleGoogleCredentialResponse);
+  handleGoogleCredentialResponseRef.current = handleGoogleCredentialResponse;
+
+  const handleGooglePolicyConfirmSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitted(true);
+    setErrorMsg(null);
+    if (!googleAgreedTerms) {
+      soundFx.playCancel();
+      setErrorMsg('Bạn cần xác nhận đồng ý với Điều khoản sử dụng và Quy chế hoạt động hiện hành của SecondLife.');
+      return;
+    }
+    if (!pendingGoogleIdToken) {
+      setMode('login');
+      return;
+    }
+    const activePolicy = currentPolicy || (await loadActivePolicy(true));
+    if (!activePolicy) {
+      setErrorMsg('Không thể tải phiên bản chính sách hiện hành. Vui lòng thử lại.');
+      return;
+    }
+    await completeGoogleLoginWithPolicy(pendingGoogleIdToken, activePolicy.id);
   };
 
   // Initialize and render Google Identity Services button
@@ -365,7 +484,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       try {
         google.accounts.id.initialize({
           client_id: GOOGLE_CLIENT_ID,
-          callback: handleGoogleCredentialResponse,
+          callback: (response: any) => handleGoogleCredentialResponseRef.current(response),
           auto_select: false,
           cancel_on_tap_outside: true,
           use_fedcm_for_prompt: true,
@@ -407,10 +526,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     const emailErr = getLoginEmailError();
     const passErr = getLoginPasswordError();
+    const termsErr = getLoginAgreedTermsError();
 
-    if (emailErr || passErr) {
+    if (emailErr || passErr || termsErr) {
       soundFx.playCancel();
-      setErrorMsg(lang === 'vi' ? 'Vui lòng kiểm tra và sửa các thông tin chưa hợp lệ bên dưới.' : 'Please correct the highlighted errors below.');
+      setErrorMsg(
+        termsErr && !emailErr && !passErr
+          ? termsErr
+          : (lang === 'vi' ? 'Vui lòng kiểm tra và sửa các thông tin chưa hợp lệ bên dưới.' : 'Please correct the highlighted errors below.')
+      );
+      return;
+    }
+
+    const activePolicy = currentPolicy || (await loadActivePolicy(true));
+    if (!activePolicy) {
+      soundFx.playCancel();
+      setErrorMsg('Không thể tải phiên bản Điều khoản sử dụng hiện hành. Vui lòng thử lại.');
       return;
     }
 
@@ -418,10 +549,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     try {
       const res = await authService.login({
         email: emailOrPhone.trim(),
-        password: password
+        password: password,
+        acceptTerms: true,
+        acceptedPolicyVersionId: activePolicy.id,
+        acceptanceSource: 'WEB',
       });
       // FE-01: Clear password from memory state immediately
       setPassword('');
+      setLoginAgreedTerms(false);
       soundFx.playChime();
       const mappedRole = mapBackendRole(res.roles);
       let normalizedGender: 'male' | 'female' | 'other' | '' = '';
@@ -449,6 +584,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       // FE-01: Clear password on failure to prevent memory leakage
       setPassword('');
       soundFx.playCancel();
+      if (err?.status === 409) {
+        await loadActivePolicy(true);
+        setLoginAgreedTerms(false);
+      }
       setErrorMsg(err.message || (lang === 'vi' ? 'Đăng nhập không thành công. Sai email/SĐT hoặc mật khẩu.' : 'Login failed. Invalid credentials.'));
     } finally {
       setIsLoading(false);
@@ -470,7 +609,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     if (nameErr || emailErr || phoneErr || passErr || confirmErr || termsErr) {
       soundFx.playCancel();
-      setErrorMsg(lang === 'vi' ? 'Vui lòng sửa các ô dữ liệu chưa đúng quy chuẩn bên dưới.' : 'Please correct the invalid fields below.');
+      setErrorMsg(
+        termsErr && !nameErr && !emailErr && !phoneErr && !passErr && !confirmErr
+          ? termsErr
+          : (lang === 'vi' ? 'Vui lòng sửa các ô dữ liệu chưa đúng quy chuẩn bên dưới.' : 'Please correct the invalid fields below.')
+      );
+      return;
+    }
+
+    const activePolicy = currentPolicy || (await loadActivePolicy(true));
+    if (!activePolicy) {
+      soundFx.playCancel();
+      setErrorMsg('Không thể tải phiên bản Điều khoản sử dụng hiện hành. Vui lòng thử lại.');
       return;
     }
 
@@ -482,11 +632,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         fullName: fullName.trim(),
         phone: phoneNumber.trim() || undefined,
         gender: registerGender ? registerGender : undefined,
+        acceptTerms: true,
+        acceptedPolicyVersionId: activePolicy.id,
+        acceptanceSource: 'WEB',
       });
       // FE-01: Wipe registration passwords from state
       setRegisterPassword('');
       setConfirmPassword('');
       setRegisterGender('');
+      setAgreedTerms(false);
       soundFx.playChime();
       setVerifyEmailAddress(registerEmail.trim());
       setVerifyOtpCode('');
@@ -507,6 +661,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setRegisterPassword('');
       setConfirmPassword('');
       soundFx.playCancel();
+      if (err?.status === 409 && String(err?.message || '').toLowerCase().includes('chính sách')) {
+        await loadActivePolicy(true);
+        setAgreedTerms(false);
+      }
       setErrorMsg(err.message || (lang === 'vi' ? 'Đăng ký không thành công. Email có thể đã được đăng ký trước đó.' : 'Registration failed. Email may already be registered.'));
     } finally {
       setIsLoading(false);
@@ -762,12 +920,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   {mode === 'register' && (lang === 'vi' ? 'Đăng ký tài khoản mới' : 'Create New Account')}
                   {mode === 'forgot' && (lang === 'vi' ? 'Quên mật khẩu' : 'Forgot Password')}
                   {mode === 'verify-email' && (lang === 'vi' ? 'Xác thực địa chỉ email' : 'Verify Email Address')}
+                  {mode === 'google-policy' && (lang === 'vi' ? 'Xác nhận điều khoản sử dụng' : 'Accept Terms of Service')}
                 </h3>
                 <p className="text-xs text-[#24263e]/70 mt-0.5">
                   {mode === 'login' && (lang === 'vi' ? 'Đăng nhập để giao dịch, định giá AI và xem đơn hàng' : 'Log in to trade, get AI valuation & manage orders')}
                   {mode === 'register' && (lang === 'vi' ? 'Trở thành thành viên bảo đảm trên sàn đồ cũ SecondLife' : 'Join verified second-hand recommerce community')}
                   {mode === 'forgot' && (lang === 'vi' ? 'Nhập email hoặc số điện thoại để nhận mã OTP khôi phục mật khẩu' : 'Enter email or phone to reset your password via OTP')}
                   {mode === 'verify-email' && (lang === 'vi' ? 'Nhập mã OTP 6 số để kích hoạt tài khoản của bạn' : 'Enter 6-digit OTP code to activate your account')}
+                  {mode === 'google-policy' && (lang === 'vi' ? 'Vui lòng xác nhận chính sách hiện hành trước khi hoàn tất đăng nhập Google' : 'Please confirm our current Terms of Service before completing Google sign-in')}
                 </p>
               </div>
 
@@ -960,9 +1120,59 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   )}
                 </div>
 
+                {/* Login Policy Acceptance Checkbox (default unchecked) */}
+                <div className="space-y-1 pt-0.5">
+                  <label className="flex items-start gap-2 text-xs text-[#24263e]/85 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={loginAgreedTerms}
+                      onChange={(e) => {
+                        setLoginAgreedTerms(e.target.checked);
+                        markTouched('loginAgreedTerms');
+                      }}
+                      className="mt-0.5 rounded border-gray-300 bg-[#faf8f5] text-[#c34c36] focus:ring-[#c34c36] cursor-pointer shrink-0"
+                    />
+                    <span className="leading-snug">
+                      Tôi xác nhận đã đọc và đồng ý với{' '}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setIsTermsReaderOpen(true);
+                        }}
+                        className="font-extrabold text-[#c34c36] underline hover:text-[#a93f2b] cursor-pointer"
+                      >
+                        Điều khoản sử dụng và Quy chế hoạt động
+                      </button>{' '}
+                      hiện hành của SecondLife
+                      {currentPolicy ? ` (Phiên bản ${currentPolicy.version})` : ''}.
+                    </span>
+                  </label>
+                  {policyLoadError && (
+                    <div className="flex items-center gap-1.5 text-[11px] text-amber-700 font-medium">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>{policyLoadError}</span>
+                      <button
+                        type="button"
+                        onClick={() => loadActivePolicy(true)}
+                        className="underline font-bold cursor-pointer"
+                      >
+                        Thử lại
+                      </button>
+                    </div>
+                  )}
+                  {(touched.loginAgreedTerms || submitted) && getLoginAgreedTermsError() && (
+                    <div className="flex items-center gap-1.5 text-[11px] text-rose-600 font-medium pt-0.5 animate-fadeIn">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0 text-rose-500" />
+                      <span>{getLoginAgreedTermsError()}</span>
+                    </div>
+                  )}
+                </div>
+
                 <button
                   type="submit"
-                  disabled={isLoading}
+                  disabled={isLoading || policyLoading}
                   className="w-full py-2.5 px-4 bg-gradient-to-r from-[#c34c36] to-[#fce5da] hover:opacity-95 disabled:opacity-50 text-white rounded-xl text-xs sm:text-sm font-extrabold shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 group mt-1"
                 >
                   <span>
@@ -1211,21 +1421,48 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   </div>
                 </div>
 
-                {/* Agreed terms */}
-                <div>
-                  <label className="flex items-start gap-2 text-[11px] text-[#24263e]/70 cursor-pointer select-none">
+                {/* Agreed terms (default unchecked, clickable policy reader without losing form data) */}
+                <div className="space-y-1">
+                  <label className="flex items-start gap-2 text-xs text-[#24263e]/85 cursor-pointer select-none">
                     <input
                       type="checkbox"
                       checked={agreedTerms}
-                      onChange={(e) => setAgreedTerms(e.target.checked)}
-                      className="mt-0.5 rounded border-gray-300 bg-[#faf8f5] text-[#24263e] focus:ring-[#c34c36] cursor-pointer shrink-0"
+                      onChange={(e) => {
+                        setAgreedTerms(e.target.checked);
+                        markTouched('agreedTerms');
+                      }}
+                      className="mt-0.5 rounded border-gray-300 bg-[#faf8f5] text-[#c34c36] focus:ring-[#c34c36] cursor-pointer shrink-0"
                     />
-                    <span className="leading-tight">
-                      {lang === 'vi'
-                        ? 'Tôi đồng ý với Quy chế hoạt động & Cam kết kiểm định Escrow của SecondLife.'
-                        : 'I agree to SecondLife Terms of Service and Certified Escrow Guarantee.'}
+                    <span className="leading-snug">
+                      Tôi xác nhận đã đọc, hiểu và đồng ý với{' '}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setIsTermsReaderOpen(true);
+                        }}
+                        className="font-extrabold text-[#c34c36] underline hover:text-[#a93f2b] cursor-pointer"
+                      >
+                        Điều khoản sử dụng và Quy chế hoạt động
+                      </button>{' '}
+                      của SecondLife
+                      {currentPolicy ? ` (Phiên bản ${currentPolicy.version})` : ''}.
                     </span>
                   </label>
+                  {policyLoadError && (
+                    <div className="flex items-center gap-1.5 text-[11px] text-amber-700 font-medium">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>{policyLoadError}</span>
+                      <button
+                        type="button"
+                        onClick={() => loadActivePolicy(true)}
+                        className="underline font-bold cursor-pointer"
+                      >
+                        Thử lại
+                      </button>
+                    </div>
+                  )}
                   {(touched.agreedTerms || submitted) && getAgreedTermsError() && (
                     <div className="flex items-center gap-1.5 text-[11px] text-rose-600 font-medium pt-0.5 animate-fadeIn">
                       <AlertCircle className="w-3.5 h-3.5 shrink-0 text-rose-500" />
@@ -1236,7 +1473,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
                 <button
                   type="submit"
-                  disabled={isLoading}
+                  disabled={isLoading || policyLoading}
                   className="w-full py-2.5 px-4 bg-gradient-to-r from-[#c34c36] to-[#fce5da] hover:opacity-95 disabled:opacity-50 text-white rounded-xl text-xs sm:text-sm font-extrabold shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 group mt-1"
                 >
                   <span>
@@ -1609,9 +1846,87 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </form>
             )}
 
+            {/* ================= 5. GOOGLE SIGN-IN POLICY CONFIRMATION STEP ================= */}
+            {mode === 'google-policy' && (
+              <form onSubmit={handleGooglePolicyConfirmSubmit} noValidate className="space-y-4">
+                <div className="p-4 rounded-2xl bg-[#faf8f5] border border-[#c34c36]/30 space-y-2">
+                  <div className="flex items-center gap-2 text-sm font-black text-[#24263e]">
+                    <ShieldCheck className="w-5 h-5 text-[#c34c36] shrink-0" />
+                    <span>Xác nhận chính sách trước khi hoàn tất đăng nhập Google</span>
+                  </div>
+                  <p className="text-xs text-[#24263e]/80 leading-relaxed">
+                    Tài khoản Google của bạn đã được xác thực. Vui lòng đọc và xác nhận đồng ý với Điều khoản sử dụng và Quy chế hoạt động hiện hành của SecondLife
+                    {currentPolicy ? ` (Phiên bản ${currentPolicy.version})` : ''} để hoàn tất đăng nhập.
+                  </p>
+                </div>
+
+                <label className="flex items-start gap-2.5 text-xs text-[#24263e]/90 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={googleAgreedTerms}
+                    onChange={(e) => {
+                      setGoogleAgreedTerms(e.target.checked);
+                      if (e.target.checked) setErrorMsg(null);
+                    }}
+                    className="mt-0.5 rounded border-gray-300 bg-[#faf8f5] text-[#c34c36] focus:ring-[#c34c36] cursor-pointer shrink-0"
+                  />
+                  <span className="leading-snug font-medium">
+                    Tôi xác nhận đã đọc và đồng ý với{' '}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setIsTermsReaderOpen(true);
+                      }}
+                      className="font-extrabold text-[#c34c36] underline hover:text-[#a93f2b] cursor-pointer"
+                    >
+                      Điều khoản sử dụng và Quy chế hoạt động
+                    </button>{' '}
+                    hiện hành của SecondLife.
+                  </span>
+                </label>
+
+                <div className="space-y-2 pt-1">
+                  <button
+                    type="submit"
+                    disabled={isLoading || policyLoading}
+                    className="w-full py-2.5 px-4 bg-gradient-to-r from-[#c34c36] to-[#fce5da] hover:opacity-95 disabled:opacity-50 text-white rounded-xl text-xs sm:text-sm font-extrabold shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    <span>
+                      {isLoading ? 'Đang hoàn tất đăng nhập...' : 'Xác nhận & Hoàn tất đăng nhập Google'}
+                    </span>
+                    {!isLoading && <ArrowRight className="w-4 h-4" />}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPendingGoogleIdToken(null);
+                      setGoogleAgreedTerms(false);
+                      setErrorMsg(null);
+                      setMode('login');
+                    }}
+                    className="w-full py-1.5 rounded-xl text-xs font-semibold text-gray-500 hover:text-[#24263e] hover:bg-gray-100 transition cursor-pointer text-center"
+                  >
+                    ← Hủy và quay lại màn hình đăng nhập
+                  </button>
+                </div>
+              </form>
+            )}
+
           </div>
         </div>
       </div>
+
+      {/* Inline Policy Reader Modal (preserves Register/Login form state & never auto-checks checkbox on close) */}
+      <PolicyModal
+        isOpen={isTermsReaderOpen}
+        focusPolicyOnly
+        policy={currentPolicy}
+        onClose={() => setIsTermsReaderOpen(false)}
+        lang={lang}
+      />
     </div>
   );
 };

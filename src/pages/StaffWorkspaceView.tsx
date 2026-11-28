@@ -47,11 +47,12 @@ import { Listing, EscrowOrder, Language, UserProfile } from '../types';
 import { UserAvatar } from '../components/common/UserAvatar';
 import { formatVND } from '../utils/translations';
 import { formatDisputeReason } from '../utils/orders/orderDispute';
-import { staffService, staffListingService, adminPostService, SellerVerificationResponseDto, staffReportService, ReportItemDto, StaffOrderConfirmationResponse, userReportService, reputationService, postService } from '../services';
+import { staffService, staffListingService, adminPostService, SellerVerificationResponseDto, staffReportService, ReportItemDto, StaffOrderConfirmationResponse, userReportService, reputationService, postService, walletService } from '../services';
 import { dialogService } from '../utils/dialogService';
 import { translateSystemNotification } from '../utils/systemNotificationTranslator';
 import { ListingComparisonModal } from '../components/staff/ListingComparisonModal';
 import { StaffDisputeManagement } from '../components/staff/StaffDisputeManagement';
+import { WithdrawalsTab } from '../components/admin/WithdrawalsTab';
 import { InspectionCashReviewPanel } from '../components/inspection/InspectionCashReviewPanel';
 import { canReviewInspectionCash } from '../utils/inspectionCashShipping';
 import { MarkdownContent } from '../components/common/MarkdownDescription';
@@ -73,6 +74,7 @@ type StaffTab =
   | 'reports-support'
   | 'disputes'
   | 'refund-requests'
+  | 'withdrawals'
   | 'payouts'
   | 'monitor-transactions'
   | 'restrict-users';
@@ -83,6 +85,7 @@ export const VALID_STAFF_TABS: StaffTab[] = [
   'reports-support',
   'disputes',
   'refund-requests',
+  'withdrawals',
   'payouts',
   'monitor-transactions',
   'restrict-users'
@@ -489,8 +492,23 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
     }
   };
 
+  const [pendingWithdrawalCount, setPendingWithdrawalCount] = useState<number>(0);
+
+  const loadPendingWithdrawalCount = async () => {
+    try {
+      const res = await walletService.getAdminWithdrawals('ALL', 0, 100);
+      const actionable = (res.items || []).filter((w) =>
+        ['PENDING', 'PROCESSING', 'TRANSFER_FAILED', 'DISPUTED', 'DISPUTE_PROCESSING'].includes(w.status)
+      ).length;
+      setPendingWithdrawalCount(actionable);
+    } catch {
+      // Non-blocking if staff account lacks STAFF_DISPUTE_REVIEW
+    }
+  };
+
   useEffect(() => {
     loadBackendReports();
+    void loadPendingWithdrawalCount();
   }, []);
 
   // 5. Disputes & Evidence
@@ -592,6 +610,13 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
       icon: RotateCcw,
       badge: pendingRefundCount,
       badgeColor: 'bg-rose-500 text-white'
+    },
+    {
+      id: 'withdrawals' as StaffTab,
+      label: 'XỬ LÝ CHUYỂN KHOẢN RÚT VÍ',
+      icon: Send,
+      badge: pendingWithdrawalCount,
+      badgeColor: 'bg-[#c34c36] text-white'
     },
     {
       id: 'payouts' as StaffTab,
@@ -1478,6 +1503,16 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
               </div>
               <StaffDisputeManagement currentUserId={currentUser?.id} canHandleReturns={canHandleReturns} returnOnly />
             </div>
+          )}
+
+          {activeTab === 'withdrawals' && (
+            <WithdrawalsTab
+              lang={lang}
+              onNotice={triggerNotice}
+              currentUser={currentUser}
+              portalMode="staff"
+              onPendingCountChange={setPendingWithdrawalCount}
+            />
           )}
 
           {activeTab === 'payouts' && (

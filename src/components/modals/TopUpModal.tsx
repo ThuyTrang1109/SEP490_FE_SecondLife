@@ -25,6 +25,8 @@ import {
   Eye,
   Plus,
   Minus,
+  ArrowUpRight,
+  History,
 } from 'lucide-react';
 import {
   TopupPackage,
@@ -60,6 +62,8 @@ export interface TopUpModalProps {
   onCreditUpdated?: (newBalance: number) => void;
   onUserCreditUpdated?: (newCredit: UserCredit) => void;
   onWalletUpdated?: (newBalance: number) => void;
+  onOpenWithdraw?: () => void;
+  onOpenWithdrawalHistory?: () => void;
   initialTab?: 'wallet' | 'packages';
   lang?: Language;
 }
@@ -138,6 +142,8 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   onCreditUpdated,
   onUserCreditUpdated,
   onWalletUpdated,
+  onOpenWithdraw,
+  onOpenWithdrawalHistory,
   initialTab = 'wallet',
   lang = 'vi',
 }) => {
@@ -489,70 +495,32 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   useEffect(() => {
     if (!depositRequest || depositRequest.status !== 'PENDING') return;
 
-    const baselineBalance = preDepositBalanceRef.current;
-
-    // 1. Lắng nghe trực tiếp từ WebSocket Push (/user/queue/wallet, /user/queue/wallet-updates)
-    const unsubWs = notificationWsClient.subscribeWalletListener(async (event) => {
+    let cancelled = false;
+    let checking = false;
+    let handled = false;
+    const reconcile = async () => {
+      if (checking || handled || cancelled || document.hidden) return;
+      checking = true;
       try {
-        const freshWallet = await walletService.getMyWallet();
-        if (
-          freshWallet &&
-          (freshWallet.balance > baselineBalance ||
-            (baselineBalance === 0 && freshWallet.balance >= depositRequest.amount))
-        ) {
-          await processSuccessfulBalanceIncrease(freshWallet);
+        const status = await walletService.getDepositRequest(depositRequest.id);
+        if (status?.id !== depositRequest.id || status.status !== 'COMPLETED' || cancelled) return;
+        const wallet = await walletService.getMyWallet();
+        if (wallet && !cancelled) {
+          handled = true;
+          await processSuccessfulBalanceIncrease(wallet);
         }
-      } catch { }
-    });
-
-    // 2. Lắng nghe sự kiện đồng bộ toàn hệ thống 'secondlife_wallet_updated'
-    const handleWalletUpdated = async (e: any) => {
-      const pushedBal = e?.detail?.balance;
-      if (typeof pushedBal === 'number' && (pushedBal > baselineBalance || (baselineBalance === 0 && pushedBal >= depositRequest.amount))) {
-        try {
-          const freshWallet = await walletService.getMyWallet();
-          if (freshWallet) await processSuccessfulBalanceIncrease(freshWallet);
-        } catch { }
-      }
+      } catch { /* Retry when the connection recovers. */ }
+      finally { checking = false; }
     };
-    window.addEventListener('secondlife_wallet_updated', handleWalletUpdated);
-
-    // 3. Fallback nhẹ nhàng: Chỉ poll khi tab đang hiển thị (không poll khi ẩn), giãn cách 12s và tối đa 10 lần
-    let pollCount = 0;
-    pollingRef.current = setInterval(async () => {
-      // Bỏ qua nếu tab đang bị ẩn / background
-      if (typeof document !== 'undefined' && document.hidden) return;
-      pollCount++;
-      if (pollCount > 10) {
-        // Sau 2 phút không có giao dịch, tự động dừng polling để tránh spam BE
-        if (pollingRef.current) {
-          clearInterval(pollingRef.current);
-          pollingRef.current = null;
-        }
-        return;
-      }
-
-      try {
-        const freshWallet = await walletService.getMyWallet();
-        const hasBalanceIncreased =
-          freshWallet &&
-          (freshWallet.balance > baselineBalance ||
-            (baselineBalance === 0 && freshWallet.balance >= depositRequest.amount));
-        if (hasBalanceIncreased) {
-          await processSuccessfulBalanceIncrease(freshWallet);
-        }
-      } catch {
-        // ignore transient errors
-      }
-    }, 12000);
-
+    const unsubscribe = notificationWsClient.subscribeWalletListener(reconcile);
+    document.addEventListener('visibilitychange', reconcile);
+    const timer = setInterval(reconcile, 12000);
+    void reconcile();
     return () => {
-      unsubWs();
-      window.removeEventListener('secondlife_wallet_updated', handleWalletUpdated);
-      if (pollingRef.current) {
-        clearInterval(pollingRef.current);
-        pollingRef.current = null;
-      }
+      cancelled = true;
+      clearInterval(timer);
+      unsubscribe();
+      document.removeEventListener('visibilitychange', reconcile);
     };
   }, [depositRequest, processSuccessfulBalanceIncrease]);
 
@@ -565,16 +533,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
         preDepositBalanceRef.current = w.balance;
         if (onWalletUpdated) onWalletUpdated(w.balance);
 
-        if (depositRequest && depositRequest.status === 'PENDING' && pendingRetailOrder && w.balance >= pendingRetailOrder.totalFee) {
-          setPendingRetailOrder(null);
-          await handleConfirmRetailPurchase();
-          setDepositRequest(null);
-        } else if (depositRequest && depositRequest.status === 'PENDING' && pendingPackage && w.balance >= getPkgPrice(pendingPackage)) {
-          const pkgToActivate = pendingPackage;
-          setPendingPackage(null);
-          await handleConfirmPurchase(pkgToActivate);
-          setDepositRequest(null);
-        }
+
       }
     } catch (err: any) {
       console.warn('Could not load wallet from BE:', err);
@@ -1052,12 +1011,20 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
     ? `https://img.vietqr.io/image/${depositRequest.bankName}-${depositRequest.bankAccountNumber}-compact2.png?amount=${depositRequest.amount}&addInfo=${depositRequest.code}&accountName=${encodeURIComponent(depositRequest.bankAccountName)}`
     : '';
 
+  const isCompactDepositView = activeTab === 'wallet' && !depositRequest;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-md animate-fadeIn">
-      <div className="relative w-full max-w-3xl lg:max-w-4xl h-[680px] sm:h-[720px] max-h-[94vh] overflow-hidden rounded-3xl bg-[#faf8f5] border border-[#24263e]/15 text-[#24263e] shadow-2xl flex flex-col">
+      <div
+        className={`relative w-full max-w-3xl ${
+          isCompactDepositView
+            ? 'h-auto max-h-[92vh]'
+            : 'lg:max-w-4xl h-[660px] sm:h-[700px] max-h-[94vh]'
+        } overflow-hidden rounded-3xl bg-[#faf8f5] border border-[#24263e]/15 text-[#24263e] shadow-2xl flex flex-col`}
+      >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3 sm:py-3.5 border-b border-white/10 bg-[#24263e] shrink-0">
-          <div className="flex items-center space-x-3">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/10 bg-[#24263e] shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
             <div className="bg-white p-1.5 rounded-xl shadow-xs border border-white/80 flex items-center justify-center shrink-0">
               <img
                 src={logoImg}
@@ -1065,16 +1032,16 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                 className="h-7 sm:h-8 w-auto object-contain shrink-0"
               />
             </div>
-            <div>
-              <h3 className="text-sm sm:text-base font-black text-white tracking-tight">
+            <div className="min-w-0">
+              <h3 className="text-sm sm:text-base font-black text-white tracking-tight truncate">
                 {isBuyerRole
-                  ? 'Ví Escrow & nạp tiền secondLife'
-                  : 'Ví tiền & quyền sử dụng secondLife'}
+                  ? 'Ví Escrow & Nạp tiền SecondLife'
+                  : 'Ví Tiền & Quyền Sử Dụng SecondLife'}
               </h3>
-              <p className="text-[11px] text-[#fce5da] font-medium leading-tight">
+              <p className="text-[11px] text-[#fce5da] font-medium leading-tight truncate">
                 {isBuyerRole
-                  ? 'Nạp tiền tự động qua VietQR (SePay) • Bảo đảm giao dịch an toàn qua Quỹ Escrow'
-                  : 'Nạp tiền tự động qua VietQR (SePay) • Mua gói lượt đăng tin AI'}
+                  ? 'Nạp tiền tự động qua VietQR (SePay) · Bảo đảm giao dịch an toàn qua Quỹ Escrow'
+                  : 'Nạp tiền tự động qua VietQR (SePay) · Rút tiền ngân hàng & Mua gói lượt đăng tin'}
               </p>
             </div>
           </div>
@@ -1086,54 +1053,82 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
           </button>
         </div>
 
-        {/* Balance Status Banner (Luôn cố định giúp chiều cao modal không bị co giật khi chuyển tab) */}
-        <div className="px-5 py-2.5 bg-gradient-to-r from-[#24263e]/5 via-[#fce5da]/30 to-[#24263e]/5 border-b border-[#24263e]/10 flex flex-wrap items-center justify-between gap-2.5 shrink-0">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-xl bg-[#24263e] text-white flex items-center justify-center shadow-xs">
-              <Wallet className="w-3.5 h-3.5 text-emerald-400" />
+        {/* Balance & Quick Actions Banner */}
+        <div className="px-5 py-3 bg-gradient-to-r from-[#24263e]/[0.04] via-[#fce5da]/25 to-[#24263e]/[0.04] border-b border-[#24263e]/10 flex flex-wrap items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-2xl bg-[#24263e] text-white flex items-center justify-center shadow-xs shrink-0">
+              <Wallet className="w-5 h-5 text-emerald-400" />
             </div>
-            <div>
-              <span className="text-[10px] text-[#24263e]/70 font-semibold block leading-tight">Số dư ví khả dụng:</span>
-              <span className="text-sm sm:text-base font-black text-[#24263e] font-mono leading-tight">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] text-[#24263e]/70 font-semibold leading-tight">
+                  Số dư ví khả dụng
+                </span>
+                {isBuyerRole && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200/90 text-emerald-700 text-[10px] font-bold">
+                    <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                    Bảo lãnh Escrow
+                  </span>
+                )}
+              </div>
+              <div className="text-lg sm:text-xl font-black text-[#24263e] font-mono leading-tight mt-0.5">
                 {formatVND(currentWalletBalance)}
-              </span>
+              </div>
             </div>
           </div>
 
-          {!isBuyerRole ? (
-            <div className="flex items-center gap-2 text-xs font-bold font-mono">
-              <span className="text-[#24263e] bg-white border border-[#24263e]/15 px-2.5 py-0.5 rounded-xl shadow-xs">
-                Tin: <span className="font-black text-[#c34c36]">{userCredit?.postCredits ?? 0}</span>
-              </span>
-              <span className="text-[#24263e] bg-white border border-[#24263e]/15 px-2.5 py-0.5 rounded-xl shadow-xs">
-                AI Chat: <span className="font-black text-[#c34c36]">{userCredit?.chatCredits ?? 0}</span>
-              </span>
-              <span className="text-[#24263e] bg-white border border-[#24263e]/15 px-2.5 py-0.5 rounded-xl shadow-xs">
-                Định giá: <span className="font-black text-[#c34c36]">{userCredit?.valuationCredits ?? 0}</span>
-              </span>
+          <div className="flex flex-wrap items-center gap-2">
+            {!isBuyerRole && (
+              <div className="flex items-center gap-1.5 text-[11px] font-bold font-mono mr-1">
+                <span className="text-[#24263e] bg-white border border-[#24263e]/15 px-2.5 py-1 rounded-xl shadow-2xs">
+                  Tin: <span className="font-black text-[#c34c36]">{userCredit?.postCredits ?? 0}</span>
+                </span>
+                <span className="text-[#24263e] bg-white border border-[#24263e]/15 px-2.5 py-1 rounded-xl shadow-2xs">
+                  AI Chat: <span className="font-black text-[#c34c36]">{userCredit?.chatCredits ?? 0}</span>
+                </span>
+                <span className="text-[#24263e] bg-white border border-[#24263e]/15 px-2.5 py-1 rounded-xl shadow-2xs">
+                  Định giá: <span className="font-black text-[#c34c36]">{userCredit?.valuationCredits ?? 0}</span>
+                </span>
+              </div>
+            )}
+
+            {onOpenWithdraw && (
               <button
-                onClick={handleRefreshTopBar}
-                title="Làm mới số dư và lịch sử"
-                className="p-1 rounded-lg bg-white border border-[#24263e]/15 text-slate-600 hover:text-[#24263e] cursor-pointer"
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenWithdraw();
+                }}
+                className="px-3.5 py-2 rounded-xl bg-[#24263e] hover:bg-[#c34c36] text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-xs transition cursor-pointer"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${walletLoading ? 'animate-spin' : ''}`} />
+                <ArrowUpRight className="w-3.5 h-3.5" />
+                <span>Rút tiền</span>
               </button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 text-xs font-bold">
-              <span className="text-emerald-800 bg-emerald-50 border border-emerald-200/80 px-2.5 py-0.5 rounded-xl font-bold flex items-center gap-1 shadow-2xs">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                Bảo lãnh ký quỹ Escrow
-              </span>
+            )}
+
+            {onOpenWithdrawalHistory && (
               <button
-                onClick={handleRefreshTopBar}
-                title="Làm mới số dư và lịch sử"
-                className="p-1 rounded-lg bg-white border border-[#24263e]/15 text-slate-600 hover:text-[#24263e] cursor-pointer"
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenWithdrawalHistory();
+                }}
+                className="px-3 py-2 rounded-xl bg-white hover:bg-slate-50 border border-[#24263e]/20 text-[#24263e] text-xs font-bold inline-flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${walletLoading ? 'animate-spin' : ''}`} />
+                <History className="w-3.5 h-3.5 text-slate-600" />
+                <span>Lịch sử rút tiền</span>
               </button>
-            </div>
-          )}
+            )}
+
+            <button
+              type="button"
+              onClick={handleRefreshTopBar}
+              title="Làm mới số dư và lịch sử"
+              className="p-2 rounded-xl bg-white border border-[#24263e]/15 text-slate-600 hover:text-[#24263e] hover:bg-slate-50 transition cursor-pointer shadow-2xs"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${walletLoading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
         </div>
 
         {/* Tab Switcher - Căn chỉnh đều 3 mục, có số thứ tự rõ ràng */}
@@ -1187,13 +1182,13 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
           </button>
         </div>
 
-        {/* Modal Scrollable Body - Giữ nguyên chiều cao cố định giữa các tab, không bị co giật */}
+        {/* Modal Scrollable Body */}
         <div className="p-4 sm:p-5 flex-1 min-h-0 flex flex-col overflow-hidden">
           {/* TAB 1: WALLET DEPOSIT VIA VIETQR */}
           {activeTab === 'wallet' && (
-            <div className="space-y-4 animate-fadeIn flex-1 overflow-y-auto min-h-0 flex flex-col justify-between pr-1">
+            <div className="space-y-4 animate-fadeIn flex-1 overflow-y-auto min-h-0 flex flex-col pr-0.5">
               {!depositRequest ? (
-                <div className="space-y-4 flex-1 flex flex-col justify-between">
+                <div className="space-y-4">
                   <div className="bg-white p-5 rounded-2xl border border-[#24263e]/10 shadow-xs space-y-4">
                     <div>
                       <h4 className="font-black text-sm text-[#24263e] flex items-center gap-1.5">
@@ -1206,7 +1201,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                     </div>
 
                     {/* Presets */}
-                    <div className="grid grid-cols-3 gap-2.5">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                       {PRESET_DEPOSIT_AMOUNTS.map((amt) => (
                         <button
                           key={amt}
@@ -1215,8 +1210,8 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                             setDepositAmount(amt);
                             setCustomAmount(amt.toLocaleString('vi-VN'));
                           }}
-                          className={`py-2.5 px-3 rounded-xl font-mono text-xs font-bold transition-all border cursor-pointer hover:scale-[1.02] active:scale-[0.98] ${depositAmount === amt
-                            ? 'bg-[#c34c36] text-white border-[#c34c36] shadow-sm'
+                          className={`py-2.5 px-3 rounded-xl font-mono text-xs sm:text-sm font-bold transition-all border cursor-pointer hover:scale-[1.01] active:scale-[0.99] ${depositAmount === amt
+                            ? 'bg-[#c34c36] text-white border-[#c34c36] shadow-sm ring-2 ring-[#c34c36]/20'
                             : 'bg-slate-50 hover:bg-slate-100 text-slate-800 border-slate-200'
                             }`}
                         >
@@ -1227,8 +1222,8 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
 
                     {/* Custom Input */}
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                        Số tiền tùy chỉnh (VNĐ):
+                      <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                        Số tiền tùy chỉnh (VNĐ)
                       </label>
                       <div className="relative">
                         <input
@@ -1246,9 +1241,9 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                             }
                           }}
                           placeholder="Ví dụ: 150.000"
-                          className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm font-bold text-slate-900 focus:outline-none focus:border-[#c34c36] focus:bg-white transition"
+                          className="w-full px-3.5 py-2.5 pr-14 bg-slate-50 border border-slate-200 rounded-xl font-mono text-base font-black text-slate-900 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 focus:bg-white transition"
                         />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
+                        <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
                           VNĐ
                         </span>
                       </div>
@@ -1256,17 +1251,17 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
 
                     {/* Trust & Security features row */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 text-[11px] text-slate-600">
-                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center gap-2">
+                      <div className="p-2.5 rounded-xl bg-slate-50/90 border border-slate-200/80 flex items-center gap-2">
                         <Zap className="w-4 h-4 text-amber-500 shrink-0" />
-                        <span>Duyệt tự động 30s qua SePay</span>
+                        <span className="font-medium">Duyệt tự động 30s qua SePay</span>
                       </div>
-                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center gap-2">
+                      <div className="p-2.5 rounded-xl bg-slate-50/90 border border-slate-200/80 flex items-center gap-2">
                         <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                        <span>Bảo lãnh Escrow an toàn</span>
+                        <span className="font-medium">Bảo lãnh Escrow an toàn</span>
                       </div>
-                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center gap-2">
+                      <div className="p-2.5 rounded-xl bg-slate-50/90 border border-slate-200/80 flex items-center gap-2">
                         <RefreshCw className="w-4 h-4 text-blue-500 shrink-0" />
-                        <span>Hoàn tiền & tra soát 24/7</span>
+                        <span className="font-medium">Hoàn tiền & tra soát 24/7</span>
                       </div>
                     </div>
 
@@ -1278,11 +1273,11 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                     )}
                   </div>
 
-                  {/* Create Button */}
+                  {/* Primary Action Button */}
                   <button
                     disabled={creatingDeposit || depositAmount < 10000}
                     onClick={handleCreateDeposit}
-                    className="w-full py-3.5 rounded-2xl font-black text-sm text-white bg-gradient-to-r from-[#c34c36] to-[#dc4729] hover:opacity-95 active:scale-[0.99] transition shadow-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer mt-auto"
+                    className="w-full py-3.5 rounded-2xl font-black text-sm text-white bg-gradient-to-r from-[#c34c36] to-[#dc4729] hover:opacity-95 active:scale-[0.99] transition shadow-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer"
                   >
                     {creatingDeposit ? (
                       <>
@@ -1292,7 +1287,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                     ) : (
                       <>
                         <QrCode className="w-4 h-4" />
-                        <span>Tạo mã QR vietQR Nạp {depositAmount.toLocaleString('vi-VN')} VNĐ</span>
+                        <span>Tạo mã QR VietQR · Nạp {depositAmount.toLocaleString('vi-VN')} VNĐ</span>
                       </>
                     )}
                   </button>

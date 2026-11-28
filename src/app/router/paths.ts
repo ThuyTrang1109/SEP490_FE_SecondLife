@@ -21,6 +21,7 @@ export const panelPaths: Partial<Record<UserRole, Record<string, string>>> = {
   staff: {
     overview: '/staff/dashboard', 'review-listings': '/staff/products',
     'reports-support': '/staff/reports', disputes: '/staff/disputes', 'refund-requests': '/staff/refunds',
+    withdrawals: '/staff/withdrawals',
     payouts: '/staff/payouts', 'monitor-transactions': '/staff/transactions', 'restrict-users': '/staff/restrictions',
   },
   inspection_center: {
@@ -47,6 +48,8 @@ const customerRoutes = (role: 'buyer' | 'seller'): AppRoute[] => [
   { path: `/${role}/chat`, role, tab: 'chat' },
   { path: `/${role}/chat/:conversationId`, role, tab: 'chat' },
   { path: `/${role}/disputes`, role, tab: 'disputes' },
+  { path: `/${role}/withdrawals`, role, tab: 'withdrawals' },
+  { path: `/${role}/withdrawals/:withdrawalId`, role, tab: 'withdrawals' },
   { path: `/${role}/inspections`, role, allowedRoles: ['buyer', 'seller'], tab: 'orders' },
   { path: `/${role}/inspections/:inspectionId`, role, allowedRoles: ['buyer', 'seller'], tab: 'buyer-inspection-decision' },
   { path: `/${role}/inspections/:inspectionId/decision`, role, allowedRoles: ['buyer', 'seller'], tab: 'buyer-inspection-decision' },
@@ -56,6 +59,8 @@ export const routeGroups: Record<string, AppRoute[]> = {
   public: [
     { path: '/', tab: 'home' }, { path: '/products', tab: 'marketplace' },
     { path: '/products/:productId', tab: 'marketplace', modal: 'product' },
+    { path: '/terms-of-service', tab: 'terms-of-service' },
+    { path: '/mobile-upload/withdrawal-evidence', tab: 'mobile-withdrawal-upload' },
     { path: '/login', tab: 'home', modal: 'login' }, { path: '/register', tab: 'home', modal: 'register' },
     { path: '/forgot-password', tab: 'home', modal: 'forgot' },
     { path: '/unauthorized', tab: 'unauthorized' }, { path: '/404', tab: 'not-found' },
@@ -93,7 +98,7 @@ for (const role of ['buyer', 'seller', 'staff', 'inspector', 'inspection_center'
 export const routes = Object.values(routeGroups).flat();
 
 export const paths = {
-  home: '/', products: '/products', login: '/login', register: '/register', unauthorized: '/unauthorized',
+  home: '/', products: '/products', termsOfService: '/terms-of-service', login: '/login', register: '/register', unauthorized: '/unauthorized',
   product: (id: string) => `/products/${encodeURIComponent(id)}`,
   profile: customerProfilePath,
   chat: (role: UserRole, id?: string) => `/${role === 'seller' ? 'seller' : 'buyer'}/chat${id ? `/${encodeURIComponent(id)}` : ''}`,
@@ -112,6 +117,12 @@ export const paths = {
   inspectorResult: (id: string) => `/inspector/inspections/${encodeURIComponent(id)}/result`,
   sellerProduct: (id: string) => `/seller/products/${encodeURIComponent(id)}`,
   editProduct: (id: string) => `/seller/products/${encodeURIComponent(id)}/edit`,
+  withdrawals: (role: UserRole, id?: string) => {
+    if (role === 'admin') return '/admin/withdrawals';
+    if (role === 'staff') return '/staff/withdrawals';
+    if (role === 'inspection_center') return '/inspection-center/wallet';
+    return `/${role === 'seller' ? 'seller' : 'buyer'}/withdrawals${id ? `/${encodeURIComponent(id)}` : ''}`;
+  },
 };
 
 export function getRoleLandingPath(role: UserRole = 'buyer'): string {
@@ -123,6 +134,7 @@ export function pathForTab(tab: string, role: UserRole = 'buyer'): string {
   const map: Record<string, string> = {
     home: isInternal ? getRoleLandingPath(role) : '/',
     marketplace: isInternal ? getRoleLandingPath(role) : '/products',
+    'terms-of-service': '/terms-of-service',
     'seller-dashboard': '/seller/dashboard',
     profile: paths.profile,
     'create-listing': role === 'staff' ? '/staff/products/create' : '/seller/products/create',
@@ -132,6 +144,7 @@ export function pathForTab(tab: string, role: UserRole = 'buyer'): string {
     chat: paths.chat(role),
     notifications: `/${role.replace('_', '-')}/notifications`,
     disputes: role === 'staff' ? '/staff/disputes' : `/${role === 'seller' ? 'seller' : 'buyer'}/disputes`,
+    withdrawals: paths.withdrawals(role),
     'inspection-center': '/inspection-center/dashboard',
     'inspection-hub': role === 'inspection_center' ? '/inspection-center/dashboard' : '/inspector/dashboard',
     'staff-workspace': '/staff/dashboard',
@@ -183,6 +196,7 @@ export function resolveAppRoute(input: string, role: UserRole = 'buyer'): RouteM
     '/marketplace': pathForTab('marketplace', role), '/home': pathForTab('home', role), '/orders': pathForTab('orders', role),
     '/chat': pathForTab('chat', role), '/negotiations': pathForTab('chat', role),
     '/notifications': pathForTab('notifications', role), '/disputes': pathForTab('disputes', role),
+    '/withdrawals': paths.withdrawals(role), '/wallet/withdrawals': paths.withdrawals(role),
     '/buyer/profile': paths.profile, '/seller/profile': paths.profile,
     '/seller-dashboard': '/seller/dashboard', '/seller/posts': '/seller/products',
     '/create-listing': pathForTab('create-listing', role), '/admin-dashboard': '/admin/dashboard',
@@ -207,6 +221,8 @@ export function resolveAppRoute(input: string, role: UserRole = 'buyer'): RouteM
   target ||= aliases[url.pathname.replace(/\/$/, '')];
   const reportLink = url.pathname.match(/^\/reports\/([^/]+)\/?$/);
   if (reportLink) target = '/buyer/disputes/' + encodeURIComponent(decodePart(reportLink[1]));
+  const walletWithdrawalLink = url.pathname.match(/^\/wallet\/withdrawals\/([^/]+)\/?$/);
+  if (walletWithdrawalLink) target = paths.withdrawals(role, decodePart(walletWithdrawalLink[1]));
   const oldOrder = url.pathname.match(/^\/(?:buyer\/orders|seller\/orders|orders?)\/([^/]+)$/);
   if (oldOrder && role === 'inspector') {
     target = `/inspector/inspections/${encodeURIComponent(decodePart(oldOrder[1]))}`;
@@ -263,7 +279,7 @@ export function getUserRoles(user: { role: UserRole; roles?: string[] } | null):
   if (!user) return [];
   const knownRoles: UserRole[] = ['buyer', 'seller', 'staff', 'inspector', 'inspection_center', 'admin'];
   const actual = (user.roles?.length ? user.roles : [user.role]).map((value) =>
-    value.toLowerCase().replace(/^role_/, '').replace(/^hub_inspector$/, 'inspector'));
+    String(value || '').trim().toLowerCase().replace(/^role_/, '').replace(/^hub_inspector$/, 'inspector'));
   const roles = knownRoles.filter((value) => actual.includes(value));
   // Sellers already participate as buyers in the existing marketplace and chat.
   if (roles.includes('seller') && !roles.includes('buyer')) roles.push('buyer');

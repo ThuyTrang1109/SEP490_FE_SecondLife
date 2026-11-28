@@ -1,3 +1,4 @@
+import { observeResourceChanges } from '../../services/observeResourceChanges';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Bell,
@@ -141,6 +142,8 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
       window.removeEventListener('storage', handleStorage);
     };
   }, [currentUser, currentRole, loadUnreadCount, loadQuickNotifications, addQuickNotification]);
+
+  useEffect(() => observeResourceChanges(["NOTIFICATIONS"], () => { void loadUnreadCount(); void loadQuickNotifications(); }), [loadUnreadCount, loadQuickNotifications]);
 
   // Connect WebSocket STOMP
   useEffect(() => {

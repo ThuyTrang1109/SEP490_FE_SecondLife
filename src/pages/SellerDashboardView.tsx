@@ -1,3 +1,4 @@
+import { observeResourceChanges } from '../services/observeResourceChanges';
 import React, { useState, useEffect, useMemo } from 'react';
 import { isPostRequiringInspection } from '../utils/listingInspection';
 import {
@@ -74,6 +75,7 @@ interface SellerDashboardViewProps {
   onSelectListing: (listing: Listing) => void;
   onCreateListing: (draft?: Listing) => void;
   onViewOrders?: () => void;
+  onViewWithdrawalHistory?: () => void;
   lang: Language;
   currentUser?: UserProfile | null;
   onDeleteListing?: (listingId: string) => void;
@@ -107,6 +109,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
   onSelectListing,
   onCreateListing,
   onViewOrders,
+  onViewWithdrawalHistory,
   lang,
   currentUser,
   onDeleteListing,
@@ -675,6 +678,8 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       }
     });
   }, [sellerId, fetchSellerData]);
+
+  useEffect(() => observeResourceChanges(["ORDER","LISTING","INSPECTION","SHIPMENT"], () => { if (sellerId) { setInspectionRefresh(n => n + 1); void fetchSellerData(); } }), [sellerId, fetchSellerData]);
 
   const handlePublishInspectedPost = async (item: Listing) => {
     if (publishingPostId || item.backendStatus !== 'READY_TO_PUBLISH') return;
@@ -1352,6 +1357,16 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                 <Wallet className="w-3.5 h-3.5 text-[#24263e]" />
                 <span>{lang === 'vi' ? 'Rút tiền ví' : 'Withdraw'}</span>
               </button>
+              {onViewWithdrawalHistory && (
+                <button
+                  type="button"
+                  onClick={onViewWithdrawalHistory}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/90 hover:bg-white text-[#24263e] border border-[#24263e]/15 font-bold text-xs transition cursor-pointer shadow-2xs"
+                >
+                  <Clock className="w-3.5 h-3.5 text-[#c34c36]" />
+                  <span>{lang === 'vi' ? 'Lịch sử rút tiền' : 'Withdrawal History'}</span>
+                </button>
+              )}
               <button
                 onClick={() => setIsSellerReviewsOpen(true)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/90 hover:bg-white text-[#24263e] border border-[#24263e]/15 font-bold text-xs transition cursor-pointer shadow-2xs"
@@ -2206,7 +2221,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       <WithdrawalModal
         isOpen={isPayoutModalOpen}
         onClose={() => setIsPayoutModalOpen(false)}
-        availableBalance={sellerWalletBalance || totalEarnings}
+        availableBalance={sellerWalletBalance}
         initialBankName={bankName}
         initialAccountNumber={accountNumber}
         initialAccountHolder={accountHolder}

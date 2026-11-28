@@ -1,3 +1,4 @@
+import { observeResourceChanges } from './services/observeResourceChanges';
 import { isValidUUID, isSellerOfferId } from './utils/negotiationHelper';
 import { getRoleLandingPath, getRouteAccess, getUserRoles, pathForTab, paths, resolveAppRoute, safeReturnPath } from './app/router/paths';
 import { navigatePath, useBrowserLocation } from './app/router/browser';
@@ -27,6 +28,7 @@ import { SessionExpiredModal } from './components/modals/SessionExpiredModal';
 import { RealtimeNotificationToast } from './components/common/RealtimeNotificationToast';
 import { GlobalPopupModal } from './components/common/GlobalPopupModal';
 import type { PolicyTabKey } from './components/modals/PolicyModal';
+import { policyService, PolicyAcceptanceStatusDto } from './services/policyService';
 import './utils/dialogService';
 import { clearNotificationsOnLogout, saveScopedLocalNotification } from './utils/notificationStorage';
 import { NotificationItem } from './types/notification';
@@ -48,6 +50,7 @@ const InboxView = lazyWithRetry(() => import('./pages/InboxView').then(m => ({ d
 const NotificationCenterView = lazyWithRetry(() => import('./pages/NotificationCenterView').then(m => ({ default: m.NotificationCenterView })), 'NotificationCenterView');
 const BuyerInspectionDecisionView = lazyWithRetry(() => import('./pages/BuyerInspectionDecisionView').then(m => ({ default: m.BuyerInspectionDecisionView })), 'BuyerInspectionDecisionView');
 const MyDisputesView = lazyWithRetry(() => import('./pages/MyDisputesView').then(m => ({ default: m.MyDisputesView })), 'MyDisputesView');
+const UserWithdrawalHistoryPage = lazyWithRetry(() => import('./pages/UserWithdrawalHistoryPage').then(m => ({ default: m.UserWithdrawalHistoryPage })), 'UserWithdrawalHistoryPage');
 
 // Code-split heavy modals via lazyWithRetry
 const importListingDetail = () => import('./components/modals/ListingDetailModal').then(m => ({ default: m.ListingDetailModal }));
@@ -62,7 +65,11 @@ const ChatModal = lazyWithRetry(() => import('./components/modals/ChatModal').th
 const ProfileDialog = lazyWithRetry(() => import('./components/modals/ProfileDialog').then(m => ({ default: m.ProfileDialog })), 'ProfileDialog');
 const SellerRegistrationModal = lazyWithRetry(() => import('./components/modals/SellerRegistrationModal').then(m => ({ default: m.SellerRegistrationModal })), 'SellerRegistrationModal');
 const TopUpModal = lazyWithRetry(() => import('./components/modals/TopUpModal').then(m => ({ default: m.TopUpModal })), 'TopUpModal');
+const WithdrawalModal = lazyWithRetry(() => import('./components/modals/WithdrawalModal').then(m => ({ default: m.WithdrawalModal })), 'WithdrawalModal');
 const PolicyModal = lazyWithRetry(() => import('./components/modals/PolicyModal').then(m => ({ default: m.PolicyModal })), 'PolicyModal');
+const TermsOfServicePage = lazyWithRetry(() => import('./pages/TermsOfServicePage').then(m => ({ default: m.TermsOfServicePage })), 'TermsOfServicePage');
+const MobileWithdrawalEvidenceUploadPage = lazyWithRetry(() => import('./pages/MobileWithdrawalEvidenceUploadPage').then(m => ({ default: m.MobileWithdrawalEvidenceUploadPage })), 'MobileWithdrawalEvidenceUploadPage');
+const PolicyUpdateModal = lazyWithRetry(() => import('./components/modals/PolicyUpdateModal').then(m => ({ default: m.PolicyUpdateModal })), 'PolicyUpdateModal');
 const SellerReviewsModal = lazyWithRetry(() => import('./components/modals/SellerReviewsModal').then(m => ({ default: m.SellerReviewsModal })), 'SellerReviewsModal');
 const UserReportModal = lazyWithRetry(() => import('./components/modals/UserReportModal').then(m => ({ default: m.UserReportModal })), 'UserReportModal');
 
@@ -93,7 +100,8 @@ const VALID_MAIN_TABS = [
   'admin-dashboard',
   'chat',
   'notifications',
-  'disputes'
+  'disputes',
+  'withdrawals'
 ] as const;
 
 const TAB_STORAGE_KEY = 'secondlife_active_tab';
@@ -358,6 +366,9 @@ export default function App() {
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
   const [isTopUpModalOpen, setIsTopUpModalOpen] = useState(false);
   const [topUpInitialTab, setTopUpInitialTab] = useState<'wallet' | 'packages'>('packages');
+  const [isWithdrawalModalOpen, setIsWithdrawalModalOpen] = useState(false);
+  const [withdrawalModalInitialTab, setWithdrawalModalInitialTab] = useState<'create' | 'history'>('create');
+  const [focusedWithdrawalId, setFocusedWithdrawalId] = useState<string | null>(null);
   const [userCreditBalance, setUserCreditBalance] = useState<number>(500);
   const [walletBalance, setWalletBalance] = useState<number>(0);
   const [checkoutNegotiationId, setCheckoutNegotiationId] = useState<string | undefined>(undefined);
@@ -431,9 +442,38 @@ export default function App() {
     closeRouteModal(route.role === 'seller' ? '/seller/products' : route.role === 'admin' ? '/admin/products' : paths.products);
   };
 
-  // Policy Modal State
+  // Policy Modal & Active Session Policy Re-Acceptance State
   const [isPolicyModalOpen, setIsPolicyModalOpen] = useState(false);
   const [policyInitialTab, setPolicyInitialTab] = useState<PolicyTabKey>('about');
+  const [policyUpdateStatus, setPolicyUpdateStatus] = useState<PolicyAcceptanceStatusDto | null>(null);
+  const [isPolicyUpdateModalOpen, setIsPolicyUpdateModalOpen] = useState(false);
+  const [dismissedPolicyVersionId, setDismissedPolicyVersionId] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!currentUserId || !getAccessToken()) {
+      setPolicyUpdateStatus(null);
+      setIsPolicyUpdateModalOpen(false);
+      return;
+    }
+    let cancelled = false;
+    policyService
+      .getAcceptanceStatus()
+      .then((status) => {
+        if (cancelled) return;
+        setPolicyUpdateStatus(status);
+        if (status.requiresAcceptance && dismissedPolicyVersionId !== status.activePolicyVersionId) {
+          setIsPolicyUpdateModalOpen(true);
+        } else {
+          setIsPolicyUpdateModalOpen(false);
+        }
+      })
+      .catch(() => {
+        // Non-blocking: never interrupt restored session if status check transiently fails
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUserId, dismissedPolicyVersionId]);
 
   // Load wallet balance from Backend
   const loadUserWallet = React.useCallback(async () => {
@@ -485,11 +525,13 @@ export default function App() {
       }
     };
 
+    const stopWalletReconciliation = observeResourceChanges([], () => { void loadUserWallet(); });
     window.addEventListener(inspectionCashConfirmedEvent, refreshWallet);
     window.addEventListener('secondlife_wallet_updated', refreshWallet);
     window.addEventListener('wallet_balance_updated', refreshWallet);
     window.addEventListener('storage', handleStorage);
     return () => {
+      stopWalletReconciliation();
       window.removeEventListener(inspectionCashConfirmedEvent, refreshWallet);
       window.removeEventListener('secondlife_wallet_updated', refreshWallet);
       window.removeEventListener('wallet_balance_updated', refreshWallet);
@@ -907,7 +949,7 @@ export default function App() {
   }, [currentUser]);
 
   // Auth Guard Helper
-  const protectedTabs = ['create-listing', 'seller-dashboard', 'orders', 'inspection-hub', 'inspection-center', 'admin-dashboard', 'staff-workspace', 'chat', 'notifications', 'disputes', 'profile'];
+  const protectedTabs = ['create-listing', 'seller-dashboard', 'orders', 'inspection-hub', 'inspection-center', 'admin-dashboard', 'staff-workspace', 'chat', 'notifications', 'disputes', 'withdrawals', 'profile'];
 
   const requireAuth = (onSuccessAction?: () => void, customMsg?: string): boolean => {
     if (!currentUser) {
@@ -973,6 +1015,33 @@ export default function App() {
     if (!actionUrl) { navigatePath(pathForTab('notifications', currentRole)); return; }
     const target = new URL(actionUrl, window.location.origin);
     if (target.origin !== window.location.origin) return;
+    const isWithdrawalNotification =
+      notification?.referenceType === 'WALLET_WITHDRAWAL' ||
+      target.pathname === '/admin/withdrawals' ||
+      target.pathname === '/staff/withdrawals' ||
+      target.pathname.startsWith('/wallet/withdrawals');
+    if (isWithdrawalNotification) {
+      if (currentRole === 'staff') {
+        navigatePath('/staff/withdrawals');
+        return;
+      }
+      if (currentRole === 'admin') {
+        navigatePath('/admin/withdrawals');
+        return;
+      }
+      const withdrawalIdMatch = target.pathname.match(/^\/(?:wallet|buyer|seller)\/withdrawals\/([^/]+)\/?$/);
+      const targetWithdrawalId = withdrawalIdMatch
+        ? decodeURIComponent(withdrawalIdMatch[1])
+        : (notification?.referenceId || null);
+      if (currentRole === 'buyer' || currentRole === 'seller') {
+        navigatePath(paths.withdrawals(currentRole, targetWithdrawalId || undefined));
+        return;
+      }
+      setWithdrawalModalInitialTab('history');
+      setFocusedWithdrawalId(targetWithdrawalId);
+      setIsWithdrawalModalOpen(true);
+      return;
+    }
     if (target.pathname.includes('/wallet')) { setIsTopUpModalOpen(true); return; }
     if (notification?.referenceType === 'REPORT' && isValidUUID(notification.referenceId ?? '')) {
       if (target.pathname.startsWith('/staff/reports/')) {
@@ -1915,6 +1984,11 @@ export default function App() {
   }, [currentUser?.id, currentUser?.role, currentRole, isCenterAccount, isRestoringSession, getLocalStoredOrders, mapBackendPostToListing]);
   refreshOrdersRef.current = loadUserOrders;
 
+  useEffect(() => {
+    if (routeAccess !== 'allowed' || isRestoringSession || !['marketplace', 'home'].includes(activeTab)) return;
+    return observeResourceChanges(['LISTING'], () => { void loadListingsFromBackend(true); }, 45000);
+  }, [activeTab, routeAccess, isRestoringSession, loadListingsFromBackend]);
+
   // Refresh listings on mount or when switching to listing-centric tabs
   React.useEffect(() => {
     if (routeAccess !== 'allowed' || isRestoringSession) return;
@@ -2029,6 +2103,7 @@ export default function App() {
       }, 600);
     };
 
+    const stopReconciliation = observeResourceChanges(['ORDER', 'INSPECTION', 'SHIPMENT'], triggerDebouncedFetch);
     window.addEventListener('secondlife_order_placed_signal', triggerDebouncedFetch);
     window.addEventListener('secondlife_inspection_task_created', triggerDebouncedFetch);
     window.addEventListener('secondlife_order_assigned_signal', triggerDebouncedFetch);
@@ -2051,6 +2126,7 @@ export default function App() {
     window.addEventListener('storage', handleStorage);
     return () => {
       if (timer) clearTimeout(timer);
+      stopReconciliation();
       window.removeEventListener('secondlife_order_placed_signal', triggerDebouncedFetch);
       window.removeEventListener('secondlife_inspection_task_created', triggerDebouncedFetch);
       window.removeEventListener('secondlife_order_assigned_signal', triggerDebouncedFetch);
@@ -2757,6 +2833,13 @@ export default function App() {
   }, [browserLocation, routeAccess, isRestoringSession, mapBackendPostToListing, selectedListing?.id, checkoutListing?.id]);
 
   if (routeAccess !== 'allowed') return <ViewLoadingFallback />;
+  if (activeTab === 'mobile-withdrawal-upload') {
+    return (
+      <Suspense fallback={<ViewLoadingFallback />}>
+        <MobileWithdrawalEvidenceUploadPage />
+      </Suspense>
+    );
+  }
   if (activeTab === 'unauthorized' || activeTab === 'not-found') {
     const landingHome = effectiveUser ? getRoleLandingPath(effectiveRole) : '/';
     return <RouteStatusPage status={activeTab} home={landingHome} />;
@@ -2968,6 +3051,10 @@ export default function App() {
             />
           ) : (
             <>
+              {activeTab === 'terms-of-service' && (
+                <TermsOfServicePage onBack={() => navigatePath(effectiveUser ? getRoleLandingPath(effectiveRole) : '/')} />
+              )}
+
               {activeTab === 'home' && (
                 <HomePageView
                   lang={lang}
@@ -3015,6 +3102,7 @@ export default function App() {
                     setListings((prev) => prev.filter((l) => l.id !== listingId));
                   }}
                   onViewOrders={() => handleTabChange('orders')}
+                  onViewWithdrawalHistory={() => navigatePath(paths.withdrawals('seller'))}
                   currentUser={currentUser}
                   lang={lang}
                 />
@@ -3237,6 +3325,23 @@ export default function App() {
                 />
               )}
 
+              {/* User Withdrawal History Page */}
+              {activeTab === 'withdrawals' && (
+                <UserWithdrawalHistoryPage
+                  lang={lang}
+                  initialWithdrawalId={route.params.withdrawalId || null}
+                  walletBalance={walletBalance}
+                  onWalletUpdated={(newBal) => setWalletBalance(newBal)}
+                  onOpenCreateWithdrawal={() => {
+                    setWithdrawalModalInitialTab('create');
+                    setFocusedWithdrawalId(null);
+                    setIsWithdrawalModalOpen(true);
+                  }}
+                  onBack={() => navigatePath(getRoleLandingPath(currentRole))}
+                  showToast={showToast}
+                />
+              )}
+
               {/* My Disputes & Escrow Arbitration Page */}
               {activeTab === 'disputes' && (
                 <MyDisputesView
@@ -3394,6 +3499,7 @@ export default function App() {
           initialMode={authModalMode}
           onClose={() => {
             setIsAuthModalOpen(false);
+            setPendingTab(null);
             const live = resolveAppRoute(window.location.href, getStoredUser()?.role || currentRole);
             if (['login', 'register', 'forgot'].includes(live.modal || '')) closeRouteModal('/');
           }}
@@ -3432,6 +3538,21 @@ export default function App() {
             const rawReturnTo = safeReturnPath(new URL(window.location.href).searchParams.get('redirect'));
             let destination: string;
 
+            const resolveSafePendingDestination = () => {
+              if (!pendingTab) return getRoleLandingPath(user.role);
+              const candidatePath = pathForTab(pendingTab, user.role);
+              const candidateRoute = resolveAppRoute(candidatePath, user.role);
+              if (getRouteAccess(candidateRoute, profileUser) === 'allowed') {
+                return candidatePath;
+              }
+              return getRoleLandingPath(user.role);
+            };
+            const shouldPromptSellerUpgrade =
+              pendingTab === 'create-listing' &&
+              user.role === 'buyer' &&
+              !getUserRoles(profileUser).includes('seller') &&
+              !getUserRoles(profileUser).includes('staff');
+
             if (user.role === 'admin') {
               if (rawReturnTo && rawReturnTo.startsWith('/admin') && getRouteAccess(resolveAppRoute(rawReturnTo, user.role), profileUser) === 'allowed') {
                 destination = rawReturnTo;
@@ -3462,14 +3583,17 @@ export default function App() {
               if (access === 'allowed') {
                 destination = rawReturnTo;
               } else {
-                destination = pendingTab ? pathForTab(pendingTab, user.role) : getRoleLandingPath(user.role);
+                destination = resolveSafePendingDestination();
               }
             } else {
-              destination = pendingTab ? pathForTab(pendingTab, user.role) : getRoleLandingPath(user.role);
+              destination = resolveSafePendingDestination();
             }
 
             setPendingTab(null);
             navigatePath(destination, { replace: true });
+            if (shouldPromptSellerUpgrade) {
+              setIsSellerRegistrationModalOpen(true);
+            }
             if (pendingCheckoutItem && ['buyer', 'seller'].includes(user.role)) {
               setSelectedListing(pendingCheckoutItem);
               setCheckoutListing(pendingCheckoutItem);
@@ -3522,6 +3646,7 @@ export default function App() {
               setIsVerifyEmailModalOpen(true);
             }}
             onOpenTopUp={() => setIsTopUpModalOpen(true)}
+            onOpenWithdrawalHistory={['buyer', 'seller'].includes(currentRole) ? () => navigatePath(paths.withdrawals(currentRole)) : undefined}
             onOpenSellerRegister={() => {
               setIsProfileDialogOpen(false);
               setIsSellerRegistrationModalOpen(true);
@@ -3602,6 +3727,30 @@ export default function App() {
               window.dispatchEvent(new CustomEvent('seller_credits_updated', { detail: newCredit }));
             }}
             onWalletUpdated={(newBal) => setWalletBalance(newBal)}
+            onOpenWithdraw={['buyer', 'seller'].includes(currentRole) ? () => {
+              setWithdrawalModalInitialTab('create');
+              setFocusedWithdrawalId(null);
+              setIsWithdrawalModalOpen(true);
+            } : undefined}
+            onOpenWithdrawalHistory={['buyer', 'seller'].includes(currentRole) ? () => navigatePath(paths.withdrawals(currentRole)) : undefined}
+          />
+        )}
+
+        {/* Withdrawal Modal Popup (Direct navigation from withdrawal notifications) */}
+        {isWithdrawalModalOpen && (
+          <WithdrawalModal
+            isOpen={isWithdrawalModalOpen}
+            onClose={() => {
+              setIsWithdrawalModalOpen(false);
+              setFocusedWithdrawalId(null);
+            }}
+            availableBalance={walletBalance}
+            initialTab={withdrawalModalInitialTab}
+            initialWithdrawalId={focusedWithdrawalId}
+            onSuccess={() => {
+              void loadUserWallet();
+              window.dispatchEvent(new Event('secondlife_wallet_updated'));
+            }}
           />
         )}
 
@@ -3620,6 +3769,27 @@ export default function App() {
             initialTab={policyInitialTab}
             onClose={() => setIsPolicyModalOpen(false)}
             lang={lang}
+          />
+        )}
+
+        {/* Active Session Policy Update Confirmation Modal */}
+        {isPolicyUpdateModalOpen && policyUpdateStatus && (
+          <PolicyUpdateModal
+            isOpen={isPolicyUpdateModalOpen}
+            status={policyUpdateStatus}
+            onAccepted={(updated) => {
+              setPolicyUpdateStatus(updated);
+              setIsPolicyUpdateModalOpen(false);
+              showToast('Đã ghi nhận xác nhận Điều khoản sử dụng và Quy chế hoạt động hiện hành.');
+            }}
+            onLogout={() => {
+              setIsPolicyUpdateModalOpen(false);
+              handleConfirmLogout();
+            }}
+            onDismissForExistingAssets={() => {
+              setDismissedPolicyVersionId(policyUpdateStatus.activePolicyVersionId);
+              setIsPolicyUpdateModalOpen(false);
+            }}
           />
         )}
       </Suspense>

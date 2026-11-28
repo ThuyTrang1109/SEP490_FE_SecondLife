@@ -6,6 +6,7 @@ import { OrderStatusBadge } from '../components/orders/OrderStatusBadge';
 import type { EscrowOrder } from '../types';
 
 test('At-home appointment countered by center is correctly preserved, synced and rendered on seller side', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-18T08:00:00Z') });
   await t.test('orderFeedItemToRaw preserves counter fields from inspection when order entity has stale fields', () => {
     const rawFeedItem: any = {
       order: {

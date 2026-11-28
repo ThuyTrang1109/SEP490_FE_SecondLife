@@ -9,7 +9,6 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { Language, ProductReview } from '../../types';
-import { reviewService } from '../../data/mockReviews';
 import {
   reputationService,
   SellerReputationDto,
@@ -113,12 +112,10 @@ export const SellerReviewsModal: React.FC<SellerReviewsModalProps> = ({
 
   if (!isOpen) return null;
 
-  const directReviews = reviewService.getReviewsBySeller(sellerId);
   const realOrderIds = new Set(realBackendReviews.map((r) => String(r.orderId || '')).filter(Boolean));
-  const directOrderIds = new Set(directReviews.map((r) => String(r.orderId || '')).filter(Boolean));
 
   const historyReviews: ProductReview[] = historyItems
-    .filter((item) => (!item.orderId || (!directOrderIds.has(String(item.orderId)) && !realOrderIds.has(String(item.orderId)))))
+    .filter((item) => (!item.orderId || !realOrderIds.has(String(item.orderId))))
     .map((item) => {
       const meta = getReputationEventMeta(item.eventType);
       const isGood =
@@ -179,7 +176,6 @@ export const SellerReviewsModal: React.FC<SellerReviewsModalProps> = ({
 
   const allReviews: ProductReview[] = [
     ...realBackendReviews,
-    ...directReviews.filter((d) => !realOrderIds.has(String(d.orderId || ''))),
     ...historyReviews,
   ];
 

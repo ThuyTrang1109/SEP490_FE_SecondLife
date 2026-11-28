@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, type RefObject } from 'react';
-import { shippingService, InspectionOrderDto, ApiError, isUserIdle } from '../../../services';
+import { shippingService, InspectionOrderDto, ApiError, isUserIdle, notificationWsClient } from '../../../services';
 import { UserProfile, ShipmentBackend } from '../../../types';
 import { dialogService } from '../../../utils/dialogService';
 import { notifyInspectionCashConfirmed } from '../../../utils/inspectionCashShipping';
@@ -172,6 +172,29 @@ export function useCenterShipments({ currentUser, loadingShipmentsRef, loadOrder
   const [hasLoadedShipmentModal, setHasLoadedShipmentModal] = useState(false);
   const [shipmentError, setShipmentError] = useState<string | null>(null);
   const [shipmentSuccess, setShipmentSuccess] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!shipmentModalOrder) return;
+    const orderId = shipmentModalOrder.id;
+    const controller = new AbortController();
+    const unsubscribe = notificationWsClient.subscribeListener((notification) => {
+      if (notification.type !== 'SHIPPING' || notification.referenceType !== 'INSPECTION_ORDER' ||
+          notification.referenceId !== orderId) return;
+      void shippingService.getInspectionShipments(orderId, { signal: controller.signal, isBackground: true })
+        .then((latest) => {
+          if (controller.signal.aborted) return;
+          setInspectionShipments((previous) => previous.map((shipment) =>
+            latest.find((item) => item.shipmentId === shipment.shipmentId) ?? shipment));
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) setShipmentError('Không tải được trạng thái vận đơn mới nhất.');
+        });
+    });
+    return () => {
+      controller.abort();
+      unsubscribe();
+    };
+  }, [shipmentModalOrder]);
   const handleBookReturn = async (order: InspectionOrderDto, maxReturnFee: number): Promise<string | null> => {
     const state = hubReturns.get(order.id);
     if (returnBookingRef.current || !canBookCenterReturn(order, currentUser?.id, currentUser?.role, state)) {

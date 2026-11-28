@@ -11,7 +11,7 @@ import { shippingService } from '../services/shippingService';
 import { getSellerPreListingInspections, hasPreListingInspectionResult } from '../services/orderFeedService';
 import { createInFlightRequests } from '../utils/inFlightRequests';
 import { getListingPhotoUploadIssues } from '../utils/listingPhotoUploadErrors';
-import { getLalamoveInterruption, isLalamoveShipmentTerminal, shouldSyncLalamoveShipment } from '../utils/lalamoveTracking';
+import { getLalamoveInterruption, isLalamoveShipmentTerminal } from '../utils/lalamoveTracking';
 
 test('a listing without a valuation resolves to no AI price range', async (t) => {
   const calls = interceptFetch(t);
@@ -219,13 +219,10 @@ test('seller Hub shipment reads can bypass cache updates and their refresh event
   assert.equal(dispatchEvent.mock.callCount(), 1);
 });
 
-test('Lalamove sync detects a rejected trip and stops automatic sync attempts for that shipment', async (t) => {
+test('Lalamove manual sync returns the carrier rejection as a terminal status', async (t) => {
   const calls = interceptFetch(t);
   const pending = { shipmentId: 'shipment-a', orderCode: '123', status: 'READY_TO_PICK', providerStatus: 'ASSIGNING_DRIVER', driverId: 'previous-driver' };
   assert.equal(getLalamoveInterruption(pending), null);
-  assert.equal(shouldSyncLalamoveShipment(pending, undefined, 0), true);
-  assert.equal(shouldSyncLalamoveShipment(pending, 0, 12_000), false);
-  assert.equal(shouldSyncLalamoveShipment(pending, 0, 60_000), true);
 
   const sync = shippingService.syncShipment(pending.shipmentId);
   await tick();
@@ -237,10 +234,8 @@ test('Lalamove sync detects a rejected trip and stops automatic sync attempts fo
   const result = await sync;
   assert.equal(getLalamoveInterruption(result), 'REJECTED');
   assert.equal(isLalamoveShipmentTerminal(result), true);
-  assert.equal(shouldSyncLalamoveShipment(result, 0, 120_000), false);
   assert.equal(getLalamoveInterruption({ status: 'CANCELLED', providerStatus: 'ASSIGNING_DRIVER' }), 'CANCELLED');
   assert.equal(isLalamoveShipmentTerminal({ status: 'READY_TO_PICK', providerStatus: 'EXPIRED' }), true);
-  assert.equal(shouldSyncLalamoveShipment({ ...pending, orderCode: null }, undefined, 0), false);
 });
 
 test('inspection center staff reads switch to the signed-in center and preserve an empty roster', async (t) => {

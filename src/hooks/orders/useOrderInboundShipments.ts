@@ -322,7 +322,9 @@ export function useOrderInboundShipments({
     // Lắng nghe sự kiện cập nhật đơn hàng/vận đơn qua WebSocket để refresh
     const unsubWs = notificationWsClient.subscribeListener((notification) => {
       const ref = String(notification?.referenceType || '').toUpperCase();
-      if (ref === 'SHIPMENT' || ref === 'INSPECTION_ORDER') {
+      const isTrackedShippingOrder = ref === 'ORDER' && notification.type === 'SHIPPING' &&
+        targets.some(({ id, purchaseId }) => notification.referenceId === id || notification.referenceId === purchaseId);
+      if (ref === 'SHIPMENT' || ref === 'INSPECTION_ORDER' || isTrackedShippingOrder) {
         void refresh();
       }
     });

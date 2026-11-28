@@ -930,6 +930,8 @@ export interface ShipmentBackend {
   reason?: string | null;
   lastError?: string | null;
   podUrl?: string | null;
+  proofOfDeliveryStatus?: 'SIGNED' | 'DELIVERED' | null;
+  proofOfDeliveryAt?: string | null;
   driverId?: string | null;
   driverName?: string | null;
   driverPhone?: string | null;

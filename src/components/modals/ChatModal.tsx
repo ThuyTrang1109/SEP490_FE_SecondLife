@@ -23,7 +23,6 @@ import {
   Home,
   Building2,
 } from 'lucide-react';
-import { reviewService } from '../../data/mockReviews';
 import { inspectorService } from '../../services/inspectorService';
 import {
   negotiationService,
@@ -37,6 +36,8 @@ import {
   reputationService,
   SellerReputationDto,
   getAssessmentStatusMeta,
+  orderReviewService,
+  SellerReviewSummaryDto,
 } from '../../services';
 import { SystemInspectionProposalPayload } from '../../types';
 import { formatVndInput, cleanVndInput, handleVndInputChange, handleVndInputKeyDown } from '../../utils/numberToWords';
@@ -157,19 +158,23 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     }
   }, [isSeller, activeRoom, partnerAvatar, listing.sellerAvatar]);
 
-  const sellerTrust = reviewService.getSellerTrustProfile(listing.sellerId, listing.sellerName);
   const [sellerReputation, setSellerReputation] = useState<SellerReputationDto | null>(null);
+  const [sellerReviewSummary, setSellerReviewSummary] = useState<SellerReviewSummaryDto | null>(null);
 
   useEffect(() => {
     let isMounted = true;
     if (listing.sellerId) {
-      reputationService.getSellerReputation(listing.sellerId)
-        .then((rep) => {
-          if (isMounted) setSellerReputation(rep);
-        })
-        .catch((err) => {
+      Promise.all([
+        reputationService.getSellerReputation(listing.sellerId).catch((err) => {
           console.warn('Could not fetch seller reputation:', err);
-        });
+          return null;
+        }),
+        orderReviewService.getSellerSummary(listing.sellerId).catch(() => null),
+      ]).then(([rep, summary]) => {
+        if (!isMounted) return;
+        setSellerReputation(rep);
+        setSellerReviewSummary(summary);
+      });
     }
     return () => {
       isMounted = false;
@@ -1234,11 +1239,11 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                           ? `${sellerReputation.score}/100 uy tín`
                           : 'Chưa có điểm uy tín'}
                     </span>
-                    {sellerTrust.rating > 0 && (
+                    {(sellerReviewSummary?.totalReviews ?? 0) > 0 && Number(sellerReviewSummary?.averageRating ?? 0) > 0 && (
                       <>
                         <span className="text-slate-400">|</span>
                         <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400" />
-                        <span>{sellerTrust.rating}</span>
+                        <span>{Number(sellerReviewSummary?.averageRating).toFixed(1)}</span>
                       </>
                     )}
                     {sellerReputation?.assessmentStatus && (

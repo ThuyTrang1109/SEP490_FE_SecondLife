@@ -4,7 +4,6 @@ type ShipmentStatus = Partial<Pick<ShipmentBackend, 'status' | 'providerStatus'>
 
 const interruptedStatuses = new Set(['CANCELED', 'CANCELLED', 'REJECTED', 'EXPIRED', 'FAILED']);
 const terminalStatuses = new Set([...interruptedStatuses, 'COMPLETED', 'DELIVERED', 'RETURNED']);
-const carrierSyncIntervalMs = 60_000;
 
 export function getLalamoveInterruption(shipment?: ShipmentStatus | null) {
   const providerStatus = shipment?.providerStatus?.toUpperCase();
@@ -51,13 +50,25 @@ export function isLalamoveShipmentTerminal(shipment?: ShipmentStatus | null) {
     terminalStatuses.has(shipment?.providerStatus?.toUpperCase() ?? '');
 }
 
-export function shouldSyncLalamoveShipment(
-  shipment: Pick<ShipmentBackend, 'orderCode' | 'status' | 'providerStatus'>,
-  lastAttemptAt: number | undefined,
-  now: number,
-) {
-  return Boolean(shipment.orderCode && !isLalamoveShipmentTerminal(shipment) &&
-    (lastAttemptAt === undefined || now - lastAttemptAt >= carrierSyncIntervalMs));
+export function getPendingLalamoveDeliveryProof(shipment?: Partial<ShipmentBackend> | null, lang: Language = 'vi') {
+  const time = shipment?.proofOfDeliveryAt;
+  const proof = shipment?.proofOfDeliveryStatus;
+  if (!time || !Number.isFinite(Date.parse(time)) || shipment?.deliveredAt || isLalamoveShipmentTerminal(shipment)) return null;
+  if (proof === 'SIGNED') {
+    return {
+      time,
+      label: lang === 'vi' ? 'Đã ký nhận · Chờ Lalamove chốt vận đơn' : 'Signed for · Waiting for Lalamove to close the shipment',
+      timeLabel: lang === 'vi' ? 'Thời điểm ký nhận' : 'Signed at',
+    };
+  }
+  if (proof === 'DELIVERED') {
+    return {
+      time,
+      label: lang === 'vi' ? 'Đã có bằng chứng giao · Chờ Lalamove chốt vận đơn' : 'Delivery proof received · Waiting for Lalamove to close the shipment',
+      timeLabel: lang === 'vi' ? 'Thời điểm ghi nhận giao hàng' : 'Delivery proof time',
+    };
+  }
+  return null;
 }
 
 export function canSellerRebookShipment(shipment: ShipmentBackend, shipments: ShipmentBackend[], events: ShipmentEventBackend[]) {

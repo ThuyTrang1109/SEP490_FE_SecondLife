@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { isUserIdle } from '../../../services';
+import { isUserIdle, notificationWsClient } from '../../../services';
 import { INBOUND_SHIPMENT_REFRESH_MS } from './shipmentTrackingConfig';
 
 interface Options {
@@ -87,6 +87,11 @@ export function useCenterOrderRefresh({
       if (!document.hidden && !isUserIdle()) void loadOrders(true);
     };
     const shouldPoll = showOrderShipments || isDispatchTab;
+    const unsubscribe = shouldPoll ? notificationWsClient.subscribeListener((notification) => {
+      if (notification.type === 'SHIPPING' && notification.referenceType === 'INSPECTION_ORDER') {
+        void loadOrders(true);
+      }
+    }) : undefined;
     const trackingTimer = shouldPoll
       ? window.setInterval(refreshOrderTracking, INBOUND_SHIPMENT_REFRESH_MS)
       : undefined;
@@ -107,6 +112,7 @@ export function useCenterOrderRefresh({
       window.removeEventListener('secondlife_appointment_countered', debouncedSignal);
       window.removeEventListener('secondlife_inspector_confirmed_signal', debouncedSignal);
       window.removeEventListener('storage', handleStorage);
+      unsubscribe?.();
       window.clearInterval(trackingTimer);
       if (shouldPoll) document.removeEventListener('visibilitychange', refreshOrderTracking);
     };

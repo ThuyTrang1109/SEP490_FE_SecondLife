@@ -27,6 +27,7 @@ import {
   Info
 } from 'lucide-react';
 import { shippingService } from '../../services/shippingService';
+import { notificationWsClient } from '../../services/notificationWsClient';
 import { orderService } from '../../services/orderService';
 import { inspectorService } from '../../services/inspectorService';
 import { dialogService } from '../../utils/dialogService';
@@ -34,13 +35,12 @@ import { translateApiError } from '../../services/apiClient';
 import { resolveListingCategory, resolveOrderListing } from '../../utils/catalogCache';
 import { getHubReturnProgress, getHubReturnState, getInboundShipmentProgress, getLatestInboundShipment, getLatestReturnShipment, getLatestBuyerDeliveryShipment } from '../../utils/inspectionCenterData';
 import { createInFlightRequests } from '../../utils/inFlightRequests';
-import { canSellerRebookShipment, getLalamoveInterruption, getLatestDirectShipment, isLalamoveShipmentTerminal, shouldSyncLalamoveShipment } from '../../utils/lalamoveTracking';
+import { canSellerRebookShipment, getLalamoveInterruption, getLatestDirectShipment, getPendingLalamoveDeliveryProof, isLalamoveShipmentTerminal } from '../../utils/lalamoveTracking';
 import { LalamoveProgress } from '../common/LalamoveProgress';
 import { getOrderEscrowHoldNotice, isOrderEscrowOnHold } from '../../utils/orders/orderDispute';
 import { getRebookableDirectShipment } from '../../utils/orders/directShipment';
 
 const settlementStep = { title: 'Quyết toán', desc: 'Người mua xác nhận & giải ngân Escrow' };
-const carrierSyncUnavailable = 'Chưa thể đồng bộ với Lalamove. Đang hiển thị trạng thái gần nhất từ SecondLife.';
 
 interface GroupedShipmentEvent {
   key: string;
@@ -174,12 +174,9 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
   const [activeShipmentId, setActiveShipmentId] = useState<string | null>(initialShipmentId || null);
   const selectedShipmentId = useRef<string | null>(initialShipmentId || null);
   const shipmentRequest = useRef(0);
-  const syncAttempts = useRef(new Map<string, number>());
   const pendingSyncs = useMemo(createInFlightRequests, []);
-  const syncCarrierShipment = useCallback((shipmentId: string) => pendingSyncs.run(shipmentId, () => {
-    syncAttempts.current.set(shipmentId, Date.now());
-    return shippingService.syncShipment(shipmentId);
-  }), [pendingSyncs]);
+  const syncCarrierShipment = (shipmentId: string) =>
+    pendingSyncs.run(shipmentId, () => shippingService.syncShipment(shipmentId));
   const [events, setEvents] = useState<ShipmentEventBackend[]>([]);
   const [trackingData, setTrackingData] = useState<LalamoveTrackingResponse | null>(null);
   const selectShipment = (id: string) => {
@@ -413,6 +410,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
     isLalamoveShipmentTerminal(activeShipment) ? null : getLalamoveInterruption(trackingData)
   );
   const effectiveProviderStatus = interruption ?? activeShipment?.providerStatus ?? trackingData?.providerStatus;
+  const pendingDeliveryProof = interruption ? null : getPendingLalamoveDeliveryProof(activeShipment, lang);
   const canShowDriver = effectiveProviderStatus === 'ON_GOING' || effectiveProviderStatus === 'PICKED_UP';
   const isHubSeller = isSeller && order.inspectionMethod === 'AT_CENTER';
 
@@ -538,45 +536,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
 
         if (selected !== targetId) selectShipment(targetId);
 
-        const currentShipment = shipList.find((s) => s.shipmentId === targetId) || shipList[0];
-        // Poll SecondLife frequently and reconcile with the carrier at a lower rate if the webhook is delayed.
-        if (!syncedShipment && shouldSyncLalamoveShipment(currentShipment, syncAttempts.current.get(targetId), Date.now())) {
-          try {
-            const synced = await syncCarrierShipment(targetId);
-            if (request !== shipmentRequest.current) return;
-            if (synced) {
-              shipList = shipList.map((s) => (s.shipmentId === targetId ? { ...s, ...synced } : s));
-              setShipments(shipList);
-              try {
-                if (typeof window !== 'undefined' && order.id) {
-                  localStorage.setItem(`sl_order_shipments_${order.id}`, JSON.stringify(shipList));
-                  localStorage.setItem(`order_shipments_${order.id}`, JSON.stringify(shipList));
-                  const allCancelled = shipList.length > 0 && shipList.every((s) => {
-                    const st = String(s.status || '').toUpperCase();
-                    const pst = String(s.providerStatus || '').toUpperCase();
-                    return ['CANCELLED', 'CANCELED', 'FAILED', 'REJECTED', 'EXPIRED'].includes(st) ||
-                      ['CANCELLED', 'CANCELED', 'FAILED', 'REJECTED', 'EXPIRED'].includes(pst);
-                  });
-                  if (allCancelled) {
-                    localStorage.removeItem(`order_packed_${order.id}`);
-                    localStorage.removeItem(`order_shipment_created_${order.id}`);
-                  }
-                  window.dispatchEvent(new CustomEvent('secondlife_shipment_updated', { detail: { orderId: order.id, shipments: shipList } }));
-                }
-              } catch { }
-              setErrorMsg((message) => message === carrierSyncUnavailable ? null : message);
-              if (currentShipment.leg === 'SELLER_TO_CENTER') {
-                onInboundShipmentLoaded?.(order.id, getLatestInboundShipment(shipList));
-              }
-              if (returnOnly) onReturnShipmentLoaded?.(order.id, getHubReturnState(shipList).shipment);
-            }
-          } catch {
-            if (request !== shipmentRequest.current) return;
-            setErrorMsg((message) => message ?? carrierSyncUnavailable);
-          }
-        }
-
-        // Parallel load tracking and events
+// Parallel load tracking and events
         const [evList, trackRes] = await Promise.allSettled([
           shippingService.getShipmentEvents(targetId),
           shippingService.getShipmentTracking(targetId),
@@ -604,7 +564,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
     } finally {
       if (request === shipmentRequest.current) setIsLoading(false);
     }
-  }, [order.id, isInspectionOrder, isHubSeller, isSeller, onInboundShipmentLoaded, returnOnly, onReturnShipmentLoaded, syncCarrierShipment]);
+  }, [order.id, order.linkedOrderId, isInspectionOrder, isHubSeller, isSeller, onInboundShipmentLoaded, returnOnly, onReturnShipmentLoaded]);
 
   // Initial load
   useEffect(() => {
@@ -612,7 +572,18 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
     return () => { shipmentRequest.current++; };
   }, [loadShipmentData]);
 
-  // Polling Effect (12 seconds, tạm dừng khi tab ẩn hoặc khi chuyến đã hoàn tất/hủy)
+  useEffect(() => notificationWsClient.subscribeListener((notification) => {
+    if (notification.type !== 'SHIPPING' || !notification.referenceId) return;
+    const referenceId = notification.referenceId;
+    const orderIds = [order.id, order.linkedOrderId, order.inspectionOrderId];
+    const matchesOrder = ['ORDER', 'INSPECTION_ORDER'].includes(notification.referenceType || '') &&
+      orderIds.includes(referenceId);
+    const matchesShipment = notification.referenceType === 'SHIPMENT' &&
+      shipments.some((shipment) => shipment.shipmentId === referenceId);
+    if (matchesOrder || matchesShipment) void loadShipmentData(true);
+  }), [loadShipmentData, order.id, order.linkedOrderId, order.inspectionOrderId, shipments]);
+
+  // Poll SecondLife every 12 seconds as fallback when the WebSocket event is missed.
   useEffect(() => {
     if (!pollingActive || isLoading || isSyncing || isLalamoveShipmentTerminal(activeShipment)) return;
 
@@ -724,7 +695,8 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
           window.dispatchEvent(new CustomEvent('secondlife_shipment_updated', { detail: { orderId: order.id, shipments: updatedList } }));
         }
       } catch { }
-      const statusDesc = getLalamoveStatusDetails(getLalamoveInterruption(updated) || updated.providerStatus || updated.status).title;
+      const statusDesc = getPendingLalamoveDeliveryProof(updated, lang)?.label
+        || getLalamoveStatusDetails(getLalamoveInterruption(updated) || updated.providerStatus || updated.status).title;
       showNotification(`Đã đồng bộ thành công từ Lalamove: ${statusDesc}`);
       await loadShipmentData(true, updated);
       onOrderUpdated?.();
@@ -1153,6 +1125,10 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                     <span className="text-[10px] text-slate-400 uppercase font-black">Trạng thái vận đơn</span>
                     {interruptionDetails ? (
                       <span className={`rounded-full border px-2.5 py-1 text-xs font-black ${interruptionDetails.badgeClass}`}>{interruptionDetails.title}</span>
+                    ) : pendingDeliveryProof ? (
+                      <span className="px-2.5 py-1 rounded-full text-xs font-black bg-teal-50 text-teal-900 border border-teal-200">
+                        {pendingDeliveryProof.label}
+                      </span>
                     ) : hubProgress ? (
                       <span className={`rounded-full border px-2.5 py-1 text-xs font-black ${hubProgress.step === 3 ? 'border-emerald-300 bg-emerald-100 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'
                         }`}>{hubProgress.label}</span>
@@ -1174,13 +1150,17 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                   <div className="p-3 bg-white rounded-2xl border border-gray-200/80">
-                    <span className="text-[10px] text-slate-400 font-bold uppercase block mb-0.5">Thời điểm giao thực tế</span>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase block mb-0.5">
+                      {pendingDeliveryProof?.timeLabel ?? 'Thời điểm giao thực tế'}
+                    </span>
                     <div className="font-bold text-slate-800 flex items-center gap-1.5">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                       <span>
                         {activeShipment.deliveredAt
                           ? new Date(activeShipment.deliveredAt).toLocaleString('vi-VN')
-                          : 'Chưa hoàn tất giao'}
+                          : pendingDeliveryProof
+                            ? new Date(pendingDeliveryProof.time).toLocaleString(lang === 'vi' ? 'vi-VN' : 'en-US')
+                            : 'Chưa hoàn tất giao'}
                       </span>
                     </div>
                   </div>

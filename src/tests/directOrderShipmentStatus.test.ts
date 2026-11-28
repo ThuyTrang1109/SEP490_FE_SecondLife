@@ -11,7 +11,17 @@ import type { EscrowOrder, ShipmentBackend } from '../types';
 import { orderFeedItemToRaw } from '../services/orderFeedService';
 import { mapEscrowOrder } from '../utils/mapEscrowOrder';
 import { getOrderEscrowHoldNotice, isOrderEscrowOnHold } from '../utils/orders/orderDispute';
-import { upsertShipment } from '../utils/lalamoveTracking';
+import { getPendingLalamoveDeliveryProof, upsertShipment } from '../utils/lalamoveTracking';
+
+test('signed proof is visible before Lalamove closes a picked-up shipment', () => {
+  const time = '2026-11-28T10:10:18Z';
+  const shipment = { providerStatus: 'PICKED_UP', status: 'PICKED', proofOfDeliveryStatus: 'SIGNED', proofOfDeliveryAt: time } as const;
+  assert.equal(getPendingLalamoveDeliveryProof(shipment)?.label, 'Đã ký nhận · Chờ Lalamove chốt vận đơn');
+  assert.equal(getPendingLalamoveDeliveryProof(shipment)?.time, time);
+  assert.equal(getPendingLalamoveDeliveryProof({ ...shipment, proofOfDeliveryAt: null }), null);
+  assert.equal(getPendingLalamoveDeliveryProof({ ...shipment, status: 'DELIVERED' }), null);
+  assert.equal(getPendingLalamoveDeliveryProof({ ...shipment, status: 'CANCELLED' }), null);
+});
 
 function renderBadge(order: EscrowOrder, isSeller: boolean) {
   return renderToStaticMarkup(createElement(OrderStatusBadge, {

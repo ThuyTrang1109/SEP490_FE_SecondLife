@@ -40,7 +40,7 @@ import { mediaService } from '../services/mediaService';
 import { postService } from '../services/postService';
 import { walletService } from '../services/walletService';
 import { reputationService, SellerReputationDto, ReputationHistoryDto, getAssessmentStatusMeta, getReputationWarningMeta, getReputationEventMeta, formatReputationReason, formatFormulaVersion } from '../services/reputationService';
-import { reviewService } from '../data/mockReviews';
+import { orderReviewService, SellerReviewSummaryDto } from '../services/orderReviewService';
 import { SellerReviewsModal } from '../components/modals/SellerReviewsModal';
 import { translateSystemNotification } from '../utils/systemNotificationTranslator';
 import { WithdrawalModal } from '../components/modals/WithdrawalModal';
@@ -290,38 +290,27 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
 
   // Seller Reputation State (GET /api/v1/seller/reputation/me & /history)
   const [myReputation, setMyReputation] = useState<SellerReputationDto | null>(null);
+  const [myReviewSummary, setMyReviewSummary] = useState<SellerReviewSummaryDto | null>(null);
 
   const sellerReviewCount = useMemo(() => {
-    const sellerId = currentUser?.id;
-    const directReviews = sellerId ? reviewService.getReviewsBySeller(sellerId).length : 0;
+    const totalReviews = Number(myReviewSummary?.totalReviews ?? 0);
     const evaluatedFromRep = Number(myReputation?.evaluatedOrders ?? 0);
-    if (evaluatedFromRep > 0 || directReviews > 0) {
-      return Math.max(evaluatedFromRep, directReviews);
+    if (totalReviews > 0 || evaluatedFromRep > 0) {
+      return Math.max(totalReviews, evaluatedFromRep);
     }
     return Number((currentUser as any)?.reviewCount ?? 0);
-  }, [currentUser?.id, (currentUser as any)?.reviewCount, myReputation?.evaluatedOrders]);
+  }, [myReviewSummary?.totalReviews, (currentUser as any)?.reviewCount, myReputation?.evaluatedOrders]);
 
   const sellerAverageRatingText = useMemo(() => {
-    const sellerId = currentUser?.id;
-    const directReviews = sellerId ? reviewService.getReviewsBySeller(sellerId) : [];
-    if (directReviews.length > 0) {
-      const avg = directReviews.reduce((sum, r) => sum + r.rating, 0) / directReviews.length;
-      return `${avg.toFixed(1)} / 5.0`;
-    }
-    const evaluated = Number(myReputation?.evaluatedOrders ?? 0);
-    if (evaluated > 0) {
-      const txScore =
-        myReputation?.transactionScore !== undefined && myReputation?.transactionScore !== null
-          ? Number(myReputation.transactionScore)
-          : (Number(myReputation?.goodTransactions ?? 0) / evaluated) * 100;
-      const starRating = Math.max(0, Math.min(5, txScore / 20));
-      return `${starRating.toFixed(1)} / 5.0`;
+    const totalReviews = Number(myReviewSummary?.totalReviews ?? 0);
+    if (totalReviews > 0) {
+      return `${Number(myReviewSummary?.averageRating ?? 0).toFixed(1)} / 5.0`;
     }
     if (currentUser?.sellerRating && currentUser.sellerRating > 0) {
       return `${currentUser.sellerRating.toFixed(1)} / 5.0`;
     }
     return lang === 'vi' ? 'Chưa có đánh giá' : 'No ratings yet';
-  }, [currentUser?.id, currentUser?.sellerRating, myReputation, lang]);
+  }, [myReviewSummary, currentUser?.sellerRating, lang]);
 
   const [isReputationHistoryOpen, setIsReputationHistoryOpen] = useState(false);
   const [reputationHistoryItems, setReputationHistoryItems] = useState<ReputationHistoryDto[]>([]);
@@ -363,11 +352,13 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
     setIsReloadingReputation(true);
     setReputationPage(0);
     try {
-      const [rep, historyRes] = await Promise.all([
+      const [rep, historyRes, summary] = await Promise.all([
         reputationService.getMyReputation(),
         reputationService.getMyReputationHistory(0, 100),
+        currentUser?.id ? orderReviewService.getSellerSummary(currentUser.id, true) : Promise.resolve(null),
       ]);
       if (rep) setMyReputation(rep);
+      if (summary) setMyReviewSummary(summary);
       setReputationHistoryItems(historyRes.items || []);
     } catch (err) {
       console.warn('Lỗi làm mới dữ liệu uy tín:', err);
@@ -536,6 +527,14 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
         })
         .catch(() => { });
 
+      if (currentUser?.id) {
+        orderReviewService.getSellerSummary(currentUser.id)
+          .then((summary) => {
+            if (summary) setMyReviewSummary(summary);
+          })
+          .catch(() => { });
+      }
+
       userReportService.getSellerDisputes(0, 50)
         .then((dispRes) => {
           const items = dispRes?.items || [];
@@ -599,11 +598,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             sellerAddress: sellerAddr,
             sellerId: p.user?.id || p.userId || currentUser?.id || 'me',
             sellerName: currentUser?.name || p.user?.fullName || p.user?.name || 'Tôi',
-            sellerRating: (() => {
-              const sId = p.user?.id || p.userId || currentUser?.id;
-              const revs = sId ? reviewService.getReviewsBySeller(sId) : [];
-              return revs.length > 0 ? (revs.reduce((sum, r) => sum + r.rating, 0) / revs.length) : 0;
-            })(),
+            sellerRating: Number(p.sellerRating ?? 0),
             sellerCompletedOrders: 0,
             sellerVerified: true,
             status: isAwaitingInspectionPublication ? 'pending_inspection'

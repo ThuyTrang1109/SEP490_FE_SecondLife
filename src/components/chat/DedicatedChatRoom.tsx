@@ -20,7 +20,6 @@ import {
   Lock,
   RotateCcw
 } from 'lucide-react';
-import { reviewService } from '../../data/mockReviews';
 import {
   negotiationService,
   chatService,

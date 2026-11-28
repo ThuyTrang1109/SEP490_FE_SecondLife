@@ -290,7 +290,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         lang === 'vi'
           ? 'Không tìm thấy mã vạch rõ nét trong ảnh tải lên. Vui lòng thử ảnh khác hoặc nhập mã trực tiếp.'
           : 'Could not detect a clear barcode in this image. Please try another image.',
-        lang === 'vi' ? 'Không Nhận Diện Được Mã' : 'Scan Notice'
+        lang === 'vi' ? 'Không nhận diện được mã' : 'Scan Notice'
       );
     } catch (err: any) {
       console.warn('File barcode scan error:', err);
@@ -330,7 +330,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
             </div>
             <div>
               <h3 className="text-sm font-black text-white flex items-center gap-2">
-                <span>{lang === 'vi' ? 'Máy Quét Barcode & QR Code' : 'Barcode & QR Scanner'}</span>
+                <span>{lang === 'vi' ? 'Máy quét barcode & QR code' : 'Barcode & QR Scanner'}</span>
                 <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-full font-mono">
                   Live Scanner
                 </span>
@@ -366,7 +366,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
                 className="px-4 py-2 rounded-xl bg-[#c34c36] hover:bg-[#a83d2a] text-white text-xs font-bold transition inline-flex items-center gap-2 cursor-pointer"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
-                <span>{lang === 'vi' ? 'Thử Lại Camera' : 'Retry Camera'}</span>
+                <span>{lang === 'vi' ? 'Thử lại camera' : 'Retry Camera'}</span>
               </button>
             </div>
           ) : (

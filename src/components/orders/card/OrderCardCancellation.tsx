@@ -25,7 +25,7 @@ export function OrderCardCancellation({
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div className="flex items-center gap-2 font-bold text-rose-950">
                 <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                <span>{lang === 'vi' ? 'Đơn Hàng Đã Bị Hủy & Hoàn Tiền' : 'Order Cancelled & Refunded'}</span>
+                <span>{lang === 'vi' ? 'Đơn hàng đã bị hủy & hoàn tiền' : 'Order Cancelled & Refunded'}</span>
               </div>
               {cancelInfo.code && (
                 <span className="text-[11px] font-sans font-medium px-2 py-0.5 rounded-lg bg-rose-100 text-rose-800 border border-rose-200">

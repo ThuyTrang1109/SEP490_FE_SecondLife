@@ -120,10 +120,10 @@ export function CenterOrders({
           <thead role="rowgroup" className="block xl:table-header-group">
             <tr role="row" className="grid grid-cols-2 bg-slate-50/80 border-b border-slate-100 text-slate-600 font-bold text-[11px] uppercase tracking-wider md:grid-cols-3 xl:table-row">
               <th role="columnheader" className="hidden py-2.5 px-3 text-center xl:table-cell">#</th>
-              <th role="columnheader" className="py-2.5 px-4 xl:w-[22%]">Mã Đơn & Sản Phẩm</th>
-              <th role="columnheader" className="hidden py-2.5 px-4 xl:table-cell xl:w-[15%]">Người Bán / Khách Mua</th>
-              <th role="columnheader" className="hidden py-2.5 px-4 xl:table-cell xl:w-[9%]">Hình Thức</th>
-              <th role="columnheader" className="hidden py-2.5 px-4 xl:table-cell xl:w-[11%]">Kỹ Thuật Viên</th>
+              <th role="columnheader" className="py-2.5 px-4 xl:w-[22%]">Mã đơn & sản phẩm</th>
+              <th role="columnheader" className="hidden py-2.5 px-4 xl:table-cell xl:w-[15%]">Người bán / khách mua</th>
+              <th role="columnheader" className="hidden py-2.5 px-4 xl:table-cell xl:w-[9%]">Hình thức</th>
+              <th role="columnheader" className="hidden py-2.5 px-4 xl:table-cell xl:w-[11%]">Kỹ thuật viên</th>
               <th role="columnheader" className="py-2.5 px-4 xl:w-[24%]">Trạng thái đơn</th>
               <th role="columnheader" className="hidden py-2.5 px-4 md:block xl:table-cell xl:w-[16%]">Thanh toán kiểm định</th>
             </tr>
@@ -201,7 +201,7 @@ export function CenterOrders({
                         <div>Mua: {ord.buyerName || 'Khách mua'}</div>
                       </td>
                       <td role="cell" className="hidden py-3 px-4 text-[11px] xl:table-cell">
-                        {ord.orderType === 'AT_HOME' ? 'Tại Nhà Khách' : 'Tại Lab Hub'}
+                        {ord.orderType === 'AT_HOME' ? 'Tại nhà khách' : 'Tại Lab Hub'}
                       </td>
                       <td role="cell" className="hidden py-3 px-4 xl:table-cell">
                         {ord.inspectorName ? (
@@ -283,7 +283,7 @@ export function CenterOrders({
                             <div className="flex flex-wrap items-center justify-between gap-1.5 font-bold text-amber-950">
                               <span className="flex items-center gap-1.5">
                                 <RotateCcw className="h-3.5 w-3.5 text-amber-600 shrink-0" />
-                                Chặng Hoàn Trả: Hub → Người bán
+                                Chặng hoàn trả: Hub → Người bán
                               </span>
                               {returnShipment ? (
                                 <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold border ${canBookHubBuyerDelivery(returnShipment) ? 'bg-rose-100 text-rose-800 border-rose-300' : 'bg-amber-100 text-amber-900 border-amber-300'}`}>
@@ -339,7 +339,7 @@ export function CenterOrders({
                             <div className="flex flex-wrap items-center justify-between gap-1.5 font-bold text-teal-950">
                               <span className="flex items-center gap-1.5">
                                 <Truck className="h-3.5 w-3.5 text-teal-600 shrink-0" />
-                                Chặng Giao Hàng: Hub → Người mua
+                                Chặng giao hàng: Hub → Người mua
                               </span>
                               {buyerShipment && (
                                 <span className="rounded-md bg-teal-100 px-2 py-0.5 text-[10px] font-bold text-teal-900 border border-teal-300">

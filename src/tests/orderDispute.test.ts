@@ -192,7 +192,7 @@ test('orderFeedItemToRaw and mapEscrowOrder immediately preserve hasActiveDisput
     getPartyInspectionFee: () => 0,
     isPartyInspectionFeePaid: () => true,
   }));
-  assert.match(badgeHtml, /Đang Tranh Chấp • Đóng Băng Escrow/);
+  assert.match(badgeHtml, /Đang tranh chấp • Đóng băng Escrow/);
   assert.equal(getOrderEscrowHoldNotice(mapped, 'vi'), null);
 });
 

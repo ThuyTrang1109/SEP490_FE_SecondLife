@@ -36,7 +36,7 @@ export function RejectAppointmentModal({ rejectApptModalOrder, appointments }: P
               <XCircle className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-sm sm:text-base font-black text-slate-900">Từ Chối Lịch Hẹn Đón KTV</h3>
+              <h3 className="text-sm sm:text-base font-black text-slate-900">Từ chối lịch hẹn đón KTV</h3>
               <p className="text-[11px] text-slate-500 font-medium">
                 Đơn hàng #{rejectApptModalOrder.id.slice(0, 8)} • Người bán: {getOrderSellerName(rejectApptModalOrder)}
               </p>
@@ -131,7 +131,7 @@ export function RejectAppointmentModal({ rejectApptModalOrder, appointments }: P
             onClick={() => setRejectApptModalOrder(null)}
             className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-gray-100 transition cursor-pointer"
           >
-            Quay Lại
+            Quay lại
           </button>
           <button
             type="button"
@@ -142,7 +142,7 @@ export function RejectAppointmentModal({ rejectApptModalOrder, appointments }: P
             }`}
           >
             {isRejectingAppt ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <XCircle className="w-3.5 h-3.5" />}
-            <span>Xác Nhận Từ Chối</span>
+            <span>Xác nhận từ chối</span>
           </button>
         </div>
       </div>

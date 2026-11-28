@@ -42,7 +42,7 @@ export function LevelFeeProposalModal({ pricing }: Props) {
             </div>
             <div>
               <h3 className="font-black text-sm text-slate-900">
-                Đề Xuất Biểu Phí Cấp Độ Kiểm Định (L1 – L4)
+                Đề xuất biểu phí cấp độ kiểm định (L1 – L4)
               </h3>
               <p className="text-[11px] text-slate-500">
                 Biểu phí áp dụng cho các thiết bị thuộc cấp độ tương ứng sau khi Admin duyệt
@@ -159,7 +159,7 @@ export function LevelFeeProposalModal({ pricing }: Props) {
               onClick={() => setIsProposeLevelFeeModalOpen(false)}
               className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition cursor-pointer"
             >
-              Hủy Bỏ
+              Hủy bỏ
             </button>
             <button
               type="submit"
@@ -172,7 +172,7 @@ export function LevelFeeProposalModal({ pricing }: Props) {
                   <span>Đang gửi...</span>
                 </>
               ) : (
-                <span>Gửi Đề Xuất Giá Cấp {proposingLevel}</span>
+                <span>Gửi đề xuất giá cấp {proposingLevel}</span>
               )}
             </button>
           </div>

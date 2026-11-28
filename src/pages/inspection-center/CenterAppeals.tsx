@@ -30,7 +30,7 @@ export function CenterAppeals({
         <div>
           <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
             <ShieldAlert className="w-5 h-5 text-amber-600" />
-            <span>Quản Lý Khiếu Nại Kiểm Định Của Người Bán</span>
+            <span>Quản lý khiếu nại kiểm định của người bán</span>
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
             Xét duyệt các đơn khiếu nại kết quả FAILED trong thời hạn 24h. Bác bỏ (UPHELD) để giữ nguyên phạt hoặc Chấp thuận (OVERTURNED) để miễn trừ phạt.
@@ -39,7 +39,7 @@ export function CenterAppeals({
         <div className="flex items-center gap-2">
           <span className="px-3 py-1.5 rounded-xl bg-amber-100 text-amber-800 text-xs font-bold border border-amber-200 flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
-            {stats.pendingAppeals} Đơn Chờ Xét Duyệt
+            {stats.pendingAppeals} Đơn chờ xét duyệt
           </span>
         </div>
       </div>
@@ -47,15 +47,15 @@ export function CenterAppeals({
       {/* Stats Counters */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
-          <div className="text-xs font-bold text-slate-400 uppercase">Tổng Khiếu Nại</div>
+          <div className="text-xs font-bold text-slate-400 uppercase">Tổng khiếu nại</div>
           <div className="text-2xl font-black text-slate-800 mt-1">{stats.totalAppeals}</div>
         </div>
         <div className="bg-white p-3.5 rounded-2xl border border-amber-200 bg-amber-50/30 shadow-xs">
-          <div className="text-xs font-bold text-amber-700 uppercase">Chờ Xét Duyệt</div>
+          <div className="text-xs font-bold text-amber-700 uppercase">Chờ xét duyệt</div>
           <div className="text-2xl font-black text-amber-600 mt-1">{stats.pendingAppeals}</div>
         </div>
         <div className="bg-white p-3.5 rounded-2xl border border-red-200 bg-red-50/30 shadow-xs">
-          <div className="text-xs font-bold text-red-700 uppercase">Đã Bác Bỏ (UPHELD)</div>
+          <div className="text-xs font-bold text-red-700 uppercase">Đã bác bỏ (UPHELD)</div>
           <div className="text-2xl font-black text-red-600 mt-1">
             {orders.filter((o) => o.appealStatus === 'UPHELD').length}
           </div>
@@ -82,12 +82,12 @@ export function CenterAppeals({
                 }`}
             >
               {st === 'ALL'
-                ? 'Tất Cả'
+                ? 'Tất cả'
                 : st === 'PENDING_REVIEW'
-                  ? 'Chờ Duyệt'
+                  ? 'Chờ duyệt'
                   : st === 'UPHELD'
-                    ? 'Đã Bác Bỏ'
-                    : 'Đã Chấp Thuận'}
+                    ? 'Đã bác bỏ'
+                    : 'Đã chấp thuận'}
             </button>
           ))}
         </div>
@@ -110,12 +110,12 @@ export function CenterAppeals({
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[11px]">
               <tr>
-                <th className="py-3 px-4">Đơn Hàng & Sản Phẩm</th>
-                <th className="py-3 px-4">Người Bán</th>
+                <th className="py-3 px-4">Đơn hàng & sản phẩm</th>
+                <th className="py-3 px-4">Người bán</th>
                 <th className="py-3 px-4">KTV & Đánh Giá</th>
-                <th className="py-3 px-4">Lý Do Khiếu Nại</th>
-                <th className="py-3 px-4">Trạng Thái</th>
-                <th className="py-3 px-4 text-right">Thao Tác</th>
+                <th className="py-3 px-4">Lý do khiếu nại</th>
+                <th className="py-3 px-4">Trạng thái</th>
+                <th className="py-3 px-4 text-right">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
@@ -162,21 +162,21 @@ export function CenterAppeals({
                         {ord.appealStatus === 'PENDING_REVIEW' ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
                             <Clock className="w-3 h-3 animate-spin" />
-                            Chờ Xét Duyệt
+                            Chờ xét duyệt
                           </span>
                         ) : ord.appealStatus === 'UPHELD' ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-red-100 text-red-800 border border-red-300">
                             <XCircle className="w-3 h-3" />
-                            Đã Bác Bỏ
+                            Đã bác bỏ
                           </span>
                         ) : ord.appealStatus === 'OVERTURNED' ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
                             <CheckCircle2 className="w-3 h-3" />
-                            Đã Chấp Thuận
+                            Đã chấp thuận
                           </span>
                         ) : (
                           <span className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-100 text-slate-600">
-                            {ord.status === 'FAILED' ? 'Chưa Khiếu Nại' : ord.appealStatus || 'Không có'}
+                            {ord.status === 'FAILED' ? 'Chưa khiếu nại' : ord.appealStatus || 'Không có'}
                           </span>
                         )}
                       </td>
@@ -187,7 +187,7 @@ export function CenterAppeals({
                             onClick={() => setReviewingAppealOrder(ord)}
                             className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-xs transition cursor-pointer"
                           >
-                            Xét Duyệt Phán Quyết
+                            Xét duyệt phán quyết
                           </button>
                         ) : (
                           <button
@@ -195,7 +195,7 @@ export function CenterAppeals({
                             onClick={() => setReviewingAppealOrder(ord)}
                             className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition cursor-pointer"
                           >
-                            Xem Chi Tiết
+                            Xem chi tiết
                           </button>
                         )}
                       </td>

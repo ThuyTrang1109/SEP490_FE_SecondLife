@@ -18,7 +18,7 @@ export function PricingProposalDetailsModal({ selectedProposalDetail, setSelecte
             </div>
             <div>
               <h3 className="font-black text-sm text-slate-900">
-                Chi Tiết Đề Xuất #{selectedProposalDetail.id.slice(0, 8)}
+                Chi tiết đề xuất #{selectedProposalDetail.id.slice(0, 8)}
               </h3>
               <p className="text-[11px] text-slate-400">
                 Gửi bởi {selectedProposalDetail.proposedByName || selectedProposalDetail.proposedByEmail} •{' '}
@@ -85,10 +85,10 @@ export function PricingProposalDetailsModal({ selectedProposalDetail, setSelecte
                 }`}
             >
               {selectedProposalDetail.status === 'APPROVED'
-                ? 'Đã Phê Duyệt'
+                ? 'Đã phê duyệt'
                 : selectedProposalDetail.status === 'REJECTED'
-                  ? 'Bị Từ Chối'
-                  : 'Chờ Admin Duyệt'}
+                  ? 'Bị từ chối'
+                  : 'Chờ Admin duyệt'}
             </span>
           </div>
 

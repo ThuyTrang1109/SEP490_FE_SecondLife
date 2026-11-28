@@ -246,28 +246,28 @@ export const MyDisputesView: React.FC<MyDisputesViewProps> = ({
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-black bg-amber-50 text-amber-800 border border-amber-200">
             <Clock className="w-3 h-3 text-amber-600 animate-pulse" />
-            <span>{lang === 'vi' ? 'Chờ Tiếp Nhận' : 'Pending Review'}</span>
+            <span>{lang === 'vi' ? 'Chờ tiếp nhận' : 'Pending Review'}</span>
           </span>
         );
       case 'IN_REVIEW':
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-black bg-blue-50 text-blue-800 border border-blue-200">
             <Scale className="w-3 h-3 text-blue-600" />
-            <span>{lang === 'vi' ? 'Đang Thẩm Định' : 'In Arbitration'}</span>
+            <span>{lang === 'vi' ? 'Đang thẩm định' : 'In Arbitration'}</span>
           </span>
         );
       case 'CONFIRMED':
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-black bg-emerald-50 text-emerald-800 border border-emerald-200">
             <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-            <span>{lang === 'vi' ? 'Đã Xác Nhận Vi Phạm' : 'Confirmed / Resolved'}</span>
+            <span>{lang === 'vi' ? 'Đã xác nhận vi phạm' : 'Confirmed / Resolved'}</span>
           </span>
         );
       case 'DISMISSED':
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-black bg-slate-100 text-slate-600 border border-slate-200">
             <XCircle className="w-3 h-3 text-slate-500" />
-            <span>{lang === 'vi' ? 'Đã Bác Bỏ' : 'Dismissed'}</span>
+            <span>{lang === 'vi' ? 'Đã bác bỏ' : 'Dismissed'}</span>
           </span>
         );
       default:
@@ -500,7 +500,7 @@ export const MyDisputesView: React.FC<MyDisputesViewProps> = ({
                     }`}
                 >
                   <Package className="w-3.5 h-3.5" />
-                  <span>{lang === 'vi' ? 'Đơn Hàng Escrow' : 'Orders'}</span>
+                  <span>{lang === 'vi' ? 'Đơn hàng Escrow' : 'Orders'}</span>
                 </button>
                 <button
                   onClick={() => setTargetFilter('LISTING')}
@@ -510,7 +510,7 @@ export const MyDisputesView: React.FC<MyDisputesViewProps> = ({
                     }`}
                 >
                   <Layers className="w-3.5 h-3.5" />
-                  <span>{lang === 'vi' ? 'Bài Đăng Bán' : 'Listings'}</span>
+                  <span>{lang === 'vi' ? 'Bài đăng bán' : 'Listings'}</span>
                 </button>
               </div>
 
@@ -537,10 +537,10 @@ export const MyDisputesView: React.FC<MyDisputesViewProps> = ({
                   className="px-3 py-2 bg-[#faf8f5] border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36] cursor-pointer"
                 >
                   <option value="ALL">{lang === 'vi' ? 'Mọi trạng thái' : 'All Statuses'}</option>
-                  <option value="OPEN">{lang === 'vi' ? 'Chờ Tiếp Nhận' : 'Pending'}</option>
-                  <option value="IN_REVIEW">{lang === 'vi' ? 'Đang Thẩm Định' : 'In Review'}</option>
-                  <option value="CONFIRMED">{lang === 'vi' ? 'Đã Xác Nhận Vi Phạm' : 'Confirmed'}</option>
-                  <option value="DISMISSED">{lang === 'vi' ? 'Đã Bác Bỏ' : 'Dismissed'}</option>
+                  <option value="OPEN">{lang === 'vi' ? 'Chờ tiếp nhận' : 'Pending'}</option>
+                  <option value="IN_REVIEW">{lang === 'vi' ? 'Đang thẩm định' : 'In Review'}</option>
+                  <option value="CONFIRMED">{lang === 'vi' ? 'Đã xác nhận vi phạm' : 'Confirmed'}</option>
+                  <option value="DISMISSED">{lang === 'vi' ? 'Đã bác bỏ' : 'Dismissed'}</option>
                 </select>
               </div>
             </div>
@@ -578,11 +578,11 @@ export const MyDisputesView: React.FC<MyDisputesViewProps> = ({
               </div>
               <div className="max-w-md mx-auto space-y-1">
                 <h3 className="text-base font-black text-[#24263e]">
-                  {lang === 'vi' ? 'Chưa Có Khiếu Nại Nào' : 'No Disputes Found'}
+                  {lang === 'vi' ? 'Chưa có khiếu nại nào' : 'No Disputes Found'}
                 </h3>
                 <p className="text-xs text-slate-500 leading-relaxed">
                   {lang === 'vi'
-                    ? 'Khi có sai khác về đơn hàng đã nhận hoặc phát hiện sản phẩm có dấu hiệu vi phạm, bạn có thể gửi yêu cầu để Ban Quản Trị SecondLife hỗ trợ bảo vệ quyền lợi.'
+                    ? 'Khi có sai khác về đơn hàng đã nhận hoặc phát hiện sản phẩm có dấu hiệu vi phạm, bạn có thể gửi yêu cầu để ban quản trị secondLife hỗ trợ bảo vệ quyền lợi.'
                     : 'When there are discrepancies with delivered orders or listings, you can file a dispute for SecondLife Arbitration.'}
                 </p>
               </div>
@@ -762,7 +762,7 @@ export const MyDisputesView: React.FC<MyDisputesViewProps> = ({
                           onClick={() => { setReturnShipment(null); setSelectedReport(report); setDetailId(report.id); }}
                           className="w-full py-1.5 px-3 bg-white hover:bg-slate-50 text-[#24263e] border border-slate-300 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer"
                         >
-                          <span>{lang === 'vi' ? 'Xem Toàn Bộ Tiến Trình' : 'View Full Timeline'}</span>
+                          <span>{lang === 'vi' ? 'Xem toàn bộ tiến trình' : 'View Full Timeline'}</span>
                           <ChevronRight className="w-3.5 h-3.5" />
                         </button>
                       </div>
@@ -834,7 +834,7 @@ export const MyDisputesView: React.FC<MyDisputesViewProps> = ({
               <div className="flex items-center gap-2">
                 <Scale className="w-4 h-4 text-[#cea981]" />
                 <h3 className="text-sm font-black text-white">
-                  {lang === 'vi' ? 'Tiến Trình Trọng Tài Khiếu Nại' : 'Dispute Arbitration Timeline'}
+                  {lang === 'vi' ? 'Tiến trình trọng tài khiếu nại' : 'Dispute Arbitration Timeline'}
                 </h3>
               </div>
               <button
@@ -862,7 +862,7 @@ export const MyDisputesView: React.FC<MyDisputesViewProps> = ({
               {/* Step Timeline */}
               <div className="space-y-4 pt-2">
                 <h4 className="text-xs font-black text-[#24263e] uppercase tracking-wider">
-                  {lang === 'vi' ? 'Dòng Thời Gian Xử Lý' : 'Processing Timeline'}
+                  {lang === 'vi' ? 'Dòng thời gian xử lý' : 'Processing Timeline'}
                 </h4>
 
                 <div className="space-y-4 pl-2 border-l-2 border-[#c34c36]/40 ml-2">
@@ -872,7 +872,7 @@ export const MyDisputesView: React.FC<MyDisputesViewProps> = ({
                       1
                     </div>
                     <div className="text-xs font-black text-[#24263e]">
-                      {lang === 'vi' ? 'Tiếp Nhận Khiếu Nại & Đóng Băng Escrow' : 'Case Opened & Escrow Frozen'}
+                      {lang === 'vi' ? 'Tiếp nhận khiếu nại & đóng băng Escrow' : 'Case Opened & Escrow Frozen'}
                     </div>
                     <div className="text-[11px] text-slate-500 mt-0.5">
                       {new Date(selectedReport.createdAt).toLocaleString('vi-VN')}
@@ -918,7 +918,7 @@ export const MyDisputesView: React.FC<MyDisputesViewProps> = ({
                       2
                     </div>
                     <div className="text-xs font-black text-[#24263e]">
-                      {lang === 'vi' ? 'Thẩm Định Chứng Từ & Đối Soát Bằng Chứng' : 'Evidence Audit & Review'}
+                      {lang === 'vi' ? 'Thẩm định chứng từ & đối soát bằng chứng' : 'Evidence Audit & Review'}
                     </div>
                     <div className="text-[11px] text-slate-500 mt-0.5">
                       {selectedReport.status === 'OPEN'
@@ -940,7 +940,7 @@ export const MyDisputesView: React.FC<MyDisputesViewProps> = ({
                       3
                     </div>
                     <div className="text-xs font-black text-[#24263e]">
-                      {lang === 'vi' ? 'Phán Quyết Trọng Tài Cuối Cùng' : 'Final Arbitration Decision'}
+                      {lang === 'vi' ? 'Phán quyết trọng tài cuối cùng' : 'Final Arbitration Decision'}
                     </div>
                     {selectedReport.resolvedAt ? (
                       <div className="mt-1.5 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 space-y-1">

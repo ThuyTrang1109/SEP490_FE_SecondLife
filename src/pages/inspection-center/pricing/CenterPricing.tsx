@@ -109,7 +109,7 @@ export function CenterPricing({ currentUser, isLoadingCategories, lang, checklis
         <div>
           <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
             <Sliders className="w-5 h-5 text-[#c34c36]" />
-            <span>Biểu Phí Kiểm Định & Bậc Cước Di Chuyển KTV</span>
+            <span>Biểu phí kiểm định & bậc cước di chuyển KTV</span>
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
             Biểu phí bậc thang phụ phí di chuyển theo khoảng cách km (gói kiểm định tận nhà AT_HOME) và danh sách đề xuất gửi Admin sàn
@@ -148,7 +148,7 @@ export function CenterPricing({ currentUser, isLoadingCategories, lang, checklis
               className="px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
             >
               <Navigation className="w-3.5 h-3.5 text-slate-500" />
-              <span>Đề Xuất Bậc Cước Km</span>
+              <span>Đề xuất bậc cước km</span>
             </button>
           </div>
         )}
@@ -185,7 +185,7 @@ export function CenterPricing({ currentUser, isLoadingCategories, lang, checklis
             </div>
             <div>
               <h4 className="font-bold text-xs sm:text-sm text-slate-900 uppercase tracking-wider">
-                Bảng Biểu Phí 4 Cấp Độ Kiểm Định (L1 – L4) Đang Áp Dụng
+                Bảng biểu phí 4 cấp độ kiểm định (L1 – L4) đang áp dụng
               </h4>
               <p className="text-[11px] text-slate-500">
                 Giá kiểm định cơ sở của trạm theo độ phức tạp kỹ thuật từng dòng thiết bị gia dụng (sau khi Admin duyệt)
@@ -420,7 +420,7 @@ export function CenterPricing({ currentUser, isLoadingCategories, lang, checklis
             <div>
               <div className="flex items-center gap-2">
                 <h4 className="font-bold text-xs sm:text-sm text-slate-900 uppercase tracking-wider">
-                  Loại Sản Phẩm (Item) Chưa Được Phân Cấp
+                  Loại sản phẩm (Item) chưa được phân cấp
                 </h4>
                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${unclassifiedItems.length > 0 ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
                   }`}>
@@ -501,7 +501,7 @@ export function CenterPricing({ currentUser, isLoadingCategories, lang, checklis
           <div className="flex items-center gap-2">
             <Navigation className="w-4 h-4 text-slate-500" />
             <h4 className="font-bold text-xs text-slate-900 uppercase tracking-wider">
-              Bảng Bậc Thang Cước Di Chuyển Hiện Hành ({effectiveTravelTiers.length} bậc)
+              Bảng bậc thang cước di chuyển hiện hành ({effectiveTravelTiers.length} bậc)
             </h4>
           </div>
           <div className="flex items-center gap-3">
@@ -532,11 +532,11 @@ export function CenterPricing({ currentUser, isLoadingCategories, lang, checklis
             <thead>
               <tr className="bg-slate-50 text-slate-600 font-bold text-[11px] uppercase tracking-wider border-b border-slate-100">
                 <th className="py-3 px-4 w-16">Bậc</th>
-                <th className="py-3 px-4">Tên Bậc</th>
-                <th className="py-3 px-4">Khoảng Cách Áp Dụng</th>
+                <th className="py-3 px-4">Tên bậc</th>
+                <th className="py-3 px-4">Khoảng cách áp dụng</th>
                 <th className="py-3 px-4">Đơn Giá / km</th>
-                <th className="py-3 px-4">Thời Gian Áp Dụng / Cập Nhật</th>
-                <th className="py-3 px-4 text-center">Trạng Thái</th>
+                <th className="py-3 px-4">Thời gian áp dụng / cập nhật</th>
+                <th className="py-3 px-4 text-center">Trạng thái</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -596,7 +596,7 @@ export function CenterPricing({ currentUser, isLoadingCategories, lang, checklis
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
           <div>
             <h4 className="font-bold text-xs text-slate-900 uppercase tracking-wider">
-              Lịch Sử Đề Xuất Biểu Phí 4 Cấp Độ (L1–L4) & Bậc Cước ({pricingProposalTotalElements} đề xuất)
+              Lịch sử đề xuất biểu phí 4 Cấp Độ (L1–L4) & Bậc Cước ({pricingProposalTotalElements} đề xuất)
             </h4>
             <p className="text-[11px] text-slate-400 mt-0.5">
               Theo dõi tiến độ xét duyệt biểu phí cơ sở và bậc thang cước từ Quản trị viên sàn
@@ -641,15 +641,15 @@ export function CenterPricing({ currentUser, isLoadingCategories, lang, checklis
             <thead>
               <tr className="bg-slate-50 text-slate-600 font-bold text-[11px] uppercase tracking-wider border-b border-slate-100">
                 <th className="py-2.5 px-3 w-10">#</th>
-                <th className="py-2.5 px-3">Mã Đề Xuất</th>
-                <th className="py-2.5 px-3">Danh Mục Áp Dụng</th>
-                <th className="py-2.5 px-3">Phí Cơ Sở Đề Xuất</th>
-                <th className="py-2.5 px-3">Người Đề Xuất</th>
-                <th className="py-2.5 px-3 text-center">Trạng Thái</th>
-                <th className="py-2.5 px-3">Phản Hồi Admin</th>
-                <th className="py-2.5 px-3">Thời Gian Gửi</th>
-                <th className="py-2.5 px-3">Thời Gian Phê Duyệt</th>
-                <th className="py-2.5 px-3 text-right">Chi Tiết</th>
+                <th className="py-2.5 px-3">Mã đề xuất</th>
+                <th className="py-2.5 px-3">Danh mục áp dụng</th>
+                <th className="py-2.5 px-3">Phí cơ sở đề xuất</th>
+                <th className="py-2.5 px-3">Người đề xuất</th>
+                <th className="py-2.5 px-3 text-center">Trạng thái</th>
+                <th className="py-2.5 px-3">Phản hồi Admin</th>
+                <th className="py-2.5 px-3">Thời gian gửi</th>
+                <th className="py-2.5 px-3">Thời gian phê duyệt</th>
+                <th className="py-2.5 px-3 text-right">Chi tiết</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -724,10 +724,10 @@ export function CenterPricing({ currentUser, isLoadingCategories, lang, checklis
                             }`}
                         >
                           {prop.status === 'APPROVED'
-                            ? 'Đã Phê Duyệt'
+                            ? 'Đã phê duyệt'
                             : prop.status === 'REJECTED'
-                              ? 'Bị Từ Chối'
-                              : 'Chờ Admin Duyệt'}
+                              ? 'Bị từ chối'
+                              : 'Chờ Admin duyệt'}
                         </span>
                       </td>
                       <td className="py-3 px-3 text-slate-500">
@@ -812,7 +812,7 @@ export function CenterPricing({ currentUser, isLoadingCategories, lang, checklis
                 </div>
                 <div>
                   <h3 className="font-black text-sm text-slate-900 flex items-center gap-2">
-                    <span>Lịch Sử Đổi Giá Biểu Phí Cấp {selectedHistoryLevel}</span>
+                    <span>Lịch sử đổi giá biểu phí cấp {selectedHistoryLevel}</span>
                     <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-purple-100 text-purple-800">
                       Cấp {selectedHistoryLevel}
                     </span>
@@ -874,14 +874,14 @@ export function CenterPricing({ currentUser, isLoadingCategories, lang, checklis
                   <table className="w-full text-left text-xs">
                     <thead>
                       <tr className="bg-slate-50 text-slate-600 font-bold text-[11px] uppercase tracking-wider border-b border-slate-100 sticky top-0">
-                        <th className="py-2.5 px-3">Mã Đề Xuất</th>
-                        <th className="py-2.5 px-3">Mức Phí Đề Xuất</th>
-                        <th className="py-2.5 px-3">Thời Gian Gửi</th>
-                        <th className="py-2.5 px-3">Người Đề Xuất</th>
-                        <th className="py-2.5 px-3 text-center">Trạng Thái</th>
-                        <th className="py-2.5 px-3">Thời Gian Phê Duyệt</th>
-                        <th className="py-2.5 px-3">Người Duyệt / Ghi Chú</th>
-                        <th className="py-2.5 px-3 text-right">Chi Tiết</th>
+                        <th className="py-2.5 px-3">Mã đề xuất</th>
+                        <th className="py-2.5 px-3">Mức phí đề xuất</th>
+                        <th className="py-2.5 px-3">Thời gian gửi</th>
+                        <th className="py-2.5 px-3">Người đề xuất</th>
+                        <th className="py-2.5 px-3 text-center">Trạng thái</th>
+                        <th className="py-2.5 px-3">Thời gian phê duyệt</th>
+                        <th className="py-2.5 px-3">Người duyệt / ghi chú</th>
+                        <th className="py-2.5 px-3 text-right">Chi tiết</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -909,10 +909,10 @@ export function CenterPricing({ currentUser, isLoadingCategories, lang, checklis
                                 }`}
                             >
                               {item.status === 'APPROVED'
-                                ? 'Đã Phê Duyệt'
+                                ? 'Đã phê duyệt'
                                 : item.status === 'REJECTED'
-                                  ? 'Bị Từ Chối'
-                                  : 'Chờ Admin Duyệt'}
+                                  ? 'Bị từ chối'
+                                  : 'Chờ Admin duyệt'}
                             </span>
                           </td>
                           <td className="py-3 px-3 font-mono text-slate-600 text-[11px]">
@@ -979,7 +979,7 @@ export function CenterPricing({ currentUser, isLoadingCategories, lang, checklis
                 </div>
                 <div>
                   <h3 className="font-black text-sm text-slate-900 flex items-center gap-2">
-                    <span>Lịch Sử Điều Chỉnh Bậc Thang Cước Di Chuyển (Km)</span>
+                    <span>Lịch sử điều chỉnh bậc thang cước di chuyển (Km)</span>
                   </h3>
                   <p className="text-[11px] text-slate-500">
                     Toàn bộ các phiên bản điều chỉnh bảng bậc cước km theo ngày giờ cụ thể và người phê duyệt
@@ -1025,10 +1025,10 @@ export function CenterPricing({ currentUser, isLoadingCategories, lang, checklis
                             }`}
                         >
                           {prop.status === 'APPROVED'
-                            ? 'Đã Phê Duyệt'
+                            ? 'Đã phê duyệt'
                             : prop.status === 'REJECTED'
-                              ? 'Bị Từ Chối'
-                              : 'Chờ Admin Duyệt'}
+                              ? 'Bị từ chối'
+                              : 'Chờ Admin duyệt'}
                         </span>
                         <span className="text-[11px] text-slate-500">
                           Gửi bởi: <strong>{prop.proposedByName || prop.proposedByEmail || 'TTKD'}</strong>
@@ -1064,8 +1064,8 @@ export function CenterPricing({ currentUser, isLoadingCategories, lang, checklis
                         <thead>
                           <tr className="bg-slate-50 text-slate-600 font-bold border-b border-slate-100 text-[10px] uppercase">
                             <th className="py-2 px-3">Bậc</th>
-                            <th className="py-2 px-3">Tên Bậc</th>
-                            <th className="py-2 px-3">Cự Ly</th>
+                            <th className="py-2 px-3">Tên bậc</th>
+                            <th className="py-2 px-3">Cự ly</th>
                             <th className="py-2 px-3 text-right">Đơn Giá / km</th>
                           </tr>
                         </thead>

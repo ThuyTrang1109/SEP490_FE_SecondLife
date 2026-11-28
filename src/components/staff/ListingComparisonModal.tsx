@@ -148,7 +148,7 @@ export const ListingComparisonModal: React.FC<ListingComparisonModalProps> = ({
       onActionSuccess(`Đã phê duyệt bài đăng "${currentPost.title}" thành công!`);
       onClose();
     } catch (err: any) {
-      dialogService.error(err?.message || 'Lỗi khi phê duyệt bài đăng. Vui lòng thử lại.', 'Lỗi Phê Duyệt');
+      dialogService.error(err?.message || 'Lỗi khi phê duyệt bài đăng. Vui lòng thử lại.', 'Lỗi phê duyệt');
     } finally {
       setIsApproving(false);
     }
@@ -194,7 +194,7 @@ export const ListingComparisonModal: React.FC<ListingComparisonModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-extrabold text-base sm:text-lg text-slate-900">
-                  Thẩm Định & Đối Soát Bài Đăng Nghi Trùng (Staff Review)
+                  Thẩm định & đối soát bài đăng nghi trùng (Staff Review)
                 </h3>
                 <span className="text-xs font-mono bg-white px-2 py-0.5 rounded-md border border-slate-300 font-bold">
                   #{postId.slice(0, 12)}
@@ -521,7 +521,7 @@ export const ListingComparisonModal: React.FC<ListingComparisonModalProps> = ({
                 disabled={isApproving || isRejecting}
                 className="px-4 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-bold text-xs transition cursor-pointer"
               >
-                Từ Chối Tin
+                Từ chối tin
               </button>
             )}
 
@@ -540,7 +540,7 @@ export const ListingComparisonModal: React.FC<ListingComparisonModalProps> = ({
                 ) : (
                   <>
                     <Check className="w-4 h-4" />
-                    <span>Phê Duyệt Bài Đăng</span>
+                    <span>Phê duyệt bài đăng</span>
                   </>
                 )}
               </button>

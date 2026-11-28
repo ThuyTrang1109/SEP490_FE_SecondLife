@@ -1,5 +1,5 @@
 import type { Listing } from '../types';
-import type { ChatRoomDto } from '../services/chatService';
+import type { ChatRoomDto, SystemOfferPayload } from '../services/chatService';
 import { isPostRequiringInspection } from './listingInspection';
 
 export type ChatProductListing = Omit<Listing, 'priceVnd'> & {
@@ -92,7 +92,7 @@ export function buildChatProductListing(room: ChatRoomDto, existing?: Listing): 
     backendStatus: status,
     status: listingStatus,
     sellerId: room.sellerId,
-    sellerName: room.sellerName || existing?.sellerName || 'Người Bán',
+    sellerName: room.sellerName || existing?.sellerName || 'Người bán',
     sellerAvatar: room.sellerAvatar || existing?.sellerAvatar,
     category: existing?.category || '',
     brand: existing?.brand || '',
@@ -133,4 +133,9 @@ export function getChatProductActions(
       (normalizedStatus === 'RESERVED' && Boolean(acceptedNegotiationId))
     ),
   };
+}
+
+export function canBuyChatOffer(postStatus: string | null | undefined, offer: Omit<SystemOfferPayload, 'type'>): boolean {
+  return offer.status === 'ACCEPTED' && Boolean(offer.negotiationId)
+    && getChatProductActions(postStatus, offer.price, offer.negotiationId).canBuy;
 }

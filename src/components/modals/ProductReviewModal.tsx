@@ -196,8 +196,8 @@ export const ProductReviewModal: React.FC<ProductReviewModalProps> = ({
               <div className="flex items-center gap-2">
                 <h3 className="font-extrabold text-base text-[#24263e]">
                   {isEditing
-                    ? (lang === 'vi' ? 'Chi Tiết Đánh Giá Đơn Hàng' : 'Order Review Details')
-                    : (lang === 'vi' ? 'Đánh Giá Sản Phẩm & Người Bán' : 'Review Product & Seller')}
+                    ? (lang === 'vi' ? 'Chi tiết đánh giá đơn hàng' : 'Order Review Details')
+                    : (lang === 'vi' ? 'Đánh giá sản phẩm & người bán' : 'Review Product & Seller')}
                 </h3>
                 <span className="text-[10px] text-emerald-700 font-extrabold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
                   <ShieldCheck className="w-3 h-3 text-emerald-600" />
@@ -468,7 +468,7 @@ export const ProductReviewModal: React.FC<ProductReviewModalProps> = ({
                   title="Xóa đánh giá này (trong vòng 48h)"
                 >
                   <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                  <span>{lang === 'vi' ? 'Xóa Đánh Giá' : 'Delete Review'}</span>
+                  <span>{lang === 'vi' ? 'Xóa đánh giá' : 'Delete Review'}</span>
                 </button>
               )}
             </div>
@@ -496,7 +496,7 @@ export const ProductReviewModal: React.FC<ProductReviewModalProps> = ({
                   ) : (
                     <>
                       <CheckCircle2 className="w-4 h-4 text-white" />
-                      <span>{isEditing ? (lang === 'vi' ? 'Lưu Thay Đổi (1 Lần)' : 'Save Changes') : (lang === 'vi' ? 'Gửi Đánh Giá Ngay' : 'Submit Review')}</span>
+                      <span>{isEditing ? (lang === 'vi' ? 'Lưu thay đổi (1 Lần)' : 'Save Changes') : (lang === 'vi' ? 'Gửi đánh giá ngay' : 'Submit Review')}</span>
                     </>
                   )}
                 </button>

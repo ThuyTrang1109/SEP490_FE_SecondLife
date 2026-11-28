@@ -29,7 +29,7 @@ test('At-home appointment countered by center is correctly preserved, synced and
         counterNote: 'KTV khu vực đã kín lịch ca sáng, Trung tâm xin phép đề xuất dời sang ca chiều cùng ngày.',
       },
       buyerName: 'Nguyen Hieu Tuan',
-      sellerName: 'Gian Hàng Thị Thùy Trang Nguyễn',
+      sellerName: 'Gian hàng thị thùy trang nguyễn',
     };
 
     const raw = orderFeedItemToRaw(rawFeedItem);
@@ -61,7 +61,7 @@ test('At-home appointment countered by center is correctly preserved, synced and
     assert.equal(appt.counterNote, 'KTV khu vực đã kín lịch ca sáng, Trung tâm xin phép đề xuất dời sang ca chiều cùng ngày.');
   });
 
-  await t.test('OrderStatusBadge renders "Hub Đề Xuất Lịch Mới • Cần Phản Hồi" for seller when countered', () => {
+  await t.test('OrderStatusBadge renders "Hub đề xuất lịch mới • Cần phản hồi" for seller when countered', () => {
     const orderItem: any = {
       id: '99cac9fc-13f3-4316-bae1-6aa97f32be4e',
       orderType: 'AT_HOME',
@@ -105,7 +105,7 @@ test('At-home appointment countered by center is correctly preserved, synced and
     const rendered = OrderStatusBadge(badgeProps) as any;
     assert.ok(rendered);
     const textChild = rendered.props.children[1].props.children;
-    assert.equal(textChild, 'Hub Đề Xuất Lịch Mới • Cần Phản Hồi');
+    assert.equal(textChild, 'Hub đề xuất lịch mới • Cần phản hồi');
   });
 
   await t.test('order counter appointment proposal is active when inspection contains counter fields', () => {
@@ -127,7 +127,7 @@ test('At-home appointment countered by center is correctly preserved, synced and
         counterNote: 'KTV khu vực đã kín lịch ca sáng, Trung tâm xin phép đề xuất dời sang ca chiều cùng ngày.',
       },
       buyerName: 'Nguyen Hieu Tuan',
-      sellerName: 'Gian Hàng Thị Thùy Trang Nguyễn',
+      sellerName: 'Gian hàng thị thùy trang nguyễn',
     };
 
     const raw = orderFeedItemToRaw(rawFeedItem);
@@ -185,6 +185,6 @@ test('At-home appointment countered by center is correctly preserved, synced and
     const rendered = OrderStatusBadge(badgeProps) as any;
     assert.ok(rendered);
     const textChild = rendered.props.children[1].props.children;
-    assert.equal(textChild, 'Đã Đề Xuất Lịch • Chờ Hub Duyệt');
+    assert.equal(textChild, 'Đã đề xuất lịch • Chờ Hub duyệt');
   });
 });

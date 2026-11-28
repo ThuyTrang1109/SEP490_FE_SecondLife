@@ -37,6 +37,8 @@ export const SellerReviewsModal: React.FC<SellerReviewsModalProps> = ({
   lang = 'vi'
 }) => {
   const [filterRating, setFilterRating] = useState<number | 'ALL'>('ALL');
+  const [reviewPage, setReviewPage] = useState<number>(1);
+  const REVIEWS_PER_PAGE = 5;
   const [reputation, setReputation] = useState<SellerReputationDto | null>(null);
   const [historyItems, setHistoryItems] = useState<ReputationHistoryDto[]>([]);
   const [realBackendReviews, setRealBackendReviews] = useState<ProductReview[]>([]);
@@ -105,6 +107,10 @@ export const SellerReviewsModal: React.FC<SellerReviewsModalProps> = ({
     };
   }, [isOpen, sellerId]);
 
+  useEffect(() => {
+    setReviewPage(1);
+  }, [filterRating, sellerId, isOpen]);
+
   if (!isOpen) return null;
 
   const directReviews = reviewService.getReviewsBySeller(sellerId);
@@ -131,7 +137,7 @@ export const SellerReviewsModal: React.FC<SellerReviewsModalProps> = ({
         (shortOrderId ? `Đơn hàng giao dịch ${shortOrderId}` : 'Đánh giá giao dịch hệ thống');
       const buyerName =
         matchedOrder?.buyerName ||
-        (isGood ? 'Khách mua qua Quỹ Escrow' : 'Hệ thống Thẩm Định SecondLife');
+        (isGood ? 'Khách mua qua Quỹ Escrow' : 'Hệ thống thẩm định secondLife');
 
       const scoreTransition =
         item.scoreBefore !== undefined && item.scoreBefore !== null && item.scoreAfter !== undefined && item.scoreAfter !== null
@@ -181,6 +187,12 @@ export const SellerReviewsModal: React.FC<SellerReviewsModalProps> = ({
     if (filterRating === 'ALL') return true;
     return r.rating === filterRating;
   });
+
+  const totalReviewPages = Math.max(1, Math.ceil(filteredReviews.length / REVIEWS_PER_PAGE));
+  const paginatedReviews = filteredReviews.slice(
+    (reviewPage - 1) * REVIEWS_PER_PAGE,
+    reviewPage * REVIEWS_PER_PAGE
+  );
 
   const ratingCounts = {
     5: allReviews.filter((r) => r.rating === 5).length,
@@ -245,7 +257,7 @@ export const SellerReviewsModal: React.FC<SellerReviewsModalProps> = ({
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-black text-slate-900">
-                      {lang === 'vi' ? 'Trạng Thái Uy Tín:' : 'Reputation Status:'}
+                      {lang === 'vi' ? 'Trạng thái uy tín:' : 'Reputation Status:'}
                     </span>
                     <span className={`px-2.5 py-0.5 rounded-lg text-xs font-black border flex items-center gap-1 shadow-2xs ${
                       statusMeta?.badgeClass || 'bg-slate-100 text-slate-800 border-slate-300'
@@ -310,7 +322,7 @@ export const SellerReviewsModal: React.FC<SellerReviewsModalProps> = ({
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 pb-3">
             <div className="flex items-center gap-2">
               <span className="font-extrabold text-sm text-[#24263e]">
-                {lang === 'vi' ? 'Nhận Xét Từ Người Mua Đã Giao Dịch:' : 'Verified Buyer Reviews:'}
+                {lang === 'vi' ? 'Nhận xét từ người mua đã giao dịch:' : 'Verified Buyer Reviews:'}
               </span>
               <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-[#faf8f5] text-slate-600 border border-gray-200">
                 {filteredReviews.length}
@@ -366,7 +378,8 @@ export const SellerReviewsModal: React.FC<SellerReviewsModalProps> = ({
                 </p>
               </div>
             ) : (
-              filteredReviews.map((rev) => (
+              <>
+                {paginatedReviews.map((rev) => (
                 <div
                   key={rev.id}
                   className="p-4 rounded-2xl bg-[#faf8f5] border border-gray-200 space-y-2.5 hover:border-gray-300 transition"
@@ -445,7 +458,39 @@ export const SellerReviewsModal: React.FC<SellerReviewsModalProps> = ({
                     </div>
                   )}
                 </div>
-              ))
+                ))}
+
+                {totalReviewPages > 1 && (
+                  <div className="flex items-center justify-between pt-2 px-1 text-xs text-slate-500 border-t border-gray-100">
+                    <span className="text-[11px] font-medium text-slate-500">
+                      {lang === 'vi'
+                        ? `Trang ${reviewPage} / ${totalReviewPages} (${filteredReviews.length} đánh giá)`
+                        : `Page ${reviewPage} of ${totalReviewPages} (${filteredReviews.length} reviews)`}
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        disabled={reviewPage <= 1}
+                        onClick={() => setReviewPage((prev) => Math.max(1, prev - 1))}
+                        className="px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed font-bold text-[11px] text-[#24263e] transition cursor-pointer shadow-2xs"
+                      >
+                        {lang === 'vi' ? '← Trước' : '← Prev'}
+                      </button>
+                      <span className="px-2 py-0.5 rounded-md bg-[#24263e] text-white font-black text-[11px]">
+                        {reviewPage}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={reviewPage >= totalReviewPages}
+                        onClick={() => setReviewPage((prev) => Math.min(totalReviewPages, prev + 1))}
+                        className="px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed font-bold text-[11px] text-[#24263e] transition cursor-pointer shadow-2xs"
+                      >
+                        {lang === 'vi' ? 'Sau →' : 'Next →'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -454,7 +499,7 @@ export const SellerReviewsModal: React.FC<SellerReviewsModalProps> = ({
         <div className="p-4 border-t border-gray-100 flex items-center justify-between bg-slate-50 rounded-b-3xl">
           <div className="text-[11px] text-slate-500 flex items-center gap-1.5 font-medium">
             <ShieldCheck className="w-4 h-4 text-emerald-600" />
-            <span>{lang === 'vi' ? '100% dữ liệu uy tín đồng bộ từ hệ thống Quỹ Tín Thác Escrow' : '100% reputation metrics synced from Escrow system'}</span>
+            <span>{lang === 'vi' ? '100% dữ liệu uy tín đồng bộ từ hệ thống quỹ tín thác Escrow' : '100% reputation metrics synced from Escrow system'}</span>
           </div>
 
           <button

@@ -265,7 +265,7 @@ export const getOrderSellerAddress = (ord: any): string => {
     String(ord.sellerName || '').toLowerCase().includes('thùy trang') ||
     String(ord.sellerName || '').toLowerCase().includes('thuy trang');
   if (isTrangSeller) {
-    return 'Student Station Coffee, Đường Quảng Trường Sáng Tạo, Phường Đông Hòa, Thành phố Dĩ An, BI 00084, Việt Nam';
+    return 'Student station coffee, đường quảng trường sáng tạo, phường đông hòa, thành phố Dĩ An, BI 00084, Việt Nam';
   }
 
   return 'Kho người bán (Đang cập nhật địa chỉ)';
@@ -597,7 +597,7 @@ export const getOrderHubAddress = (ord: any, currentUser?: any): string => {
     inspectionCenterAddress: currentUser?.address || ord?.inspectionCenterAddress,
     inspectionCenterPhone: currentUser?.phone || ord?.inspectionCenterPhone,
   });
-  return currentUser?.address || ord?.inspectionCenterAddress || resolved.address || 'K&B Mini Mart, Đường Võ Thị Sáu, Xã Phước Hải, Thành phố Hồ Chí Minh';
+  return currentUser?.address || ord?.inspectionCenterAddress || resolved.address || 'K&B Mini mart, đường võ thị sáu, xã phước hải, thành phố Hồ Chí Minh';
 };
 
 export const getOrderHubName = (ord: any, currentUser?: any): string => {
@@ -607,5 +607,5 @@ export const getOrderHubName = (ord: any, currentUser?: any): string => {
     inspectionCenterAddress: currentUser?.address || ord?.inspectionCenterAddress,
     inspectionCenterPhone: currentUser?.phone || ord?.inspectionCenterPhone,
   });
-  return currentUser?.centerName || currentUser?.name || ord?.inspectionCenterName || resolved.name || 'Trung Tâm Kiểm Định SecondLife';
+  return currentUser?.centerName || currentUser?.name || ord?.inspectionCenterName || resolved.name || 'Trung tâm kiểm định secondLife';
 };

@@ -422,7 +422,7 @@ export const PackageFormModal: React.FC<PackageFormModalProps> = ({
             </div>
             <div>
               <h3 className="text-base font-black text-slate-900 tracking-tight">
-                {editingPackage ? 'Chỉnh Sửa Gói Dịch Vụ' : 'Thêm Gói Dịch Vụ Mới'}
+                {editingPackage ? 'Chỉnh sửa gói dịch vụ' : 'Thêm gói dịch vụ mới'}
               </h3>
               <p className="text-[11px] text-slate-500 mt-0.5">
                 {editingPackage
@@ -454,7 +454,7 @@ export const PackageFormModal: React.FC<PackageFormModalProps> = ({
             )}
           <div>
             <label className="block text-slate-700 font-bold mb-1">
-              Tên Gói Dịch Vụ <span className="text-rose-500">*</span>
+              Tên gói dịch vụ <span className="text-rose-500">*</span>
             </label>
             <input
               type="text"
@@ -462,13 +462,13 @@ export const PackageFormModal: React.FC<PackageFormModalProps> = ({
               maxLength={100}
               value={formData.name}
               onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
-              placeholder="Ví dụ: Gói Tiết Kiệm, Pro Combo, 10 Tin Đăng..."
+              placeholder="Ví dụ: Gói tiết kiệm, Pro combo, 10 Tin Đăng..."
               className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 outline-none text-slate-800 font-bold transition"
             />
           </div>
 
           <div>
-            <label className="block text-slate-700 font-bold mb-1">Mô Tả Gói (Hiển thị người mua)</label>
+            <label className="block text-slate-700 font-bold mb-1">Mô tả gói (Hiển thị người mua)</label>
             <input
               type="text"
               maxLength={255}
@@ -483,11 +483,11 @@ export const PackageFormModal: React.FC<PackageFormModalProps> = ({
           <div className="p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200/80 space-y-2.5">
             <div className="text-[11px] font-extrabold text-slate-700 uppercase tracking-wide flex items-center gap-1.5">
               <Tag className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Quyền Lợi Lượt Dịch Vụ Cấp Cho Người Bán</span>
+              <span>Quyền lợi lượt dịch vụ cấp cho người bán</span>
             </div>
             <div className="grid grid-cols-3 gap-2.5">
               <div className="p-2.5 bg-white rounded-xl border border-slate-200">
-                <label className="block text-[11px] text-slate-600 mb-1 font-bold">Đăng Tin</label>
+                <label className="block text-[11px] text-slate-600 mb-1 font-bold">Đăng tin</label>
                 <input
                   type="text"
                   inputMode="numeric"
@@ -533,7 +533,7 @@ export const PackageFormModal: React.FC<PackageFormModalProps> = ({
                 )}
               </div>
               <div className="p-2.5 bg-white rounded-xl border border-slate-200">
-                <label className="block text-[11px] text-slate-600 mb-1 font-bold">Định Giá AI</label>
+                <label className="block text-[11px] text-slate-600 mb-1 font-bold">Định giá AI</label>
                 <input
                   type="text"
                   inputMode="numeric"
@@ -563,7 +563,7 @@ export const PackageFormModal: React.FC<PackageFormModalProps> = ({
             <div className="flex items-center justify-between">
               <label className="text-[11px] font-extrabold text-slate-700 uppercase tracking-wide flex items-center gap-1.5">
                 <Tag className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Cấu Hình Giá Bán Gói Dịch Vụ</span>
+                <span>Cấu hình giá bán gói dịch vụ</span>
               </label>
               <span className="text-[10px] text-slate-500 font-medium">
                 (Khóa ô còn lại khi nhập)
@@ -766,7 +766,7 @@ export const PackageFormModal: React.FC<PackageFormModalProps> = ({
               ) : (
                 <>
                   <Check className="w-3.5 h-3.5" />
-                  <span>{editingPackage ? 'Lưu Thay Đổi' : 'Tạo Gói Dịch Vụ'}</span>
+                  <span>{editingPackage ? 'Lưu thay đổi' : 'Tạo gói dịch vụ'}</span>
                 </>
               )}
             </button>

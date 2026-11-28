@@ -983,19 +983,21 @@ export interface SystemWalletData {
   heldBalance: number;
   shippingBalance: number;
   revenueBalance: number;
+  packageRevenueBalance?: number;
   totalBalance: number;
   updatedAt: string;
   totalHubPaid?: number;
   inspectionHeldBalance?: number;
 }
 
-export type SystemWalletFundCategory = 'PRODUCT_ESCROW' | 'USER_SHIPPING' | 'HUB_PAYOUT' | 'COMMISSION';
+export type SystemWalletFundCategory = 'PRODUCT_ESCROW' | 'USER_SHIPPING' | 'HUB_PAYOUT' | 'COMMISSION' | 'PACKAGE_REVENUE';
 
 export interface SystemWalletTransaction {
   id: number;
   entryId?: string;
   orderId: string | null;
   inspectionOrderId?: string | null;
+  topupPackagePurchaseId?: string | null;
   type: 'OPENING_BALANCE' | 'PAYMENT_HOLD' | 'SETTLEMENT' | 'REFUND' | 'RETURN_SHIPPING_FEE' | string;
   fundCategory?: SystemWalletFundCategory;
   totalDelta?: number;

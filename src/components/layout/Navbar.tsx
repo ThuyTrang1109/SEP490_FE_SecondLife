@@ -184,7 +184,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 }`}
             >
               <ShieldAlert className="w-4 h-4" />
-              <span>{lang === 'vi' ? 'Quản Trị Hệ Thống (Admin)' : 'Admin Dashboard'}</span>
+              <span>{lang === 'vi' ? 'Quản trị hệ thống (Admin)' : 'Admin Dashboard'}</span>
             </button>
           ) : currentUser && (currentRole === 'inspector' || currentRole === 'inspection_center') ? (
             /* Inspector & Inspection Center Manager role: Single Inspection Center Portal */
@@ -196,7 +196,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 }`}
             >
               <Building2 className="w-4 h-4" />
-              <span>{lang === 'vi' ? (currentRole === 'inspection_center' ? 'Dashboard Trưởng Trung Tâm' : 'Trung Tâm Kiểm Định') : 'Inspection Center'}</span>
+              <span>{lang === 'vi' ? (currentRole === 'inspection_center' ? 'Dashboard trưởng trung tâm' : 'Trung tâm kiểm định') : 'Inspection Center'}</span>
             </button>
           ) : (
             /* Buyer, Seller, Staff & Public roles: Full Marketplace Navigation */
@@ -209,7 +209,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   }`}
               >
                 <Home className="w-3.5 h-3.5" />
-                <span>{lang === 'vi' ? 'Trang Chủ' : 'Home'}</span>
+                <span>{lang === 'vi' ? 'Trang chủ' : 'Home'}</span>
               </button>
 
               <button
@@ -220,7 +220,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   }`}
               >
                 <ShoppingBag className="w-3.5 h-3.5" />
-                <span>{lang === 'vi' ? 'Sàn Đồ Cũ' : 'Marketplace'}</span>
+                <span>{lang === 'vi' ? 'Sàn đồ cũ' : 'Marketplace'}</span>
               </button>
 
               {currentUser && (currentRole === 'seller' || currentRole === 'staff') && (
@@ -232,7 +232,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     }`}
                 >
                   <Building2 className="w-3.5 h-3.5" />
-                  <span>{lang === 'vi' ? 'Kênh Người Bán' : 'Seller Hub'}</span>
+                  <span>{lang === 'vi' ? 'Kênh người bán' : 'Seller Hub'}</span>
                 </button>
               )}
 
@@ -245,7 +245,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     }`}
                 >
                   <Clock className="w-3.5 h-3.5" />
-                  <span>{lang === 'vi' ? (currentRole === 'buyer' ? 'Đơn hàng' : 'Quản Lý Đơn') : 'Orders'}</span>
+                  <span>{lang === 'vi' ? (currentRole === 'buyer' ? 'Đơn hàng' : 'Quản lý đơn') : 'Orders'}</span>
                   {activeOrdersCount > 0 && (
                     <span className="ml-0.5 px-1.5 py-0.2 bg-[#c34c36] text-white rounded-full text-[10px] font-extrabold shadow-xs">
                       {activeOrdersCount}
@@ -264,7 +264,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   title={lang === 'vi' ? 'Khiếu nại & Trọng tài Escrow' : 'Disputes & Escrow Arbitration'}
                 >
                   <Scale className="w-3.5 h-3.5" />
-                  <span>{lang === 'vi' ? 'Khiếu Nại' : 'Disputes'}</span>
+                  <span>{lang === 'vi' ? 'Khiếu nại' : 'Disputes'}</span>
                 </button>
               )}
 
@@ -278,7 +278,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     }`}
                 >
                   <FileCheck className="w-3.5 h-3.5 text-[#cea981]" />
-                  <span>{lang === 'vi' ? 'Nghiệp Vụ Staff' : 'Staff Portal'}</span>
+                  <span>{lang === 'vi' ? 'Nghiệp vụ Staff' : 'Staff Portal'}</span>
                 </button>
               )}
             </>
@@ -292,7 +292,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               onClick={onOpenTopUp}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/15 text-white border border-white/20 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs"
-              title={lang === 'vi' ? (currentRole === 'buyer' ? 'Ví Escrow & Nạp tiền' : 'Ví tiền & Gói tin đăng') : 'Wallet & Top Up'}
+              title={lang === 'vi' ? (currentRole === 'buyer' ? 'Ví Escrow & nạp tiền' : 'Ví tiền & Gói tin đăng') : 'Wallet & Top Up'}
             >
               <Wallet className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
               <div className="flex items-center gap-1 text-[11px]">
@@ -367,7 +367,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               ) : (
                 <>
                   <Sparkles className="w-3.5 h-3.5 fill-white" />
-                  <span>{lang === 'vi' ? 'Đăng Bán' : 'Post Listing'}</span>
+                  <span>{lang === 'vi' ? 'Đăng bán' : 'Post Listing'}</span>
                 </>
               )}
             </button>
@@ -413,14 +413,14 @@ export const Navbar: React.FC<NavbarProps> = ({
                 className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold text-white hover:bg-white/10 transition cursor-pointer"
               >
                 <LogIn className="w-3.5 h-3.5" />
-                <span>{lang === 'vi' ? 'Đăng Nhập' : 'Login'}</span>
+                <span>{lang === 'vi' ? 'Đăng nhập' : 'Login'}</span>
               </button>
               <button
                 onClick={() => onOpenAuth('register')}
                 className="hidden sm:flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-black bg-white/15 hover:bg-white/25 text-white border border-white/20 transition cursor-pointer shadow-sm"
               >
                 <UserPlus className="w-3.5 h-3.5" />
-                <span>{lang === 'vi' ? 'Đăng Ký' : 'Register'}</span>
+                <span>{lang === 'vi' ? 'Đăng ký' : 'Register'}</span>
               </button>
             </div>
           )}
@@ -436,7 +436,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               }`}
           >
             <ShieldAlert className="w-3.5 h-3.5" />
-            <span>Quản Trị Admin</span>
+            <span>Quản trị Admin</span>
           </button>
         ) : currentUser && (currentRole === 'inspector' || currentRole === 'inspection_center') ? (
           <button
@@ -506,7 +506,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   }`}
               >
                 <FileCheck className="w-3.5 h-3.5" />
-                <span>Nghiệp Vụ Staff</span>
+                <span>Nghiệp vụ Staff</span>
               </button>
             )}
             {currentUser && canOpenProfile && (

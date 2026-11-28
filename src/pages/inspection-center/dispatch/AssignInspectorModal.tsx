@@ -81,7 +81,7 @@ export function AssignInspectorModal({
               <UserPlus className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-black text-[#24263e]">Phân Công Kỹ Thuật Viên Kiểm Định</h3>
+              <h3 className="text-base font-black text-[#24263e]">Phân công kỹ thuật viên kiểm định</h3>
               <p className="text-[11px] text-gray-400">
                 {assignModalOrder.orderType === 'AT_HOME'
                   ? 'Giao task kiểm tra và ấn định lịch hẹn khảo sát tại nhà khách'
@@ -129,7 +129,7 @@ export function AssignInspectorModal({
             <div>
               <span className="text-gray-400">Hình thức: </span>
               <strong className="text-gray-800">
-                {assignModalOrder.orderType === 'AT_HOME' ? 'Tại Nhà Khách (Tận Nơi)' : 'Tại Lab Hub (Trung Tâm)'}
+                {assignModalOrder.orderType === 'AT_HOME' ? 'Tại nhà khách (Tận Nơi)' : 'Tại Lab Hub (Trung Tâm)'}
               </strong>
             </div>
             <div>
@@ -214,10 +214,10 @@ export function AssignInspectorModal({
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <span className="font-black text-amber-900 flex items-center gap-1.5 uppercase text-[11px] tracking-wide">
                     <Calendar className="w-4 h-4 text-amber-700" />
-                    Lịch Hẹn Người Bán Yêu Cầu (Đã Xác Nhận):
+                    Lịch hẹn người bán yêu cầu (Đã xác nhận):
                   </span>
                   <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-200 text-amber-900 border border-amber-300">
-                    {isMorning ? 'Ca Sáng (08:00 - 12:00)' : 'Ca Chiều (13:00 - 17:00)'}
+                    {isMorning ? 'Ca sáng (08:00 - 12:00)' : 'Ca chiều (13:00 - 17:00)'}
                   </span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
@@ -228,7 +228,7 @@ export function AssignInspectorModal({
                     </span>
                   </div>
                   <div className="p-3 bg-white rounded-xl border border-amber-200 shadow-2xs space-y-1">
-                    <span className="text-slate-400 font-bold block text-[10px] uppercase">Địa chỉ khảo sát thực tế (Nhà Người Bán):</span>
+                    <span className="text-slate-400 font-bold block text-[10px] uppercase">Địa chỉ khảo sát thực tế (Nhà người bán):</span>
                     <span className="font-extrabold text-slate-800 text-xs block leading-snug">
                       📍 {getOrderSellerAddress(assignModalOrder)}
                     </span>
@@ -308,7 +308,7 @@ export function AssignInspectorModal({
 
           {/* Dispatch note */}
           <div className="space-y-1.5">
-            <label className="text-xs font-black text-[#24263e]">Ghi Chú Hướng Dẫn Kỹ Thuật Cho KTV:</label>
+            <label className="text-xs font-black text-[#24263e]">Ghi chú hướng dẫn kỹ thuật cho KTV:</label>
             <textarea
               value={assignNote}
               onChange={(e) => setAssignNote(e.target.value)}
@@ -322,7 +322,7 @@ export function AssignInspectorModal({
             <div className="p-3 bg-rose-50 border border-rose-300 rounded-xl text-xs text-rose-800 flex items-start gap-2.5 animate-in fade-in">
               <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
               <div className="space-y-0.5">
-                <div className="font-bold">Không Thể Xác Nhận Giao Task</div>
+                <div className="font-bold">Không thể xác nhận giao task</div>
                 <p className="text-[11px] leading-relaxed text-rose-700">{assignError}</p>
               </div>
             </div>
@@ -416,7 +416,7 @@ export function AssignInspectorModal({
                     title="Đổi lại lịch hẹn hoặc thương lượng lại với người bán"
                   >
                     <CalendarSync className="w-4 h-4 text-amber-600" />
-                    <span>Đổi Lịch Hẹn</span>
+                    <span>Đổi lịch hẹn</span>
                   </button>
                 )}
 
@@ -452,13 +452,13 @@ export function AssignInspectorModal({
                   {isAssigning && <Loader2 className="w-4 h-4 animate-spin" />}
                   <span>
                     {assignModalOrder.status === 'CANCELLED' || assignModalOrder.status === 'CANCELED'
-                      ? 'Đã Hủy - Không Thể Giao'
+                      ? 'Đã hủy - Không thể giao'
                       : isAssignmentLocked
                         ? 'Đã khóa'
                         : isAtHomeMissingAppt
-                          ? 'Chờ Người Bán Hẹn Lịch'
+                          ? 'Chờ người bán hẹn lịch'
                           : assignModalOrder.orderType === 'AT_HOME'
-                            ? 'Xác Nhận & Giao Task Cho KTV'
+                            ? 'Xác nhận & giao task cho KTV'
                             : 'Xác nhận phân công'}
                   </span>
                 </button>

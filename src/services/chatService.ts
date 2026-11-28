@@ -31,12 +31,12 @@ export interface SendMessageRequest {
   messageContent: string;
 }
 
-import { SystemInspectionProposalPayload } from '../types';
+import type { NegotiationStatusBackend, SystemInspectionProposalPayload } from '../types';
 
 // System negotiation offer structure if backend sends JSON inside "SYSTEM: ..."
 export interface SystemOfferPayload {
   type: 'OFFER';
-  status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'CANCELLED';
+  status: NegotiationStatusBackend;
   price: number;
   negotiationId?: string;
   senderRole?: 'buyer' | 'seller';

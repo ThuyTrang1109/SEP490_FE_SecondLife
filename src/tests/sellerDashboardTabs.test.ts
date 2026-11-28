@@ -41,14 +41,14 @@ test('2. Normal listings strictly exclude high-value products and only show regu
   };
 
   const combinedListings = [
-    { id: '1', title: 'Máy Lọc Không Khí Xiaomi', status: 'active', backendStatus: 'ACTIVE', priceVnd: 11_200_000 },
-    { id: '2', title: 'Tủ Lạnh Hisense 260L', status: 'pending_inspection', backendStatus: 'PENDING_INSPECTION', priceVnd: 18_200_000 },
-    { id: '3', title: 'Tủ Lạnh Hisense Inverter', status: 'reserved', backendStatus: 'RESERVED', priceVnd: 11_110_000 },
-    { id: '4', title: 'Máy Lọc Không Khí Sunhouse', status: 'draft', backendStatus: 'DRAFT', priceVnd: 0 },
-    { id: '5', title: 'Máy Nước Nóng ATMOR', status: 'active', backendStatus: 'ACTIVE', priceVnd: 2_200_000 },
-    { id: '6', title: 'Quạt Đứng Lifan', status: 'reserved', backendStatus: 'RESERVED', priceVnd: 350_000 },
-    { id: '7', title: 'Lò Vi Sóng Toshiba', status: 'sold', backendStatus: 'SOLD', priceVnd: 1_350_000 },
-    { id: '8', title: 'Bàn Là Hơi Nước Bị Từ Chối', status: 'rejected', backendStatus: 'REJECTED', priceVnd: 200_000 },
+    { id: '1', title: 'Máy lọc không khí xiaomi', status: 'active', backendStatus: 'ACTIVE', priceVnd: 11_200_000 },
+    { id: '2', title: 'Tủ lạnh hisense 260L', status: 'pending_inspection', backendStatus: 'PENDING_INSPECTION', priceVnd: 18_200_000 },
+    { id: '3', title: 'Tủ lạnh hisense inverter', status: 'reserved', backendStatus: 'RESERVED', priceVnd: 11_110_000 },
+    { id: '4', title: 'Máy lọc không khí sunhouse', status: 'draft', backendStatus: 'DRAFT', priceVnd: 0 },
+    { id: '5', title: 'Máy nước nóng ATMOR', status: 'active', backendStatus: 'ACTIVE', priceVnd: 2_200_000 },
+    { id: '6', title: 'Quạt đứng lifan', status: 'reserved', backendStatus: 'RESERVED', priceVnd: 350_000 },
+    { id: '7', title: 'Lò vi sóng toshiba', status: 'sold', backendStatus: 'SOLD', priceVnd: 1_350_000 },
+    { id: '8', title: 'Bàn là hơi nước bị từ chối', status: 'rejected', backendStatus: 'REJECTED', priceVnd: 200_000 },
   ];
 
   const normalListings = combinedListings.filter((l) => !isHighValueListing(l));
@@ -124,7 +124,7 @@ test('high-value Hub badges use the latest inbound shipment from the API', () =>
   assert.equal(label('SHIPPING_TO_CENTER', { ...pending, status: 'PICKED', providerStatus: 'PICKED_UP' }), '● Đang giao hàng đến Hub');
   const delivered = { ...pending, status: 'DELIVERED', providerStatus: 'COMPLETED' };
   assert.equal(label('RECEIVED_AT_CENTER', delivered), '● Đã đến Hub · Chờ kiểm định');
-  assert.equal(label('INSPECTING', delivered), '● Đang Kiểm Định Tại Hub');
+  assert.equal(label('INSPECTING', delivered), '● Đang kiểm định tại Hub');
 });
 
 test('5. Seller dashboard listings pagination: 10 items per page and page range calculation', () => {

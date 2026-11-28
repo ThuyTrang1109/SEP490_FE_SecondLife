@@ -61,7 +61,7 @@ export interface PermissionModuleInfo {
 export const PERMISSION_MODULES: PermissionModuleInfo[] = [
   {
     id: 'system',
-    name: 'Quản Trị & Cấu Hình',
+    name: 'Quản trị & cấu hình',
     description: 'Bảo mật hệ thống, quản trị RBAC, bảng giá, hoa hồng sàn và xử lý tài khoản',
     icon: Shield,
     color: '#c34c36',
@@ -70,7 +70,7 @@ export const PERMISSION_MODULES: PermissionModuleInfo[] = [
   },
   {
     id: 'users',
-    name: 'Tài Khoản & Định Danh eKYC',
+    name: 'Tài khoản & định danh eKYC',
     description: 'Hồ sơ người dùng, duyệt eKYC căn cước công dân và cảnh báo vi phạm',
     icon: Users,
     color: '#2563eb',
@@ -79,7 +79,7 @@ export const PERMISSION_MODULES: PermissionModuleInfo[] = [
   },
   {
     id: 'listings',
-    name: 'Tin Đăng & Kiểm Duyệt Sản Phẩm',
+    name: 'Tin đăng & kiểm duyệt sản phẩm',
     description: 'Tạo bài đăng, định giá AI, phê duyệt và gỡ bỏ tin đăng thiết bị đồ cũ',
     icon: FileText,
     color: '#d97706',
@@ -88,7 +88,7 @@ export const PERMISSION_MODULES: PermissionModuleInfo[] = [
   },
   {
     id: 'inspection',
-    name: 'Kiểm Định & Trạm Hub Kỹ Thuật',
+    name: 'Kiểm định & trạm Hub kỹ thuật',
     description: 'Trạm hub trung chuyển, điều phối kiểm định viên, checklist kỹ thuật và biên bản kiểm định',
     icon: CheckCircle2,
     color: '#059669',
@@ -97,7 +97,7 @@ export const PERMISSION_MODULES: PermissionModuleInfo[] = [
   },
   {
     id: 'finance',
-    name: 'Tài Chính, Ví Sàn & Đơn Hàng',
+    name: 'Tài chính, ví sàn & đơn hàng',
     description: 'Duyệt rút tiền, giữ tiền giải ngân (escrow), điểm credit và kiểm soát gian lận',
     icon: Wallet,
     color: '#7c3aed',
@@ -106,7 +106,7 @@ export const PERMISSION_MODULES: PermissionModuleInfo[] = [
   },
   {
     id: 'ai_utils',
-    name: 'Tiện Ích, Trợ Lý AI & Cá Nhân',
+    name: 'Tiện ích, trợ lý AI & cá nhân',
     description: 'Trợ lý AI Chatbot, tải lên hình ảnh đa phương tiện và cập nhật hồ sơ cá nhân',
     icon: Sparkles,
     color: '#0891b2',
@@ -228,7 +228,7 @@ export const PERMISSION_METADATA_VI: Record<string, { name: string; desc: string
     module: 'listings'
   },
   'POST_DELETE': {
-    name: 'Xóa / Ẩn Tin đăng',
+    name: 'Xóa / ẩn tin đăng',
     desc: 'Gỡ bài đăng khỏi sàn giao dịch.',
     module: 'listings'
   },
@@ -280,7 +280,7 @@ export const PERMISSION_METADATA_VI: Record<string, { name: string; desc: string
     module: 'inspection'
   },
   'INSPECTION_ORDER_READ_SELF': {
-    name: 'Xem Đơn Kiểm định của Mình',
+    name: 'Xem đơn kiểm định của Mình',
     desc: 'Kiểm định viên xem các đơn được giao, hoặc người dùng theo dõi đơn của thiết bị mình.',
     module: 'inspection'
   },
@@ -322,7 +322,7 @@ export const PERMISSION_METADATA_VI: Record<string, { name: string; desc: string
     module: 'finance'
   },
   'CREDIT_PURCHASE_SELF': {
-    name: 'Mua Gói Nạp Credit',
+    name: 'Mua gói nạp credit',
     desc: 'Thực hiện thanh toán trực tuyến qua cổng để nạp credit vào tài khoản.',
     module: 'finance'
   },
@@ -367,7 +367,7 @@ interface RoleMeta {
 
 const ROLE_META_MAP: Record<string, RoleMeta> = {
   ADMIN: {
-    title: 'Quản Trị Viên Tối Cao',
+    title: 'Quản trị viên tối cao',
     subtitle: 'Toàn quyền kiểm soát và điều hành toàn bộ nền tảng SecondLife',
     icon: ShieldAlert,
     colorClass: 'text-rose-600',
@@ -375,7 +375,7 @@ const ROLE_META_MAP: Record<string, RoleMeta> = {
     badgeBg: 'bg-rose-50 text-rose-700 border-rose-200'
   },
   STAFF: {
-    title: 'Nhân Viên Vận Hành Sàn',
+    title: 'Nhân viên vận hành sàn',
     subtitle: 'Phê duyệt bài đăng, duyệt rút tiền ví và hỗ trợ người dùng',
     icon: Briefcase,
     colorClass: 'text-indigo-600',
@@ -383,7 +383,7 @@ const ROLE_META_MAP: Record<string, RoleMeta> = {
     badgeBg: 'bg-indigo-50 text-indigo-700 border-indigo-200'
   },
   INSPECTOR: {
-    title: 'Kiểm Định Viên Kỹ Thuật',
+    title: 'Kiểm định viên kỹ thuật',
     subtitle: 'Thao tác checklist kiểm định thiết bị, phát hành biên bản chất lượng',
     icon: Award,
     colorClass: 'text-emerald-600',
@@ -391,7 +391,7 @@ const ROLE_META_MAP: Record<string, RoleMeta> = {
     badgeBg: 'bg-emerald-50 text-emerald-700 border-emerald-200'
   },
   INSPECTION_CENTER: {
-    title: 'Trung Tâm Hub Đối Tác',
+    title: 'Trung tâm Hub đối tác',
     subtitle: 'Quản lý trạm trung chuyển, phân công kiểm định viên tại trạm',
     icon: Building2,
     colorClass: 'text-cyan-600',
@@ -399,7 +399,7 @@ const ROLE_META_MAP: Record<string, RoleMeta> = {
     badgeBg: 'bg-cyan-50 text-cyan-700 border-cyan-200'
   },
   SELLER: {
-    title: 'Người Bán Hàng',
+    title: 'Người bán hàng',
     subtitle: 'Đăng tin bán thiết bị gia dụng, nạp credit và nộp hồ sơ eKYC',
     icon: Store,
     colorClass: 'text-amber-600',
@@ -407,7 +407,7 @@ const ROLE_META_MAP: Record<string, RoleMeta> = {
     badgeBg: 'bg-amber-50 text-amber-700 border-amber-200'
   },
   BUYER: {
-    title: 'Người Mua Hàng',
+    title: 'Người mua hàng',
     subtitle: 'Tìm kiếm, mua hàng, đặt cọc giữ tiền escrow và đánh giá',
     icon: ShoppingBag,
     colorClass: 'text-sky-600',
@@ -695,7 +695,7 @@ export const PermissionsTab: React.FC<PermissionsTabProps> = ({
   const handleDeletePermission = async (permCode: string) => {
     const confirmed = await dialogService.confirm(
       `Bạn có chắc chắn muốn xóa quyền "${permCode}" khỏi hệ thống không? Chỉ có thể xóa quyền chưa được gán vào vai trò nào.`,
-      { title: 'Xác Nhận Xóa Quyền', type: 'warning' }
+      { title: 'Xác nhận xóa quyền', type: 'warning' }
     );
     if (!confirmed) return;
 
@@ -833,7 +833,7 @@ export const PermissionsTab: React.FC<PermissionsTabProps> = ({
               }`}
             >
               <SlidersHorizontal className="w-3.5 h-3.5 text-[#c34c36]" />
-              <span>Ma Trận Quyền Vai Trò</span>
+              <span>Ma trận quyền vai trò</span>
             </button>
             <button
               type="button"
@@ -845,7 +845,7 @@ export const PermissionsTab: React.FC<PermissionsTabProps> = ({
               }`}
             >
               <Layers className="w-3.5 h-3.5 text-[#24263e]" />
-              <span>Từ Điển Quyền Hệ Thống ({permissions.length})</span>
+              <span>Từ điển quyền hệ thống ({permissions.length})</span>
             </button>
           </div>
 
@@ -866,7 +866,7 @@ export const PermissionsTab: React.FC<PermissionsTabProps> = ({
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
           <div className="flex items-center justify-between text-slate-500 text-xs font-bold mb-1">
-            <span>Tổng Vai Trò</span>
+            <span>Tổng vai trò</span>
             <Users className="w-4 h-4 text-[#24263e]" />
           </div>
           <div className="text-2xl font-black text-slate-900">{roles.length}</div>
@@ -875,7 +875,7 @@ export const PermissionsTab: React.FC<PermissionsTabProps> = ({
 
         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
           <div className="flex items-center justify-between text-slate-500 text-xs font-bold mb-1">
-            <span>Tổng Quyền Chức Năng</span>
+            <span>Tổng quyền chức năng</span>
             <ShieldCheck className="w-4 h-4 text-emerald-600" />
           </div>
           <div className="text-2xl font-black text-slate-900">{permissions.length}</div>
@@ -886,7 +886,7 @@ export const PermissionsTab: React.FC<PermissionsTabProps> = ({
 
         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
           <div className="flex items-center justify-between text-slate-500 text-xs font-bold mb-1">
-            <span>Quyền Đang Gán ({selectedRoleCode})</span>
+            <span>Quyền đang gán ({selectedRoleCode})</span>
             <CheckCircle2 className="w-4 h-4 text-blue-600" />
           </div>
           <div className="text-2xl font-black text-slate-900">
@@ -899,7 +899,7 @@ export const PermissionsTab: React.FC<PermissionsTabProps> = ({
 
         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
           <div className="flex items-center justify-between text-slate-500 text-xs font-bold mb-1">
-            <span>Bảo Mật Vai Trò</span>
+            <span>Bảo mật vai trò</span>
             {currentRole?.editable ? (
               <Unlock className="w-4 h-4 text-emerald-600" />
             ) : (
@@ -936,7 +936,7 @@ export const PermissionsTab: React.FC<PermissionsTabProps> = ({
             <div className="flex items-center justify-between pb-1">
               <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
                 <Users className="w-4 h-4 text-[#24263e]" />
-                <span>Danh Sách Vai Trò ({roles.length})</span>
+                <span>Danh sách vai trò ({roles.length})</span>
               </h3>
               <span className="text-[11px] text-slate-400">Chọn để cấu hình</span>
             </div>
@@ -1020,7 +1020,7 @@ export const PermissionsTab: React.FC<PermissionsTabProps> = ({
             <div className="p-3.5 rounded-xl bg-amber-50/70 border border-amber-200/80 text-[11px] text-amber-900 space-y-1">
               <div className="font-bold flex items-center gap-1.5 text-amber-950">
                 <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                <span>Quy tắc An Toàn Phân Quyền (RBAC)</span>
+                <span>Quy tắc an toàn phân quyền (RBAC)</span>
               </div>
               <p className="text-amber-800/90 leading-relaxed">
                 • Vai trò <strong>ADMIN</strong> luôn có 100% quyền hệ thống và được khóa bảo vệ.<br />
@@ -1064,7 +1064,7 @@ export const PermissionsTab: React.FC<PermissionsTabProps> = ({
                   className="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-bold text-slate-700 flex items-center gap-1.5 transition cursor-pointer"
                 >
                   <History className="w-3.5 h-3.5 text-slate-500" />
-                  <span>Nhật Ký</span>
+                  <span>Nhật ký</span>
                 </button>
 
                 <button
@@ -1082,7 +1082,7 @@ export const PermissionsTab: React.FC<PermissionsTabProps> = ({
                   ) : (
                     <Save className="w-3.5 h-3.5" />
                   )}
-                  <span>Lưu Ma Trận Quyền</span>
+                  <span>Lưu ma trận quyền</span>
                 </button>
               </div>
             </div>
@@ -1385,7 +1385,7 @@ export const PermissionsTab: React.FC<PermissionsTabProps> = ({
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
             <div>
               <h3 className="text-sm font-bold text-slate-900 uppercase">
-                Từ Điển & Danh Mục Toàn Bộ Quyền Hệ Thống
+                Từ điển & danh mục toàn bộ quyền hệ thống
               </h3>
               <p className="text-xs text-slate-500">
                 Toàn bộ {permissions.length} mã quyền endpoint đã được đăng ký và chính sách phân bổ cho các vai trò
@@ -1398,7 +1398,7 @@ export const PermissionsTab: React.FC<PermissionsTabProps> = ({
               className="px-3.5 py-1.5 rounded-xl bg-[#c34c36] hover:bg-[#a63f2d] text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer self-start sm:self-auto"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>Thêm Quyền Mới (Custom Permission)</span>
+              <span>Thêm quyền mới (Custom Permission)</span>
             </button>
           </div>
 
@@ -1450,11 +1450,11 @@ export const PermissionsTab: React.FC<PermissionsTabProps> = ({
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-slate-700 text-[11px] font-bold">
                   <th className="py-3 px-4">Mã Quyền (Code)</th>
-                  <th className="py-3 px-4">Tên Chức Năng Tiếng Việt</th>
-                  <th className="py-3 px-4">Chuyên Mục</th>
-                  <th className="py-3 px-4">Mô Tả Chi Tiết</th>
-                  <th className="py-3 px-4">Vai Trò Được Phép Gán</th>
-                  <th className="py-3 px-4 text-right">Thao Tác</th>
+                  <th className="py-3 px-4">Tên chức năng tiếng việt</th>
+                  <th className="py-3 px-4">Chuyên mục</th>
+                  <th className="py-3 px-4">Mô tả chi tiết</th>
+                  <th className="py-3 px-4">Vai trò được phép gán</th>
+                  <th className="py-3 px-4 text-right">Thao tác</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -1551,7 +1551,7 @@ export const PermissionsTab: React.FC<PermissionsTabProps> = ({
                 </div>
                 <div>
                   <h4 className="text-sm font-bold text-slate-900">
-                    Nhật Ký Thay Đổi Quyền: {auditModal.roleCode}
+                    Nhật ký thay đổi quyền: {auditModal.roleCode}
                   </h4>
                   <span className="text-[11px] text-slate-400">
                     Lịch sử phân bổ và thu hồi quyền hạn qua API RBAC
@@ -1638,7 +1638,7 @@ export const PermissionsTab: React.FC<PermissionsTabProps> = ({
           >
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <h4 className="text-sm font-bold text-slate-900">
-                Chỉnh Sửa Thông Tin Quyền: {editingPerm.code}
+                Chỉnh sửa thông tin quyền: {editingPerm.code}
               </h4>
               <button
                 type="button"
@@ -1661,7 +1661,7 @@ export const PermissionsTab: React.FC<PermissionsTabProps> = ({
               </div>
 
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Tên Hiển Thị Chức Năng</label>
+                <label className="font-bold text-slate-700 block mb-1">Tên hiển thị chức năng</label>
                 <input
                   type="text"
                   value={editingPerm.name}
@@ -1672,7 +1672,7 @@ export const PermissionsTab: React.FC<PermissionsTabProps> = ({
               </div>
 
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Mô Tả Quyền Hạn</label>
+                <label className="font-bold text-slate-700 block mb-1">Mô tả quyền hạn</label>
                 <textarea
                   rows={3}
                   value={editingPerm.description || ''}
@@ -1696,7 +1696,7 @@ export const PermissionsTab: React.FC<PermissionsTabProps> = ({
                 className="px-4 py-1.5 rounded-xl bg-[#c34c36] hover:bg-[#a63f2d] text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
               >
                 {isSavingEdit && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                <span>Cập Nhật</span>
+                <span>Cập nhật</span>
               </button>
             </div>
           </form>
@@ -1714,7 +1714,7 @@ export const PermissionsTab: React.FC<PermissionsTabProps> = ({
           >
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <h4 className="text-sm font-bold text-slate-900">
-                Thêm Quyền Chức Năng Mới (Custom Permission)
+                Thêm quyền chức năng mới (Custom Permission)
               </h4>
               <button
                 type="button"
@@ -1747,7 +1747,7 @@ export const PermissionsTab: React.FC<PermissionsTabProps> = ({
 
               <div>
                 <label className="font-bold text-slate-700 block mb-1">
-                  Tên Hiển Thị <span className="text-rose-500">*</span>
+                  Tên hiển thị <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -1760,7 +1760,7 @@ export const PermissionsTab: React.FC<PermissionsTabProps> = ({
               </div>
 
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Mô Tả Chức Năng</label>
+                <label className="font-bold text-slate-700 block mb-1">Mô tả chức năng</label>
                 <textarea
                   rows={2}
                   placeholder="Mô tả quyền hạn này cho phép thực hiện hành động gì..."
@@ -1772,7 +1772,7 @@ export const PermissionsTab: React.FC<PermissionsTabProps> = ({
 
               <div>
                 <label className="font-bold text-slate-700 block mb-1.5">
-                  Các Vai Trò Được Phép Gán Quyền Này:
+                  Các vai trò được phép gán quyền này:
                 </label>
                 <div className="grid grid-cols-2 gap-2 p-2.5 rounded-xl border border-slate-200 bg-slate-50">
                   {roles.map((r) => {
@@ -1814,7 +1814,7 @@ export const PermissionsTab: React.FC<PermissionsTabProps> = ({
                 className="px-4 py-1.5 rounded-xl bg-[#c34c36] hover:bg-[#a63f2d] text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
               >
                 {isCreating && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                <span>Tạo Quyền</span>
+                <span>Tạo quyền</span>
               </button>
             </div>
           </form>

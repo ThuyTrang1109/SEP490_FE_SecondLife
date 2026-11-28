@@ -390,7 +390,7 @@ export const InspectionCenterProfileTab: React.FC<InspectionCenterProfileTabProp
         className: 'custom-center-marker',
         html: `<div style="position: relative; width: 100%; height: 100%;">
           <div style="position: absolute; bottom: 36px; left: 50%; transform: translateX(-50%); background: #c34c36; color: white; padding: 3px 8px; border-radius: 9999px; font-size: 10px; font-weight: 800; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.25); white-space: nowrap;">
-            Cửa Tiếp Nhận Hub
+            Cửa tiếp nhận Hub
           </div>
           <div style="position: absolute; bottom: 5px; left: 50%; box-sizing: border-box; width: 26px; height: 26px; background: #c34c36; border: 3px solid white; border-radius: 50% 50% 50% 0; transform: translateX(-50%) rotate(-45deg); box-shadow: 0 4px 8px rgba(0,0,0,0.35);"></div>
         </div>`,
@@ -566,7 +566,7 @@ export const InspectionCenterProfileTab: React.FC<InspectionCenterProfileTabProp
             <div className="space-y-1.5 min-w-0">
               <div className="flex items-center gap-2.5 flex-wrap">
                 <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight truncate">
-                  {profile?.name || name || 'Trung Tâm Kiểm Định'}
+                  {profile?.name || name || 'Trung tâm kiểm định'}
                 </h2>
                 {profile?.shippingAddressConfigured ? (
                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -622,7 +622,7 @@ export const InspectionCenterProfileTab: React.FC<InspectionCenterProfileTabProp
               ) : (
                 <>
                   <Edit3 className="w-3.5 h-3.5" />
-                  <span>Chỉnh Sửa Thông Tin</span>
+                  <span>Chỉnh sửa thông tin</span>
                 </>
               )}
             </button>
@@ -711,7 +711,7 @@ export const InspectionCenterProfileTab: React.FC<InspectionCenterProfileTabProp
             <div>
               <h3 className="font-black text-sm sm:text-base text-slate-900 flex items-center gap-2">
                 <Building2 className="w-4 h-4 text-[#c34c36]" />
-                <span>{isEditing ? 'Cập Nhật Hồ Sơ & Địa Chỉ Tiếp Nhận' : 'Chi Tiết Hồ Sơ & Địa Chỉ Tiếp Nhận'}</span>
+                <span>{isEditing ? 'Cập nhật hồ sơ & địa chỉ tiếp nhận' : 'Chi tiết hồ sơ & địa chỉ tiếp nhận'}</span>
               </h3>
               <p className="text-[11px] text-slate-500 mt-0.5">
                 {isEditing
@@ -731,13 +731,13 @@ export const InspectionCenterProfileTab: React.FC<InspectionCenterProfileTabProp
             {/* Section 1: Thông Tin Định Danh & Hotline Liên Hệ */}
             <div className="space-y-4">
               <h4 className="text-xs font-black uppercase text-slate-400 tracking-wider flex items-center gap-2">
-                <span>1. Thông Tin Định Danh & Hotline Tiếp Nhận</span>
+                <span>1. Thông tin định danh & hotline tiếp nhận</span>
               </h4>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold text-slate-700">
-                    Tên Trung Tâm Kiểm Định <span className="text-rose-500">*</span>
+                    Tên trung tâm kiểm định <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -755,7 +755,7 @@ export const InspectionCenterProfileTab: React.FC<InspectionCenterProfileTabProp
 
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold text-slate-700">
-                    Số Điện Thoại Hotline Tiếp Nhận <span className="text-rose-500">*</span>
+                    Số điện thoại hotline tiếp nhận <span className="text-rose-500">*</span>
                   </label>
                   <div className="relative">
                     <Phone className="w-3.5 h-3.5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -781,7 +781,7 @@ export const InspectionCenterProfileTab: React.FC<InspectionCenterProfileTabProp
                 <div>
                   <h4 id="center-location-heading" className="text-xs font-black uppercase text-slate-600 tracking-wider flex items-center gap-2">
                     <Navigation className="w-3.5 h-3.5 text-[#c34c36]" />
-                    <span>2. Vị Trí Tiếp Nhận & Địa Chỉ GPS</span>
+                    <span>2. Vị trí tiếp nhận & địa chỉ GPS</span>
                   </h4>
                   <p className="text-[11px] text-slate-500 mt-0.5">
                     {isEditing
@@ -814,7 +814,7 @@ export const InspectionCenterProfileTab: React.FC<InspectionCenterProfileTabProp
                           handleSearchOnMap();
                         }
                       }}
-                      placeholder="Tìm kiếm địa chỉ, tên đường, tòa nhà hoặc địa danh (VD: 1059 Nguyễn Văn Linh, Crescent Plaza hoặc Heart Lake)..."
+                      placeholder="Tìm kiếm địa chỉ, tên đường, tòa nhà hoặc địa danh (VD: 1059 nguyễn văn linh, crescent plaza hoặc Heart Lake)..."
                       className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none transition"
                     />
                   </div>
@@ -829,7 +829,7 @@ export const InspectionCenterProfileTab: React.FC<InspectionCenterProfileTabProp
                     ) : (
                       <LocateFixed className="w-3.5 h-3.5" />
                     )}
-                    <span>Tìm Trên Bản Đồ</span>
+                    <span>Tìm trên bản đồ</span>
                   </button>
                 </div>
               )}
@@ -974,7 +974,7 @@ export const InspectionCenterProfileTab: React.FC<InspectionCenterProfileTabProp
                   }}
                   className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs transition cursor-pointer disabled:opacity-50"
                 >
-                  Hủy Bỏ
+                  Hủy bỏ
                 </button>
 
                 <button
@@ -985,12 +985,12 @@ export const InspectionCenterProfileTab: React.FC<InspectionCenterProfileTabProp
                   {isSaving ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Đang Lưu Hồ Sơ...</span>
+                      <span>Đang lưu hồ sơ...</span>
                     </>
                   ) : (
                     <>
                       <Save className="w-4 h-4" />
-                      <span>Lưu Thông Tin Hồ Sơ & Địa Chỉ</span>
+                      <span>Lưu thông tin hồ sơ & địa chỉ</span>
                     </>
                   )}
                 </button>

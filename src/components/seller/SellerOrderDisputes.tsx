@@ -254,28 +254,28 @@ export function SellerOrderDisputes({ onOpenOrder, onOpenPost, getReasonLabel, l
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-black bg-amber-50 text-amber-800 border border-amber-200">
             <Clock className="w-3 h-3 text-amber-600 animate-pulse" />
-            <span>{lang === 'vi' ? 'Chờ Tiếp Nhận' : 'Pending Review'}</span>
+            <span>{lang === 'vi' ? 'Chờ tiếp nhận' : 'Pending Review'}</span>
           </span>
         );
       case 'IN_REVIEW':
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-black bg-blue-50 text-blue-800 border border-blue-200">
             <Scale className="w-3 h-3 text-blue-600" />
-            <span>{lang === 'vi' ? 'Đang Thẩm Định' : 'In Arbitration'}</span>
+            <span>{lang === 'vi' ? 'Đang thẩm định' : 'In Arbitration'}</span>
           </span>
         );
       case 'CONFIRMED':
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-black bg-emerald-50 text-emerald-800 border border-emerald-200">
             <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-            <span>{lang === 'vi' ? 'Đã Xác Nhận Vi Phạm' : 'Confirmed'}</span>
+            <span>{lang === 'vi' ? 'Đã xác nhận vi phạm' : 'Confirmed'}</span>
           </span>
         );
       case 'DISMISSED':
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-black bg-slate-100 text-slate-600 border border-slate-200">
             <XCircle className="w-3 h-3 text-slate-500" />
-            <span>{lang === 'vi' ? 'Đã Bác Bỏ' : 'Dismissed'}</span>
+            <span>{lang === 'vi' ? 'Đã bác bỏ' : 'Dismissed'}</span>
           </span>
         );
       default:
@@ -611,7 +611,7 @@ export function SellerOrderDisputes({ onOpenOrder, onOpenPost, getReasonLabel, l
                         onClick={() => setTimelineReportId(report.id)}
                         className="w-full py-1.5 px-3 bg-white hover:bg-slate-50 text-[#24263e] border border-slate-300 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer"
                       >
-                        <span>{lang === 'vi' ? 'Xem Toàn Bộ Tiến Trình' : 'View Full Timeline'}</span>
+                        <span>{lang === 'vi' ? 'Xem toàn bộ tiến trình' : 'View Full Timeline'}</span>
                         <ChevronRight className="w-3.5 h-3.5" />
                       </button>
                     </div>
@@ -683,7 +683,7 @@ export function SellerOrderDisputes({ onOpenOrder, onOpenPost, getReasonLabel, l
               <div className="flex items-center gap-2">
                 <Scale className="w-4 h-4 text-[#cea981]" />
                 <h3 className="text-sm font-black text-white">
-                  {lang === 'vi' ? 'Tiến Trình Trọng Tài Khiếu Nại' : 'Dispute Arbitration Timeline'}
+                  {lang === 'vi' ? 'Tiến trình trọng tài khiếu nại' : 'Dispute Arbitration Timeline'}
                 </h3>
               </div>
               <button
@@ -722,7 +722,7 @@ export function SellerOrderDisputes({ onOpenOrder, onOpenPost, getReasonLabel, l
                   {/* Step Timeline */}
                   <div className="space-y-4 pt-2">
                     <h4 className="text-xs font-black text-[#24263e] uppercase tracking-wider">
-                      {lang === 'vi' ? 'Dòng Thời Gian Xử Lý' : 'Processing Timeline'}
+                      {lang === 'vi' ? 'Dòng thời gian xử lý' : 'Processing Timeline'}
                     </h4>
 
                     <div className="space-y-4 pl-2 border-l-2 border-[#c34c36]/40 ml-2">
@@ -732,7 +732,7 @@ export function SellerOrderDisputes({ onOpenOrder, onOpenPost, getReasonLabel, l
                           1
                         </div>
                         <div className="text-xs font-black text-[#24263e]">
-                          {lang === 'vi' ? 'Tiếp Nhận Khiếu Nại & Đóng Băng Escrow' : 'Case Opened & Escrow Frozen'}
+                          {lang === 'vi' ? 'Tiếp nhận khiếu nại & đóng băng Escrow' : 'Case Opened & Escrow Frozen'}
                         </div>
                         <div className="text-[11px] text-slate-500 mt-0.5">
                           {new Date(timelineReport.createdAt).toLocaleString('vi-VN')}
@@ -780,7 +780,7 @@ export function SellerOrderDisputes({ onOpenOrder, onOpenPost, getReasonLabel, l
                           2
                         </div>
                         <div className="text-xs font-black text-[#24263e]">
-                          {lang === 'vi' ? 'Thẩm Định Chứng Từ & Đối Soát Bằng Chứng' : 'Evidence Audit & Review'}
+                          {lang === 'vi' ? 'Thẩm định chứng từ & đối soát bằng chứng' : 'Evidence Audit & Review'}
                         </div>
                         <div className="text-[11px] text-slate-500 mt-0.5">
                           {timelineReport.status === 'OPEN'
@@ -802,7 +802,7 @@ export function SellerOrderDisputes({ onOpenOrder, onOpenPost, getReasonLabel, l
                           3
                         </div>
                         <div className="text-xs font-black text-[#24263e]">
-                          {lang === 'vi' ? 'Phán Quyết Trọng Tài Cuối Cùng' : 'Final Arbitration Decision'}
+                          {lang === 'vi' ? 'Phán quyết trọng tài cuối cùng' : 'Final Arbitration Decision'}
                         </div>
                         {timelineReport.resolvedAt ? (
                           <div className="mt-1.5 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 space-y-1">
@@ -837,7 +837,7 @@ export function SellerOrderDisputes({ onOpenOrder, onOpenPost, getReasonLabel, l
                           </div>
                           <div>
                             <h4 className="font-extrabold text-sm text-indigo-950">
-                              {lang === 'vi' ? 'Tiến Trình Hoàn Trả Hàng Về Cho Người Bán' : 'Return Shipment to Seller'}
+                              {lang === 'vi' ? 'Tiến trình hoàn trả hàng về cho người bán' : 'Return Shipment to Seller'}
                             </h4>
                             <p className="text-[10px] text-slate-500">Đối tác vận chuyển: <strong>Lalamove Logistics</strong></p>
                           </div>

@@ -150,7 +150,7 @@ export const LiveFaceScannerModal: React.FC<LiveFaceScannerModalProps> = ({
             <span>VNPT AI eKYC Face Liveness v3.2.1</span>
           </div>
           <h3 className="text-base sm:text-lg font-black text-white">
-            {lang === 'vi' ? 'Quét Khuôn Mặt Xác Thực Định Danh Người Bán' : 'VNPT eKYC Face Verification'}
+            {lang === 'vi' ? 'Quét khuôn mặt xác thực định danh người bán' : 'VNPT eKYC Face Verification'}
           </h3>
           <p className="text-xs text-slate-400 max-w-md mx-auto">
             {lang === 'vi'

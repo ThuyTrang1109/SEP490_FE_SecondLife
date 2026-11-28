@@ -228,7 +228,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
       inspectionOrderInfo?.sellerContact?.name ||
       inspectionOrderInfo?.sellerName ||
       getOrderSellerName(order) ||
-      'Gian Hàng Verified Seller'
+      'Gian hàng verified Seller'
     ).slice(0, 50);
   }, [sellerPickup, order, inspectionOrderInfo]);
 
@@ -469,13 +469,13 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
                   Tạo vận đơn • Lalamove
                 </h3>
                 <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
-                  {isHubInspection ? 'Chặng 1: Gửi Hub' : isAtHome ? 'Giao Trực Tiếp (Kiểm Định Tại Nhà Đạt)' : 'Giao Thẳng'}
+                  {isHubInspection ? 'Chặng 1: Gửi Hub' : isAtHome ? 'Giao trực tiếp (Kiểm định tại nhà đạt)' : 'Giao thẳng'}
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-1">
                 Mã đơn hàng: <strong className="font-mono text-slate-700">#{order.id.slice(0, 12).toUpperCase()}</strong> •{' '}
                 {isHubInspection
-                  ? 'Lộ trình chuyển kiện hàng đến Trạm Kiểm Định SecondLife Hub (Cước Sàn thanh toán)'
+                  ? 'Lộ trình chuyển kiện hàng đến trạm kiểm định secondLife Hub (Cước Sàn thanh toán)'
                   : isAtHome
                     ? 'Đơn kiểm định tại nhà đã Đạt chuẩn & Khách đã xác nhận mua. Vận chuyển trực tiếp từ Người Bán đến Người Mua qua Lalamove'
                     : 'Vận chuyển trực tiếp từ Người Bán đến Người Mua'}
@@ -547,13 +547,13 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
               <span className="font-extrabold uppercase text-[10px] sm:text-[11px] text-slate-500 tracking-wider flex items-center gap-1.5">
                 <Truck className="w-3.5 h-3.5 text-blue-600" />
                 {isHubInspection
-                  ? 'Lộ trình Chặng 1: Kho người bán ➔ Trạm Kiểm Định SecondLife Hub'
+                  ? 'Lộ trình Chặng 1: Kho người bán ➔ trạm kiểm định secondLife Hub'
                   : isAtHome
                     ? 'Lộ trình giao hàng trực tiếp: Kho người bán ➔ Khách mua hàng'
                     : 'Lộ trình nhận & giao hàng Lalamove'}
               </span>
               <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
-                {isHubInspection ? 'Lalamove Chặng 1' : isAtHome ? 'Lalamove Giao Trực Tiếp' : 'Lalamove Direct'}
+                {isHubInspection ? 'Lalamove chặng 1' : isAtHome ? 'Lalamove giao trực tiếp' : 'Lalamove Direct'}
               </span>
             </div>
 
@@ -566,7 +566,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-bold text-slate-900 text-xs">Kho lấy hàng (Người bán)</span>
                   <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-semibold border border-emerald-200">
-                    {sellerPickup?.address ? 'Kho lấy hàng xác minh' : 'GPS Sẵn Sàng'}
+                    {sellerPickup?.address ? 'Kho lấy hàng xác minh' : 'GPS sẵn sàng'}
                   </span>
                 </div>
                 <div className="text-[11px] font-bold text-slate-800 flex items-center gap-1.5 flex-wrap">
@@ -607,7 +607,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
                     ? 'bg-blue-100 text-blue-800 border-blue-200'
                     : 'bg-emerald-100 text-emerald-800 border-emerald-200'
                     }`}>
-                    {isHubInspection ? '' : 'GPS Người Nhận'}
+                    {isHubInspection ? '' : 'GPS người nhận'}
                   </span>
                 </div>
                 {!isHubInspection && (
@@ -681,7 +681,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
                   Kiểm định tại nhà Đạt chuẩn & Khách đã xác nhận mua
                 </span>
                 <span className="text-[9px] font-black px-2 py-0.2 rounded-full bg-emerald-200 text-emerald-800 border border-emerald-300">
-                  Giao Thẳng
+                  Giao thẳng
                 </span>
               </div>
 
@@ -738,14 +738,14 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
               ) : order.escrowStatus === 'AWAITING_PAYMENT' ? (
                 <>
                   <AlertTriangle className="w-3.5 h-3.5 text-gray-500" />
-                  <span>Chờ Khách Ký Quỹ Escrow</span>
+                  <span>Chờ khách ký quỹ Escrow</span>
                 </>
               ) : (
                 <>
                   <Truck className="w-3.5 h-3.5 text-white" />
                   <span>
                     {isHubInspection
-                      ? 'Xác nhận tạo vận đơn gửi đến Hub (Chặng 1)'
+                      ? 'Xác nhận tạo vận đơn'
                       : isAtHome
                         ? 'Xác nhận tạo vận đơn giao cho khách mua'
                         : 'Xác nhận tạo đơn vận chuyển'}

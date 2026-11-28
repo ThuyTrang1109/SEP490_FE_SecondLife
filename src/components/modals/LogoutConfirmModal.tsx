@@ -63,7 +63,7 @@ export const LogoutConfirmModal: React.FC<LogoutConfirmModalProps> = ({
 
           <div className="space-y-1.5">
             <h3 className="text-lg font-black text-[#24263e] tracking-tight">
-              {lang === 'vi' ? 'Xác Nhận Đăng Xuất' : 'Confirm Logout'}
+              {lang === 'vi' ? 'Xác nhận đăng xuất' : 'Confirm Logout'}
             </h3>
             <p className="text-xs text-gray-500 leading-relaxed max-w-xs mx-auto">
               {lang === 'vi'
@@ -98,7 +98,7 @@ export const LogoutConfirmModal: React.FC<LogoutConfirmModalProps> = ({
               className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 text-white text-xs font-black shadow-md shadow-rose-500/20 transition cursor-pointer flex items-center justify-center gap-1.5"
             >
               <LogOut className="w-3.5 h-3.5" />
-              <span>{lang === 'vi' ? 'Đăng Xuất' : 'Log Out'}</span>
+              <span>{lang === 'vi' ? 'Đăng xuất' : 'Log Out'}</span>
             </button>
           </div>
         </div>

@@ -245,7 +245,7 @@ export function OrderFeeBreakdown({
           <div className="bg-[#faf8f5] rounded-2xl p-4 border border-gray-200 space-y-2.5 text-xs">
             <div className="flex items-center justify-between">
               <div className="font-bold text-[#24263e] uppercase tracking-wider text-[11px]">
-                {lang === 'vi' ? 'Chi Tiết Đơn Hàng Kiểm Định' : 'Inspection Order Summary'}
+                {lang === 'vi' ? 'Chi tiết đơn hàng kiểm định' : 'Inspection Order Summary'}
               </div>
               <span className="px-2 py-0.5 rounded text-[10px] font-black bg-blue-100 text-blue-800">
                 {isAtHome
@@ -253,22 +253,6 @@ export function OrderFeeBreakdown({
                   : (lang === 'vi' ? 'Kiểm định tại Hub' : 'Hub Inspection')}
               </span>
             </div>
-
-            {!isPhase2Paid && (
-              <div className="flex justify-between items-center text-[#24263e]/80">
-                <div className="flex items-center gap-1.5">
-                  <span className="font-medium text-[#24263e]">
-                    {lang === 'vi' ? 'Giá sản phẩm · Chưa thanh toán' : 'Product Price · Unpaid'}:
-                  </span>
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">
-                    {lang === 'vi' ? 'Chưa thanh toán (Giai đoạn 2)' : 'Phase 2 Unpaid'}
-                  </span>
-                </div>
-                <span className="font-semibold text-slate-700">
-                  {formatVND(detailModalOrder.itemPriceVnd || detailInspectionDto?.postPrice || 0)}
-                </span>
-              </div>
-            )}
 
             {/* Base inspection fee */}
             <div className="flex justify-between items-center text-[#24263e]/70">
@@ -524,9 +508,9 @@ export function OrderFeeBreakdown({
             {isInspectionPassed && !isPhase2Paid && (
               <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-xl space-y-1.5 text-xs text-blue-950 mt-2">
                 <div className="font-bold flex items-center justify-between text-blue-900">
-                  <span>{lang === 'vi' ? 'Thanh Toán Mua Tiếp Sản Phẩm (Giai đoạn 2)' : 'Phase 2 Product Purchase Payment'}</span>
+                  <span>{lang === 'vi' ? 'Thanh toán mua tiếp sản phẩm (Giai đoạn 2)' : 'Phase 2 Product Purchase Payment'}</span>
                   <span className="text-[10px] font-extrabold bg-blue-100 text-blue-800 px-2 py-0.5 rounded">
-                    {lang === 'vi' ? 'Chờ Người Mua Thanh Toán' : 'Awaiting Buyer Payment'}
+                    {lang === 'vi' ? 'Chờ người mua thanh toán' : 'Awaiting Buyer Payment'}
                   </span>
                 </div>
                 <div className="flex justify-between text-slate-700 text-[11px]">
@@ -576,12 +560,12 @@ export function OrderFeeBreakdown({
                       <span>{lang === 'vi' ? 'Kết thúc' : 'Inspection Process Ended'}</span>
                       <span className="text-[10px] font-extrabold bg-rose-100 text-rose-800 px-2 py-0.5 rounded">
                         {isInspectionFailed
-                          ? (lang === 'vi' ? 'Không Đạt Chuẩn' : 'Inspection Failed')
+                          ? (lang === 'vi' ? 'Không đạt chuẩn' : 'Inspection Failed')
                           : isInspectionRejected
-                            ? (lang === 'vi' ? 'Từ Chối Mua' : 'Purchase Declined')
+                            ? (lang === 'vi' ? 'Từ chối mua' : 'Purchase Declined')
                             : isPurchaseExpired
-                              ? (lang === 'vi' ? 'Hết Hạn Thanh Toán' : 'Payment Expired')
-                              : (lang === 'vi' ? 'Đã Hủy' : 'Cancelled')}
+                              ? (lang === 'vi' ? 'Hết hạn thanh toán' : 'Payment Expired')
+                              : (lang === 'vi' ? 'Đã hủy' : 'Cancelled')}
                       </span>
                     </div>
                     <p className="text-[11px] text-rose-800/90 leading-relaxed">

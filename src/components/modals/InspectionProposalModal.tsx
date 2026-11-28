@@ -435,7 +435,7 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
             </div>
             <div>
               <h3 className="font-black text-sm sm:text-base leading-tight">
-                {lang === 'vi' ? 'Đề Xuất Kiểm Định Tại Trung Tâm' : 'Center Inspection Proposal'}
+                {lang === 'vi' ? 'Đề xuất kiểm định tại trung tâm' : 'Center Inspection Proposal'}
               </h3>
               <p className="text-[11px] text-blue-200 font-medium">
                 {lang === 'vi' ? 'Thương lượng chi phí kiểm định an toàn 100% qua Escrow Hub' : 'Negotiate inspection fee safely via Escrow Hub'}
@@ -806,7 +806,7 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
             disabled={isSubmitting}
             className="px-4 py-2.5 rounded-xl border border-slate-300 hover:bg-slate-100 text-xs font-bold text-slate-700 transition cursor-pointer"
           >
-            {lang === 'vi' ? 'Hủy Bỏ' : 'Cancel'}
+            {lang === 'vi' ? 'Hủy bỏ' : 'Cancel'}
           </button>
           <button
             type="button"

@@ -83,7 +83,7 @@ export function ChecklistEditorModal({ catalogItems, categories, checklist, pric
             </div>
             <div>
               <h3 className="font-black text-sm sm:text-base text-slate-900">
-                {editingChecklistId ? 'Chỉnh Sửa Bộ Tiêu Chuẩn Kiểm Định' : 'Thiết Lập Bộ Tiêu Chuẩn Kiểm Định Mới'}
+                {editingChecklistId ? 'Chỉnh sửa bộ tiêu chuẩn kiểm định' : 'Thiết lập bộ tiêu chuẩn kiểm định mới'}
               </h3>
               <p className="text-[11px] text-slate-500">
                 {editingChecklistId
@@ -264,7 +264,7 @@ export function ChecklistEditorModal({ catalogItems, categories, checklist, pric
               required
               value={checklistTitle}
               onChange={(e) => setChecklistTitle(e.target.value)}
-              placeholder="VD: Tiêu Chuẩn Kiểm Định Tủ Lạnh & Thiết Bị Làm Lạnh Inverter..."
+              placeholder="VD: Tiêu chuẩn kiểm định tủ lạnh & thiết bị làm lạnh Inverter..."
               className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 text-xs sm:text-sm focus:outline-none focus:border-[#c34c36]"
             />
           </div>
@@ -309,7 +309,7 @@ export function ChecklistEditorModal({ catalogItems, categories, checklist, pric
                 className="px-3 py-1 rounded-lg bg-slate-100 hover:bg-[#c34c36] hover:text-white text-[#c34c36] font-bold transition cursor-pointer flex items-center gap-1 text-[11px]"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>Thêm Hạng Mục</span>
+                <span>Thêm hạng mục</span>
               </button>
             </div>
 
@@ -365,7 +365,7 @@ export function ChecklistEditorModal({ catalogItems, categories, checklist, pric
                       ) : (
                         <Square className="w-3.5 h-3.5 text-slate-400" />
                       )}
-                      <span>{item.mandatory ? 'Bắt Buộc Đạt' : 'Tùy Chọn'}</span>
+                      <span>{item.mandatory ? 'Bắt buộc đạt' : 'Tùy chọn'}</span>
                     </label>
 
                     {/* Move Up / Down */}
@@ -489,7 +489,7 @@ export function ChecklistEditorModal({ catalogItems, categories, checklist, pric
               ) : (
                 <>
                   <FileCheck className="w-4 h-4 text-emerald-400" />
-                  <span>{editingChecklistId ? 'Lưu Thay Đổi' : 'Lưu Bộ Tiêu Chuẩn'}</span>
+                  <span>{editingChecklistId ? 'Lưu thay đổi' : 'Lưu bộ tiêu chuẩn'}</span>
                 </>
               )}
             </button>

@@ -26,7 +26,7 @@ export function OrderDetailCertificate({
               </div>
               <div>
                 <h4 className="font-bold text-sm text-[#24263e]">
-                  Biên Bản Giám Định Xác Thực #{detailModalOrder.inspectionReport.id}
+                  Biên bản giám định xác thực #{detailModalOrder.inspectionReport.id}
                 </h4>
                 <p className="text-xs text-[#24263e]/70">
                   {detailModalOrder.inspectionReport.centerName} • {detailModalOrder.inspectionReport.inspectorName}
@@ -39,7 +39,7 @@ export function OrderDetailCertificate({
                 {detailModalOrder.inspectionReport.verdict === 'PASS' ? 'KẾT QUẢ: ĐẠT CHUẨN' : 'KHÔNG ĐẠT'}
               </span>
               <span className="px-2.5 py-1 rounded-full text-xs font-mono font-bold bg-[#FFFFFF] text-[#24263e] border border-gray-200">
-                Mã Tem: {detailModalOrder.inspectionReport.tamperSealId}
+                Mã tem: {detailModalOrder.inspectionReport.tamperSealId}
               </span>
               <button
                 type="button"
@@ -51,7 +51,7 @@ export function OrderDetailCertificate({
                 title="Quét và tra cứu chứng thực tem từ Backend SecondLife"
               >
                 <ShieldCheck className="w-3.5 h-3.5" />
-                <span>Xác Thực Tem (BE)</span>
+                <span>Xác thực tem (BE)</span>
               </button>
               <button
                 type="button"

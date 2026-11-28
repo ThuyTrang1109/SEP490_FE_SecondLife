@@ -346,7 +346,7 @@ export const WalletHistoryPanel: React.FC<WalletHistoryPanelProps> = ({
 
       if (matchingPurchase) {
         isPackage = true;
-        title = `Mua Gói ${matchingPurchase.packageName}`;
+        title = `Mua gói ${matchingPurchase.packageName}`;
         const rightsArr: string[] = [];
         if (matchingPurchase.postCredits) rightsArr.push(`+${matchingPurchase.postCredits} tin đăng`);
         if (matchingPurchase.chatCredits) rightsArr.push(`+${matchingPurchase.chatCredits} chat AI`);
@@ -362,21 +362,21 @@ export const WalletHistoryPanel: React.FC<WalletHistoryPanelProps> = ({
           tx.description?.toLowerCase().includes('quyền sử dụng'))
       ) {
         isPackage = true;
-        title = 'Mua Gói Quyền Sử Dụng Dịch Vụ';
+        title = 'Mua gói quyền sử dụng dịch vụ';
         rightsBadge = 'Lượt đăng tin & tính năng AI';
         purpose = 'Trừ tiền ví để mua gói quyền sử dụng lượt đăng tin và tính năng AI SecondLife.';
       } else if (tx.type === 'DEPOSIT') {
-        title = 'Nạp Tiền Vào Ví (VietQR)';
+        title = 'Nạp tiền vào ví (VietQR)';
         rightsBadge = 'Nạp qua VietQR SePay';
         purpose = 'Nạp tiền tự động qua cổng VietQR SePay, tiền đã được cộng trực tiếp vào số dư ví khả dụng.';
       } else if (tx.type === 'EARNING') {
-        title = 'Nhận Tiền Bán Hàng (Escrow)';
+        title = 'Nhận tiền bán hàng (Escrow)';
         rightsBadge = tx.referenceId ? `Đơn hàng #${tx.referenceId.slice(0, 8).toUpperCase()}` : 'Giải ngân Escrow';
         purpose = tx.referenceId
           ? `Người mua đã xác nhận nhận hàng cho đơn #${tx.referenceId.slice(0, 8).toUpperCase()}, Quỹ Escrow giải ngân tiền về ví.`
           : 'Quỹ Escrow giải ngân tiền bán hàng vào ví thành công.';
       } else if (tx.type === 'REFUND') {
-        title = 'Hoàn Tiền Vào Ví';
+        title = 'Hoàn tiền vào ví';
         rightsBadge = tx.referenceType === 'WITHDRAWAL' ? 'Hoàn tiền rút' : 'Hoàn tiền bảo lãnh';
         purpose =
           tx.referenceType === 'WITHDRAWAL'
@@ -385,7 +385,7 @@ export const WalletHistoryPanel: React.FC<WalletHistoryPanelProps> = ({
             ? `Hoàn tiền bảo lãnh cho đơn hàng #${tx.referenceId.slice(0, 8).toUpperCase()} theo chính sách giao dịch an toàn.`
             : 'Hoàn trả tiền vào ví theo chính sách hoàn trả của SecondLife.';
       } else if (tx.type === 'WITHDRAW') {
-        title = 'Rút Tiền Về Ngân Hàng';
+        title = 'Rút tiền về ngân hàng';
         rightsBadge = 'Rút tiền tài khoản';
         purpose = 'Khấu trừ tiền ví để thực hiện lệnh chuyển khoản rút tiền về tài khoản ngân hàng của bạn.';
       } else if (tx.type === 'SHIPPING_REIMBURSE') {
@@ -393,13 +393,13 @@ export const WalletHistoryPanel: React.FC<WalletHistoryPanelProps> = ({
         rightsBadge = tx.referenceId ? `Vận đơn #${tx.referenceId.slice(0, 8).toUpperCase()}` : 'Mô phỏng Sandbox';
         purpose = 'Cộng hoàn ứng cước mô phỏng vào ví SecondLife.';
       } else if (tx.type === 'RETURN_SHIPPING_FEE') {
-        title = 'Phí Vận Chuyển Hoàn Hàng';
+        title = 'Phí vận chuyển hoàn hàng';
         rightsBadge = tx.referenceId ? `Vận đơn #${tx.referenceId.slice(0, 8).toUpperCase()}` : 'Phí hoàn hàng';
         purpose = tx.referenceId
           ? `Trừ số dư ví để thanh toán cước hoàn của vận đơn #${tx.referenceId.slice(0, 8).toUpperCase()}.`
           : 'Khấu trừ chi phí vận chuyển chiều hoàn hàng.';
       } else if (tx.type === 'PAYMENT') {
-        title = 'Thanh Toán Đơn Hàng';
+        title = 'Thanh toán đơn hàng';
         rightsBadge = tx.referenceId ? `Đơn #${tx.referenceId.slice(0, 8).toUpperCase()}` : 'Thanh toán ví';
         purpose = tx.referenceId
           ? `Trừ tiền ví thanh toán cho đơn hàng #${tx.referenceId.slice(0, 8).toUpperCase()}, tiền được tạm giữ trong Quỹ Escrow an toàn.`
@@ -779,7 +779,7 @@ export const WalletHistoryPanel: React.FC<WalletHistoryPanelProps> = ({
                   </div>
                   <div>
                     <h4 className="text-sm sm:text-base font-black text-slate-900 leading-tight">
-                      Chi Tiết Giao Dịch Ví
+                      Chi tiết giao dịch ví
                     </h4>
                     <span className="text-[11px] text-slate-500 font-medium">
                       {modalInfo.title} • Mã #{detailModalTx.id.slice(0, 8).toUpperCase()}
@@ -853,21 +853,21 @@ export const WalletHistoryPanel: React.FC<WalletHistoryPanelProps> = ({
                         <div className="flex items-center gap-2">
                           <Sparkles className="w-4 h-4 text-purple-600 shrink-0" />
                           <span className="font-black text-slate-900 text-sm">
-                            Gói Dịch Vụ: {modalInfo.matchingPurchase.packageName}
+                            Gói dịch vụ: {modalInfo.matchingPurchase.packageName}
                           </span>
                           <span className="text-[10px] px-2 py-0.5 rounded-md bg-purple-100 text-purple-800 font-mono font-bold">
                             v{modalInfo.matchingPurchase.packageVersion}
                           </span>
                         </div>
                         <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
-                          Đã Kích Hoạt
+                          Đã kích hoạt
                         </span>
                       </div>
 
                       {/* Chi tiết 3 quyền lợi */}
                       <div className="grid grid-cols-3 gap-2 text-center">
                         <div className="p-2.5 bg-white rounded-xl border border-purple-100 shadow-2xs">
-                          <span className="block text-[10px] text-slate-500 font-bold mb-0.5">Tin Đăng</span>
+                          <span className="block text-[10px] text-slate-500 font-bold mb-0.5">Tin đăng</span>
                           <span className="font-mono font-black text-sm sm:text-base text-purple-700">
                             +{modalInfo.matchingPurchase.postCredits}
                           </span>
@@ -879,7 +879,7 @@ export const WalletHistoryPanel: React.FC<WalletHistoryPanelProps> = ({
                           </span>
                         </div>
                         <div className="p-2.5 bg-white rounded-xl border border-purple-100 shadow-2xs">
-                          <span className="block text-[10px] text-slate-500 font-bold mb-0.5">Định Giá AI</span>
+                          <span className="block text-[10px] text-slate-500 font-bold mb-0.5">Định giá AI</span>
                           <span className="font-mono font-black text-sm sm:text-base text-purple-700">
                             +{modalInfo.matchingPurchase.valuationCredits}
                           </span>
@@ -997,7 +997,7 @@ export const WalletHistoryPanel: React.FC<WalletHistoryPanelProps> = ({
                       onClick={() => setDetailModalTx(null)}
                       className="w-full py-2.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-black text-xs sm:text-sm transition cursor-pointer shadow-sm"
                     >
-                      Đóng Chi Tiết
+                      Đóng chi tiết
                     </button>
                   </div>
                 </>

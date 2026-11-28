@@ -805,12 +805,12 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
           ? (isSeller ? (vi ? 'Đã đề xuất lịch • Chờ Hub duyệt' : 'Visit proposed • Awaiting Hub') : (vi ? 'Chờ Hub duyệt lịch' : 'Awaiting Hub approval'))
           : hasApptConfirmed
             ? (hasInsp
-              ? (vi ? (isSeller ? 'Đã phân công kỹ thuật viên' : 'Đã phân công kỹ thuật viên • Chờ Khảo Sát') : 'Inspector Assigned')
-              : (vi ? 'Đã Chốt Lịch • Chờ Giao KTV' : 'Visit Confirmed • Awaiting Dispatch'))
+              ? (vi ? (isSeller ? 'Đã phân công kỹ thuật viên' : 'Đã phân công kỹ thuật viên • Chờ khảo sát') : 'Inspector Assigned')
+              : (vi ? 'Đã chốt lịch • Chờ giao KTV' : 'Visit Confirmed • Awaiting Dispatch'))
             : (hasNoAppt
               ? (isSeller ? (vi ? 'Chờ bạn hẹn lịch đón KTV' : 'Awaiting your schedule') : (vi ? 'Chờ người bán hẹn lịch đón KTV' : 'Awaiting seller schedule'))
               : (hasInsp
-                ? (vi ? (isSeller ? 'Đã phân công kỹ thuật viên' : 'Đã phân công kỹ thuật viên • Chờ Khảo Sát') : 'Inspector Assigned')
+                ? (vi ? (isSeller ? 'Đã phân công kỹ thuật viên' : 'Đã phân công kỹ thuật viên • Chờ khảo sát') : 'Inspector Assigned')
                 : (vi ? 'Đã phân công kỹ thuật viên' : 'Technician Dispatched'))))
       : (vi ? 'Đã thu đủ phí' : 'Fees collected'),
     DISPATCHED: isAtHome
@@ -820,22 +820,22 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
           ? (isSeller ? (vi ? 'Đã đề xuất lịch • Chờ Hub duyệt' : 'Visit proposed • Awaiting Hub') : (vi ? 'Chờ Hub duyệt lịch' : 'Awaiting Hub approval'))
           : hasApptConfirmed
             ? (hasInsp
-              ? (vi ? (isSeller ? 'Đã phân công kỹ thuật viên' : 'Đã phân công kỹ thuật viên • Chờ Khảo Sát') : 'Inspector Assigned')
-              : (vi ? 'Đã Chốt Lịch • Chờ giao kỹ thuật viên' : 'Visit Confirmed • Awaiting Dispatch'))
+              ? (vi ? (isSeller ? 'Đã phân công kỹ thuật viên' : 'Đã phân công kỹ thuật viên • Chờ khảo sát') : 'Inspector Assigned')
+              : (vi ? 'Đã chốt lịch • Chờ giao kỹ thuật viên' : 'Visit Confirmed • Awaiting Dispatch'))
             : (hasNoAppt
               ? (isSeller ? (vi ? 'Chờ bạn hẹn lịch đón KTV' : 'Awaiting your schedule') : (vi ? 'Chờ người bán hẹn lịch đón KTV' : 'Awaiting seller schedule'))
               : (hasInsp
-                ? (vi ? (isSeller ? 'Đã phân công kỹ thuật viên' : 'Đã phân công kỹ thuật viên • Chờ Khảo Sát') : 'Inspector Assigned')
+                ? (vi ? (isSeller ? 'Đã phân công kỹ thuật viên' : 'Đã phân công kỹ thuật viên • Chờ khảo sát') : 'Inspector Assigned')
                 : (vi ? 'Đã điều phối KTV' : 'Technician Dispatched'))))
       : (vi ? 'Đã điều phối vận chuyển' : 'Dispatched'),
     SCHEDULED: isAtHome
       ? (hasApptConfirmed
         ? (hasInsp
-          ? (vi ? (isSeller ? 'Đã phân công kỹ thuật viên' : 'Đã phân công kỹ thuật viên • Chờ Khảo Sát') : 'Inspector Assigned')
+          ? (vi ? (isSeller ? 'Đã phân công kỹ thuật viên' : 'Đã phân công kỹ thuật viên • Chờ khảo sát') : 'Inspector Assigned')
           : (vi ? 'Đã chốt lịch kiểm định' : 'Schedule Confirmed'))
         : (vi ? 'Đã xếp lịch kiểm định' : 'Inspection Scheduled'))
       : (vi ? 'Đã xếp lịch kiểm định' : 'Inspection Scheduled'),
-    ASSIGNED: vi ? (isSeller ? 'Đã phân công kỹ thuật viên' : 'Đã phân công kỹ thuật viên • Chờ Khảo Sát') : 'Inspector Assigned',
+    ASSIGNED: vi ? (isSeller ? 'Đã phân công kỹ thuật viên' : 'Đã phân công kỹ thuật viên • Chờ khảo sát') : 'Inspector Assigned',
     DISPATCHED_TO_CENTER: vi ? 'Đang giao đến Hub' : 'Shipping to Hub',
     WAITING_INSPECTION: vi ? 'Chờ kiểm định' : 'Awaiting Inspection',
     INSPECTION_IN_PROGRESS: vi ? 'Đang kiểm định' : 'Inspection in Progress',
@@ -1385,7 +1385,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                   className="w-full py-2.5 px-4 bg-slate-200 text-slate-500 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 border border-slate-300 cursor-not-allowed"
                 >
                   <AlertCircle className="w-4 h-4 text-slate-400" />
-                  <span>{lang === 'vi' ? 'Đã Hết Hạn Đóng Phí Kiểm Định' : 'Payment Deadline Expired'}</span>
+                  <span>{lang === 'vi' ? 'Đã hết hạn đóng phí kiểm định' : 'Payment Deadline Expired'}</span>
                 </button>
               ) : (
                 <button
@@ -1519,14 +1519,14 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                     <Calendar className="w-4 h-4 text-amber-600 shrink-0" />
                     <span>
                       {isSeller
-                        ? (lang === 'vi' ? 'Chờ Bạn Hẹn Lịch Đón KTV' : 'Awaiting Your Schedule')
-                        : (lang === 'vi' ? 'Chờ Người Bán Hẹn Lịch Đón KTV' : 'Awaiting Seller Schedule')}
+                        ? (lang === 'vi' ? 'Chờ bạn hẹn lịch đón KTV' : 'Awaiting Your Schedule')
+                        : (lang === 'vi' ? 'Chờ người bán hẹn lịch đón KTV' : 'Awaiting Seller Schedule')}
                     </span>
                   </div>
                   <p className="text-[11px] text-amber-800 leading-relaxed">
                     {isSeller
                       ? (lang === 'vi'
-                        ? 'Khách mua đã đăng ký gói kiểm định tận nơi. Vui lòng bấm nút "Hẹn Lịch Đón KTV" bên dưới để chọn ngày giờ làm việc trong khung giờ hành chính (08:00 - 12:00 hoặc 13:00 - 17:00). Trung tâm SecondLife sẽ nhận thông tin để điều phối Kỹ thuật viên phù hợp.'
+                        ? 'Khách mua đã đăng ký gói kiểm định tận nơi. Vui lòng bấm nút "Hẹn lịch đón KTV" bên dưới để chọn ngày giờ làm việc trong khung giờ hành chính (08:00 - 12:00 hoặc 13:00 - 17:00). Trung tâm SecondLife sẽ nhận thông tin để điều phối Kỹ thuật viên phù hợp.'
                         : 'Buyer requested on-site inspection. Please click "Schedule Visit" below to choose an appointment slot.')
                       : (lang === 'vi'
                         ? 'Hai bên đã nộp đủ phí kiểm định giai đoạn 1. Đang chờ người bán chọn ngày giờ làm việc để Kỹ thuật viên SecondLife đến tận nhà kiểm định thiết bị.'
@@ -1541,7 +1541,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                       className="w-full py-2.5 px-4 bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 hover:from-amber-700 hover:to-orange-700 text-white rounded-xl font-bold text-xs shadow-md transition flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99]"
                     >
                       <Calendar className="w-4 h-4" />
-                      <span>{lang === 'vi' ? 'Hẹn Lịch Đón KTV' : 'Schedule Inspector Visit'}</span>
+                      <span>{lang === 'vi' ? 'Hẹn lịch đón KTV' : 'Schedule Inspector Visit'}</span>
                     </button>
                   )}
                 </div>
@@ -1577,7 +1577,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                       className="w-full py-2 px-3 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-xs shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
                     >
                       <Calendar className="w-3.5 h-3.5" />
-                      <span>{lang === 'vi' ? 'Hẹn Lại Lịch Khác' : 'Reschedule'}</span>
+                      <span>{lang === 'vi' ? 'Hẹn lại lịch khác' : 'Reschedule'}</span>
                     </button>
                   )}
                 </div>
@@ -1588,7 +1588,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                     <span>
                       {hasInsp
                         ? (lang === 'vi' ? (isSeller ? 'Đã phân công kỹ thuật viên • KTV sẽ đến kiểm định tận nhà' : 'Đã phân công kỹ thuật viên • Chờ khảo sát') : 'Inspector Assigned')
-                        : (lang === 'vi' ? 'Đã Chốt Lịch • Chờ Giao KTV' : 'Visit Confirmed • Awaiting Dispatch')}
+                        : (lang === 'vi' ? 'Đã chốt lịch • Chờ giao KTV' : 'Visit Confirmed • Awaiting Dispatch')}
                     </span>
                   </div>
                 </div>
@@ -1797,8 +1797,8 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                     <Truck className="w-4 h-4 text-emerald-600 shrink-0" />
                     <span>
                       {isSeller
-                        ? (lang === 'vi' ? 'Chặng 2: Hub Giao Người Mua (Đã Duyệt Mua)' : 'Leg 2: Hub to Buyer (Purchase Confirmed)')
-                        : (lang === 'vi' ? 'Chặng 2: Đã Duyệt Mua • Chờ Hub Giao Hàng' : 'Leg 2: Purchase Confirmed • Hub Delivering')}
+                        ? (lang === 'vi' ? 'Chặng 2: Hub giao người mua (Đã duyệt mua)' : 'Leg 2: Hub to Buyer (Purchase Confirmed)')
+                        : (lang === 'vi' ? 'Chặng 2: Đã duyệt mua • Chờ Hub giao hàng' : 'Leg 2: Purchase Confirmed • Hub Delivering')}
                     </span>
                   </div>
                   {buyerShipment?.orderCode && (
@@ -2031,7 +2031,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                   className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-orange-600 to-[#c34c36] hover:opacity-95 text-white text-xs font-black shadow-xs cursor-pointer flex items-center gap-1 disabled:opacity-50"
                 >
                   {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-                  <span>{isPaymentDeadlinePassed ? (lang === 'vi' ? 'Đã Hết Hạn' : 'Expired') : (lang === 'vi' ? 'Xác nhận thanh toán' : 'Confirm Payment')}</span>
+                  <span>{isPaymentDeadlinePassed ? (lang === 'vi' ? 'Đã hết hạn' : 'Expired') : (lang === 'vi' ? 'Xác nhận thanh toán' : 'Confirm Payment')}</span>
                 </button>
               </div>
             </div>

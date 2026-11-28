@@ -19,7 +19,7 @@ export function ChecklistDetailsModal({ viewingChecklist, checklist }: Props) {
             </div>
             <div>
               <h3 className="font-black text-sm sm:text-base text-slate-900">
-                Hồ Sơ Tiêu Chuẩn Kiểm Định Kỹ Thuật
+                Hồ sơ tiêu chuẩn kiểm định kỹ thuật
               </h3>
               <div className="flex items-center gap-2 mt-0.5">
                 <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-bold text-[10px]">
@@ -87,7 +87,7 @@ export function ChecklistDetailsModal({ viewingChecklist, checklist }: Props) {
                         : 'bg-slate-100 text-slate-600'
                         }`}
                     >
-                      {item.mandatory !== false ? 'Bắt Buộc' : 'Tùy Chọn'}
+                      {item.mandatory !== false ? 'Bắt buộc' : 'Tùy chọn'}
                     </span>
                   </div>
                   {(item.criteriaDescription || (item as any).description) && (
@@ -111,7 +111,7 @@ export function ChecklistDetailsModal({ viewingChecklist, checklist }: Props) {
             className="px-3.5 py-2 border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50 font-bold transition cursor-pointer flex items-center gap-1.5"
           >
             <Copy className="w-3.5 h-3.5" />
-            <span>Nhân Bản Mẫu Này</span>
+            <span>Nhân bản mẫu này</span>
           </button>
 
           <div className="flex items-center gap-2">
@@ -124,7 +124,7 @@ export function ChecklistDetailsModal({ viewingChecklist, checklist }: Props) {
               className="px-4 py-2 bg-[#24263e] hover:bg-black text-white rounded-xl font-bold transition cursor-pointer flex items-center gap-1.5"
             >
               <Edit3 className="w-3.5 h-3.5 text-amber-400" />
-              <span>Chỉnh Sửa Bộ Này</span>
+              <span>Chỉnh sửa bộ này</span>
             </button>
             <button
               type="button"

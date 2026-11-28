@@ -393,7 +393,7 @@ export function CenterWalletTab({ lang: _lang = 'vi', onNavigateToOrder }: Cente
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-lg sm:text-xl font-black text-[#24263e] tracking-tight uppercase">
-                Ví Trung Tâm Kiểm Định
+                Ví trung tâm kiểm định
               </h2>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-emerald-100 text-emerald-800 border border-emerald-200">
                 Hub Active
@@ -1070,7 +1070,7 @@ export function CenterWalletTab({ lang: _lang = 'vi', onNavigateToOrder }: Cente
                 </div>
                 <div>
                   <h3 className="font-black text-sm text-slate-900 uppercase">
-                    Chi Tiết Giao Dịch Ví
+                    Chi tiết giao dịch ví
                   </h3>
                   <p className="text-[11px] text-slate-500 font-mono">
                     ID: {detailModalTx.id}

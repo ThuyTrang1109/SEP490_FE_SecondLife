@@ -205,7 +205,7 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
               <Wallet className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-black text-base text-[#24263e]">Rút Tiền Về Ngân Hàng</h3>
+              <h3 className="font-black text-base text-[#24263e]">Rút tiền về ngân hàng</h3>
               <p className="text-[11px] text-slate-500">Chuyển tiền từ ví SecondLife về tài khoản cá nhân</p>
             </div>
           </div>
@@ -229,7 +229,7 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
             }`}
           >
             <ArrowUpRight className="w-3.5 h-3.5 text-[#c34c36]" />
-            <span>Tạo Lệnh Rút Tiền</span>
+            <span>Tạo lệnh rút tiền</span>
           </button>
           <button
             type="button"
@@ -241,7 +241,7 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
             }`}
           >
             <History className="w-3.5 h-3.5 text-blue-600" />
-            <span>Lịch Sử Rút Tiền</span>
+            <span>Lịch sử rút tiền</span>
           </button>
         </div>
 
@@ -402,7 +402,7 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
                 onClick={onClose}
                 className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 font-bold text-xs cursor-pointer"
               >
-                Hủy Bỏ
+                Hủy bỏ
               </button>
               <button
                 type="submit"
@@ -410,7 +410,7 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
                 className="px-5 py-2.5 bg-[#24263e] hover:bg-[#1a1c2e] text-white rounded-xl font-black text-xs shadow-md transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
               >
                 {isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                <span>Gửi Yêu Cầu Rút Tiền</span>
+                <span>Gửi yêu cầu rút tiền</span>
               </button>
             </div>
           </form>

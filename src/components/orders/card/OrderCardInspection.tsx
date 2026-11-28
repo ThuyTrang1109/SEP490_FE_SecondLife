@@ -176,7 +176,7 @@ export function OrderCardInspection({
                     <div className="flex items-center gap-2">
                       <span className={`px-2.5 py-0.5 rounded-md text-[11px] font-black uppercase tracking-wider flex items-center gap-1 shadow-2xs ${isPurchaseRejected ? 'bg-rose-600 text-white' : isPurchaseAccepted ? 'bg-emerald-700 text-white' : isInspPassed ? 'bg-emerald-600 text-white' : isInspFailed ? 'bg-rose-600 text-white' : isRejected ? 'bg-rose-600 text-white' : isOrderCountered ? 'bg-orange-600 text-white' : isArrived ? 'bg-emerald-600 text-white' : isApptConfirmed ? 'bg-emerald-700 text-white' : 'bg-amber-600 text-white'}`}>
                         {isPurchaseRejected ? <XCircle className="w-3.5 h-3.5" /> : isPurchaseAccepted || isInspPassed ? <CheckCircle2 className="w-3.5 h-3.5" /> : isInspFailed || isRejected ? <AlertCircle className="w-3.5 h-3.5" /> : isOrderCountered ? <CalendarSync className="w-3.5 h-3.5" /> : isApptConfirmed ? <CalendarCheck className="w-3.5 h-3.5" /> : <Calendar className="w-3.5 h-3.5" />}
-                        <span>{isPurchaseRejected ? (lang === 'vi' ? 'Kiểm Định Tận Nhà (Người mua từ chối)' : 'At-Home Inspection (Buyer Declined)') : isInspPassed || isPurchaseAccepted ? (lang === 'vi' ? 'Kiểm Định Tận Nhà (Đạt Chuẩn)' : 'At-Home Inspection (Passed)') : isInspFailed ? (lang === 'vi' ? 'Kiểm Định Tận Nhà (Không Đạt)' : 'At-Home Inspection (Failed)') : (lang === 'vi' ? 'Kiểm Định Tận Nhà (KTV Đến Nhà)' : 'At-Home Inspection (Technician Visit)')}</span>
+                        <span>{isPurchaseRejected ? (lang === 'vi' ? 'Kiểm định tận nhà (Người mua từ chối)' : 'At-Home Inspection (Buyer Declined)') : isInspPassed || isPurchaseAccepted ? (lang === 'vi' ? 'Kiểm định tận nhà (Đạt Chuẩn)' : 'At-Home Inspection (Passed)') : isInspFailed ? (lang === 'vi' ? 'Kiểm định tận nhà (Không Đạt)' : 'At-Home Inspection (Failed)') : (lang === 'vi' ? 'Kiểm định tận nhà (KTV đến nhà)' : 'At-Home Inspection (Technician Visit)')}</span>
                       </span>
                       <span className={`text-xs font-bold ${isPurchaseRejected ? 'text-rose-700 font-black' : isPurchaseAccepted || isInspPassed ? 'text-emerald-800 font-black' : isInspFailed ? 'text-rose-700 font-black' : isRejected ? 'text-rose-700' : isOrderCountered ? 'text-orange-800' : missedAppointment ? 'text-rose-700 font-black' : isArrived ? 'text-emerald-800 font-black' : isApptConfirmed ? 'text-emerald-800 font-extrabold' : 'text-amber-900'}`}>
                         {isCompletedOrReleased
@@ -192,7 +192,7 @@ export function OrderCardInspection({
                                 : isInspFailed
                                   ? (lang === 'vi' ? 'KTV đã hoàn tất kiểm định • Không đạt chuẩn' : 'Technician completed inspection • Standard Not Met')
                                   : isWaitingSellerApproval
-                                    ? (lang === 'vi' ? 'Yêu Cầu Kiểm Định Mới • Chờ Bạn Xác Nhận' : 'New Inspection Request • Waiting Seller Approval')
+                                    ? (lang === 'vi' ? 'Yêu cầu kiểm định mới • Chờ bạn xác nhận' : 'New Inspection Request • Waiting Seller Approval')
                                     : isWaitingBuyerApproval
                                       ? (lang === 'vi' ? 'Đã gửi đề xuất lại • Chờ người mua phản hồi' : 'Counter-proposal sent • Awaiting buyer response')
                                       : isWaitingFeePayment
@@ -227,7 +227,7 @@ export function OrderCardInspection({
                         <strong>Lý do từ chối:</strong> "{rejectionInfo?.reason || (ord as any).appointmentRejectionReason || (savedAppointment as any)?.rejectionReason || 'KTV đã kín lịch trong khung giờ này, vui lòng chọn ca khác.'}"
                       </div>
                       <p className="text-[11px] text-rose-700">
-                        Vui lòng bấm nút <strong>"Đặt Lại Lịch Hẹn KTV"</strong> bên dưới để chọn lại ngày giờ hẹn khác phù hợp hơn.
+                        Vui lòng bấm nút <strong>"Đặt lại lịch hẹn KTV"</strong> bên dưới để chọn lại ngày giờ hẹn khác phù hợp hơn.
                       </p>
                     </div>
                   )}
@@ -304,7 +304,7 @@ export function OrderCardInspection({
                                   year: 'numeric',
                                 })
                                 : 'Theo đề xuất của Trung tâm'}
-                              {effectiveCounterShift ? ` (${effectiveCounterShift === 'MORNING' ? 'Ca Sáng: 08:00 - 12:00' : 'Ca Chiều: 13:00 - 17:00'})` : ''}
+                              {effectiveCounterShift ? ` (${effectiveCounterShift === 'MORNING' ? 'Ca sáng: 08:00 - 12:00' : 'Ca chiều: 13:00 - 17:00'})` : ''}
                             </span>
                           </div>
                           {effectiveCounterNote && (
@@ -335,7 +335,7 @@ export function OrderCardInspection({
                             className="py-2 px-3 bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 rounded-lg font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
                           >
                             <Calendar className="w-3.5 h-3.5" />
-                            <span>Hẹn Lại Lịch Khác</span>
+                            <span>Hẹn lại lịch khác</span>
                           </button>
                         </div>
                       </div>
@@ -344,7 +344,7 @@ export function OrderCardInspection({
                     <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-[11px] text-rose-900 leading-relaxed">
                       <strong>{lang === 'vi' ? 'Lưu ý người bán:' : 'Seller note:'}</strong>{' '}
                       {lang === 'vi'
-                        ? 'Trung tâm SecondLife đã từ chối lịch hẹn trước đó. Vui lòng bấm nút "Đặt Lại Lịch Hẹn KTV" bên dưới để chọn ca hẹn mới phù hợp hơn!'
+                        ? 'Trung tâm SecondLife đã từ chối lịch hẹn trước đó. Vui lòng bấm nút "Đặt lại lịch hẹn KTV" bên dưới để chọn ca hẹn mới phù hợp hơn!'
                         : 'SecondLife Hub has rejected the previous appointment. Please click "Reschedule Appointment" below to pick a different shift!'}
                     </div>
                   ) : (savedAppointment?.scheduledAt && !isPendingApprovalOrFee) ? (
@@ -508,7 +508,7 @@ export function OrderCardInspection({
                               ? 'Yêu cầu kiểm định đã được xác nhận. Vui lòng hoàn tất đóng phí kiểm định (hoặc chờ người mua đóng phí) để mở tính năng hẹn lịch đón KTV.'
                               : 'Inspection request accepted. Please complete inspection fee payment to proceed with appointment scheduling.')
                             : (lang === 'vi'
-                              ? 'Khách mua đã đăng ký gói kiểm định tận nơi. Vui lòng bấm nút "Hẹn Lịch Đón KTV" bên dưới để chọn ngày giờ làm việc trong khung giờ hành chính (08:00 - 12:00 hoặc 13:00 - 17:00). Trung tâm SecondLife sẽ nhận thông tin để điều phối Kỹ thuật viên phù hợp.'
+                              ? 'Khách mua đã đăng ký gói kiểm định tận nơi. Vui lòng bấm nút "Hẹn lịch đón KTV" bên dưới để chọn ngày giờ làm việc trong khung giờ hành chính (08:00 - 12:00 hoặc 13:00 - 17:00). Trung tâm SecondLife sẽ nhận thông tin để điều phối Kỹ thuật viên phù hợp.'
                               : 'Buyer opted for at-home inspection. Technician will visit your location. Please click "Schedule Visit" below to choose appointment date during business hours (08:00 - 12:00 or 13:00 - 17:00)!')}
                     </div>
                   )}
@@ -570,7 +570,7 @@ export function OrderCardInspection({
                     <div className="flex items-center gap-2">
                       <span className="px-2.5 py-0.5 rounded-md bg-blue-700 text-white text-[11px] font-black uppercase tracking-wider flex items-center gap-1 shadow-2xs">
                         <Truck className="w-3.5 h-3.5" />
-                        <span>{lang === 'vi' ? 'Kiểm Định Qua Hub (Ship 2 Chặng)' : 'Hub Inspection (2-Leg Delivery)'}</span>
+                        <span>{lang === 'vi' ? 'Kiểm định qua Hub (Ship 2 Chặng)' : 'Hub Inspection (2-Leg Delivery)'}</span>
                       </span>
                       <span className="text-xs font-bold text-blue-900">
                         {isInspFailed
@@ -623,7 +623,7 @@ export function OrderCardInspection({
                     {/* Chặng 1 */}
                     <div className="p-2.5 rounded-lg bg-white/90 border border-blue-200 text-blue-950 space-y-1">
                       <div className="flex items-center justify-between font-bold">
-                        <span className="text-blue-700">{lang === 'vi' ? 'Chặng 1: Gửi Hàng Đến Hub' : 'Leg 1: Send to Hub'}</span>
+                        <span className="text-blue-700">{lang === 'vi' ? 'Chặng 1: Gửi hàng đến Hub' : 'Leg 1: Send to Hub'}</span>
                         <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold ${(() => {
                           if (isWaitingFeePayment) return 'bg-amber-100 text-amber-800';
                           if (isWaitingSellerApproval || isWaitingBuyerApproval) return 'bg-slate-100 text-slate-700';
@@ -686,8 +686,8 @@ export function OrderCardInspection({
                                 : 'text-slate-700'
                         }>
                           {isInspFailed || isRejected
-                            ? (lang === 'vi' ? 'Chặng 2: Hoàn Trả Người Bán' : 'Leg 2: Return to Seller')
-                            : (lang === 'vi' ? 'Chặng 2: Hub Giao Người Mua' : 'Leg 2: Hub to Buyer')}
+                            ? (lang === 'vi' ? 'Chặng 2: Hoàn trả người bán' : 'Leg 2: Return to Seller')
+                            : (lang === 'vi' ? 'Chặng 2: Hub giao người mua' : 'Leg 2: Hub to Buyer')}
                         </span>
                         <span className={`px-1.5 py-0.2 rounded text-[10px] font-extrabold ${isInspFailed || isRejected
                           ? 'bg-rose-100 text-rose-800'

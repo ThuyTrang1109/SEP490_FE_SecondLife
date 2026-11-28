@@ -230,7 +230,7 @@ export const VerifyEmailModal: React.FC<VerifyEmailModalProps> = ({
 
             <div className="space-y-1">
               <h3 className="text-xl sm:text-2xl font-black text-[#24263e] tracking-tight">
-                {lang === 'vi' ? 'Xác Thực Email 6 Chữ Số' : '6-Digit Email Verification'}
+                {lang === 'vi' ? 'Xác thực email 6 Chữ Số' : '6-Digit Email Verification'}
               </h3>
               <p className="text-xs sm:text-sm text-gray-500 leading-relaxed max-w-sm mx-auto">
                 {lang === 'vi'
@@ -317,7 +317,7 @@ export const VerifyEmailModal: React.FC<VerifyEmailModalProps> = ({
               <span>
                 {isLoading
                   ? (lang === 'vi' ? 'Đang kiểm tra mã...' : 'Verifying code...')
-                  : (lang === 'vi' ? 'Xác Thực & Kích Hoạt Tài Khoản' : 'Verify & Activate Account')}
+                  : (lang === 'vi' ? 'Xác thực & kích hoạt tài khoản' : 'Verify & Activate Account')}
               </span>
               {!isLoading && (
                 <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />

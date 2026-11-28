@@ -605,7 +605,7 @@ export function useCenterAppointments({ applyCounterResponse, handleOpenAssign, 
           month: '2-digit',
           year: 'numeric',
         });
-        const shiftLabel = counterShift === 'MORNING' ? 'Ca Sáng (08:00 - 12:00)' : 'Ca Chiều (13:00 - 17:00)';
+        const shiftLabel = counterShift === 'MORNING' ? 'Ca sáng (08:00 - 12:00)' : 'Ca chiều (13:00 - 17:00)';
         const sellerNotif = {
           id: `notif-seller-counter-appt-${orderId}-${Date.now()}`,
           recipientId: sellerId,

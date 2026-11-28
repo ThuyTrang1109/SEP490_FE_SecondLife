@@ -126,7 +126,7 @@ export const AdminInspectionFundsView: React.FC<AdminInspectionFundsViewProps> =
             <section className="space-y-2">
               <div className="flex items-center justify-between">
                 <h4 className="font-bold uppercase tracking-wider text-[11px] text-slate-500">
-                  Tổng Quan Thu Phí & Quyết Toán
+                  Tổng quan thu phí & quyết toán
                 </h4>
                 <div className="flex items-center gap-1.5">
                   <span className="text-[10px] text-slate-400">Trạng thái thu:</span>
@@ -270,7 +270,7 @@ export const AdminInspectionFundsView: React.FC<AdminInspectionFundsViewProps> =
               return (
                 <section className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/50 space-y-2.5">
                   <h4 className="font-bold uppercase tracking-wider text-[11px] text-slate-500">
-                    Chi Tiết Cấu Thành Phí
+                    Chi tiết cấu thành phí
                   </h4>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                     <div className="p-2.5 rounded-lg bg-white border border-slate-100 shadow-2xs">
@@ -328,7 +328,7 @@ export const AdminInspectionFundsView: React.FC<AdminInspectionFundsViewProps> =
                     <div className="flex items-center gap-2">
                       <Truck className="w-4 h-4 text-amber-700" />
                       <h4 className="font-bold uppercase tracking-wider text-[11px] text-amber-900">
-                        Dự Phòng Cước Trả Hàng
+                        Dự phòng cước trả hàng
                       </h4>
                     </div>
                     <span
@@ -567,7 +567,7 @@ export const AdminInspectionFundsView: React.FC<AdminInspectionFundsViewProps> =
             <section className="p-3.5 rounded-xl border border-slate-200 bg-white space-y-2.5">
               <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
                 <h4 className="font-bold uppercase tracking-wider text-[11px] text-slate-500">
-                  Quyết Toán Tài Chính Đơn Hàng
+                  Quyết toán tài chính đơn hàng
                 </h4>
                 {funds.settlement?.settledAt ? (
                   <span className="text-[10px] text-emerald-700 font-mono flex items-center gap-1 font-bold">
@@ -635,7 +635,7 @@ export const AdminInspectionFundsView: React.FC<AdminInspectionFundsViewProps> =
             {/* 6. VẬN ĐƠN (SHIPMENTS) */}
             <section className="space-y-2">
               <h4 className="font-bold uppercase tracking-wider text-[11px] text-slate-500">
-                Danh Sách Kiện Hàng & Cước Vận Chuyển ({funds.shipments?.length ?? 0})
+                Danh sách kiện hàng & cước vận chuyển ({funds.shipments?.length ?? 0})
               </h4>
 
               {funds.shipments && funds.shipments.length > 0 ? (

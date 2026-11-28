@@ -68,7 +68,7 @@ export function CreateInspectorModal({ staff }: Props) {
               <UserPlus className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-black text-[#24263e]">Cấp Tài Khoản Kỹ Thuật Viên</h3>
+              <h3 className="text-base font-black text-[#24263e]">Cấp tài khoản kỹ thuật viên</h3>
               <p className="text-[11px] text-gray-400">Tạo thông tin công vụ cho KTV trực thuộc trung tâm</p>
             </div>
           </div>
@@ -119,7 +119,7 @@ export function CreateInspectorModal({ staff }: Props) {
                 className="flex-1 py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer shadow-md"
               >
                 {hasCopiedCredentials ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-                <span>{hasCopiedCredentials ? 'Đã Sao Chép!' : 'Sao Chép Thông Tin'}</span>
+                <span>{hasCopiedCredentials ? 'Đã sao chép!' : 'Sao chép thông tin'}</span>
               </button>
 
               <button
@@ -147,7 +147,7 @@ export function CreateInspectorModal({ staff }: Props) {
             {/* Name */}
             <div className="space-y-1">
               <label className="text-xs font-black text-[#24263e]">
-                Họ Và Tên Kỹ Thuật Viên: <strong className="text-rose-500">*</strong>
+                Họ và tên kỹ thuật viên: <strong className="text-rose-500">*</strong>
               </label>
               <div className="relative">
                 <User className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -156,7 +156,7 @@ export function CreateInspectorModal({ staff }: Props) {
                   required
                   value={newStaffName}
                   onChange={(e) => setNewStaffName(e.target.value)}
-                  placeholder="Nguyễn Văn Kỹ Thuật"
+                  placeholder="Nguyễn văn kỹ thuật"
                   className="w-full pl-10 pr-3.5 py-2 rounded-xl border border-gray-200 text-xs font-medium focus:outline-none focus:border-[#c34c36]"
                 />
               </div>
@@ -165,7 +165,7 @@ export function CreateInspectorModal({ staff }: Props) {
             {/* Email */}
             <div className="space-y-1">
               <label className="text-xs font-black text-[#24263e]">
-                Email Đăng Nhập Công Vụ: <strong className="text-rose-500">*</strong>
+                Email đăng nhập công vụ: <strong className="text-rose-500">*</strong>
               </label>
               <div className="relative">
                 <Mail className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -184,7 +184,7 @@ export function CreateInspectorModal({ staff }: Props) {
             <div className="space-y-1">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-black text-[#24263e]">
-                  Mật Khẩu Khởi Tạo: <strong className="text-rose-500">*</strong>
+                  Mật khẩu khởi tạo: <strong className="text-rose-500">*</strong>
                 </label>
                 <button
                   type="button"
@@ -192,7 +192,7 @@ export function CreateInspectorModal({ staff }: Props) {
                   className="text-[11px] font-bold text-[#c34c36] hover:underline flex items-center gap-1 cursor-pointer"
                 >
                   <Sparkles className="w-3 h-3" />
-                  <span>Tạo Mật Khẩu Ngẫu Nhiên</span>
+                  <span>Tạo mật khẩu ngẫu nhiên</span>
                 </button>
               </div>
               <div className="relative">
@@ -231,7 +231,7 @@ export function CreateInspectorModal({ staff }: Props) {
                 className="px-5 py-2.5 rounded-xl text-xs font-extrabold bg-[#c34c36] hover:bg-[#a63f2d] text-white transition flex items-center gap-2 cursor-pointer shadow-md disabled:opacity-50"
               >
                 {isCreatingStaff && <Loader2 className="w-4 h-4 animate-spin" />}
-                <span>Cấp Tài Khoản KTV</span>
+                <span>Cấp tài khoản KTV</span>
               </button>
             </div>
           </form>

@@ -257,7 +257,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
     });
 
     showNotice(
-      `[Xác Nhận Đơn] Đã tiếp nhận đơn kiểm định #${orderId.slice(0, 8)}${orderTitle ? ` (${orderTitle})` : ''}. Quyền đổi KTV tại trung tâm đã được khóa!`
+      `[Xác nhận đơn] Đã tiếp nhận đơn kiểm định #${orderId.slice(0, 8)}${orderTitle ? ` (${orderTitle})` : ''}. Quyền đổi KTV tại trung tâm đã được khóa!`
     );
 
     // Phát tín hiệu tới các tab khác
@@ -418,7 +418,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
         orderId: bo.id,
         centerId: bo.inspectionCenterId || 'center-hcm-01',
         centerName: 'SecondLife Hub Flagship Lab',
-        inspectorName: assignedName || 'Kỹ Thuật Viên Kiểm Định SecondLife',
+        inspectorName: assignedName || 'Kỹ thuật viên kiểm định secondLife',
         inspectedAt: bo.updatedAt || bo.createdAt || new Date().toISOString(),
         completedAt: bo.updatedAt || bo.createdAt || new Date().toISOString(),
         verdict: result.verdict,
@@ -822,7 +822,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
             <div>
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/80 border border-[#24263e]/15 text-[#24263e] text-xs font-bold shadow-xs">
                 <Building2 className="w-3.5 h-3.5 text-[#c34c36]" />
-                <span>Cổng Quản Lý Trung Tâm Kiểm Định Chuẩn ISO/IEC 17025</span>
+                <span>Cổng quản lý trung tâm kiểm định chuẩn ISO/IEC 17025</span>
               </div>
               <h1 className="text-2xl sm:text-3xl font-black mt-2 text-[#24263e] flex items-center gap-2">
                 <span>{(activeCenter?.name || resolveInspectionCenter().name)}</span>
@@ -846,7 +846,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
               }`}
           >
             <ClipboardList className="w-4 h-4" />
-            <span>Điều Phối Đơn Kiểm Định</span>
+            <span>Điều phối đơn kiểm định</span>
           </button>
           <button
             onClick={() => setManagerTab('center_staff')}
@@ -854,14 +854,14 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
               }`}
           >
             <Users className="w-4 h-4" />
-            <span>Đội Ngũ Kỹ Thuật Viên</span>
+            <span>Đội ngũ kỹ thuật viên</span>
           </button>
         </div>
 
         {/* Dispatch tab */}
         {managerTab === 'center_dispatch' && (
           <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
-            <h2 className="text-lg font-black text-[#24263e]">Hàng Đợi Điều Phối & Phân Công Kiểm Định ({allOrdersList.length} đơn)</h2>
+            <h2 className="text-lg font-black text-[#24263e]">Hàng đợi điều phối & phân công kiểm định ({allOrdersList.length} đơn)</h2>
             <div className="space-y-3">
               {allOrdersList.map((ord) => (
                 <div key={ord.id} className="p-4 rounded-2xl border border-slate-200 flex items-center justify-between">
@@ -964,7 +964,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                       Mã: {inspectorId}
                     </span>
                     <span className="px-2 py-0.5 rounded-md bg-[#c34c36]/10 text-[#c34c36] font-extrabold text-[10px]">
-                      Kỹ Thuật Viên Hub
+                      Kỹ thuật viên Hub
                     </span>
                   </div>
                 </div>
@@ -977,7 +977,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                     className="w-full text-left px-3 py-2 hover:bg-rose-50 rounded-xl text-rose-600 flex items-center gap-2 cursor-pointer font-bold transition"
                   >
                     <LogOut className="w-3.5 h-3.5" />
-                    <span>Đăng Xuất</span>
+                    <span>Đăng xuất</span>
                   </button>
                 </div>
               </div>
@@ -1110,21 +1110,21 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-gray-200/60">
               <div>
                 <div className="flex items-center gap-2 text-xs font-semibold text-gray-500 mb-1">
-                  <span>Trạm Đo Kiểm</span>
+                  <span>Trạm đo kiểm</span>
                   <ChevronRight className="w-3.5 h-3.5" />
                   <span className="text-[#c34c36] font-bold">
-                    {inspectorTab === 'workbench' && 'Bàn Đo Kiểm Trực Tiếp'}
-                    {inspectorTab === 'tasks' && 'Hàng Đợi Nhiệm Vụ & Lịch Hẹn'}
-                    {inspectorTab === 'certificates' && 'Sổ Chứng Thư Số & Hồ Sơ'}
-                    {inspectorTab === 'standards' && 'Tiêu Chuẩn Kỹ Thuật Của Phòng Kiểm Định'}
+                    {inspectorTab === 'workbench' && 'Bàn đo kiểm trực tiếp'}
+                    {inspectorTab === 'tasks' && 'Hàng đợi nhiệm vụ & lịch hẹn'}
+                    {inspectorTab === 'certificates' && 'Sổ chứng thư số & hồ sơ'}
+                    {inspectorTab === 'standards' && 'Tiêu chuẩn kỹ thuật của phòng kiểm định'}
                   </span>
                 </div>
                 <h1 className="text-xl sm:text-2xl font-black text-[#24263e] tracking-tight flex flex-wrap items-center gap-2.5">
                   <span>
-                    {inspectorTab === 'workbench' && 'Bàn Làm Việc Kỹ Thuật Viên'}
-                    {inspectorTab === 'tasks' && 'Hàng Đợi Nhiệm Vụ & Lịch Đo Kiểm'}
-                    {inspectorTab === 'certificates' && 'Sổ Tay Hồ Sơ & Chứng Thư Số'}
-                    {inspectorTab === 'standards' && 'Tiêu Chuẩn Phòng kiểm đinh'}
+                    {inspectorTab === 'workbench' && 'Bàn làm việc kỹ thuật viên'}
+                    {inspectorTab === 'tasks' && 'Hàng đợi nhiệm vụ & lịch đo kiểm'}
+                    {inspectorTab === 'certificates' && 'Sổ tay hồ sơ & chứng thư số'}
+                    {inspectorTab === 'standards' && 'Tiêu chuẩn phòng kiểm đinh'}
                   </span>
                   {/* <span className="text-xs bg-emerald-100 text-emerald-800 border border-emerald-300 px-2.5 py-0.5 rounded-full font-bold">
                     Đang Trực Ca
@@ -1148,7 +1148,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                   className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold border border-slate-200 shadow-xs flex items-center gap-2 transition cursor-pointer"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isLoadingBackendOrders ? 'animate-spin' : ''}`} />
-                  <span>Đồng Bộ Hàng Đợi</span>
+                  <span>Đồng bộ hàng đợi</span>
                 </button>
               </div>
             </div>
@@ -1306,7 +1306,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                         className="rounded-xl bg-[#c34c36] hover:bg-[#a63f2d] px-4 py-2 text-sm font-bold text-white shadow-xs transition cursor-pointer flex items-center gap-1.5"
                       >
                         <Wrench className="w-4 h-4" />
-                        <span>Vào Bàn Đo Kiểm Đơn Này</span>
+                        <span>Vào bàn đo kiểm đơn này</span>
                       </button>
                     )}
                     <button type="button" onClick={() => setSelectedOrderId('')} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 transition cursor-pointer">
@@ -1341,7 +1341,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-slate-100">
                 <div>
                   <h2 className="text-xl font-black text-[#24263e] flex items-center gap-2.5">
-                    <span>{lang === 'vi' ? 'Hàng Đợi Nhiệm Vụ & Lịch Đo Kiểm' : 'Assigned Task Queue & Schedule'}</span>
+                    <span>{lang === 'vi' ? 'Hàng đợi nhiệm vụ & lịch đo kiểm' : 'Assigned Task Queue & Schedule'}</span>
                     <span className="text-xs bg-slate-100 text-slate-700 font-bold px-2.5 py-0.5 rounded-full">
                       {filteredTasks.length} nhiệm vụ
                     </span>
@@ -1412,7 +1412,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                     className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer ${taskFilter === 'AT_HOME' ? 'bg-white text-purple-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
                       }`}
                   >
-                    Tận Nhà ({atHomeCount})
+                    Tận nhà ({atHomeCount})
                   </button>
                   <button
                     type="button"
@@ -1506,7 +1506,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                                     const failed = ord.inspectionStatus === 'FAILED';
                                     return (
                                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${failed ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
-                                        {failed ? 'Kiểm Định Không Đạt' : 'Kiểm Định Đạt'}
+                                        {failed ? 'Kiểm định không đạt' : 'Kiểm định đạt'}
                                       </span>
                                     );
                                   }
@@ -1514,7 +1514,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                                   if (stage === 'cancelled' || stage === 'disputed') {
                                     return (
                                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
-                                        {stage === 'cancelled' ? 'Đã Hủy' : 'Đang Khiếu Nại'}
+                                        {stage === 'cancelled' ? 'Đã hủy' : 'Đang khiếu nại'}
                                       </span>
                                     );
                                   }
@@ -1522,7 +1522,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                                   if (stage === 'inspecting') {
                                     return (
                                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
-                                        Đang Đo Kiểm
+                                        Đang đo kiểm
                                       </span>
                                     );
                                   }
@@ -1530,7 +1530,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                                   if (stage === 'inbound') {
                                     return (
                                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-50 text-cyan-700 border border-cyan-200">
-                                        Đang Giao Đến Hub
+                                        Đang giao đến Hub
                                       </span>
                                     );
                                   }
@@ -1547,7 +1547,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                                         ? 'bg-amber-50 text-amber-800 border-amber-200'
                                         : 'bg-blue-50 text-blue-700 border-blue-200'
                                         }`}>
-                                        Đến Theo Hẹn ({formattedAppt}) {!isInspectorArrived && (checkIn.expired
+                                        Đến theo hẹn ({formattedAppt}) {!isInspectorArrived && (checkIn.expired
                                           ? '• Quá hạn check-in'
                                           : !checkIn.allowed && '• Mở check-in trước 30 phút')}
                                       </span>
@@ -1557,7 +1557,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                                   if (isAtHome && !apptTime) {
                                     return (
                                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
-                                        Chờ Người Bán Hẹn Lịch (8h-12h, 13h-17h)
+                                        Chờ người bán hẹn lịch (8h-12h, 13h-17h)
                                       </span>
                                     );
                                   }
@@ -1565,14 +1565,14 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                                   if (isOrderConfirmed && stage === 'assigned') {
                                     return (
                                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                        Đã Tiếp Nhận • Chờ Đo Kiểm
+                                        Đã tiếp nhận • Chờ đo kiểm
                                       </span>
                                     );
                                   }
 
                                   return (
                                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-                                      {stage === 'assigned' ? 'Chờ Đo Kiểm' : 'Chờ Xử Lý'}
+                                      {stage === 'assigned' ? 'Chờ đo kiểm' : 'Chờ xử lý'}
                                     </span>
                                   );
                                 })()}
@@ -1663,7 +1663,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                               title="Đơn hàng đã hoàn thành kiểm định. Nhấn để xem chứng thư số & biên bản nghiệm thu."
                             >
                               <Award className="w-4 h-4 text-emerald-600" />
-                              <span>Xem Chứng Thư / Biên Bản Giám Định</span>
+                              <span>Xem chứng thư / biên bản giám định</span>
                             </button>
                           ) : isAtHome && !apptTime ? (
                             <button
@@ -1673,7 +1673,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                               title="Người bán chưa đặt lịch hẹn đón KTV. KTV chưa thể tiếp nhận đo kiểm."
                             >
                               <Clock className="w-3.5 h-3.5 text-slate-400" />
-                              <span>Chờ Người Bán Hẹn Lịch</span>
+                              <span>Chờ người bán hẹn lịch</span>
                             </button>
                           ) : missedAppointment ? (
                             <span className="flex-1 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-center text-xs font-bold text-rose-800">
@@ -1686,7 +1686,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                               className="flex-1 py-2 px-3 rounded-xl bg-slate-100 text-slate-400 text-xs font-bold flex items-center justify-center gap-1.5 cursor-not-allowed border border-slate-200"
                             >
                               <Clock className="w-3.5 h-3.5 text-slate-400" />
-                              <span>{stage === 'inbound' ? 'Chờ Hàng Đến Hub' : stage === 'completed' ? 'Chưa có biên bản để xem' : 'Bàn đo kiểm chưa khả dụng'}</span>
+                              <span>{stage === 'inbound' ? 'Chờ hàng đến Hub' : stage === 'completed' ? 'Chưa có biên bản để xem' : 'Bàn đo kiểm chưa khả dụng'}</span>
                             </button>
                           ) : (
                             <div className="flex-1 flex items-center gap-2">
@@ -1699,16 +1699,16 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                                     title="Xác nhận tiếp nhận đơn này. Hệ thống sẽ khóa quyền đổi kỹ thuật viên tại trung tâm để tránh xung đột dữ liệu."
                                   >
                                     <CheckCircle2 className="w-3.5 h-3.5" />
-                                    <span>Xác Nhận Đơn</span>
+                                    <span>Xác nhận đơn</span>
                                   </button>
                                   <button
                                     type="button"
                                     disabled
                                     className="flex-1 py-2 px-3 rounded-xl bg-slate-100 text-slate-400 text-xs font-bold flex items-center justify-center gap-1.5 cursor-not-allowed border border-slate-200"
-                                    title="Vui lòng bấm 'Xác Nhận Đơn' trước khi vào bàn đo kiểm."
+                                    title="Vui lòng bấm 'xác nhận đơn' trước khi vào bàn đo kiểm."
                                   >
                                     <Wrench className="w-3.5 h-3.5 text-slate-400" />
-                                    <span>Vào Bàn Đo Kiểm</span>
+                                    <span>Vào bàn đo kiểm</span>
                                   </button>
                                 </>
                               ) : (
@@ -1728,20 +1728,20 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                                       isInspectorArrived ? (
                                         <>
                                           <Wrench className="w-3.5 h-3.5 text-[#fce5da]" />
-                                          <span>Vào Bàn Đo Kiểm (Tại Nhà)</span>
+                                          <span>Vào bàn đo kiểm (Tại Nhà)</span>
                                         </>
                                       ) : (
                                         <>
                                           <QrCode className="w-3.5 h-3.5 text-amber-300" />
                                           <span>
-                                            {checkIn.allowed ? 'Quét Mã Nhận Máy (Tại Nhà)' : 'Chi Tiết Lịch Hẹn'}
+                                            {checkIn.allowed ? 'Quét mã nhận máy (Tại Nhà)' : 'Chi tiết lịch hẹn'}
                                           </span>
                                         </>
                                       )
                                     ) : (
                                       <>
                                         <Wrench className="w-3.5 h-3.5 text-[#fce5da]" />
-                                        <span>Vào Bàn Đo Kiểm</span>
+                                        <span>Vào bàn đo kiểm</span>
                                       </>
                                     )}
                                   </button>
@@ -1767,7 +1767,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                 <div>
                   <h2 className="text-xl font-black text-[#24263e] flex items-center gap-2.5">
                     <FileCheck className="w-6 h-6 text-emerald-600" />
-                    <span>{lang === 'vi' ? 'Sổ Tay Hồ Sơ & Chứng Thư Số Đã Cấp' : 'Digital Certificates & Inspection Records'}</span>
+                    <span>{lang === 'vi' ? 'Sổ tay hồ sơ & chứng thư số đã cấp' : 'Digital Certificates & Inspection Records'}</span>
                   </h2>
                   <p className="text-xs text-slate-500 mt-1 font-medium">
                     {lang === 'vi'
@@ -1778,7 +1778,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
 
                 <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold">
                   <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                  <span>{completedOrders.length} Hồ Sơ Kiểm Định</span>
+                  <span>{completedOrders.length} Hồ sơ kiểm định</span>
                 </div>
               </div>
 
@@ -1793,7 +1793,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                       onClick={() => setInspectorTab('workbench')}
                       className="mt-3 px-4 py-2 rounded-xl bg-[#24263e] text-white text-xs font-bold cursor-pointer"
                     >
-                      Mở Bàn Kiểm Định Ngay
+                      Mở bàn kiểm định ngay
                     </button>
                   </div>
                 ) : (
@@ -1839,7 +1839,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                             className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs"
                           >
                             <Eye className="w-3.5 h-3.5" />
-                            <span>Xem Chứng Thư Số</span>
+                            <span>Xem chứng thư số</span>
                           </button>
                         </div>
                       </div>
@@ -1863,7 +1863,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                   </div>
                   <div>
                     <h2 className="text-xl font-black text-[#24263e]">
-                      Tiêu Chuẩn Đo Kiểm Phòng Lab Kỹ Thuật ISO/IEC 17025
+                      Tiêu chuẩn đo kiểm phòng Lab kỹ thuật ISO/IEC 17025
                     </h2>
                     <p className="text-xs text-slate-500 font-medium">
                       Quy chuẩn kỹ thuật áp dụng cho thiết bị điện lạnh và gia dụng đã qua sử dụng trên sàn SecondLife.
@@ -1886,7 +1886,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                     </span>
                     <Zap className="w-4 h-4 text-blue-600" />
                   </div>
-                  <h3 className="font-bold text-sm text-[#24263e]">An Toàn Nguồn Điện & Tiếp Địa</h3>
+                  <h3 className="font-bold text-sm text-[#24263e]">An toàn nguồn điện & tiếp địa</h3>
                   <ul className="text-xs text-slate-600 space-y-1.5 list-disc list-inside">
                     <li>Kiểm tra rò rỉ điện vỏ kim loại: dòng rò &lt; 0.25mA</li>
                     <li>Điện trở cách điện Megohmmeter &gt; 5.0 MΩ ở 500VDC</li>
@@ -1902,7 +1902,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                     </span>
                     <Wrench className="w-4 h-4 text-amber-600" />
                   </div>
-                  <h3 className="font-bold text-sm text-[#24263e]">Máy Nén Compressor & Ga Lạnh</h3>
+                  <h3 className="font-bold text-sm text-[#24263e]">Máy nén compressor & ga lạnh</h3>
                   <ul className="text-xs text-slate-600 space-y-1.5 list-disc list-inside">
                     <li>Đo áp suất hút/nén chuẩn môi chất (R600a/R134a/R32)</li>
                     <li>Đo độ ồn vận hành decibel &lt; 42 dB khi máy nén hoạt động</li>
@@ -1918,7 +1918,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                     </span>
                     <Thermometer className="w-4 h-4 text-emerald-600" />
                   </div>
-                  <h3 className="font-bold text-sm text-[#24263e]">Cảm Biến Nhiệt & Rơ-Le Đóng Ngắt</h3>
+                  <h3 className="font-bold text-sm text-[#24263e]">Cảm biến nhiệt & Rơ-Le đóng ngắt</h3>
                   <ul className="text-xs text-slate-600 space-y-1.5 list-disc list-inside">
                     <li>Đo nhiệt độ thực tế bằng nhiệt kế hồng ngoại laser (±0.5°C)</li>
                     <li>Chu kỳ đóng ngắt nhiệt tự động đúng dải thiết lập</li>
@@ -1934,7 +1934,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                     </span>
                     <Cpu className="w-4 h-4 text-purple-600" />
                   </div>
-                  <h3 className="font-bold text-sm text-[#24263e]">Bo Mạch IC, Inverter & Màn Hình</h3>
+                  <h3 className="font-bold text-sm text-[#24263e]">Bo Mạch IC, Inverter & màn hình</h3>
                   <ul className="text-xs text-slate-600 space-y-1.5 list-disc list-inside">
                     <li>Bo mạch Inverter biến tần nguyên bản chưa câu dây</li>
                     <li>Màn hình LED/OLED sáng đều, không điểm chết cảm ứng</li>
@@ -1950,7 +1950,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                     </span>
                     <ShieldCheck className="w-4 h-4 text-teal-600" />
                   </div>
-                  <h3 className="font-bold text-sm text-[#24263e]">Gioăng Cửa, Ngoại Quan & Niêm Phong</h3>
+                  <h3 className="font-bold text-sm text-[#24263e]">Gioăng cửa, ngoại quan & niêm phong</h3>
                   <ul className="text-xs text-slate-600 space-y-1.5 list-disc list-inside">
                     <li>Độ hít nam châm gioăng cao su khép kín 100% không thoát nhiệt</li>
                     <li>Khử khuẩn buồng máy bằng dung dịch sát trùng y tế &amp; Ozone</li>
@@ -1966,7 +1966,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                     </span>
                     <ShieldAlert className="w-4 h-4 text-[#c34c36]" />
                   </div>
-                  <h3 className="font-bold text-sm text-[#24263e]">Quy Tắc An Toàn Kỹ Thuật Viên</h3>
+                  <h3 className="font-bold text-sm text-[#24263e]">Quy tắc an toàn kỹ thuật viên</h3>
                   <p className="text-xs text-slate-700 leading-relaxed">
                     Kỹ thuật viên bắt buộc đeo găng tay cách điện, kính bảo hộ khi đo mạch cao áp và kiểm tra áp suất bình chứa khí gas. Mọi hành vi làm sai lệch kết quả đo kiểm sẽ bị đình chỉ chứng chỉ ISO vĩnh viễn.
                   </p>

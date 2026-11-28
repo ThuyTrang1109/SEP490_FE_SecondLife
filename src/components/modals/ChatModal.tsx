@@ -135,7 +135,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       if (partnerName && !isNameOfCurrentUser(partnerName)) {
         return partnerName;
       }
-      return lang === 'vi' ? 'Người Mua' : 'Buyer';
+      return lang === 'vi' ? 'Người mua' : 'Buyer';
     } else {
       if (activeRoom?.sellerName && !isNameOfCurrentUser(activeRoom.sellerName)) {
         return activeRoom.sellerName;
@@ -146,7 +146,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       if (partnerName && !isNameOfCurrentUser(partnerName)) {
         return partnerName;
       }
-      return lang === 'vi' ? 'Người Bán' : 'Seller';
+      return lang === 'vi' ? 'Người bán' : 'Seller';
     }
   }, [isSeller, activeRoom, partnerName, listing.sellerName, isNameOfCurrentUser, lang]);
 
@@ -543,7 +543,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   }, [roomId, syncIncomingMessage]);
 
   // 1. Phân tích trạng thái mới nhất của từng phiên thương lượng (theo negotiationId)
-  const negotiationMap = new Map<string, { id: string; status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'CANCELLED'; price: number }>();
+  const negotiationMap = new Map<string, { id: string; status: SystemOfferPayload['status']; price: number }>();
   messages.forEach((m) => {
     const parsed = parseSystemMessage(m.text);
     if (parsed.offer && parsed.offer.negotiationId) {
@@ -987,7 +987,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       notifyChatInteraction(roomId || activeRoom?.id, action === 'accepted' ? 'Đã chấp nhận đề xuất giá' : 'Đã từ chối đề xuất giá');
     } catch (err: any) {
       console.warn('Backend respond negotiation error:', err);
-      dialogService.error(err?.message || 'Thao tác không thành công. Vui lòng thử lại.', 'Lỗi Phản Hồi Trả Giá');
+      dialogService.error(err?.message || 'Thao tác không thành công. Vui lòng thử lại.', 'Lỗi phản hồi trả giá');
     } finally {
       isRespondingOfferRef.current = false;
     }
@@ -1385,7 +1385,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                   const isAccepted = latestStatus === 'ACCEPTED';
                   const isRejected = latestStatus === 'REJECTED';
                   const isCancelled = latestStatus === 'CANCELLED';
-                  const isExpired = false; // Note: EXPIRED is not in SystemOfferPayload
+                  const isExpired = latestStatus === 'EXPIRED';
                   const isPending = latestStatus === 'PENDING';
 
                   const isSellerOffer = offer.senderRole === 'seller' || (Boolean(offer.negotiationId) && offer.negotiationId.startsWith('seller-offer-'));
@@ -1416,16 +1416,16 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                           )}
                           <span className="text-[11px] font-black uppercase tracking-wider">
                             {isAccepted
-                              ? 'Thỏa Thuận Chốt Giá Thành Công'
+                              ? 'Thỏa thuận chốt giá thành công'
                               : isRejected
-                                ? '❌ Đề Xuất Giá Đã Bị Từ Chối'
+                                ? '❌ đề xuất giá đã bị từ chối'
                                 : isCancelled
-                                  ? 'Đề Xuất Giá Đã Được Hủy'
+                                  ? 'Đề xuất giá đã được hủy'
                                   : isExpired
-                                    ? '⏳ Phiên Thương Lượng Đã Hết Hạn'
+                                    ? '⏳ phiên thương lượng đã hết hạn'
                                     : isSellerOffer
-                                      ? 'Người Bán Đề Xuất Giá Mới'
-                                      : 'Đề Xuất Thương Lượng Giá Mới'}
+                                      ? 'Người bán đề xuất giá mới'
+                                      : 'Đề xuất thương lượng giá mới'}
                           </span>
                         </div>
 
@@ -1572,7 +1572,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                         <div className="flex items-center justify-between pb-2 border-b border-blue-200/50">
                           <div className="flex items-center gap-1.5 font-black text-xs uppercase tracking-tight text-blue-900">
                             <ShieldCheck className="w-4 h-4 text-blue-600" />
-                            <span>Đề Xuất Phương Án Kiểm Định</span>
+                            <span>Đề xuất phương án kiểm định</span>
                           </div>
                           <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${isAccepted
                             ? 'bg-emerald-600 text-white'
@@ -1582,7 +1582,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                                 ? 'bg-slate-400 text-white'
                                 : 'bg-blue-600 text-white animate-pulse'
                             }`}>
-                            {isAccepted ? 'Đã Đồng Ý' : isRejected ? 'Đã Từ Chối' : isCancelled ? 'Đã Hủy' : 'Chờ Phản Hồi'}
+                            {isAccepted ? 'Đã Đồng Ý' : isRejected ? 'Đã từ chối' : isCancelled ? 'Đã hủy' : 'Chờ phản hồi'}
                           </span>
                         </div>
 
@@ -1629,7 +1629,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                               className="py-1.5 px-3 bg-slate-200 hover:bg-rose-50 text-slate-700 hover:text-rose-600 rounded-xl text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition"
                             >
                               <X className="w-3.5 h-3.5" />
-                              <span>Từ Chối</span>
+                              <span>Từ chối</span>
                             </button>
                           </div>
                         )}
@@ -1815,7 +1815,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                                         <ShoppingBag className="w-4 h-4" />
                                         <span>
                                           {lang === 'vi'
-                                            ? `Mua Hàng Ngay Với Giá ${formatVND(msg.offerAmountVnd)}`
+                                            ? `Mua hàng ngay với giá ${formatVND(msg.offerAmountVnd)}`
                                             : `Buy Now at ${formatVND(msg.offerAmountVnd)}`}
                                         </span>
                                       </button>
@@ -1949,7 +1949,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
               {negotiationLoading ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : (
-                <span>{lang === 'vi' ? (isSeller ? 'Gửi Đề Xuất Giá' : 'Gửi Offer') : (isSeller ? 'Send Proposal' : 'Send Offer')}</span>
+                <span>{lang === 'vi' ? (isSeller ? 'Gửi đề xuất giá' : 'Gửi offer') : (isSeller ? 'Send Proposal' : 'Send Offer')}</span>
               )}
             </button>
             <button
@@ -1975,7 +1975,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
               onClick={() => { window.location.href = '#topup'; }}
               className="mt-1 px-4 py-1.5 bg-[#c34c36] hover:bg-[#a83d2a] text-white rounded-lg text-[10px] font-bold shadow-xs cursor-pointer"
             >
-              {lang === 'vi' ? 'Nạp Thêm Credit (Topup)' : 'Top Up Credits'}
+              {lang === 'vi' ? 'Nạp thêm credit (Topup)' : 'Top Up Credits'}
             </button>
           </div>
         ) : (
@@ -1986,7 +1986,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                 <div className="flex items-center justify-between">
                   <span className="font-black text-blue-900 uppercase tracking-tight flex items-center gap-1.5">
                     <ShieldCheck className="w-4 h-4 text-blue-600" />
-                    <span>Thỏa Thuận Phương Án Kiểm Định</span>
+                    <span>Thỏa thuận phương án kiểm định</span>
                   </span>
                   <button
                     onClick={() => setShowInspectionForm(false)}
@@ -2014,7 +2014,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                     >
                       <div className="flex items-center gap-1.5">
                         <Building2 className="w-4 h-4 text-blue-600" />
-                        <span>Tại Hub SecondLife</span>
+                        <span>Tại Hub secondLife</span>
                       </div>
                       <div className="text-[10px] text-slate-500 mt-1">Theo biểu phí kiểm định Hub</div>
                     </button>
@@ -2031,7 +2031,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                     >
                       <div className="flex items-center gap-1.5">
                         <Home className="w-4 h-4 text-orange-600" />
-                        <span>KTV Đến Tận Nhà</span>
+                        <span>KTV đến tận nhà</span>
                       </div>
                       <div className="text-[10px] text-slate-500 mt-1">Theo biểu phí kiểm định Tại nhà</div>
                     </button>
@@ -2097,7 +2097,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                     className="px-4 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold cursor-pointer shadow-xs flex items-center gap-1.5 disabled:opacity-60"
                   >
                     {inspectionLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                    <span>Gửi Đề Xuất Kiểm Định</span>
+                    <span>Gửi đề xuất kiểm định</span>
                   </button>
                 </div>
               </div>
@@ -2146,8 +2146,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                 title="Thương lượng hình thức kiểm định & chia phí"
               >
                 <ShieldCheck className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">{lang === 'vi' ? 'Đề Xuất Kiểm Định' : 'Inspection'}</span>
-                <span className="sm:hidden">Kiểm Định</span>
+                <span className="hidden sm:inline">{lang === 'vi' ? 'Đề xuất kiểm định' : 'Inspection'}</span>
+                <span className="sm:hidden">Kiểm định</span>
               </button>
 
               <input

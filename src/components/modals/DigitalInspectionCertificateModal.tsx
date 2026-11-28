@@ -76,7 +76,7 @@ export function buildInspectionReportFromDto(dto: InspectionOrderDto | any, orde
     }
   }
 
-  const resolvedHub = order ? resolveInspectionCenter(order) : { id: 'center-hcm-01', name: 'Trung Tâm Kiểm Định SecondLife', address: 'Đang cập nhật địa chỉ', phone: '0875456654' };
+  const resolvedHub = order ? resolveInspectionCenter(order) : { id: 'center-hcm-01', name: 'Trung tâm kiểm định secondLife', address: 'Đang cập nhật địa chỉ', phone: '0875456654' };
 
   const rawStatus = String(dto.status || order?.inspectionStatus || order?.status || '').toUpperCase();
   const verdict = rawStatus !== 'FAILED' &&
@@ -96,7 +96,7 @@ export function buildInspectionReportFromDto(dto: InspectionOrderDto | any, orde
     centerName: dto.inspectionCenterName || order?.inspectionCenterName || (dto as any)?.centerName || resolvedHub.name,
     centerAddress: dto.inspectionCenterAddress || order?.inspectionCenterAddress || resolvedHub.address,
     centerPhone: dto.inspectionCenterPhone || order?.inspectionCenterPhone || resolvedHub.phone,
-    inspectorName: dto.inspectorName || order?.inspectorName || 'Kỹ Thuật Viên Kiểm Định SecondLife',
+    inspectorName: dto.inspectorName || order?.inspectorName || 'Kỹ thuật viên kiểm định secondLife',
     inspectedAt: dto.updatedAt || dto.createdAt || order?.updatedAt || order?.createdAt || new Date().toISOString(),
     completedAt: dto.updatedAt || dto.createdAt || order?.updatedAt || order?.createdAt || new Date().toISOString(),
     verdict,
@@ -183,7 +183,7 @@ export const DigitalInspectionCertificateModal: React.FC<DigitalInspectionCertif
 
   const certId = `CERT-SL-${order.id.slice(0, 8).toUpperCase()}`;
   const resolvedHub = resolveInspectionCenter(order);
-  const hubName = report?.centerName || order.inspectionCenterName || (order as any).centerName || resolvedHub.name || 'Trung Tâm Kiểm Định SecondLife';
+  const hubName = report?.centerName || order.inspectionCenterName || (order as any).centerName || resolvedHub.name || 'Trung tâm kiểm định secondLife';
   const hubAddress = report?.centerAddress || order.inspectionCenterAddress || (order as any).centerAddress || resolvedHub.address || 'Đang cập nhật địa chỉ';
   const hubPhone = report?.centerPhone || order.inspectionCenterPhone || (order as any).centerPhone || resolvedHub.phone || '0875456654';
   const hubCity = resolvedHub.city || 'TP. Hồ Chí Minh';
@@ -191,7 +191,7 @@ export const DigitalInspectionCertificateModal: React.FC<DigitalInspectionCertif
   const inspectionMethod = initialDto?.orderType || (order as any).orderType || order.inspectionMethod;
   const isAtCenter = inspectionMethod === 'AT_CENTER' ||
     (!inspectionMethod && Boolean(order.inspectionCenterId || order.inspectionCenterName));
-  const inspectorName = report?.inspectorName || order.inspectorName || (order as any).inspectorName || 'Kỹ Thuật Viên Kiểm Định SecondLife';
+  const inspectorName = report?.inspectorName || order.inspectorName || (order as any).inspectorName || 'Kỹ thuật viên kiểm định secondLife';
 
   // Mã niêm phong: CHỈ hiển thị khi hệ thống có giá trị thật, không tự bịa
   const rawSeal = report?.tamperSealId || (order as any).tamperSealId || (!isAtCenter && typeof window !== 'undefined' ? localStorage.getItem(`inspection_seal_${order.id}`) : null);
@@ -430,7 +430,7 @@ export const DigitalInspectionCertificateModal: React.FC<DigitalInspectionCertif
             </span>
             <div>
               <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">
-                Giấy Chứng Nhận Kết Quả Kiểm Định
+                Giấy chứng nhận kết quả kiểm định
               </h3>
               <p className="text-[11px] text-slate-400">Mã đơn hàng: #{order.id}</p>
             </div>
@@ -491,7 +491,7 @@ export const DigitalInspectionCertificateModal: React.FC<DigitalInspectionCertif
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b border-slate-200 pb-1.5 print:pb-1">
               <div>
                 <span className="text-[10px] print:text-[8.5px] font-bold uppercase text-slate-400 block tracking-wider">
-                  Tên Tổ Chức Kiểm Định
+                  Tên tổ chức kiểm định
                 </span>
                 <h3 className="text-xs sm:text-sm print:text-[11px] font-black text-slate-900 uppercase flex items-center gap-1.5 mt-0.5">
                   <Building2 className="w-3.5 h-3.5 text-[#c34c36]" />
@@ -500,7 +500,7 @@ export const DigitalInspectionCertificateModal: React.FC<DigitalInspectionCertif
               </div>
               <div className="sm:text-right shrink-0 flex items-center sm:flex-col sm:items-end gap-2.5 sm:gap-0.5">
                 <div>
-                  <div className="text-[10px] print:text-[8.5px] uppercase font-bold text-slate-400">Số Đăng Ký Chứng Nhận</div>
+                  <div className="text-[10px] print:text-[8.5px] uppercase font-bold text-slate-400">Số đăng ký chứng nhận</div>
                   <div className="font-mono font-black text-xs print:text-[10.5px] text-[#24263e]">{certId}</div>
                   <div className="text-[10px] print:text-[8.5px] text-slate-400">{dateDisplay}</div>
                 </div>
@@ -559,7 +559,7 @@ export const DigitalInspectionCertificateModal: React.FC<DigitalInspectionCertif
                   Mã hồ sơ đơn hàng: <strong className="font-mono text-slate-700 font-medium">#{order.id}</strong>
                 </div>
                 <div className="text-slate-500 text-[10px] print:text-[8.5px] mt-0.5">
-                  Hình thức kiểm định: <strong className="text-slate-700 font-medium">{isAtCenter ? 'Tại Trung Tâm Kiểm Định (Hub)' : 'Tại Nhà (At Home)'}</strong>
+                  Hình thức kiểm định: <strong className="text-slate-700 font-medium">{isAtCenter ? 'Tại trung tâm kiểm định (Hub)' : 'Tại Nhà (At Home)'}</strong>
                 </div>
               </div>
             </div>
@@ -700,7 +700,7 @@ export const DigitalInspectionCertificateModal: React.FC<DigitalInspectionCertif
                   </span>
                   {grade && (
                     <span className="text-xs print:text-[9.5px] font-bold text-slate-700">
-                      Phân Hạng: <strong className="text-slate-900">Grade {grade}</strong>
+                      Phân hạng: <strong className="text-slate-900">Grade {grade}</strong>
                     </span>
                   )}
                 </div>
@@ -713,7 +713,7 @@ export const DigitalInspectionCertificateModal: React.FC<DigitalInspectionCertif
 
               {realConditionScore !== null && (
                 <div className="sm:text-right shrink-0 bg-white px-2.5 py-1.5 rounded-lg border border-slate-200 shadow-2xs">
-                  <div className="text-[9px] print:text-[8px] uppercase font-bold text-slate-400">Điểm Chất Lượng Thẩm Định</div>
+                  <div className="text-[9px] print:text-[8px] uppercase font-bold text-slate-400">Điểm chất lượng thẩm định</div>
                   <div className="text-lg print:text-base font-black text-slate-900">
                     {realConditionScore}<span className="text-xs font-normal text-slate-400">/100</span>
                   </div>
@@ -724,7 +724,7 @@ export const DigitalInspectionCertificateModal: React.FC<DigitalInspectionCertif
             {displaySummaryNotes && (
               <div className="p-2 print:p-1.5 rounded-xl print:rounded-lg bg-slate-50 border border-slate-200 text-xs print:text-[9px] space-y-0.5">
                 <span className="text-[9.5px] print:text-[8px] font-bold uppercase text-slate-400 tracking-wider block">
-                  Ghi Chú Kết Luận Của Kỹ Thuật Viên:
+                  Ghi chú kết luận của kỹ thuật viên:
                 </span>
                 <p className="italic text-slate-700 leading-relaxed font-medium">"{displaySummaryNotes}"</p>
               </div>
@@ -800,7 +800,7 @@ export const DigitalInspectionCertificateModal: React.FC<DigitalInspectionCertif
 
         {/* Footer Note (Ẩn khi in ấn) */}
         <div className="mt-3 text-center text-[11px] text-slate-400 print-hidden">
-          Giấy chứng nhận này được bảo chứng bởi Quỹ Bảo Lãnh Escrow SecondLife trong cửa sổ 48h đối soát khiếu nại.
+          Giấy chứng nhận này được bảo chứng bởi quỹ bảo lãnh Escrow secondLife trong cửa sổ 48h đối soát khiếu nại.
         </div>
       </div>
     </div>

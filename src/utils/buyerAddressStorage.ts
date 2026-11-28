@@ -50,7 +50,7 @@ export function loadSavedBuyerAddresses(
     const lng = typeof currentUser?.longitude === 'number' && currentUser.longitude !== 0 ? currentUser.longitude : 106.660172;
     const defaultAddr: BuyerDeliveryAddress = {
       id: `addr-${Date.now()}`,
-      name: currentUser?.name || (currentUser as any)?.fullName || 'Khách Hàng',
+      name: currentUser?.name || (currentUser as any)?.fullName || 'Khách hàng',
       phone: currentUser?.phone || '',
       email: currentUser?.email || '',
       streetAddress: profileAddress,

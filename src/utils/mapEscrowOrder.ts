@@ -124,11 +124,11 @@ export function mapEscrowOrder(bOrd: any, {
       priceVnd: Number(bOrd.itemPriceVnd || bOrd.finalItemPrice || bOrd.postPrice || bOrd.finalPrice || bOrd.price || 0),
       conditionGrade: (bOrd.conditionGrade || bOrd.itemCondition || (bOrd as any).condition || 'Good') as any,
       declaredConditionText: resolvedCondition,
-      description: 'Giao dịch bảo lãnh qua Quỹ Escrow SecondLife.',
+      description: 'Giao dịch bảo lãnh qua quỹ Escrow secondLife.',
       location: resolvedLoc,
       sellerAddress: resolvedSellerAddr,
       sellerId: bOrd.sellerId,
-      sellerName: (bOrd as any).sellerName || 'Người Bán SecondLife',
+      sellerName: (bOrd as any).sellerName || 'Người bán secondLife',
       sellerRating: Number((bOrd as any).sellerRating ?? 0),
       sellerCompletedOrders: Number((bOrd as any).sellerCompletedOrders ?? 0),
       sellerVerified: true,
@@ -330,8 +330,8 @@ export function mapEscrowOrder(bOrd: any, {
     buyerNameMap?.get(`post_${bOrd.postId}`) ||
     parsedBuyerName ||
     bOrd.buyerName ||
-    (currentRole === 'buyer' ? (currentUser?.name || currentUser?.email || 'Khách Hàng') : '') ||
-    `Khách Mua #${bOrd.buyerId ? bOrd.buyerId.slice(0, 8).toUpperCase() : 'VIP'}`
+    (currentRole === 'buyer' ? (currentUser?.name || currentUser?.email || 'Khách hàng') : '') ||
+    `Khách mua #${bOrd.buyerId ? bOrd.buyerId.slice(0, 8).toUpperCase() : 'VIP'}`
   ).trim();
 
   const resolvedBuyerPhone = (
@@ -348,7 +348,7 @@ export function mapEscrowOrder(bOrd: any, {
     bOrd.sellerName ||
     sellerNameMap?.get(bOrd.sellerId) ||
     matchedListing.sellerName ||
-    (currentRole === 'seller' ? (currentUser?.name || 'Người Bán') : 'Người Bán')
+    (currentRole === 'seller' ? (currentUser?.name || 'Người bán') : 'Người bán')
   ).trim();
 
   const isBadSellerAddr = (addr?: string | null) => {
@@ -386,7 +386,7 @@ export function mapEscrowOrder(bOrd: any, {
     (!isBadSellerAddr(bOrd.sellerAddress) ? bOrd.sellerAddress : undefined) ||
     (!isBadSellerAddr(bOrd.shippingLegs?.[0]?.origin) ? bOrd.shippingLegs[0].origin : undefined) ||
     (!isBadSellerAddr(matchedListing.sellerAddress) ? matchedListing.sellerAddress : undefined) ||
-    (isTrangSeller ? 'Student Station Coffee, Đường Quảng Trường Sáng Tạo, Phường Đông Hòa, Thành phố Dĩ An, BI 00084, Việt Nam' : undefined) ||
+    (isTrangSeller ? 'Student station coffee, đường quảng trường sáng tạo, phường đông hòa, thành phố Dĩ An, BI 00084, Việt Nam' : undefined) ||
     (!isBadSellerAddr(matchedListing.location && matchedListing.location !== 'Đà Nẵng, Việt Nam' ? matchedListing.location : undefined) ? matchedListing.location : undefined);
 
   const extractDeliveryText = (src: any): string | undefined => {
@@ -428,7 +428,7 @@ export function mapEscrowOrder(bOrd: any, {
     cachedBuyer?.buyerAddress ||
     bOrd.buyerAddress ||
     (currentUser && currentUser.id === bOrd.buyerId ? (currentUser.address || currentUser.pickupAddress) : undefined) ||
-    (isInspectionOrder && bOrd.orderType !== 'AT_HOME' ? 'Trạm Kiểm Định SecondLife Hub' : 'Địa chỉ nhận hàng của người mua');
+    (isInspectionOrder && bOrd.orderType !== 'AT_HOME' ? 'Trạm kiểm định secondLife Hub' : 'Địa chỉ nhận hàng của người mua');
 
   const itemPrice = Number(bOrd.itemPriceVnd || bOrd.finalItemPrice || bOrd.postPrice || bOrd.finalPrice || bOrd.price || bOrd.listing?.priceVnd || matchedListing?.priceVnd || 0);
   const shipFee = Number(bOrd.shippingFeeVnd || bOrd.shippingFee || bOrd.finalShippingFee || 0);
@@ -603,7 +603,7 @@ export function mapEscrowOrder(bOrd: any, {
           trackingNumber: (bOrd as any).shipmentOrderCode || (bOrd as any).trackingNumber || '',
           status: bOrd.status === 'DELIVERED' ? 'DELIVERED' : (bOrd.status === 'SHIPPED' ? 'IN_TRANSIT' : 'PENDING'),
           origin: (bOrd as any).sellerAddress || matchedListing.sellerAddress || (matchedListing.location && matchedListing.location !== 'Đà Nẵng, Việt Nam' ? matchedListing.location : null) || 'Địa chỉ kho người bán',
-          destination: (bOrd as any).inspectionCenterAddress || resolveInspectionCenter(bOrd).address || 'Giảng đường Phượng Vỹ, Đường số 8, Phường Linh Xuân, Thành phố Hồ Chí Minh',
+          destination: (bOrd as any).inspectionCenterAddress || resolveInspectionCenter(bOrd).address || 'Giảng đường phượng vỹ, đường số 8, phường linh xuân, thành phố Hồ Chí Minh',
           estimatedDelivery: 'Trong ngày',
           timeline: [
             {
@@ -619,7 +619,7 @@ export function mapEscrowOrder(bOrd: any, {
           carrier: 'Lalamove',
           trackingNumber: '',
           status: 'PENDING',
-          origin: (bOrd as any).inspectionCenterAddress || resolveInspectionCenter(bOrd).address || 'Giảng đường Phượng Vỹ, Đường số 8, Phường Linh Xuân, Thành phố Hồ Chí Minh',
+          origin: (bOrd as any).inspectionCenterAddress || resolveInspectionCenter(bOrd).address || 'Giảng đường phượng vỹ, đường số 8, phường linh xuân, thành phố Hồ Chí Minh',
           destination: buyerAddr,
           estimatedDelivery: 'Giao nhanh trong ngày sau kiểm định',
           timeline: [

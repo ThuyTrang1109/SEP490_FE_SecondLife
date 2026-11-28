@@ -334,7 +334,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
           <div className="p-4 border-b border-white/15 flex items-center justify-between bg-white/5">
             <div className="flex items-center gap-2">
               <span className="font-black text-sm text-white">
-                {lang === 'vi' ? 'Thông Báo' : 'Notifications'}
+                {lang === 'vi' ? 'Thông báo' : 'Notifications'}
               </span>
               {unreadCount > 0 && (
                 <span className="text-[10px] font-extrabold bg-[#c34c36] text-white px-2 py-0.5 rounded-full shadow-2xs">

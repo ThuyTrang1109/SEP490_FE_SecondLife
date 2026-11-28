@@ -198,13 +198,13 @@ export const InboxView: React.FC<InboxViewProps> = ({
         roleLabel = lang === 'vi' ? 'Đối tác: Người mua' : 'Partner: Buyer';
         partnerName =
           (!isNameOfMe(room.buyerName) && room.buyerName) ||
-          (lang === 'vi' ? 'Khách Hàng' : 'Customer');
+          (lang === 'vi' ? 'Khách hàng' : 'Customer');
         partnerAvatar = room.buyerAvatar || '';
       } else {
         roleLabel = lang === 'vi' ? 'Đối tác: Người bán' : 'Partner: Seller';
         partnerName =
           (!isNameOfMe(room.sellerName) && room.sellerName) ||
-          (lang === 'vi' ? 'Người Bán' : 'Seller');
+          (lang === 'vi' ? 'Người bán' : 'Seller');
         partnerAvatar = room.sellerAvatar || '';
       }
 
@@ -257,7 +257,10 @@ export const InboxView: React.FC<InboxViewProps> = ({
           if (localMsg && localTouch) {
             const touchTime = Number(localTouch);
             const serverTime = r.updatedAt ? new Date(r.updatedAt).getTime() : 0;
-            if (touchTime > serverTime) {
+            const serverOffer = parseSystemMessage(r.lastMessage || '').offer;
+            const localOffer = parseSystemMessage(localMsg).offer;
+            const isSameOffer = serverOffer?.negotiationId && serverOffer.negotiationId === localOffer?.negotiationId;
+            if (touchTime > serverTime && !isSameOffer) {
               mergedRoom.lastMessage = localMsg;
               mergedRoom.updatedAt = new Date(touchTime).toISOString();
             }
@@ -387,6 +390,12 @@ export const InboxView: React.FC<InboxViewProps> = ({
     if (parsed.isSystem) {
       if (parsed.offer) {
         const off = parsed.offer;
+        if (off.status === 'COMPLETED') {
+          return `${lang === 'vi' ? 'Đã mua theo giá chốt' : 'Purchased at agreed price'} · ${formatVND(off.price)}`;
+        }
+        if (off.status === 'EXPIRED') {
+          return lang === 'vi' ? 'Thỏa thuận đã hết hạn' : 'Offer expired';
+        }
         if (off.status === 'ACCEPTED') {
           return `🎉 ${lang === 'vi' ? 'Đã chốt giá:' : 'Agreed price:'} ${formatVND(off.price)}`;
         }

@@ -58,9 +58,9 @@ class DialogService {
       this.listener({
         isOpen: true,
         type: options?.type || 'info',
-        title: options?.title || 'Thông Báo Hệ Thống',
+        title: options?.title || 'Thông báo hệ thống',
         message: finalMsg,
-        confirmText: options?.confirmText || 'Đã Hiểu',
+        confirmText: options?.confirmText || 'Đã hiểu',
         resolve: () => resolve(),
       });
     });
@@ -69,7 +69,7 @@ class DialogService {
   success(message: string, title?: string): Promise<void> {
     return this.alert(message, {
       type: 'success',
-      title: title || 'Thao Tác Thành Công',
+      title: title || 'Thao tác thành công',
       confirmText: 'Đồng Ý',
     });
   }
@@ -77,16 +77,16 @@ class DialogService {
   error(message: string, title?: string): Promise<void> {
     return this.alert(message, {
       type: 'error',
-      title: title || 'Đã Xảy Ra Lỗi',
-      confirmText: 'Đã Hiểu',
+      title: title || 'Đã xảy ra lỗi',
+      confirmText: 'Đã hiểu',
     });
   }
 
   warning(message: string, title?: string): Promise<void> {
     return this.alert(message, {
       type: 'warning',
-      title: title || 'Cảnh Báo',
-      confirmText: 'Đã Hiểu',
+      title: title || 'Cảnh báo',
+      confirmText: 'Đã hiểu',
     });
   }
 
@@ -101,10 +101,10 @@ class DialogService {
       this.listener({
         isOpen: true,
         type: options?.type || 'confirm',
-        title: options?.title || 'Xác Nhận Thao Tác',
+        title: options?.title || 'Xác nhận thao tác',
         message: finalMsg,
-        confirmText: options?.confirmText || 'Xác Nhận',
-        cancelText: options?.cancelText || 'Hủy Bỏ',
+        confirmText: options?.confirmText || 'Xác nhận',
+        cancelText: options?.cancelText || 'Hủy bỏ',
         routeDetails: options?.routeDetails,
         resolve: (val: boolean) => resolve(val),
       });

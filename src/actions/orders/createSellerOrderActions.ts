@@ -32,7 +32,7 @@ export function createSellerOrderActions({
   const handlePromptRejectInspection = (ord: EscrowOrder) => {
     setConfirmDialog({
       isOpen: true,
-      title: lang === 'vi' ? 'Từ Chối Yêu Cầu Kiểm Định' : 'Reject Inspection Request',
+      title: lang === 'vi' ? 'Từ chối yêu cầu kiểm định' : 'Reject Inspection Request',
       message: lang === 'vi'
         ? 'Bạn có chắc chắn muốn từ chối yêu cầu kiểm định cho sản phẩm này? Đơn hàng sẽ bị hủy và tiền ký quỹ sẽ được hoàn trả cho người mua.'
         : 'Are you sure you want to reject the inspection request? The order will be cancelled and refunded.',
@@ -74,7 +74,7 @@ export function createSellerOrderActions({
     setConfirmDialog({
       isOpen: true,
       title: lang === 'vi'
-        ? (orderHasInspection ? 'Xác nhận đồng ý kiểm định' : 'Xác Nhận Chuẩn Bị Đơn Hàng')
+        ? (orderHasInspection ? 'Xác nhận đồng ý kiểm định' : 'Xác nhận chuẩn bị đơn hàng')
         : (orderHasInspection ? 'Confirm Inspection Agreement' : 'Confirm Order Preparation'),
       message: lang === 'vi'
         ? (orderHasInspection
@@ -91,7 +91,7 @@ export function createSellerOrderActions({
           : 'Sau khi xác nhận, người bán cam kết đóng gói sản phẩm cẩn thận theo quy chuẩn và chuẩn bị sẵn sàng để bưu tá / tài xế Lalamove đến lấy.')
         : 'After confirmation, you commit to packing the item safely for pickup.',
       confirmText: lang === 'vi'
-        ? (orderHasInspection ? 'Đồng ý kiểm định' : 'Xác Nhận Đơn')
+        ? (orderHasInspection ? 'Đồng ý kiểm định' : 'Xác nhận đơn')
         : (orderHasInspection ? 'Accept Inspection' : 'Confirm Order'),
       cancelText: lang === 'vi' ? 'Đóng' : 'Cancel',
       variant: 'primary',
@@ -259,7 +259,7 @@ export function createSellerOrderActions({
       subMessage: lang === 'vi'
         ? 'Sau khi bạn xác nhận, hệ thống sẽ ghi nhận mốc thời gian hoàn tất (SLA) và phát tín hiệu điều phối tài xế Lalamove đến địa chỉ kho lấy hàng.'
         : 'Upon confirmation, the system records SLA completion timestamp and signals Lalamove driver dispatch to your warehouse.',
-      confirmText: lang === 'vi' ? '✓ Sẵn Sàng Giao' : '✓ Ready for Pickup',
+      confirmText: lang === 'vi' ? '✓ Sẵn sàng giao' : '✓ Ready for Pickup',
       cancelText: lang === 'vi' ? 'Đóng' : 'Close',
       variant: 'primary',
       iconType: 'truck',

@@ -95,16 +95,16 @@ export const ShippingLabelModal: React.FC<ShippingLabelModalProps> = ({
   const formatLegTitle = () => {
     switch (leg) {
       case 'SELLER_TO_CENTER':
-        return 'Chặng 1: Kho Người Bán ➔ Trạm Kiểm Định Hub';
+        return 'Chặng 1: Kho người bán ➔ trạm kiểm định Hub';
       case 'CENTER_TO_BUYER':
-        return 'Chặng 2: Trạm Kiểm Định Hub ➔ Người Mua';
+        return 'Chặng 2: Trạm kiểm định Hub ➔ Người Mua';
       case 'CENTER_TO_SELLER':
-        return 'Hoàn Trả: Trạm Kiểm Định Hub ➔ Kho Người Bán';
+        return 'Hoàn Trả: Trạm kiểm định Hub ➔ kho người bán';
       case 'BUYER_TO_SELLER':
-        return 'Hoàn Trả: Người Mua ➔ Kho Người Bán';
+        return 'Hoàn Trả: Người Mua ➔ kho người bán';
       case 'SELLER_TO_BUYER':
       default:
-        return 'Giao Trực Tiếp (Người Bán ➔ Người Mua)';
+        return 'Giao trực tiếp (Người Bán ➔ Người Mua)';
     }
   };
 
@@ -335,7 +335,7 @@ export const ShippingLabelModal: React.FC<ShippingLabelModalProps> = ({
             </div>
             <div>
               <h3 className="text-base font-black text-slate-900 uppercase tracking-tight">
-                Phiếu Gửi Hàng & Vận Đơn Lalamove Delivery
+                Phiếu gửi hàng & vận đơn Lalamove delivery
               </h3>
               <p className="text-xs text-slate-500">
                 Mã đơn: <strong className="font-mono text-slate-700">#{order.id.slice(0, 16)}</strong> • Đối tác Lalamove
@@ -349,7 +349,7 @@ export const ShippingLabelModal: React.FC<ShippingLabelModalProps> = ({
               className="px-4 py-2 rounded-xl bg-[#24263e] hover:bg-black text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
             >
               <Printer className="w-3.5 h-3.5" />
-              <span>In Phiếu</span>
+              <span>In phiếu</span>
             </button>
             <button
               onClick={onClose}
@@ -479,7 +479,7 @@ export const ShippingLabelModal: React.FC<ShippingLabelModalProps> = ({
                   </span>
                 ) : (
                   <span className="text-[9px] bg-emerald-50 text-emerald-800 font-bold px-1.5 py-0.2 rounded border border-emerald-200">
-                    GPS Sẵn Sàng
+                    GPS sẵn sàng
                   </span>
                 )}
               </div>
@@ -540,7 +540,7 @@ export const ShippingLabelModal: React.FC<ShippingLabelModalProps> = ({
             </div>
             <p className="leading-relaxed text-[11px] sm:text-xs text-amber-900 font-medium">
               {isSellerToCenter
-                ? 'Tài xế giao kiện hàng đến Trạm Kiểm Định SecondLife Hub. Kỹ thuật viên Hub sẽ kiểm tra, cấp phiếu tiếp nhận và tiến hành thẩm định kỹ thuật.'
+                ? 'Tài xế giao kiện hàng đến trạm kiểm định secondLife Hub. Kỹ thuật viên Hub sẽ kiểm tra, cấp phiếu tiếp nhận và tiến hành thẩm định kỹ thuật.'
                 : isCenterToBuyer
                   ? 'Giao hàng cho khách mua theo địa chỉ đã xác minh. Sản phẩm đã đạt chuẩn kiểm định và được Hub dán tem bảo đảm SecondLife. Không thu tiền mặt COD.'
                   : 'Cho khách xem hàng, không cho dùng thử. Sản phẩm SecondLife đã được niêm phong kỹ lưỡng. Chuyển hoàn về người gửi sau 3 lần giao không thành công.'}
@@ -561,7 +561,7 @@ export const ShippingLabelModal: React.FC<ShippingLabelModalProps> = ({
             className="px-5 py-2.5 rounded-xl bg-[#c34c36] hover:bg-[#dc4729] text-white font-black text-xs cursor-pointer shadow-sm flex items-center gap-1.5 transition"
           >
             <Printer className="w-4 h-4" />
-            <span>In Phiếu Dán Kiện Hàng</span>
+            <span>In phiếu dán kiện hàng</span>
           </button>
         </div>
       </div>

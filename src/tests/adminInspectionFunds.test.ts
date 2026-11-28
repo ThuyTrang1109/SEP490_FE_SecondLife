@@ -351,7 +351,7 @@ test('AdminInspectionFundsView renders Scenario 4 correctly (Tại nhà: ẩn kh
   }));
 
   assert.match(html, /Phụ phí di chuyển KTV/);
-  assert.doesNotMatch(html, /Dự Phòng Cước Trả Hàng/);
+  assert.doesNotMatch(html, /Dự phòng cước trả hàng/);
 });
 
 test('AdminInspectionFundsView renders 403 and 404 error messages properly', () => {
@@ -379,10 +379,10 @@ test('AdminInspectionFundsTab renders dedicated tab with KPI cards and inspectio
   }));
 
   assert.match(html, /ĐỐI SOÁT TIỀN KIỂM ĐỊNH/);
-  assert.match(html, /Đơn Đang Giữ Tiền/);
-  assert.match(html, /Quỹ Cước Hoàn Đang Giữ/);
-  assert.match(html, /Chờ Quyết Toán Hub/);
-  assert.match(html, /Danh Sách Đơn Kiểm Định Đang Quản Lý Dòng Tiền/);
+  assert.match(html, /Đơn đang giữ tiền/);
+  assert.match(html, /Quỹ cước hoàn đang giữ/);
+  assert.match(html, /Chờ quyết toán Hub/);
+  assert.match(html, /Danh sách đơn kiểm định đang quản lý dòng tiền/);
   assert.match(html, /Tìm mã đơn, tên máy, người/);
 });
 

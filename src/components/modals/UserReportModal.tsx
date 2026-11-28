@@ -460,7 +460,7 @@ export const UserReportModal: React.FC<UserReportModalProps> = ({
             </div>
             <div>
               <h3 className="font-black text-base text-[#24263e]">
-                {isSuccess ? 'Gửi Khiếu Nại Thành Công' : 'Báo Cáo & Khiếu Nại'}
+                {isSuccess ? 'Gửi khiếu nại thành công' : 'Báo cáo & khiếu nại'}
               </h3>
               <p className="text-[11px] text-slate-500">
                 {isSuccess ? 'Hệ thống đã tiếp nhận yêu cầu của bạn' : 'Bảo vệ quyền lợi người dùng sàn SecondLife'}
@@ -485,7 +485,7 @@ export const UserReportModal: React.FC<UserReportModalProps> = ({
 
             <div className="space-y-1">
               <h4 className="text-base font-black text-slate-900">
-                Khiếu Nại Của Bạn Đã Được Ghi Nhận!
+                Khiếu nại của bạn đã được ghi nhận!
               </h4>
               <p className="text-xs text-slate-600 max-w-sm mx-auto leading-relaxed">
                 Nhân viên SecondLife sẽ xem xét hồ sơ. Với khiếu nại đơn hàng hợp lệ, tiền hàng được giữ trong Escrow trong thời gian xử lý.
@@ -589,7 +589,7 @@ export const UserReportModal: React.FC<UserReportModalProps> = ({
                           }`}
                       >
                         <Package className="w-3.5 h-3.5 text-[#c34c36]" />
-                        <span>Đơn Hàng Của Tôi</span>
+                        <span>Đơn hàng của tôi</span>
                       </button>
                       <button
                         type="button"
@@ -600,7 +600,7 @@ export const UserReportModal: React.FC<UserReportModalProps> = ({
                           }`}
                       >
                         <Layers className="w-3.5 h-3.5 text-blue-600" />
-                        <span>Bài Đăng Vi Phạm</span>
+                        <span>Bài đăng vi phạm</span>
                       </button>
                     </div>
 
@@ -815,7 +815,7 @@ export const UserReportModal: React.FC<UserReportModalProps> = ({
                   className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white rounded-xl font-black text-xs shadow-md transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  <span>{isSubmitting ? 'Đang Gửi Khiếu Nại...' : 'Gửi Khiếu Nại Vi Phạm'}</span>
+                  <span>{isSubmitting ? 'Đang gửi khiếu nại...' : 'Gửi'}</span>
                 </button>
               </div>
             </form>

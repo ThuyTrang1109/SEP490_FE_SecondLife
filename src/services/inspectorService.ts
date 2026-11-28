@@ -606,7 +606,7 @@ export const inspectorService = {
           : data.filter((c: any) => c.shippingAddressConfigured !== false);
         const mapped = filtered.map((c: any) => ({
           id: c.id,
-          name: c.name || 'Trung Tâm Kiểm Định SecondLife',
+          name: c.name || 'Trung tâm kiểm định secondLife',
           city: c.city || (c.address ? c.address.split(',').pop()?.trim() : 'Hồ Chí Minh'),
           address: c.address ?? null,
           phone: c.phone ?? null,
@@ -707,7 +707,7 @@ export const inspectorService = {
 
     const normalizedAddress = typeof data.buyerDeliveryAddress === 'object' && data.buyerDeliveryAddress
       ? {
-        name: (data.buyerDeliveryAddress.name || 'Khách Hàng').trim().slice(0, 100),
+        name: (data.buyerDeliveryAddress.name || 'Khách hàng').trim().slice(0, 100),
         phone: cleanedPhone,
         address: typeof (data.buyerDeliveryAddress as any).address === 'string' ? (data.buyerDeliveryAddress as any).address.trim() : undefined,
         latitude: buyerLat,

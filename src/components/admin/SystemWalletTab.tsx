@@ -29,8 +29,14 @@ import {
 } from '../../services';
 import { inspectorService, InspectionOrderDto } from '../../services/inspectorService';
 import { AdminInspectionFundsModal } from './AdminInspectionFundsModal';
+import { SystemWalletBalanceDialog } from './SystemWalletBalanceDialog';
+import type { SystemWalletBalanceFund } from '../../services/systemWalletService';
 import { isValidUUID } from '../../utils/negotiationHelper';
-import { toSystemWalletHistoryItem, getSystemWalletBreakdownLines } from '../../utils/systemWalletHistory';
+import {
+  toSystemWalletHistoryItem,
+  getSystemWalletBreakdownLines,
+  isInternalCommissionTransfer,
+} from '../../utils/systemWalletHistory';
 import {
   SystemWalletData,
   SystemWalletFundCategory,
@@ -47,6 +53,7 @@ export type SystemWalletFilterType =
   | 'USER_SHIPPING'
   | 'HUB_PAYOUT'
   | 'COMMISSION'
+  | 'PACKAGE_REVENUE'
   | 'SHIPPING'
   | 'PAYMENT_HOLD'
   | 'INSPECTION_HOLD'
@@ -119,9 +126,9 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
   const [currentPage, setCurrentPage] = useState(0);
   const [pageSize] = useState(100);
   const [totalPages, setTotalPages] = useState(1);
-  const [totalElements, setTotalElements] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [historyError, setHistoryError] = useState(false);
   const historyRequest = useRef(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -138,6 +145,8 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
   const [searchOrderId, setSearchOrderId] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [directAuditId, setDirectAuditId] = useState('');
+  const [balanceFund, setBalanceFund] = useState<SystemWalletBalanceFund | null>(null);
+  const viewingShippingHistory = activeFilter === 'SHIPPING' || activeFilter === 'USER_SHIPPING';
 
   // Selected Order Detail Modal (when clicking orderId for Escrow)
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
@@ -191,14 +200,22 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
   }, []);
 
   const fetchTransactions = useCallback(
-    async (page = 0, _filterType = activeFilter, orderQuery = debouncedSearch) => {
+    async (page = 0, filterType = activeFilter, orderQuery = debouncedSearch) => {
       const request = ++historyRequest.current;
       setIsLoadingHistory(true);
+      setHistoryError(false);
       try {
         const filter: SystemWalletTransactionFilter = {
           page,
           size: pageSize,
         };
+
+        if (filterType === 'PACKAGE_REVENUE' || filterType === 'COMMISSION' || filterType === 'PRODUCT_ESCROW') {
+          filter.fundCategory = filterType;
+        }
+        if (filterType === 'SHIPPING' || filterType === 'USER_SHIPPING') {
+          filter.hasShipping = true;
+        }
 
         if (isValidUUID(orderQuery)) {
           filter.orderId = orderQuery;
@@ -209,14 +226,18 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
         setTransactions(res.items);
         setCurrentPage(res.page);
         setTotalPages(res.totalPages || 1);
-        setTotalElements(res.totalElements || 0);
       } catch (err: any) {
         console.error('Error fetching system transactions:', err);
+        if (request === historyRequest.current) {
+          setTransactions([]);
+          setTotalPages(1);
+          setHistoryError(true);
+        }
       } finally {
         if (request === historyRequest.current) setIsLoadingHistory(false);
       }
     },
-    [debouncedSearch, pageSize]
+    [activeFilter, debouncedSearch, pageSize]
   );
 
   useEffect(() => {
@@ -315,9 +336,11 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
   const totalHubPaid = Number(wallet?.totalHubPaid ?? 0);
 
   // 5. Tổng tiền hoa hồng sàn (All Revenue Balance) - lấy trực tiếp từ Database
-  const totalRevenue = Number(wallet?.revenueBalance ?? 0);
+  const packageRevenue = Number(wallet?.packageRevenueBalance ?? 0);
+  const commissionRevenue = Number(wallet?.revenueBalance ?? 0) - packageRevenue;
 
   const getTransactionBadgeClass = (type: string, category: SystemWalletFundCategory) => {
+    if (category === 'PACKAGE_REVENUE') return 'bg-violet-100 text-violet-800 border-violet-200';
     if (category === 'COMMISSION') return 'bg-emerald-100 text-emerald-800 border-emerald-300';
     if (category === 'HUB_PAYOUT') return 'bg-purple-100 text-purple-800 border-purple-300';
     switch (type) {
@@ -350,27 +373,16 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
     let list = unifiedTransactions;
 
     if (activeFilter === 'PRODUCT_ESCROW') {
-      list = list.filter((item) =>
-        item.fundCategory === 'PRODUCT_ESCROW' ||
-        (item.source === 'ESCROW' && !item.isShipping && item.fundCategory !== 'COMMISSION' && item.transaction.heldDelta !== 0)
-      );
+      list = list.filter((item) => item.fundCategory === 'PRODUCT_ESCROW');
     } else if (activeFilter === 'HUB_PAYOUT') {
       list = list.filter((item) =>
         item.fundCategory === 'HUB_PAYOUT' ||
         item.typeLabel === 'Thanh toán ví Hub'
       );
-    } else if (activeFilter === 'COMMISSION') {
-      list = list.filter((item) =>
-        item.fundCategory === 'COMMISSION' ||
-        item.typeLabel === 'Hoa hồng sàn' ||
-        (item.transaction.revenueDelta !== 0 && item.fundCategory !== 'HUB_PAYOUT')
-      );
+    } else if (activeFilter === 'COMMISSION' || activeFilter === 'PACKAGE_REVENUE') {
+      list = list.filter((item) => item.fundCategory === activeFilter);
     } else if (activeFilter === 'USER_SHIPPING' || activeFilter === 'SHIPPING') {
-      list = list.filter((item) =>
-        item.isShipping ||
-        item.transaction.shippingDelta !== 0 ||
-        item.fundCategory === 'USER_SHIPPING'
-      );
+      list = list.filter((item) => Number(item.transaction.shippingDelta) !== 0);
     } else if (activeFilter === 'PAYMENT_HOLD') {
       list = list.filter((item) =>
         item.typeLabel === 'Nhận ký quỹ' ||
@@ -412,7 +424,7 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
       const query = debouncedSearch.toLowerCase().trim();
       const cleanQuery = query.replace(/^#/, '');
       list = list.filter((item) =>
-        item.orderId.toLowerCase().includes(query) ||
+        item.referenceId.toLowerCase().includes(cleanQuery) ||
         item.displayId.toLowerCase().includes(query) ||
         item.itemTitle?.toLowerCase().includes(query) ||
         item.entryId.toLowerCase().includes(cleanQuery) ||
@@ -541,6 +553,23 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
     );
   };
 
+  const formatUnifiedDelta = (item: UnifiedPlatformItem | null | undefined) => {
+    if (!item) return formatDelta(0);
+    if (isInternalCommissionTransfer(item)) {
+      return (
+        <div className="flex flex-col items-end">
+          <span className="text-emerald-700 font-mono font-bold">
+            {formatVND(item.transaction.revenueDelta)}
+          </span>
+          <span className="text-[10px] text-slate-500 font-normal">
+            Trích từ tiền ký quỹ
+          </span>
+        </div>
+      );
+    }
+    return formatDelta(item.signedDelta);
+  };
+
   const renderDetailButton = (item: UnifiedPlatformItem) => item.orderId && (
     <button
       type="button"
@@ -584,7 +613,7 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-200 shrink-0">
         <div className="flex items-center gap-2">
           <h2 className="text-sm sm:text-base font-black text-slate-900 uppercase tracking-tight">
-            Ví Hệ Thống &amp; Kế Toán Đối Soát
+            Ví hệ thống &amp; kế toán đối soát
           </h2>
 
 
@@ -678,16 +707,11 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
         </div>
 
         {/* 2. Tổng tiền hàng đang giữ (Product Escrow - heldBalance) */}
-        <div
-          onClick={() => {
-            setActiveViewMode('ALL_UNIFIED');
-            handleFilterChange(activeFilter === 'PRODUCT_ESCROW' ? 'ALL' : 'PRODUCT_ESCROW');
-          }}
-          className={`flex min-h-32 flex-col gap-2.5 rounded-xl border px-3.5 py-4 shadow-2xs transition cursor-pointer ${activeFilter === 'PRODUCT_ESCROW'
-            ? 'border-blue-500 ring-2 ring-blue-400 bg-blue-50/25'
-            : 'border-slate-200 hover:border-blue-300 bg-white'
-            }`}
-          title="Bấm để lọc lịch sử tiền hàng đang giữ"
+        <button
+          type="button"
+          onClick={() => setBalanceFund('PRODUCT_ESCROW')}
+          className="flex min-h-32 cursor-pointer flex-col gap-2.5 rounded-xl border border-slate-200 bg-white px-3.5 py-4 text-left shadow-2xs transition hover:border-blue-400 hover:bg-blue-50/30 focus-visible:outline-2 focus-visible:outline-blue-500"
+          title="Xem từng đơn còn giữ tiền trong Escrow"
         >
           <div className="flex items-center justify-between text-[11px] text-slate-600 font-bold">
             <span className="flex items-center gap-1">
@@ -703,9 +727,9 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
           </div>
           <div className="mt-auto flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1 text-[10px] leading-4 text-slate-500">
             <span>Tiền mua hàng bảo chứng chưa trả người bán</span>
-            <span className="text-blue-700 font-bold">{activeFilter === 'PRODUCT_ESCROW' ? '✓ Đang lọc' : 'Lọc tiền hàng →'}</span>
+            <span className="text-blue-700 font-bold">Xem đơn đang giữ tiền →</span>
           </div>
-        </div>
+        </button>
 
         {/* 3. Tiền kiểm định đang giữ (Inspection Escrow) */}
         <div
@@ -738,23 +762,18 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
         </div>
 
         {/* 4. Tiền ship đã thu của người dùng (shippingBalance) */}
-        <div
-          onClick={() => {
-            setActiveViewMode('ALL_UNIFIED');
-            handleFilterChange(activeFilter === 'SHIPPING' ? 'ALL' : 'SHIPPING');
-          }}
-          className={`flex min-h-32 flex-col gap-2.5 rounded-xl border px-3.5 py-4 shadow-2xs transition cursor-pointer ${activeFilter === 'SHIPPING' || activeFilter === 'USER_SHIPPING'
-            ? 'border-amber-500 ring-2 ring-amber-400 bg-amber-50/25'
-            : 'border-slate-200 hover:border-amber-300 bg-white'
-            }`}
-          title="Bấm để lọc nhanh các giao dịch có phát sinh tiền vận chuyển"
+        <button
+          type="button"
+          onClick={() => setBalanceFund('SHIPPING')}
+          className="flex min-h-32 cursor-pointer flex-col gap-2.5 rounded-xl border border-slate-200 bg-white px-3.5 py-4 text-left shadow-2xs transition hover:border-amber-400 hover:bg-amber-50/30 focus-visible:outline-2 focus-visible:outline-amber-500"
+          title="Xem số dư cước và các khoản cộng, trừ theo từng đơn"
         >
           <div className="flex items-center justify-between text-[11px] text-slate-600 font-bold">
             <span className="flex items-center gap-1">
               <Truck className="w-3.5 h-3.5 text-amber-600" />
-              <span>Phí vận chuyển đã thu</span>
+              <span>Số dư quỹ cước vận chuyển</span>
               <span className="px-1 py-0.2 rounded text-[8px] font-extrabold bg-amber-100 text-amber-800">
-                Đang giữ
+                Cước ròng
               </span>
             </span>
           </div>
@@ -762,10 +781,10 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
             {formatVND(totalUserShippingHeld)}
           </div>
           <div className="mt-auto flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1 text-[10px] leading-4 text-slate-500">
-            <span>Tiền ship hệ thống lưu giữ bảo chứng cho các đơn hàng</span>
-            <span className="text-amber-700 font-bold">{activeFilter === 'SHIPPING' || activeFilter === 'USER_SHIPPING' ? '✓ Đang lọc' : 'Lọc cước ship →'}</span>
+            <span>Các khoản cộng vào quỹ sau khi trừ các bút toán giảm.</span>
+            <span className="text-amber-700 font-bold">Xem đối soát cước →</span>
           </div>
-        </div>
+        </button>
 
         {/* 5. Tổng tiền đã thanh toán cho bên Hub */}
         <div
@@ -819,10 +838,19 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
             </span>
           </div>
           <div className="text-base sm:text-lg font-black text-emerald-700 font-mono">
-            {wallet ? formatVND(totalRevenue) : '---'}
+            {wallet ? formatVND(commissionRevenue) : '---'}
           </div>
           <div className="mt-auto flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1 text-[10px] leading-4 text-slate-500">
-            <span>Hoa hồng thực tế thu được từ các đơn quyết toán</span>
+            <button
+              type="button"
+              className="font-bold text-violet-700 hover:underline"
+              onClick={(event) => {
+                event.stopPropagation();
+                handleFilterChange(activeFilter === 'PACKAGE_REVENUE' ? 'ALL' : 'PACKAGE_REVENUE');
+              }}
+            >
+              Bán gói: {wallet ? formatVND(packageRevenue) : '---'}
+            </button>
             <span className="text-emerald-700 font-bold">{activeFilter === 'COMMISSION' ? '✓ Đang xem' : 'Lọc hoa hồng →'}</span>
           </div>
         </div>
@@ -841,7 +869,7 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
               }`}
           >
             <Zap className="w-3 h-3 text-amber-400" />
-            <span>Toàn Bộ Hệ Thống ({totalElements || unifiedTransactions.length})</span>
+            <span>Lịch sử toàn hệ thống</span>
           </button>
 
           <button
@@ -853,7 +881,7 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
               }`}
           >
             <Wallet className="w-3 h-3" />
-            <span>Đơn Mua Bán Sàn ({escrowItems.length})</span>
+            <span>Đơn mua bán sàn</span>
           </button>
 
           <button
@@ -865,7 +893,7 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
               }`}
           >
             <Building2 className="w-3 h-3" />
-            <span>Đơn Kiểm Định Hub ({inspectionOrders.length})</span>
+            <span>Đơn kiểm định Hub ({inspectionOrders.length})</span>
           </button>
         </div>
 
@@ -957,6 +985,17 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
 
           <button
             type="button"
+            onClick={() => handleFilterChange('PACKAGE_REVENUE')}
+            className={`px-2 py-0.5 rounded-full font-bold transition cursor-pointer border ${activeFilter === 'PACKAGE_REVENUE'
+              ? 'bg-violet-600 text-white border-violet-600'
+              : 'bg-white text-violet-800 border-violet-200 hover:bg-violet-50'
+              }`}
+          >
+            Doanh thu bán gói
+          </button>
+
+          <button
+            type="button"
             onClick={() => handleFilterChange('REFUND')}
             className={`px-2 py-0.5 rounded-full font-bold transition cursor-pointer border ${activeFilter === 'REFUND'
               ? 'bg-rose-600 text-white border-rose-600'
@@ -1022,25 +1061,27 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
                 <thead className="sticky top-0 bg-slate-100/95 backdrop-blur-xs z-10 border-b border-slate-200 shadow-2xs">
                   <tr className="bg-slate-50/70 border-b border-slate-200 text-slate-500 uppercase text-[10px] tracking-wider font-bold">
                     <th className="py-3 px-3.5">Mã GD</th>
-                    <th className="py-3 px-3.5">Phân Hệ</th>
-                    <th className="py-3 px-3.5">Mã Đơn Hàng (Order ID)</th>
-                    <th className="py-3 px-3.5">Phân Loại</th>
+                    <th className="py-3 px-3.5">Phân hệ</th>
+                    <th className="py-3 px-3.5">Mã đơn hàng (Order ID)</th>
+                    <th className="py-3 px-3.5">Phân loại</th>
                     <th className="py-3 px-3.5 text-right min-w-[210px]">
-                      <div>Số Tiền Biến Động</div>
+                      <div>{viewingShippingHistory ? 'Biến động quỹ cước' : 'Số tiền biến động'}</div>
 
                     </th>
-                    <th className="py-3 px-3.5 text-center">Thời Gian</th>
-                    <th className="py-3 px-3.5 text-center">Hành Động</th>
+                    <th className="py-3 px-3.5 text-center">Thời gian</th>
+                    <th className="py-3 px-3.5 text-center">Hành động</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {isLoadingHistory && transactions.length === 0 ? (
+                  {isLoadingHistory ? (
                     <tr>
                       <td colSpan={7} className="py-12 text-center text-slate-400">
                         <RefreshCw className="w-6 h-6 animate-spin mx-auto text-[#c34c36] mb-2" />
                         <span>Đang tải lịch sử giao dịch toàn hệ thống...</span>
                       </td>
                     </tr>
+                  ) : historyError ? (
+                    <tr><td colSpan={7} className="py-10 text-center text-rose-700">Không tải được lịch sử giao dịch. Hãy thử Làm mới.</td></tr>
                   ) : displayedUnifiedItems.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="py-10 text-center text-slate-400 italic">
@@ -1061,7 +1102,11 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
                         </td>
 
                         <td className="py-3 px-3.5 whitespace-nowrap">
-                          {item.source === 'ESCROW' ? (
+                          {item.source === 'PACKAGE' ? (
+                            <span className="inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold bg-violet-50 text-violet-800 border border-violet-200">
+                              Gói dịch vụ
+                            </span>
+                          ) : item.source === 'ESCROW' ? (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
                               <Wallet className="w-3 h-3 text-blue-500" />
                               <span>Sàn (Escrow)</span>
@@ -1075,7 +1120,11 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
                         </td>
 
                         <td className="py-3 px-3.5">
-                          {!item.orderId ? (
+                          {item.source === 'PACKAGE' ? (
+                            <span className="font-mono text-[11px] text-violet-800" title={item.referenceId}>
+                              {item.displayId}
+                            </span>
+                          ) : !item.orderId ? (
                             <span className="text-slate-400">—</span>
                           ) : item.source === 'ESCROW' ? (
                             <button
@@ -1115,7 +1164,7 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
 
                         {/* GOM THÀNH 1 CỘT: Số Tiền Biến Động (Cộng / Trừ) */}
                         <td className="py-3 px-3.5 text-right whitespace-nowrap font-medium">
-                          {formatDelta(item.signedDelta)}
+                          {viewingShippingHistory ? formatDelta(Number(item.transaction.shippingDelta)) : formatUnifiedDelta(item)}
                         </td>
 
                         <td className="py-3 px-3.5 text-center text-[11px] text-slate-500 font-mono whitespace-nowrap">
@@ -1153,19 +1202,19 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
                 <thead className="sticky top-0 bg-slate-100/95 backdrop-blur-xs z-10 border-b border-slate-200 shadow-2xs">
                   <tr className="text-slate-500 uppercase text-[10px] tracking-wider font-bold">
                     <th className="py-3 px-3.5">Mã GD</th>
-                    <th className="py-3 px-3.5">Mã Đơn Hàng (Order ID)</th>
-                    <th className="py-3 px-3.5">Phân Loại</th>
-                    <th className="py-3 px-3.5 text-right">Biến Động Ký Quỹ</th>
+                    <th className="py-3 px-3.5">Mã đơn hàng (Order ID)</th>
+                    <th className="py-3 px-3.5">Phân loại</th>
+                    <th className="py-3 px-3.5 text-right">Biến động ký quỹ</th>
                     <th
                       className={`py-3 px-3.5 text-right transition ${activeFilter === 'SHIPPING' ? 'bg-amber-100/70 text-amber-900 font-black' : ''
                         }`}
                     >
-                      Biến Động Phí Ship
+                      Biến động phí ship
                     </th>
-                    <th className="py-3 px-3.5 text-right">Biến Động Hoa Hồng</th>
-                    <th className="py-3 px-3.5 text-right">Số Dư Sau GD</th>
-                    <th className="py-3 px-3.5 text-center">Thời Gian</th>
-                    <th className="py-3 px-3.5 text-center">Hành Động</th>
+                    <th className="py-3 px-3.5 text-right">Biến động hoa hồng</th>
+                    <th className="py-3 px-3.5 text-right">Số dư sau GD</th>
+                    <th className="py-3 px-3.5 text-center">Thời gian</th>
+                    <th className="py-3 px-3.5 text-center">Hành động</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -1242,7 +1291,7 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
                             Ký quỹ: <strong>{formatVND(item.transaction.heldBalanceAfter)}</strong>
                           </div>
                           <div className="text-[10px] text-slate-400">
-                            Hoa hồng: {formatVND(item.transaction.revenueBalanceAfter)}
+                            Doanh thu: {formatVND(item.transaction.revenueBalanceAfter)}
                           </div>
                         </td>
 
@@ -1343,14 +1392,14 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
               <table className="w-full text-left text-xs">
                 <thead className="sticky top-0 bg-amber-50/95 backdrop-blur-xs z-10 border-b border-amber-200/80 shadow-2xs">
                   <tr className="bg-amber-50/70 border-b border-amber-200/80 text-amber-950 uppercase text-[10px] tracking-wider font-bold">
-                    <th className="py-2.5 px-3">Mã Đơn Kiểm Định</th>
+                    <th className="py-2.5 px-3">Mã đơn kiểm định</th>
                     <th className="py-2.5 px-3">Sản Phẩm &amp; Đối Tác</th>
-                    <th className="py-2.5 px-3 text-right">Phí Kiểm Định</th>
-                    <th className="py-2.5 px-3 text-right">Cước Gửi Hub</th>
-                    <th className="py-2.5 px-3 text-right">Dự Phòng Hoàn</th>
-                    <th className="py-2.5 px-3 text-right">Tổng Đã Thu</th>
-                    <th className="py-2.5 px-3 text-center">Trạng Thái Quỹ</th>
-                    <th className="py-2.5 px-3 text-center">Hành Động</th>
+                    <th className="py-2.5 px-3 text-right">Phí kiểm định</th>
+                    <th className="py-2.5 px-3 text-right">Cước gửi Hub</th>
+                    <th className="py-2.5 px-3 text-right">Dự phòng hoàn</th>
+                    <th className="py-2.5 px-3 text-right">Tổng đã thu</th>
+                    <th className="py-2.5 px-3 text-center">Trạng thái quỹ</th>
+                    <th className="py-2.5 px-3 text-center">Hành động</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -1395,7 +1444,7 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
                             </button>
                             {ord.orderType && (
                               <span className="text-[10px] text-slate-400 block font-sans">
-                                {ord.orderType === 'AT_HOME' ? 'Tại Nhà' : 'Tại Lab Hub'}
+                                {ord.orderType === 'AT_HOME' ? 'Tại nhà' : 'Tại Lab Hub'}
                               </span>
                             )}
                           </td>
@@ -1472,6 +1521,21 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
         )}
       </div>
 
+      {balanceFund && (
+        <SystemWalletBalanceDialog
+          key={balanceFund}
+          fund={balanceFund}
+          onClose={() => setBalanceFund(null)}
+          onViewHistory={(orderId) => {
+            setActiveViewMode('ALL_UNIFIED');
+            handleFilterChange(balanceFund);
+            setSearchOrderId(orderId ?? '');
+            setDebouncedSearch(orderId ?? '');
+            setBalanceFund(null);
+          }}
+        />
+      )}
+
       {/* Order Settlement & Commission Inspection Modal (for Escrow order) */}
       {selectedOrderId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/75 backdrop-blur-md animate-fadeIn overflow-y-auto">
@@ -1530,7 +1594,7 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
                         Biến động giao dịch
                       </div>
                       <div className="text-xl sm:text-2xl font-black text-slate-900 font-mono mt-1">
-                        {formatDelta(selectedItem?.signedDelta ?? 0)}
+                        {formatUnifiedDelta(selectedItem)}
                       </div>
                     </div>
 
@@ -1571,7 +1635,7 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
                       Hoa hồng sàn thực thu
                     </div>
                     <div className="text-xl sm:text-2xl font-black text-emerald-700 font-mono mt-1">
-                      {formatDelta(selectedRevenue)}
+                      {selectedRevenue > 0 ? formatVND(selectedRevenue) : formatDelta(selectedRevenue)}
                     </div>
                     <div className="text-xs text-emerald-700 mt-1.5 break-words font-medium leading-relaxed">
                       {commissionData?.ratePercent
@@ -1603,7 +1667,7 @@ export const SystemWalletTab: React.FC<SystemWalletTabProps> = ({ onOpenInspecti
                     <div className="flex justify-between items-center py-1.5 border-b border-slate-200/60">
                       <span className="text-slate-600 font-medium">Hoa hồng sàn trích thu:</span>
                       <strong className="font-mono text-emerald-700 text-sm font-extrabold">
-                        {formatDelta(selectedRevenue)}
+                        {selectedRevenue > 0 ? formatVND(selectedRevenue) : formatDelta(selectedRevenue)}
                       </strong>
                     </div>
 

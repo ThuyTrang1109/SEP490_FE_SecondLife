@@ -88,7 +88,7 @@ export function CenterChecklists({ categories, checklist }: Props) {
             </div>
             <div>
               <h3 className="text-base font-black text-slate-900 tracking-tight">
-                Checklist Studio: Bộ Tiêu Chuẩn Kỹ Thuật Kiểm Định Sản Phẩm
+                Checklist Studio: Bộ tiêu chuẩn kỹ thuật kiểm định sản phẩm
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
                 Thiết lập tiêu chuẩn kiểm định chuyên sâu từng dòng sản phẩm gia dụng (Tủ lạnh, Máy giặt, Điều hòa, Bếp từ, Lò vi sóng...).
@@ -103,7 +103,7 @@ export function CenterChecklists({ categories, checklist }: Props) {
             className="px-4 py-2.5 rounded-xl bg-[#24263e] hover:bg-black text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-sm shrink-0"
           >
             <Plus className="w-4 h-4 text-[#c34c36]" />
-            <span>Tạo Bộ Tiêu Chuẩn Mới</span>
+            <span>Tạo bộ tiêu chuẩn mới</span>
           </button>
           <button
             type="button"
@@ -123,7 +123,7 @@ export function CenterChecklists({ categories, checklist }: Props) {
             <FileText className="w-5 h-5" />
           </div>
           <div>
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Bộ Tiêu Chuẩn</span>
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Bộ tiêu chuẩn</span>
             <span className="text-lg sm:text-xl font-black text-slate-900">{checklistStats.total}</span>
             <span className="text-[10px] text-slate-400 block">Đang hiệu lực tại trạm</span>
           </div>
@@ -134,7 +134,7 @@ export function CenterChecklists({ categories, checklist }: Props) {
             <Boxes className="w-5 h-5" />
           </div>
           <div>
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Danh Mục Thiết Bị</span>
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Danh mục thiết bị</span>
             <span className="text-lg sm:text-xl font-black text-slate-900">{checklistStats.categoriesCount}</span>
             <span className="text-[10px] text-slate-400 block">Đã có quy chuẩn đo kiểm</span>
           </div>
@@ -145,7 +145,7 @@ export function CenterChecklists({ categories, checklist }: Props) {
             <CheckSquare className="w-5 h-5" />
           </div>
           <div>
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Hạng Mục Tiêu Trí</span>
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Hạng mục tiêu trí</span>
             <span className="text-lg sm:text-xl font-black text-slate-900">{checklistStats.totalItems}</span>
             <span className="text-[10px] text-slate-400 block">Tiêu chí đo kiểm chi tiết</span>
           </div>
@@ -156,7 +156,7 @@ export function CenterChecklists({ categories, checklist }: Props) {
             <ShieldCheck className="w-5 h-5" />
           </div>
           <div>
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">An Toàn Bắt Buộc</span>
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">An toàn bắt buộc</span>
             <span className="text-lg sm:text-xl font-black text-rose-600">{checklistStats.mandatoryItems}</span>
             <span className="text-[10px] text-slate-400 block">Bắt buộc đạt mới PASS</span>
           </div>
@@ -169,7 +169,7 @@ export function CenterChecklists({ categories, checklist }: Props) {
           <div className="flex items-center gap-2">
             <Zap className="w-4 h-4 text-amber-400" />
             <span className="text-xs font-black uppercase tracking-wider text-amber-300">
-              ⚡ Thư Viện Mẫu Tiêu Chuẩn Nhanh Theo Dòng Sản Phẩm Gia Dụng
+              ⚡ thư viện mẫu tiêu chuẩn nhanh theo dòng sản phẩm gia dụng
             </span>
           </div>
           <span className="text-[11px] text-slate-300">
@@ -266,11 +266,11 @@ export function CenterChecklists({ categories, checklist }: Props) {
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100 text-slate-600 font-bold text-[11px] uppercase tracking-wider">
                 <th className="py-3 px-4 w-12 text-center">#</th>
-                <th className="py-3 px-4">Bộ Tiêu Chuẩn & Căn Cứ Đo Kiểm</th>
-                <th className="py-3 px-4">Loại Thiết Bị (Item) & Cấp Độ</th>
-                <th className="py-3 px-4 text-center">Hạng Mục Tiêu Trí</th>
-                <th className="py-3 px-4 text-center">Trạng Thái Phê Duyệt</th>
-                <th className="py-3 px-4 text-right">Thao Tác</th>
+                <th className="py-3 px-4">Bộ tiêu chuẩn & căn cứ đo kiểm</th>
+                <th className="py-3 px-4">Loại thiết bị (Item) & Cấp Độ</th>
+                <th className="py-3 px-4 text-center">Hạng mục tiêu trí</th>
+                <th className="py-3 px-4 text-center">Trạng thái phê duyệt</th>
+                <th className="py-3 px-4 text-right">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -287,7 +287,7 @@ export function CenterChecklists({ categories, checklist }: Props) {
                     <Layers className="w-10 h-10 text-slate-300 mx-auto mb-2" />
                     <p className="font-bold text-slate-700">Chưa có bộ tiêu chuẩn nào phù hợp.</p>
                     <p className="text-[11px] text-slate-400 mt-1">
-                      Chọn một mẫu nhanh ở trên hoặc nhấn "+ Tạo Bộ Tiêu Chuẩn Mới" để thiết lập.
+                      Chọn một mẫu nhanh ở trên hoặc nhấn "+ tạo bộ tiêu chuẩn mới" để thiết lập.
                     </p>
                     <div className="mt-4 flex items-center justify-center gap-2">
                       <button
@@ -295,7 +295,7 @@ export function CenterChecklists({ categories, checklist }: Props) {
                         onClick={() => handleOpenCreateModal()}
                         className="px-4 py-2 rounded-xl bg-[#24263e] text-white text-xs font-bold hover:bg-black transition cursor-pointer"
                       >
-                        + Tạo Mới Ngay
+                        + tạo mới ngay
                       </button>
                     </div>
                   </td>
@@ -382,7 +382,7 @@ export function CenterChecklists({ categories, checklist }: Props) {
                           </span>
                         ) : (
                           <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-600 border border-slate-200">
-                            {chk.approvalStatus || (chk.active !== false ? 'Đang Áp Dụng' : 'Tạm Dừng')}
+                            {chk.approvalStatus || (chk.active !== false ? 'Đang áp dụng' : 'Tạm dừng')}
                           </span>
                         )}
                       </td>

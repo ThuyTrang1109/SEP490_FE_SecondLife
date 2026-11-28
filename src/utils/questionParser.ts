@@ -130,7 +130,7 @@ export const parseQuestionItem = (q: string, idx: number): ParsedQuestionItem =>
     // Công suất điện (W)
     else if (combined.includes('công suất') || combined.includes('watt')) {
       examples.push('Dưới 1000W', '1500W - 2000W', 'Trên 2000W', 'Bếp đôi 4000W');
-      finalHint = 'VD: Dưới 1000W, 1500W - 2000W, Trên 2000W';
+      finalHint = 'VD: Dưới 1000W, 1500W - 2000W, trên 2000W';
     }
     // Kích thước nội thất
     else if (combined.includes('kích thước') || combined.includes('dài x rộng')) {
@@ -236,7 +236,7 @@ export const splitCompoundQuestion = (q: string): string[] => {
 
   if (lower.includes('inverter') && (lower.includes('máy nén') || lower.includes('rung lắc') || lower.includes('chạy có êm')) && (lower.includes('và') || lower.includes(','))) {
     return [
-      'Thiết bị có trang bị công nghệ Inverter tiết kiệm điện không (VD: Có Inverter, Không)?',
+      'Thiết bị có trang bị công nghệ Inverter tiết kiệm điện không (VD: Có Inverter, không)?',
       'Động cơ/máy nén khi vận hành có bị ồn hoặc rung lắc bất thường không (VD: Chạy êm ru, Ồn nhẹ)?'
     ];
   }
@@ -343,7 +343,7 @@ export const getStandardProductQuestions = (
       q2,
       q3,
       '**Số vùng nấu và tổng công suất của bếp là bao nhiêu?** (Ví dụ: Bếp đơn 2000W, Bếp đôi 4000W lắp âm/dương, Bếp từ kết hợp hồng ngoại, Bếp 3 vùng nấu)',
-      '**Chất liệu mặt kính và bảng điều khiển cảm ứng?** (Ví dụ: Kính Ceramic/Schott Ceran nguyên vẹn, Cảm ứng trượt nhạy có khóa trẻ em, Phím bấm cảm ứng độc lập, Có hẹn giờ & Inverter)'
+      '**Chất liệu mặt kính và bảng điều khiển cảm ứng?** (Ví dụ: Kính Ceramic/Schott ceran nguyên vẹn, Cảm ứng trượt nhạy có khóa trẻ em, Phím bấm cảm ứng độc lập, Có hẹn giờ & Inverter)'
     ];
   }
 
@@ -382,7 +382,7 @@ export const getStandardProductQuestions = (
       q1,
       q2,
       q3,
-      `**Kích thước thực tế (Dài x Rộng x Cao) của ${targetLabel} là bao nhiêu?** (Ví dụ: 1m6 x 2m, 1m8 x 2m, Dài 1m2 x Rộng 60cm, Sofa văng 2m / góc chữ L 2m4)`,
+      `**Kích thước thực tế (Dài x Rộng x Cao) của ${targetLabel} là bao nhiêu?** (Ví dụ: 1m6 x 2m, 1m8 x 2m, Dài 1m2 x rộng 60cm, sofa văng 2m / góc chữ L 2m4)`,
       `**Chất liệu chính và kết cấu khung của ${targetLabel}?** (Ví dụ: Gỗ tự nhiên sồi/xoan đào, Gỗ công nghiệp MDF lõi xanh chống ẩm, Bọc da công nghiệp / vải nỉ cao cấp, Khung sắt sơn tĩnh điện)`
     ];
   }

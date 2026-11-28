@@ -740,7 +740,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
     if (!activeShipment) return;
     const confirmed = await dialogService.confirm(
       'Bạn có chắc chắn muốn hủy vận đơn Lalamove này trước khi tài xế đến lấy hàng?',
-      { title: 'Hủy Vận Đơn', type: 'warning' }
+      { title: 'Hủy vận đơn', type: 'warning' }
     );
     if (!confirmed) return;
     setIsCancelling(true);
@@ -811,7 +811,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
     if (!activeShipment) return;
     const confirmed = await dialogService.confirm(
       'Xác nhận hoàn cước vận chuyển của vận đơn này về Ví SecondLife?',
-      { title: 'Hoàn Cước Vận Chuyển', type: 'confirm' }
+      { title: 'Hoàn cước vận chuyển', type: 'confirm' }
     );
     if (!confirmed) return;
     setIsRefunding(true);
@@ -832,7 +832,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
   const handleConfirmReceived = async () => {
     const confirmed = await dialogService.confirm(
       'Xác nhận bạn đã nhận được hàng và nghiệm thu thiết bị? Tiền sẽ được giải ngân cho người bán.',
-      { title: 'Xác Nhận Đã Nhận Hàng', type: 'success' }
+      { title: 'Xác nhận đã nhận hàng', type: 'success' }
     );
     if (!confirmed) return;
     setIsConfirmingDelivered(true);
@@ -1119,7 +1119,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                     ) : (
                       <>
                         <Truck className="w-4 h-4 text-white" />
-                        <span>Tạo Vận Đơn Lalamove Ngay</span>
+                        <span>Tạo vận đơn Lalamove ngay</span>
                       </>
                     )}
                   </button>
@@ -1211,7 +1211,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                   <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 space-y-2.5">
                     <div className="flex items-center gap-2 font-black text-xs uppercase tracking-tight text-rose-700">
                       <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                      <span>Sự Cố Giao Vận / Vận Đơn Bị Gián Đoạn</span>
+                      <span>Sự cố giao vận / vận đơn bị gián đoạn</span>
                     </div>
                     <p className="text-[11px] text-rose-800 leading-relaxed">
                       {interruptionDetails?.description || 'Vận đơn đang chờ xử lý lại do sự cố vận chuyển.'}
@@ -1507,7 +1507,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                       disabled={isCancelling}
                       className="px-3.5 py-2.5 rounded-2xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition border border-rose-200 cursor-pointer disabled:opacity-50"
                     >
-                      {isCancelling ? 'Đang hủy...' : 'Hủy Vận Đơn Lalamove'}
+                      {isCancelling ? 'Đang hủy...' : 'Hủy vận đơn Lalamove'}
                     </button>
                   )}
                 </div>

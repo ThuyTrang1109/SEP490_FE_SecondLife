@@ -189,7 +189,7 @@ export const WithdrawalsTab: React.FC<WithdrawalsTabProps> = ({ lang = 'vi', onN
         <div className="bg-amber-50/70 border border-amber-200/80 rounded-2xl p-4 shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-amber-800 uppercase tracking-wide">
-                {lang === 'vi' ? 'Chờ Tiếp Nhận' : 'Awaiting Claim'}
+                {lang === 'vi' ? 'Chờ tiếp nhận' : 'Awaiting Claim'}
             </span>
             <div className="w-8 h-8 rounded-lg bg-amber-200/60 text-amber-900 flex items-center justify-center">
               <Clock className="w-4 h-4" />
@@ -207,7 +207,7 @@ export const WithdrawalsTab: React.FC<WithdrawalsTabProps> = ({ lang = 'vi', onN
         <div className="bg-emerald-50/70 border border-emerald-200/80 rounded-2xl p-4 shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-emerald-800 uppercase tracking-wide">
-              {lang === 'vi' ? 'Đã Giải Ngân' : 'Approved'}
+              {lang === 'vi' ? 'Đã giải ngân' : 'Approved'}
             </span>
             <div className="w-8 h-8 rounded-lg bg-emerald-200/60 text-emerald-900 flex items-center justify-center">
               <CheckCircle2 className="w-4 h-4" />
@@ -225,7 +225,7 @@ export const WithdrawalsTab: React.FC<WithdrawalsTabProps> = ({ lang = 'vi', onN
         <div className="bg-rose-50/70 border border-rose-200/80 rounded-2xl p-4 shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-rose-800 uppercase tracking-wide">
-              {lang === 'vi' ? 'Đã Từ Chối' : 'Rejected'}
+              {lang === 'vi' ? 'Đã từ chối' : 'Rejected'}
             </span>
             <div className="w-8 h-8 rounded-lg bg-rose-200/60 text-rose-900 flex items-center justify-center">
               <XCircle className="w-4 h-4" />
@@ -243,7 +243,7 @@ export const WithdrawalsTab: React.FC<WithdrawalsTabProps> = ({ lang = 'vi', onN
         <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-700 uppercase tracking-wide">
-              {lang === 'vi' ? 'Tổng Yêu Cầu' : 'Total Requests'}
+              {lang === 'vi' ? 'Tổng yêu cầu' : 'Total Requests'}
             </span>
             <div className="w-8 h-8 rounded-lg bg-slate-200 text-slate-700 flex items-center justify-center">
               <CreditCard className="w-4 h-4" />
@@ -327,13 +327,13 @@ export const WithdrawalsTab: React.FC<WithdrawalsTabProps> = ({ lang = 'vi', onN
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50/80 text-slate-600 text-[11px] font-bold uppercase tracking-wider">
-                  <th className="py-3 px-4">Mã Lệnh / Ngày Tạo</th>
+                  <th className="py-3 px-4">Mã lệnh / ngày tạo</th>
                   <th className="py-3 px-4">Khách Hàng (Email)</th>
-                  <th className="py-3 px-4">Số Tiền Rút</th>
-                  <th className="py-3 px-4">Tài Khoản Thụ Hưởng</th>
-                  <th className="py-3 px-4">Trạng Thái</th>
-                  <th className="py-3 px-4">Ghi Chú Admin</th>
-                  <th className="py-3 px-4 text-center">Hành Động</th>
+                  <th className="py-3 px-4">Số tiền rút</th>
+                  <th className="py-3 px-4">Tài khoản thụ hưởng</th>
+                  <th className="py-3 px-4">Trạng thái</th>
+                  <th className="py-3 px-4">Ghi chú Admin</th>
+                  <th className="py-3 px-4 text-center">Hành động</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -390,19 +390,19 @@ export const WithdrawalsTab: React.FC<WithdrawalsTabProps> = ({ lang = 'vi', onN
                         {isPending && (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
                             <Clock className="w-3 h-3" />
-                            <span>Chờ Tiếp Nhận</span>
+                            <span>Chờ tiếp nhận</span>
                           </span>
                         )}
                         {isApproved && (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                             <CheckCircle2 className="w-3 h-3" />
-                            <span>{item.status === 'COMPLETED' ? 'Hoàn Tất' : 'Chờ Đối Soát'}</span>
+                            <span>{item.status === 'COMPLETED' ? 'Hoàn tất' : 'Chờ đối soát'}</span>
                           </span>
                         )}
                         {isRejected && (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
                             <XCircle className="w-3 h-3" />
-                            <span>Đã Từ Chối</span>
+                            <span>Đã từ chối</span>
                           </span>
                         )}
                         {isTransferFailed && (
@@ -492,7 +492,7 @@ export const WithdrawalsTab: React.FC<WithdrawalsTabProps> = ({ lang = 'vi', onN
                 )}
                 <div>
                   <h3 className="font-extrabold text-sm sm:text-base">
-                    {reviewAction === 'APPROVE' ? 'Xác Nhận Phê Duyệt Rút Tiền' : 'Từ Chối Yêu Cầu Rút Tiền'}
+                    {reviewAction === 'APPROVE' ? 'Xác nhận phê duyệt rút tiền' : 'Từ chối yêu cầu rút tiền'}
                   </h3>
                   <p className="text-xs text-white/80">Lệnh #{selectedWithdrawal.id?.substring(0, 8)}</p>
                 </div>
@@ -590,7 +590,7 @@ export const WithdrawalsTab: React.FC<WithdrawalsTabProps> = ({ lang = 'vi', onN
                 }`}
               >
                 {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                <span>{reviewAction === 'APPROVE' ? 'Xác Nhận Giải Ngân' : 'Xác Nhận Từ Chối'}</span>
+                <span>{reviewAction === 'APPROVE' ? 'Xác nhận giải ngân' : 'Xác nhận từ chối'}</span>
               </button>
             </div>
           </div>

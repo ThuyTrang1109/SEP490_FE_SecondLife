@@ -322,7 +322,7 @@ test('OrderStatusBadge keeps "Người mua từ chối mua • Chờ trung tâm 
   assert.equal(textChild, 'Người mua từ chối mua • Chờ trung tâm hoàn hàng');
 });
 
-test('OrderStatusBadge renders "Đang Tranh Chấp • Đóng Băng Escrow" when delivered order is disputed for both seller and buyer', () => {
+test('OrderStatusBadge renders "Đang tranh chấp • Đóng băng Escrow" when delivered order is disputed for both seller and buyer', () => {
   const disputedOrder: any = {
     id: '4de60c8a-64cd-4c74-89bf-63b4cafc9500',
     listingId: 'post-999',
@@ -356,13 +356,13 @@ test('OrderStatusBadge renders "Đang Tranh Chấp • Đóng Băng Escrow" when
   const sellerBadge = OrderStatusBadge({ ...baseProps, isSeller: true, isCurrentOrderSeller: true }) as any;
   assert.ok(sellerBadge);
   const sellerText = sellerBadge.props.children[1].props.children;
-  assert.equal(sellerText, 'Đang Tranh Chấp • Đóng Băng Escrow');
+  assert.equal(sellerText, 'Đang tranh chấp • Đóng băng Escrow');
 
   // 2. Buyer view
   const buyerBadge = OrderStatusBadge({ ...baseProps, isSeller: false, isCurrentOrderSeller: false }) as any;
   assert.ok(buyerBadge);
   const buyerText = buyerBadge.props.children[1].props.children;
-  assert.equal(buyerText, 'Đang Tranh Chấp • Đóng Băng Escrow');
+  assert.equal(buyerText, 'Đang tranh chấp • Đóng băng Escrow');
 });
 
 test('OrderStatusBadge renders "Vận đơn đã bị hủy" for direct order when shipment is cancelled', () => {

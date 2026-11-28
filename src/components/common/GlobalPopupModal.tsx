@@ -178,7 +178,7 @@ export const GlobalPopupModal: React.FC = () => {
               onClick={handleCancel}
               className="py-3 px-4 rounded-2xl border border-slate-200 text-slate-700 font-bold text-xs sm:text-sm hover:bg-slate-50 transition cursor-pointer"
             >
-              {dialogState.cancelText || 'Hủy Bỏ'}
+              {dialogState.cancelText || 'Hủy bỏ'}
             </button>
 
             <button
@@ -186,7 +186,7 @@ export const GlobalPopupModal: React.FC = () => {
               onClick={handleConfirm}
               className={`py-3 px-4 rounded-2xl text-white font-bold text-xs sm:text-sm shadow-md transition cursor-pointer ${confirmBtnClass}`}
             >
-              {dialogState.confirmText || 'Xác Nhận'}
+              {dialogState.confirmText || 'Xác nhận'}
             </button>
           </div>
         ) : (
@@ -195,7 +195,7 @@ export const GlobalPopupModal: React.FC = () => {
             onClick={handleConfirm}
             className={`w-full py-3 px-6 rounded-2xl text-white font-bold text-xs sm:text-sm shadow-md transition cursor-pointer ${confirmBtnClass}`}
           >
-            {dialogState.confirmText || 'Đã Hiểu'}
+            {dialogState.confirmText || 'Đã hiểu'}
           </button>
         )}
       </div>

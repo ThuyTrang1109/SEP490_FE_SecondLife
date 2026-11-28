@@ -110,7 +110,7 @@ export const AtHomeIntakeBarcode: React.FC<AtHomeIntakeBarcodeProps> = ({
           <span className="text-[11px] font-black uppercase text-amber-950 tracking-wider">
             {isQr
               ? (lang === 'vi' ? 'Mã QR tiếp nhận kiểm định tại nhà' : 'At-home inspection check-in QR code')
-              : (lang === 'vi' ? 'Mã Vạch Tiếp Nhận KTV Tại Nhà' : 'At-Home Inspector Intake Barcode')}
+              : (lang === 'vi' ? 'Mã vạch tiếp nhận KTV tại nhà' : 'At-Home Inspector Intake Barcode')}
           </span>
         </div>
         <span className="text-[10px] font-bold text-amber-800 bg-amber-100/90 px-2 py-0.5 rounded-md border border-amber-200/80 flex items-center gap-1 shrink-0">
@@ -138,7 +138,7 @@ export const AtHomeIntakeBarcode: React.FC<AtHomeIntakeBarcodeProps> = ({
       {/* Code Text and Copy Action */}
       <div className="flex items-center justify-between gap-2 pt-0.5">
         <div className="text-[11px] text-amber-900/90 flex-1 min-w-0 leading-tight">
-          <span className="font-bold block sm:inline">{lang === 'vi' ? 'Mã Tiếp Nhận:' : 'Intake Code:'} </span>
+          <span className="font-bold block sm:inline">{lang === 'vi' ? 'Mã tiếp nhận:' : 'Intake Code:'} </span>
           <code className="font-mono font-black text-amber-950 bg-amber-100/80 px-1.5 py-0.5 rounded border border-amber-200 select-all">
             {intakeCode}
           </code>

@@ -44,7 +44,7 @@ export const ShowroomLobby3D: React.FC<ShowroomLobby3DProps> = ({
               : 'text-[#2b1d16]/80 hover:text-[#2b1d16] hover:bg-white/60'
               }`}
           >
-            {lang === 'vi' ? 'Tủ Lạnh Hitachi' : 'Hitachi Fridge'}
+            {lang === 'vi' ? 'Tủ lạnh Hitachi' : 'Hitachi Fridge'}
           </button>
           <button
             onClick={() => {
@@ -56,7 +56,7 @@ export const ShowroomLobby3D: React.FC<ShowroomLobby3DProps> = ({
               : 'text-[#2b1d16]/80 hover:text-[#2b1d16] hover:bg-white/60'
               }`}
           >
-            {lang === 'vi' ? 'Máy Giặt Electrolux' : 'Electrolux Washer'}
+            {lang === 'vi' ? 'Máy giặt Electrolux' : 'Electrolux Washer'}
           </button>
           <button
             onClick={() => {
@@ -68,7 +68,7 @@ export const ShowroomLobby3D: React.FC<ShowroomLobby3DProps> = ({
             title={lang === 'vi' ? 'Bật / tắt tự động xoay' : 'Toggle auto-rotate'}
           >
             <RefreshCw className={`w-3 h-3 ${autoRotate ? 'animate-spin' : ''}`} style={{ animationDuration: '6s' }} />
-            <span>{lang === 'vi' ? 'Tự Động' : 'Auto'}</span>
+            <span>{lang === 'vi' ? 'Tự động' : 'Auto'}</span>
           </button>
         </div>
       </div>
@@ -79,12 +79,12 @@ export const ShowroomLobby3D: React.FC<ShowroomLobby3DProps> = ({
         <div className="w-full lg:w-[420px] shrink-0 z-10 space-y-3">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/70 border border-[#2b1d16]/15 text-[#2b1d16] text-xs font-bold backdrop-blur-md w-fit shadow-xs">
             <ShieldCheck className="w-3.5 h-3.5 text-[#2b1d16]" />
-            <span>{lang === 'vi' ? 'Sàn Đồ Cũ Kiểm Định & AI Định Giá Uy Tín' : 'Certified Recommerce & AI Valuation'}</span>
+            <span>{lang === 'vi' ? 'Sàn đồ cũ kiểm định & AI định giá uy tín' : 'Certified Recommerce & AI Valuation'}</span>
           </div>
 
           <h1 className="text-xl sm:text-3xl md:text-4xl font-black tracking-tight text-[#2b1d16] leading-tight">
             <BlurText
-              text={lang === 'vi' ? 'Mua Bán Đồ Cũ An Toàn Với Kiểm Định & Escrow.' : 'Verified Second-Hand with Inspection & Escrow.'}
+              text={lang === 'vi' ? 'Mua bán đồ cũ an toàn với kiểm định & Escrow.' : 'Verified Second-Hand with Inspection & Escrow.'}
               delay={60}
               animateBy="words"
               direction="top"
@@ -94,7 +94,7 @@ export const ShowroomLobby3D: React.FC<ShowroomLobby3DProps> = ({
 
           <p className="text-[#2b1d16]/85 text-xs sm:text-sm leading-relaxed max-w-xl font-bold">
             {lang === 'vi'
-              ? 'Kiểm tra chi tiết thiết bị với ảnh thực tế 5 góc chuẩn, tra cứu biên bản kiểm định phần cứng tại Hub và thanh toán được bảo vệ trọn vẹn qua Quỹ tín thác.'
+              ? 'Kiểm tra chi tiết thiết bị với ảnh thực tế các góc chuẩn, tra cứu biên bản kiểm định phần cứng tại Hub và thanh toán được bảo vệ trọn vẹn qua Quỹ tín thác.'
               : 'Inspect devices with 5 standard real photos, verify hardware hub reports, and pay safely via Escrow protection.'}
           </p>
 
@@ -110,25 +110,15 @@ export const ShowroomLobby3D: React.FC<ShowroomLobby3DProps> = ({
           <div className="pt-2 grid grid-cols-2 sm:grid-cols-4 gap-2 max-w-xl">
             <div className="bg-white/70 backdrop-blur-md rounded-xl p-2 border border-[#cea981]/40 shadow-xs">
               <div className="text-base font-black text-[#2b1d16]">
-                {lang === 'vi' ? 'Bảo Đảm' : 'Protected'}
+                {lang === 'vi' ? 'Bảo đảm' : 'Protected'}
               </div>
               <div className="text-[11px] text-[#2b1d16]/75 font-bold">{lang === 'vi' ? 'Cơ chế Escrow' : 'Escrow Protection'}</div>
             </div>
+
+
             <div className="bg-white/70 backdrop-blur-md rounded-xl p-2 border border-[#cea981]/40 shadow-xs">
               <div className="text-base font-black text-[#2b1d16]">
-                5 Góc
-              </div>
-              <div className="text-[11px] text-[#2b1d16]/75 font-bold">{lang === 'vi' ? 'Ảnh chuẩn Hub' : 'Verified Photos'}</div>
-            </div>
-            <div className="bg-white/70 backdrop-blur-md rounded-xl p-2 border border-[#cea981]/40 shadow-xs">
-              <div className="text-base font-black text-[#2b1d16]">
-                &lt; <CountUp to={3} duration={1.5} />%
-              </div>
-              <div className="text-[11px] text-[#2b1d16]/75 font-bold">Độ lệch giá AI</div>
-            </div>
-            <div className="bg-white/70 backdrop-blur-md rounded-xl p-2 border border-[#cea981]/40 shadow-xs">
-              <div className="text-base font-black text-[#2b1d16]">
-                <CountUp to={3} duration={1.2} /> Hubs
+                <CountUp to={2} duration={1.2} /> Hubs
               </div>
               <div className="text-[11px] text-[#2b1d16]/75 font-bold">HN • TP.HCM</div>
             </div>
@@ -154,7 +144,7 @@ export const ShowroomLobby3D: React.FC<ShowroomLobby3DProps> = ({
               <div className="flex justify-between">
                 <span className="text-[#2b1d16]/75 font-semibold">Thiết bị:</span>
                 <span className="text-[#2b1d16] font-bold">
-                  {applianceType === 'fridge' ? 'Tủ Lạnh Hitachi 540L' : 'Máy Giặt Electrolux Inverter'}
+                  {applianceType === 'fridge' ? 'Tủ lạnh Hitachi 540L' : 'Máy giặt Electrolux Inverter'}
                 </span>
               </div>
               <div className="flex justify-between">
@@ -169,12 +159,7 @@ export const ShowroomLobby3D: React.FC<ShowroomLobby3DProps> = ({
                   {applianceType === 'fridge' ? 'Gas R600a (-19°C)' : 'EcoInverter (1400 RPM)'}
                 </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-[#2b1d16]/75 font-semibold">Tem niêm phong:</span>
-                <span className="text-[#2b1d16] font-bold">
-                  {applianceType === 'fridge' ? '#SL-HOME-8839' : '#SL-WASH-9912'}
-                </span>
-              </div>
+
             </div>
           </div>
         </div>

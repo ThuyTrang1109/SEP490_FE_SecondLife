@@ -43,7 +43,7 @@ import { navigatePath, useBrowserLocation } from '../../app/router/browser';
 import { formatVndInput, cleanVndInput, handleVndInputChange, handleVndInputKeyDown } from '../../utils/numberToWords';
 import { clearInspectionChatIntent, inspectionChatDraftFromUrl, isInspectionProposalForPost, matchesInspectionChatDraft } from '../../utils/inspectionChatDraft';
 import { createChatInspectionReader, getChatInspectionOrderId, getCurrentChatInspection, isActiveChatInspection, matchesChatInspection } from '../../utils/chatInspection';
-import { getChatPostStatusBadge } from '../../utils/chatProduct';
+import { canBuyChatOffer, getChatPostStatusBadge } from '../../utils/chatProduct';
 import { formatOrderCancellationReason } from '../../utils/inspectionPurchase';
 import { isInspectionReturningToSeller, isPostUnderInspectionOrReturning } from '../../utils/orderUtils';
 import { UserAvatar } from '../common/UserAvatar';
@@ -114,7 +114,7 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
       if (room?.buyerName && !isNameOfCurrentUser(room.buyerName)) {
         return room.buyerName;
       }
-      return lang === 'vi' ? 'Người Mua' : 'Buyer';
+      return lang === 'vi' ? 'Người mua' : 'Buyer';
     } else {
       if (room?.sellerName && !isNameOfCurrentUser(room.sellerName)) {
         return room.sellerName;
@@ -122,7 +122,7 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
       if (listing.sellerName && !isNameOfCurrentUser(listing.sellerName)) {
         return listing.sellerName;
       }
-      return lang === 'vi' ? 'Người Bán' : 'Seller';
+      return lang === 'vi' ? 'Người bán' : 'Seller';
     }
   }, [isSeller, room, listing.sellerName, isNameOfCurrentUser, lang]);
 
@@ -320,7 +320,7 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
           ? 'declined'
           : parsedSys.offer.status === 'CANCELLED'
             ? 'cancelled'
-            : 'pending';
+            : parsedSys.offer.status === 'PENDING' ? 'pending' : undefined;
       negotiationId = parsedSys.offer.negotiationId;
       offerSenderRole = parsedSys.offer.senderRole || (parsedSys.offer.negotiationId?.startsWith('seller-offer-') ? 'seller' : 'buyer');
     }
@@ -355,11 +355,13 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
     };
   }, [effectiveUserId, currentUser?.name, resolvedPartnerName, isSeller, room.sellerId]);
 
+  const historyRequest = useRef(0);
   // Load message history from backend
   const reloadMessages = useCallback(async () => {
+    const request = ++historyRequest.current;
     try {
       const history = await chatService.getMessages(room.id);
-      if (Array.isArray(history)) {
+      if (request === historyRequest.current && Array.isArray(history)) {
         // Deduplicate by message ID and consolidate negotiation offers by negotiationId
         const seenIds = new Set<string>();
         const negotiationIndexMap = new Map<string, number>();
@@ -538,6 +540,10 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
       if (!notif) return;
       const type = String(notif.type || '').toUpperCase();
       const refType = String(notif.referenceType || '').toUpperCase();
+      if (refType === 'ORDER') {
+        void reloadMessages();
+        onRoomActivity?.();
+      }
       const title = String(notif.title || '').toLowerCase();
       const message = String(notif.message || '').toLowerCase();
       const refId = notif.referenceId;
@@ -585,7 +591,7 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
       window.removeEventListener('focus', handleVisibilityOrFocus);
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
     };
-  }, [refreshCurrentInspectionOrder, reloadMessages, inspectionReader, currentInspectionOrder?.id]);
+  }, [refreshCurrentInspectionOrder, reloadMessages, inspectionReader, currentInspectionOrder?.id, onRoomActivity]);
 
   // Fallback heartbeat while an inspection order is in negotiation or payment stage
   useEffect(() => {
@@ -629,7 +635,7 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
 
   // Analyze negotiation offers from messages
   const negotiationMap = useMemo(() => {
-    const map = new Map<string, { id: string; status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'CANCELLED'; price: number }>();
+    const map = new Map<string, { id: string; status: SystemOfferPayload['status']; price: number }>();
     messages.forEach((m) => {
       const parsed = parseSystemMessage(m.text);
       if (parsed.offer && parsed.offer.negotiationId) {
@@ -764,6 +770,10 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
   const latestAccepted = acceptedNegotiations[acceptedNegotiations.length - 1];
   const latestAcceptedOffer = latestAccepted?.price;
   const latestAcceptedNegotiationId = latestAccepted?.id;
+  const purchasedOffer = room.postStatus === 'SOLD'
+    ? Array.from(negotiationMap.values()).reverse().find((n) => n.status === 'COMPLETED')
+    : undefined;
+  const displayedAgreedPrice = purchasedOffer?.price ?? latestAcceptedOffer;
 
   // Check if buyer has initiated any price negotiation request in this room
   const hasBuyerRequestedNegotiation = useMemo(() => {
@@ -780,14 +790,13 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
   }, [displayMessages, negotiationMap]);
 
   const postStatusBadge = getChatPostStatusBadge(room.postStatus, lang);
-  const isListingClosed = Boolean(
-    postStatusBadge?.isClosed ||
+  const isCheckoutBlocked = Boolean(
     isUnderInspectionOrReturning ||
     (listing as any).isNotAvailable ||
     (listing as any).notFound ||
-    listing.status === 'sold' ||
-    listing.status === 'reserved'
+    listing.status === 'sold'
   );
+  const isListingClosed = postStatusBadge?.isClosed || isCheckoutBlocked || listing.status === 'reserved';
 
   // Button display condition (strict logic: seller only sees button after buyer requested!)
   const canShowOfferButton = !isListingClosed && !isUnderInspectionOrReturning && !hasPendingOffer && (
@@ -1023,9 +1032,18 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
   const handleBuyNow = (priceToUse?: number, specificNegotiationId?: string) => {
     const finalPrice = priceToUse || latestAcceptedOffer || listing.priceVnd;
     const finalNegoId = specificNegotiationId || latestAcceptedNegotiationId;
-    if (onBuyClick) {
-      onBuyClick(listing, finalPrice, finalNegoId);
+    if (!isBuyer || isCheckoutBlocked) return;
+    if (finalNegoId) {
+      const negotiation = negotiationMap.get(finalNegoId);
+      if (!negotiation || !canBuyChatOffer(room.postStatus, {
+        status: negotiation.status,
+        price: finalPrice,
+        negotiationId: finalNegoId,
+      })) return;
+    } else if (isListingClosed) {
+      return;
     }
+    onBuyClick?.(listing, finalPrice, finalNegoId);
   };
 
   // Handle proposal submission from InspectionProposalModal
@@ -1371,10 +1389,10 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
 
             {/* Price display */}
             <div className="flex items-center gap-2 mt-0.5">
-              {latestAcceptedOffer ? (
+              {displayedAgreedPrice ? (
                 <>
                   <span className="text-xs font-black text-emerald-700">
-                    {formatVND(latestAcceptedOffer)}
+                    {formatVND(displayedAgreedPrice)}
                   </span>
                   {listing.priceVnd > 0 && (
                     <span className="text-[11px] line-through text-slate-400 font-medium">
@@ -1382,7 +1400,9 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
                     </span>
                   )}
                   <span className="text-[9px] font-bold bg-emerald-100 text-emerald-800 px-1 py-0.5 rounded">
-                    {lang === 'vi' ? 'Đã chốt giá' : 'Deal Agreed'}
+                    {purchasedOffer
+                      ? (lang === 'vi' ? 'Đã mua theo giá chốt' : 'Purchased at agreed price')
+                      : (lang === 'vi' ? 'Đã chốt giá' : 'Deal Agreed')}
                   </span>
                 </>
               ) : (
@@ -1492,10 +1512,12 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
             )
           ) : (
             <div className="text-right">
-              {latestAcceptedOffer ? (
+              {displayedAgreedPrice ? (
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold rounded-xl">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                  <span className="hidden sm:inline">{lang === 'vi' ? 'Đã đồng ý giá' : 'Deal Agreed'}</span>
+                  <span className="hidden sm:inline">{purchasedOffer
+                    ? (lang === 'vi' ? 'Đã mua theo giá chốt' : 'Purchased at agreed price')
+                    : (lang === 'vi' ? 'Đã đồng ý giá' : 'Deal Agreed')}</span>
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 text-slate-700 text-xs font-medium rounded-xl">
@@ -1618,40 +1640,48 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
                     const offer = parsedSys.offer;
                     const latestStatus = (offer.negotiationId && negotiationMap.get(offer.negotiationId)?.status) || offer.status;
                     const isAccepted = latestStatus === 'ACCEPTED';
+                    const isCompleted = latestStatus === 'COMPLETED';
+                    const isAgreed = isAccepted || isCompleted;
                     const isRejected = latestStatus === 'REJECTED';
                     const isCancelled = latestStatus === 'CANCELLED';
+                    const isExpired = latestStatus === 'EXPIRED';
                     const isPending = latestStatus === 'PENDING';
+                    const canUseOffer = !isCheckoutBlocked && canBuyChatOffer(room.postStatus, { ...offer, status: latestStatus });
 
-                    const isSellerOffer = offer.senderRole === 'seller' || offer.negotiationId.startsWith('seller-offer-');
+                    const isSellerOffer = offer.senderRole === 'seller' || offer.negotiationId?.startsWith('seller-offer-');
                     const isProposerMe = isSellerOffer ? isSeller : isBuyer;
                     const isRecipientMe = isSellerOffer ? isBuyer : isSeller;
 
                     return (
                       <div className="flex justify-center my-3 animate-fadeIn">
-                        <div className={`max-w-md w-full rounded-2xl border p-3.5 shadow-xs text-center transition-all ${isAccepted
+                        <div className={`max-w-md w-full rounded-2xl border p-3.5 shadow-xs text-center transition-all ${isAgreed
                           ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
-                          : isRejected || isCancelled
+                          : isRejected || isCancelled || isExpired
                             ? 'bg-rose-50 border-rose-200 text-rose-900'
                             : 'bg-gradient-to-b from-amber-50 to-orange-50/50 border-amber-300 text-amber-950'
                           }`}>
                           <div className="flex items-center justify-center gap-1.5 mb-1.5">
-                            {isAccepted ? (
+                            {isAgreed ? (
                               <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                            ) : isRejected || isCancelled ? (
+                            ) : isRejected || isCancelled || isExpired ? (
                               <XCircle className="w-4 h-4 text-rose-500" />
                             ) : (
                               <Tag className="w-4 h-4 text-amber-600" />
                             )}
                             <span className="text-[11px] font-black uppercase tracking-wider">
-                              {isAccepted
-                                ? 'Thỏa Thuận Chốt Giá Thành Công'
-                                : isRejected
-                                  ? '❌ Đề Xuất Giá Đã Bị Từ Chối'
-                                  : isCancelled
-                                    ? 'Đề Xuất Giá Đã Được Hủy'
-                                    : isSellerOffer
-                                      ? 'Người Bán Đề Xuất Giá Mới'
-                                      : 'Đề Xuất Thương Lượng Giá Mới'}
+                              {isCompleted
+                                ? (lang === 'vi' ? 'Đã mua theo giá chốt' : 'Purchased at agreed price')
+                                : isAccepted
+                                  ? 'Thỏa thuận chốt giá thành công'
+                                  : isRejected
+                                    ? 'Đề xuất giá đã bị từ chối'
+                                    : isCancelled
+                                      ? 'Đề xuất giá đã được hủy'
+                                      : isExpired
+                                        ? (lang === 'vi' ? 'Thỏa thuận đã hết hạn' : 'Offer expired')
+                                        : isSellerOffer
+                                          ? 'Người bán đề xuất giá mới'
+                                          : 'Đề xuất thương lượng giá mới'}
                             </span>
                           </div>
 
@@ -1672,23 +1702,27 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
                           </div>
 
                           <p className="text-[11px] text-slate-600 mb-2">
-                            {isAccepted
-                              ? (isBuyer
-                                ? 'Người bán đã đồng ý mức giá này. Bạn có thể tiến hành đặt mua qua Escrow ngay bây giờ!'
-                                : 'Mức giá đã chốt thành công. Đang chờ người mua tiến hành thanh toán qua Escrow.')
-                              : isRejected
-                                ? (isProposerMe ? 'Mức giá đề xuất chưa được chấp nhận.' : 'Bạn đã từ chối mức giá đề xuất này.')
-                                : isCancelled
-                                  ? 'Yêu cầu trả giá đã được hủy.'
-                                  : isPending
-                                    ? (isRecipientMe
-                                      ? (isSellerOffer ? 'Người bán đề xuất giá ưu đãi cho bạn. Bạn có muốn đồng ý mua?' : 'Người mua gửi đề xuất giá cho sản phẩm của bạn. Vui lòng phản hồi:')
-                                      : 'Đề xuất giá đã gửi tới đối phương, đang chờ phản hồi...')
-                                    : ''}
+                            {isCompleted
+                              ? (lang === 'vi' ? 'Người mua đã thanh toán theo mức giá này.' : 'The buyer paid the agreed price.')
+                              : isAccepted
+                                ? (canUseOffer
+                                  ? (isBuyer
+                                    ? 'Người bán đã đồng ý mức giá này. Bạn có thể đặt mua qua Escrow.'
+                                    : 'Mức giá đã chốt. Đang chờ người mua thanh toán qua Escrow.')
+                                  : (lang === 'vi' ? 'Hiện không thể đặt mua qua thỏa thuận này.' : 'Checkout is unavailable for this offer.'))
+                                : isRejected
+                                  ? (isProposerMe ? 'Mức giá đề xuất chưa được chấp nhận.' : 'Bạn đã từ chối mức giá đề xuất này.')
+                                  : isCancelled
+                                    ? 'Yêu cầu trả giá đã được hủy.'
+                                    : isPending && !isListingClosed
+                                      ? (isRecipientMe
+                                        ? (isSellerOffer ? 'Người bán đề xuất giá ưu đãi cho bạn. Bạn có muốn đồng ý mua?' : 'Người mua gửi đề xuất giá cho sản phẩm của bạn. Vui lòng phản hồi:')
+                                        : 'Đề xuất giá đã gửi tới đối phương, đang chờ phản hồi...')
+                                      : ''}
                           </p>
 
                           {/* Recipient Action buttons */}
-                          {isPending && isRecipientMe && (
+                          {isPending && !isListingClosed && isRecipientMe && offer.negotiationId && (
                             <div className="flex items-center justify-center gap-2 mt-2 pt-2 border-t border-amber-200/60">
                               <button
                                 type="button"
@@ -1710,7 +1744,7 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
                           )}
 
                           {/* Proposer Cancel button */}
-                          {isPending && isProposerMe && (
+                          {isPending && !isListingClosed && isProposerMe && offer.negotiationId && (
                             <div className="mt-2 pt-2 border-t border-amber-200/60 flex justify-center">
                               <button
                                 type="button"
@@ -1724,7 +1758,7 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
                           )}
 
                           {/* Checkout button for Buyer after accepted */}
-                          {isAccepted && isBuyer && (
+                          {canUseOffer && isBuyer && (
                             <div className="mt-2 pt-2 border-t border-emerald-200 flex justify-center">
                               <button
                                 type="button"
@@ -1862,7 +1896,7 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
                 }`}
             >
               {negotiationLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              <span>{isSeller ? 'Gửi Đề Xuất Bán' : 'Gửi Yêu Cầu Trả Giá'}</span>
+              <span>{isSeller ? 'Gửi đề xuất bán' : 'Gửi yêu cầu trả giá'}</span>
             </button>
 
             <button
@@ -1924,8 +1958,8 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
             title="Đề xuất kiểm định tại trung tâm & thương lượng chia phí"
           >
             <ShieldCheck className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">{lang === 'vi' ? 'Đề Xuất Kiểm Định' : 'Inspection Proposal'}</span>
-            <span className="sm:hidden">Kiểm Định</span>
+            <span className="hidden sm:inline">{lang === 'vi' ? 'Đề xuất kiểm định' : 'Inspection Proposal'}</span>
+            <span className="sm:hidden">Kiểm định</span>
           </button>
         )}
 

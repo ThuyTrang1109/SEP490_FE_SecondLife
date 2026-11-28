@@ -186,7 +186,7 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
             </div>
             <div>
               <h3 className="text-sm sm:text-base font-black text-slate-900">
-                {missedAppointment ? 'Hẹn lại lịch kiểm định tại nhà' : 'Duyệt Lịch Hẹn Kiểm Định Tại Nhà'}
+                {missedAppointment ? 'Hẹn lại lịch kiểm định tại nhà' : 'Duyệt lịch hẹn kiểm định tại nhà'}
               </h3>
               <p className="text-[11px] text-slate-500 font-medium">
                 Đơn hàng #{reviewApptOrder.id.slice(0, 8)} • Thương lượng thời gian kiểm định với người bán
@@ -243,10 +243,10 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-amber-950 uppercase tracking-wide flex items-center gap-1.5 text-[11px]">
                     <Calendar className="w-4 h-4 text-amber-600" />
-                    Lịch Hẹn Người Bán Yêu Cầu:
+                    Lịch hẹn người bán yêu cầu:
                   </span>
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-200 text-amber-900 border border-amber-300">
-                    {isMorning ? 'Ca Sáng (08:00 - 12:00)' : 'Ca Chiều (13:00 - 17:00)'}
+                    {isMorning ? 'Ca sáng (08:00 - 12:00)' : 'Ca chiều (13:00 - 17:00)'}
                   </span>
                 </div>
 
@@ -314,7 +314,7 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
                       }`}
                   >
                     <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    <span>1. Chấp Nhận Lịch Hẹn</span>
+                    <span>1. Chấp nhận lịch hẹn</span>
                   </button>
                   <button
                     type="button"
@@ -328,7 +328,7 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
                       }`}
                   >
                     <CalendarSync className="w-4 h-4 text-amber-600" />
-                    <span>{isWaitingSellerCounter ? '2. Đề Xuất Lịch (Đã Gửi)' : '2. Đề Xuất Lịch Mới'}</span>
+                    <span>{isWaitingSellerCounter ? '2. Đề xuất lịch (Đã Gửi)' : '2. Đề xuất lịch mới'}</span>
                   </button>
                 </div>
                 )}
@@ -368,7 +368,7 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
                         ) : (
                           <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
                         )}
-                        <span>Xác Nhận Chấp Nhận Lịch Hẹn</span>
+                        <span>Xác nhận chấp nhận lịch hẹn</span>
                       </button>
                     </div>
                   )
@@ -380,7 +380,7 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
                     <div className="p-4 bg-amber-50/90 rounded-2xl border-2 border-amber-300 text-xs space-y-3 animate-fadeIn">
                       <div className="flex items-center gap-2 text-amber-950 font-black text-sm">
                         <Clock className="w-5 h-5 text-amber-700 animate-spin" />
-                        <span>Đã Gửi Đề Xuất • Đang Chờ Người Bán Phản Hồi</span>
+                        <span>Đã gửi đề xuất • Đang chờ người bán phản hồi</span>
                       </div>
                       <p className="text-amber-900 leading-relaxed">
                         Trung tâm đã gửi đề xuất dời lịch hẹn sang{' '}
@@ -458,7 +458,7 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
                               : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                               }`}
                           >
-                            <span>Ca Sáng (08:00 - 12:00)</span>
+                            <span>Ca sáng (08:00 - 12:00)</span>
                           </button>
                           <button
                             type="button"
@@ -468,7 +468,7 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
                               : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                               }`}
                           >
-                            <span>Ca Chiều (13:00 - 17:00)</span>
+                            <span>Ca chiều (13:00 - 17:00)</span>
                           </button>
                         </div>
                       </div>
@@ -594,7 +594,7 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
                         ) : (
                           <CalendarSync className="w-4 h-4" />
                         )}
-                        <span>Xác Nhận &amp; Gửi Lại Lịch Cho Người Bán</span>
+                        <span>Xác Nhận &amp; gửi lại lịch cho người bán</span>
                       </button>
                     </div>
                   )
@@ -628,7 +628,7 @@ export function ReviewAppointmentModal({ reviewApptOrder, appointments }: Props)
               }
             >
               <XCircle className={`w-4 h-4 ${isWaitingSellerCounter ? 'text-slate-400' : 'text-rose-500'}`} />
-              <span>Từ Chối Lịch Hẹn</span>
+              <span>Từ chối lịch hẹn</span>
             </button>
             )}
             {isWaitingSellerCounter && (

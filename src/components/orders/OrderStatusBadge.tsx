@@ -112,7 +112,7 @@ export function OrderStatusBadge({
         <XCircle className="w-3.5 h-3.5 text-rose-600" />
         <span>{isInspectionOrder
           ? (lang === 'vi' ? 'Giao dịch đã bị hủy' : 'Transaction cancelled')
-          : (lang === 'vi' ? 'Đã Hủy • Hoàn Tiền' : 'Cancelled & Refunded')}</span>
+          : (lang === 'vi' ? 'Đã hủy • Hoàn tiền' : 'Cancelled & Refunded')}</span>
       </span>
     );
   }
@@ -122,7 +122,7 @@ export function OrderStatusBadge({
     return (
       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-500/15 text-amber-700 border border-amber-500/30">
         <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-        <span>{lang === 'vi' ? 'Đang Tranh Chấp • Đóng Băng Escrow' : 'Disputed • Escrow Frozen'}</span>
+        <span>{lang === 'vi' ? 'Đang tranh chấp • Đóng băng Escrow' : 'Disputed • Escrow Frozen'}</span>
       </span>
     );
   }
@@ -151,7 +151,7 @@ export function OrderStatusBadge({
         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
         <span>
           {lang === 'vi'
-            ? isSellerForThisOrder ? 'Đã Nhận Tiền Vào Ví' : 'Hoàn Tất • Đã Giải Ngân'
+            ? isSellerForThisOrder ? 'Đã nhận tiền vào ví' : 'Hoàn tất • Đã giải ngân'
             : isSellerForThisOrder ? 'Payout Transferred to Wallet' : 'Completed • Escrow Released'}
         </span>
       </span>
@@ -455,7 +455,7 @@ export function OrderStatusBadge({
         {progress.step === 3 ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> : <Truck className="h-3.5 w-3.5" />}
         <span>
           {progress.step === 3
-            ? (lang === 'vi' ? 'Đã Đến Hub Kiểm Định' : 'Delivered to Hub')
+            ? (lang === 'vi' ? 'Đã đến Hub kiểm định' : 'Delivered to Hub')
             : (lang === 'vi' ? 'Đang vận chuyển đến trung tâm kiểm định' : 'Shipping to Hub')}
         </span>
       </span>
@@ -488,7 +488,7 @@ export function OrderStatusBadge({
           <Clock className="w-3.5 h-3.5 text-amber-600" />
           <span>
             {lang === 'vi'
-              ? isSellerForThisOrder ? 'Yêu Cầu Kiểm Định Mới' : 'Đã Gửi Yêu Cầu • Chờ Người Bán Xác Nhận'
+              ? isSellerForThisOrder ? 'Yêu cầu kiểm định mới' : 'Đã gửi yêu cầu • Chờ người bán xác nhận'
               : isSellerForThisOrder ? 'New Inspection Request • Awaiting Your Approval' : 'Inspection Requested • Awaiting Seller Approval'}
           </span>
         </span>
@@ -502,7 +502,7 @@ export function OrderStatusBadge({
         <Clock className="w-3.5 h-3.5 text-purple-600" />
         <span>
           {lang === 'vi'
-            ? isSellerForThisOrder ? 'Đã Đề Xuất Lại • Chờ Người Mua Phản Hồi' : 'Người Bán Đã Đề Xuất Lại • Chờ Bạn Xác Nhận'
+            ? isSellerForThisOrder ? 'Đã đề xuất lại • Chờ người mua phản hồi' : 'Người bán đã đề xuất lại • Chờ bạn xác nhận'
             : isSellerForThisOrder ? 'Counter-proposal Sent • Awaiting Buyer Approval' : 'Seller Counter-proposed • Awaiting Your Response'}
         </span>
       </span>
@@ -561,7 +561,7 @@ export function OrderStatusBadge({
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
             <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
-            <span>{lang === 'vi' ? 'Đã phân công kỹ thuật viên • Chờ Khảo Sát' : 'Inspector Assigned • Pending Survey'}</span>
+            <span>{lang === 'vi' ? 'Đã phân công kỹ thuật viên • Chờ khảo sát' : 'Inspector Assigned • Pending Survey'}</span>
           </span>
         );
       }
@@ -569,7 +569,7 @@ export function OrderStatusBadge({
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
             <CalendarCheck className="w-3.5 h-3.5 text-emerald-600" />
-            <span>{lang === 'vi' ? 'Đã Chốt Lịch • Chờ Giao KTV' : 'Visit Confirmed • Awaiting Dispatch'}</span>
+            <span>{lang === 'vi' ? 'Đã chốt lịch • Chờ giao KTV' : 'Visit Confirmed • Awaiting Dispatch'}</span>
           </span>
         );
       }
@@ -578,7 +578,7 @@ export function OrderStatusBadge({
           return (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-800 border border-rose-300">
               <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
-              <span>{lang === 'vi' ? 'Lịch Hẹn Bị Từ Chối • Cần Hẹn Lại' : 'Appointment Rejected • Please Reschedule'}</span>
+              <span>{lang === 'vi' ? 'Lịch hẹn bị từ chối • Cần hẹn lại' : 'Appointment Rejected • Please Reschedule'}</span>
             </span>
           );
         }
@@ -586,7 +586,7 @@ export function OrderStatusBadge({
           return (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300 animate-pulse">
               <CalendarSync className="w-3.5 h-3.5 text-amber-700" />
-              <span>{lang === 'vi' ? 'Hub Đề Xuất Lịch Mới • Cần Phản Hồi' : 'Hub Proposed New Time • Response Needed'}</span>
+              <span>{lang === 'vi' ? 'Hub đề xuất lịch mới • Cần phản hồi' : 'Hub Proposed New Time • Response Needed'}</span>
             </span>
           );
         }
@@ -594,14 +594,14 @@ export function OrderStatusBadge({
           return (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
               <Clock className="w-3.5 h-3.5 text-blue-600" />
-              <span>{lang === 'vi' ? 'Đã Đề Xuất Lịch • Chờ Hub Duyệt' : 'Visit Proposed • Awaiting Hub Approval'}</span>
+              <span>{lang === 'vi' ? 'Đã đề xuất lịch • Chờ Hub duyệt' : 'Visit Proposed • Awaiting Hub Approval'}</span>
             </span>
           );
         }
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300">
             <Calendar className="w-3.5 h-3.5 text-amber-600" />
-            <span>{lang === 'vi' ? 'Chờ Bạn Hẹn Lịch Đón KTV' : 'Awaiting Schedule Visit'}</span>
+            <span>{lang === 'vi' ? 'Chờ bạn hẹn lịch đón KTV' : 'Awaiting Schedule Visit'}</span>
           </span>
         );
       }
@@ -610,7 +610,7 @@ export function OrderStatusBadge({
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300">
             <Calendar className="w-3.5 h-3.5 text-amber-600" />
-            <span>{lang === 'vi' ? 'Chờ Người Bán Hẹn Lại Lịch KTV' : 'Awaiting Seller Reschedule Visit'}</span>
+            <span>{lang === 'vi' ? 'Chờ người bán hẹn lại lịch KTV' : 'Awaiting Seller Reschedule Visit'}</span>
           </span>
         );
       }
@@ -618,14 +618,14 @@ export function OrderStatusBadge({
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
             <Clock className="w-3.5 h-3.5 text-blue-600" />
-            <span>{lang === 'vi' ? 'Đã Hẹn Lịch • Chờ KTV Khảo Sát' : 'Visit Scheduled • Awaiting Inspector'}</span>
+            <span>{lang === 'vi' ? 'Đã hẹn lịch • Chờ KTV khảo sát' : 'Visit Scheduled • Awaiting Inspector'}</span>
           </span>
         );
       }
       return (
         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300">
           <Calendar className="w-3.5 h-3.5 text-amber-600" />
-          <span>{lang === 'vi' ? 'Chờ Người Bán Hẹn Lịch Đón KTV' : 'Awaiting Seller Schedule Visit'}</span>
+          <span>{lang === 'vi' ? 'Chờ người bán hẹn lịch đón KTV' : 'Awaiting Seller Schedule Visit'}</span>
         </span>
       );
     }
@@ -695,7 +695,7 @@ export function OrderStatusBadge({
       return (
         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
           <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
-          <span>{lang === 'vi' ? (isAtCenter ? 'Đã Điều Phối Vận Chuyển Hub' : 'Đã Điều Phối KTV / Hub') : 'Dispatched'}</span>
+          <span>{lang === 'vi' ? (isAtCenter ? 'Đã điều phối vận chuyển Hub' : 'Đã điều phối KTV / Hub') : 'Dispatched'}</span>
         </span>
       );
     }
@@ -731,7 +731,7 @@ export function OrderStatusBadge({
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-500/15 text-blue-600 border border-blue-500/30">
             <Truck className="w-3.5 h-3.5 text-blue-600" />
-            <span>{lang === 'vi' ? (isSellerForThisOrder ? 'Đang Giao Tới Người Mua' : 'Đang Giao Hàng Tới Bạn') : 'Delivering'}</span>
+            <span>{lang === 'vi' ? (isSellerForThisOrder ? 'Đang giao tới người mua' : 'Đang giao hàng tới bạn') : 'Delivering'}</span>
           </span>
         );
       }
@@ -749,8 +749,8 @@ export function OrderStatusBadge({
           <span>
             {lang === 'vi'
               ? isSellerForThisOrder
-                ? 'Đã Xác Nhận • Đang Chuẩn Bị Giao Hàng'
-                : 'Người Bán Đã Xác Nhận • Đang Chuẩn Bị Giao'
+                ? 'Đã xác nhận • Đang chuẩn bị giao hàng'
+                : 'Người bán đã xác nhận • Đang chuẩn bị giao'
               : isSellerForThisOrder
                 ? 'Confirmed • Preparing Delivery'
                 : 'Seller Confirmed • Preparing Delivery'}
@@ -811,7 +811,7 @@ export function OrderStatusBadge({
           return (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
               <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
-              <span>{lang === 'vi' ? 'Đã phân công kỹ thuật viên • Chờ Khảo Sát' : 'Inspector Assigned • Pending Survey'}</span>
+              <span>{lang === 'vi' ? 'Đã phân công kỹ thuật viên • Chờ khảo sát' : 'Inspector Assigned • Pending Survey'}</span>
             </span>
           );
         }
@@ -819,7 +819,7 @@ export function OrderStatusBadge({
           return (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
               <CalendarCheck className="w-3.5 h-3.5 text-emerald-600" />
-              <span>{lang === 'vi' ? 'Đã Chốt Lịch • Chờ Giao KTV' : 'Visit Confirmed • Awaiting Dispatch'}</span>
+              <span>{lang === 'vi' ? 'Đã chốt lịch • Chờ giao KTV' : 'Visit Confirmed • Awaiting Dispatch'}</span>
             </span>
           );
         }
@@ -828,7 +828,7 @@ export function OrderStatusBadge({
             return (
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-800 border border-rose-300">
                 <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
-                <span>{lang === 'vi' ? 'Lịch Hẹn Bị Từ Chối • Cần Hẹn Lại' : 'Appointment Rejected • Please Reschedule'}</span>
+                <span>{lang === 'vi' ? 'Lịch hẹn bị từ chối • Cần hẹn lại' : 'Appointment Rejected • Please Reschedule'}</span>
               </span>
             );
           }
@@ -836,7 +836,7 @@ export function OrderStatusBadge({
             return (
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300 animate-pulse">
                 <CalendarSync className="w-3.5 h-3.5 text-amber-700" />
-                <span>{lang === 'vi' ? 'Hub Đề Xuất Lịch Mới • Cần Phản Hồi' : 'Hub Proposed New Time • Response Needed'}</span>
+                <span>{lang === 'vi' ? 'Hub đề xuất lịch mới • Cần phản hồi' : 'Hub Proposed New Time • Response Needed'}</span>
               </span>
             );
           }
@@ -844,14 +844,14 @@ export function OrderStatusBadge({
             return (
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
                 <Clock className="w-3.5 h-3.5 text-blue-600" />
-                <span>{lang === 'vi' ? 'Đã Đề Xuất Lịch • Chờ Hub Duyệt' : 'Visit Proposed • Awaiting Hub Approval'}</span>
+                <span>{lang === 'vi' ? 'Đã đề xuất lịch • Chờ Hub duyệt' : 'Visit Proposed • Awaiting Hub Approval'}</span>
               </span>
             );
           }
           return (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300">
               <Calendar className="w-3.5 h-3.5 text-amber-600" />
-              <span>{lang === 'vi' ? 'Chờ Bạn Hẹn Lịch Đón KTV' : 'Awaiting Schedule Visit'}</span>
+              <span>{lang === 'vi' ? 'Chờ bạn hẹn lịch đón KTV' : 'Awaiting Schedule Visit'}</span>
             </span>
           );
         }
@@ -860,7 +860,7 @@ export function OrderStatusBadge({
           return (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300">
               <Calendar className="w-3.5 h-3.5 text-amber-600" />
-              <span>{lang === 'vi' ? 'Chờ Người Bán Hẹn Lại Lịch KTV' : 'Awaiting Seller Reschedule Visit'}</span>
+              <span>{lang === 'vi' ? 'Chờ người bán hẹn lại lịch KTV' : 'Awaiting Seller Reschedule Visit'}</span>
             </span>
           );
         }
@@ -868,14 +868,14 @@ export function OrderStatusBadge({
           return (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
               <Clock className="w-3.5 h-3.5 text-blue-600" />
-              <span>{lang === 'vi' ? 'Đã Hẹn Lịch • Chờ KTV Khảo Sát' : 'Visit Scheduled • Awaiting Inspector'}</span>
+              <span>{lang === 'vi' ? 'Đã hẹn lịch • Chờ KTV khảo sát' : 'Visit Scheduled • Awaiting Inspector'}</span>
             </span>
           );
         }
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300">
             <Calendar className="w-3.5 h-3.5 text-amber-600" />
-            <span>{lang === 'vi' ? 'Chờ Người Bán Hẹn Lịch Đón KTV' : 'Awaiting Seller Schedule Visit'}</span>
+            <span>{lang === 'vi' ? 'Chờ người bán hẹn lịch đón KTV' : 'Awaiting Seller Schedule Visit'}</span>
           </span>
         );
       }
@@ -886,8 +886,8 @@ export function OrderStatusBadge({
           <span>
             {lang === 'vi'
               ? isSellerForThisOrder
-                ? 'Đã Xác Nhận • Đang Chuẩn Bị Gửi Hub'
-                : (isSellerPaysAll ? 'Chờ người bán gửi hàng đến Hub' : 'Người Bán Đã Đồng Ý • Đang Điều Phối Hub')
+                ? 'Đã xác nhận • Đang chuẩn bị gửi Hub'
+                : (isSellerPaysAll ? 'Chờ người bán gửi hàng đến Hub' : 'Người bán đã đồng Ý • Đang điều phối Hub')
               : isSellerForThisOrder
                 ? 'Confirmed • Preparing Hub Dispatch'
                 : (isSellerPaysAll ? 'Awaiting seller shipment to Hub' : 'Seller Confirmed • Dispatching to Hub')}
@@ -903,7 +903,7 @@ export function OrderStatusBadge({
           <Clock className="w-3.5 h-3.5 text-amber-600" />
           <span>
             {lang === 'vi'
-              ? isSellerForThisOrder ? 'Chờ Khách Ký Quỹ Escrow' : 'Chờ Chuyển Khoản Ký Quỹ Escrow'
+              ? isSellerForThisOrder ? 'Chờ khách ký quỹ Escrow' : 'Chờ chuyển khoản ký quỹ Escrow'
               : isSellerForThisOrder ? 'Awaiting Buyer Escrow Deposit' : 'Awaiting Escrow Deposit'}
           </span>
         </span>
@@ -918,7 +918,7 @@ export function OrderStatusBadge({
             return (
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300">
                 <Calendar className="w-3.5 h-3.5 text-amber-600" />
-                <span>{lang === 'vi' ? 'Chờ Bạn Hẹn Lịch Đón KTV' : 'Awaiting Schedule Visit'}</span>
+                <span>{lang === 'vi' ? 'Chờ bạn hẹn lịch đón KTV' : 'Awaiting Schedule Visit'}</span>
               </span>
             );
           }
@@ -926,14 +926,14 @@ export function OrderStatusBadge({
             return (
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
                 <Clock className="w-3.5 h-3.5 text-blue-600" />
-                <span>{lang === 'vi' ? 'Đã Hẹn Lịch • Chờ KTV Đến' : 'Visit Scheduled • Awaiting Inspector'}</span>
+                <span>{lang === 'vi' ? 'Đã hẹn lịch • Chờ KTV đến' : 'Visit Scheduled • Awaiting Inspector'}</span>
               </span>
             );
           }
           return (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300">
               <Calendar className="w-3.5 h-3.5 text-amber-600" />
-              <span>{lang === 'vi' ? 'Chờ Người Bán Hẹn Lịch Đón KTV' : 'Awaiting Seller Schedule Visit'}</span>
+              <span>{lang === 'vi' ? 'Chờ người bán hẹn lịch đón KTV' : 'Awaiting Seller Schedule Visit'}</span>
             </span>
           );
         }
@@ -954,8 +954,8 @@ export function OrderStatusBadge({
               <span>
                 {lang === 'vi'
                   ? isSellerForThisOrder
-                    ? 'Đã Xác Nhận • Đang Chuẩn Bị Giao Hàng'
-                    : 'Người Bán Đã Xác Nhận • Đang Chuẩn Bị Giao'
+                    ? 'Đã xác nhận • Đang chuẩn bị giao hàng'
+                    : 'Người bán đã xác nhận • Đang chuẩn bị giao'
                   : isSellerForThisOrder
                     ? 'Confirmed • Preparing Delivery'
                     : 'Seller Confirmed • Preparing Delivery'}
@@ -970,8 +970,8 @@ export function OrderStatusBadge({
             <span>
               {lang === 'vi'
                 ? isSellerForThisOrder
-                  ? 'Đã Xác Nhận • Đang Chuẩn Bị Gửi Hub'
-                  : (isSellerPaysAll ? 'Chờ người bán gửi hàng đến Hub' : 'Người Bán Đã Đồng Ý • Đang Điều Phối Hub')
+                  ? 'Đã xác nhận • Đang chuẩn bị gửi Hub'
+                  : (isSellerPaysAll ? 'Chờ người bán gửi hàng đến Hub' : 'Người bán đã đồng Ý • Đang điều phối Hub')
                 : isSellerForThisOrder
                   ? 'Confirmed • Preparing Hub Dispatch'
                   : (isSellerPaysAll ? 'Awaiting seller shipment to Hub' : 'Seller Confirmed • Dispatching to Hub')}
@@ -984,7 +984,7 @@ export function OrderStatusBadge({
           <Clock className="w-3.5 h-3.5 text-amber-600" />
           <span>
             {lang === 'vi'
-              ? isSellerForThisOrder ? 'Chờ Bạn Xác Nhận Kiểm Định' : 'Đã Gửi Yêu Cầu • Chờ Người Bán Xác Nhận'
+              ? isSellerForThisOrder ? 'Chờ bạn xác nhận kiểm định' : 'Đã gửi yêu cầu • Chờ người bán xác nhận'
               : isSellerForThisOrder ? 'Awaiting Your Inspection Confirmation' : 'Inspection Requested • Awaiting Seller'}
           </span>
         </span>
@@ -995,7 +995,7 @@ export function OrderStatusBadge({
           <Clock className="w-3.5 h-3.5 text-amber-600" />
           <span>
             {lang === 'vi'
-              ? isSellerForThisOrder ? 'Chờ Bạn Xác Nhận Kiểm Định' : 'Chờ Kiểm Định'
+              ? isSellerForThisOrder ? 'Chờ bạn xác nhận kiểm định' : 'Chờ kiểm định'
               : isSellerForThisOrder ? 'Awaiting Your Inspection Confirmation' : 'Awaiting Inspection'}
           </span>
         </span>
@@ -1005,8 +1005,8 @@ export function OrderStatusBadge({
           <span>
             {lang === 'vi'
               ? sellerConfirmed
-                ? (isSellerForThisOrder ? 'Đã Ký Quỹ Escrow • Chờ Bạn Giao Hàng' : 'Đã Ký Quỹ Escrow • Chờ Người Bán Giao')
-                : (isSellerForThisOrder ? 'Đã Ký Quỹ Escrow • Chờ Bạn Xác Nhận' : 'Đã Ký Quỹ Escrow • Chờ Người Bán Xác Nhận')
+                ? (isSellerForThisOrder ? 'Đã ký quỹ Escrow • Chờ bạn giao hàng' : 'Đã ký quỹ Escrow • Chờ người bán giao')
+                : (isSellerForThisOrder ? 'Đã ký quỹ Escrow • Chờ bạn xác nhận' : 'Đã ký quỹ Escrow • Chờ người bán xác nhận')
               : sellerConfirmed
                 ? 'Escrow Protected • Awaiting Shipping'
                 : 'Escrow Protected • Awaiting Confirmation'}
@@ -1022,7 +1022,7 @@ export function OrderStatusBadge({
             <span>
               {isAtHomeProg
                 ? (lang === 'vi' ? 'Kỹ thuật viên đã đến và đang kiểm tra' : 'Technician has arrived and is inspecting')
-                : (lang === 'vi' ? 'Đang Kiểm Định Tại Hub' : 'In Hub Inspection')}
+                : (lang === 'vi' ? 'Đang kiểm định tại Hub' : 'In Hub Inspection')}
             </span>
           </span>
         );
@@ -1047,7 +1047,7 @@ export function OrderStatusBadge({
           <Truck className="w-3.5 h-3.5" />
           <span>
             {lang === 'vi'
-              ? isSellerForThisOrder ? 'Đang Giao Tới Người Mua' : 'Đang Giao Hàng Tới Bạn'
+              ? isSellerForThisOrder ? 'Đang giao tới người mua' : 'Đang giao hàng tới bạn'
               : isSellerForThisOrder ? 'Delivering to Buyer' : 'Delivering to You'}
           </span>
         </span>
@@ -1058,7 +1058,7 @@ export function OrderStatusBadge({
           <ShieldCheck className="w-3.5 h-3.5" />
           <span>
             {lang === 'vi'
-              ? isSellerForThisOrder ? 'Khách Đang Kiểm Máy (48h)' : 'Đã Giao • 48h Kiểm Tra Đối Soát'
+              ? isSellerForThisOrder ? 'Khách đang kiểm máy (48h)' : 'Đã giao • 48h kiểm tra đối soát'
               : isSellerForThisOrder ? 'Buyer Review (48h Window)' : 'Delivered • 48h Inspection Window'}
           </span>
         </span>
@@ -1071,7 +1071,7 @@ export function OrderStatusBadge({
           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
           <span>
             {lang === 'vi'
-              ? isSellerForThisOrder ? 'Đã Nhận Tiền Vào Ví' : 'Hoàn Tất • Đã Giải Ngân'
+              ? isSellerForThisOrder ? 'Đã nhận tiền vào ví' : 'Hoàn tất • Đã giải ngân'
               : isSellerForThisOrder ? 'Payout Transferred to Wallet' : 'Completed • Escrow Released'}
           </span>
         </span>
@@ -1083,7 +1083,7 @@ export function OrderStatusBadge({
           <span>
             {isInspectionOrder
               ? (lang === 'vi' ? 'Giao dịch đã bị hủy' : 'Transaction cancelled')
-              : (lang === 'vi' ? (isSellerForThisOrder ? 'Đã Hoàn Tiền Cho Người Mua' : 'Đã Hoàn Tiền Vào Ví') : 'Refunded')}
+              : (lang === 'vi' ? (isSellerForThisOrder ? 'Đã hoàn tiền cho người mua' : 'Đã hoàn tiền vào ví') : 'Refunded')}
           </span>
         </span>
       );
@@ -1101,7 +1101,7 @@ export function OrderStatusBadge({
           <XCircle className="w-3.5 h-3.5 text-rose-600" />
           <span>{isInspectionOrder
             ? (lang === 'vi' ? 'Giao dịch đã bị hủy' : 'Transaction cancelled')
-            : (lang === 'vi' ? 'Đã Hủy Đơn' : 'Cancelled')}</span>
+            : (lang === 'vi' ? 'Đã hủy đơn' : 'Cancelled')}</span>
         </span>
       );
     default:

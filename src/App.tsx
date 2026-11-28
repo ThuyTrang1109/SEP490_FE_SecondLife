@@ -247,8 +247,8 @@ export default function App() {
             district: profile.district,
             ward: profile.ward,
             streetAddress: profile.streetAddress,
-            latitude: profile.latitude ?? stored?.latitude,
-            longitude: profile.longitude ?? stored?.longitude,
+            latitude: isSeller ? pickupAddr?.latitude : profile.latitude ?? stored?.latitude,
+            longitude: isSeller ? pickupAddr?.longitude : profile.longitude ?? stored?.longitude,
             wardName: resolvedWard,
             provinceName: resolvedProv,
             avatar: profile.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=256',
@@ -799,6 +799,13 @@ export default function App() {
         getRefreshToken() ||
         getStoredUser()
       );
+      const isCelebratingUpgrade = (() => {
+        try { return sessionStorage.getItem('seller_upgrade_celebrating') === '1'; } catch { return false; }
+      })();
+      if (isCelebratingUpgrade) {
+        return;
+      }
+
       const isSellerUpgrade = (() => {
         try { return sessionStorage.getItem('seller_upgrade_relogin') === '1'; } catch { return false; }
       })();
@@ -1229,7 +1236,8 @@ export default function App() {
       sellerCompletedOrders: post.sellerCompletedOrders ?? (post.user?.completedOrdersCount ?? 0),
       sellerVerified: true,
       status: (() => {
-        if (alreadyAvailable) return 'active';
+        if (alreadyAvailable || post.status === 'ACTIVE') return 'active';
+        if (post.status === 'RETURNING') return 'reserved';
         const returnStatus = getPostReturnStatus(post, ordersRef.current);
         if (returnStatus?.isReturning) return 'reserved';
         if (returnStatus?.isReturned) return 'draft';
@@ -1239,7 +1247,7 @@ export default function App() {
         return getBoughtListingIds().has(String(post.postId || post.id)) ? 'reserved' : (post.status === 'ACTIVE' ? 'active' : post.status === 'DRAFT' ? 'draft' : post.status === 'REJECTED' ? 'rejected' : 'reserved');
       })() as any,
       backendStatus: (() => {
-        if (alreadyAvailable) return post.status;
+        if (alreadyAvailable || post.status === 'ACTIVE' || post.status === 'RETURNING') return post.status;
         const returnStatus = getPostReturnStatus(post, ordersRef.current);
         if (returnStatus?.isReturning) return 'RETURNING';
         if (returnStatus?.isReturned) return 'RETURNED';
@@ -1382,8 +1390,8 @@ export default function App() {
     (updated: UserProfile, successToast?: string) => {
       setCurrentUser(updated);
       setStoredUser(updated);
-      const buyerAddress = cleanFullAddress(updated.pickupAddress || updated.address || '');
-      if (buyerAddress) {
+      const buyerAddress = cleanFullAddress(updated.address || '');
+      if (updated.role !== 'seller' && buyerAddress) {
         setOrders((prevOrders) =>
           prevOrders.map((order) => order.buyerId === updated.id ? { ...order, buyerAddress } : order)
         );
@@ -2783,7 +2791,7 @@ export default function App() {
               </button>
             )}
             <button type="button" onClick={() => navigatePath(dashboardPath)} className="rounded-xl border border-slate-200 px-4 py-2 text-slate-700 hover:bg-slate-50">
-              {lang === 'vi' ? 'Về Kênh Người Bán' : 'Back to Seller Dashboard'}
+              {lang === 'vi' ? 'Về kênh người bán' : 'Back to Seller Dashboard'}
             </button>
           </div>
         </section>
@@ -3019,7 +3027,7 @@ export default function App() {
                       <Store className="w-8 h-8" />
                     </div>
                     <h3 className="text-xl font-bold text-slate-900">
-                      {lang === 'vi' ? 'Bạn Cần Đăng Ký Thành Người Bán' : 'Seller Registration Required'}
+                      {lang === 'vi' ? 'Bạn cần đăng ký thành người bán' : 'Seller Registration Required'}
                     </h3>
                     <p className="text-sm text-slate-500">
                       {lang === 'vi'
@@ -3417,7 +3425,7 @@ export default function App() {
             );
             showToast(
               lang === 'vi'
-                ? `Chào mừng ${user.name}${['buyer', 'seller'].includes(user.role) ? '' : ` (${user.role === 'inspector' ? 'Kỹ Sư Hub' : user.role === 'staff' ? 'Nhân Viên Vận Hành' : 'Quản Trị'})`} đã đăng nhập!`
+                ? `Chào mừng ${user.name}${['buyer', 'seller'].includes(user.role) ? '' : ` (${user.role === 'inspector' ? 'Kỹ sư Hub' : user.role === 'staff' ? 'Nhân viên vận hành' : 'Quản trị'})`} đã đăng nhập!`
                 : `Welcome ${user.name}! Logged in successfully${['buyer', 'seller'].includes(user.role) ? '' : ` as ${user.role.toUpperCase()}`}.`
             );
             setIsAuthModalOpen(false);
@@ -3553,12 +3561,21 @@ export default function App() {
             currentUser={currentUser}
             lang={lang}
             onUpdateProfile={(updated) => {
-              handleUserProfileUpdated(
-                updated,
-                lang === 'vi'
-                  ? 'Đã cập nhật hồ sơ người bán thành công!'
-                  : 'Seller profile updated successfully!'
-              );
+              const toastMessage =
+                updated.kycStatus === 'verified'
+                  ? (lang === 'vi'
+                      ? currentUser?.role === 'seller'
+                        ? 'Đã cập nhật hồ sơ người bán thành công!'
+                        : 'Đã kích hoạt hồ sơ người bán thành công!'
+                      : currentUser?.role === 'seller'
+                        ? 'Seller profile updated successfully!'
+                        : 'Seller account activated successfully!')
+                  : updated.kycStatus === 'pending'
+                    ? (lang === 'vi'
+                        ? 'Đã gửi hồ sơ eKYC! Hồ sơ đang chờ quản trị viên xét duyệt.'
+                        : 'eKYC submitted! Pending administrator review.')
+                    : undefined;
+              handleUserProfileUpdated(updated, toastMessage);
             }}
             onRoleChange={handleRoleChange}
             onNavigateToCreateListing={() => {

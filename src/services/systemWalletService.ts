@@ -1,5 +1,24 @@
-import { request } from './apiClient';
+import { request, type PageResponse } from './apiClient';
 import { SystemWalletData, SystemWalletTransactionsPage, SystemWalletTransactionFilter } from '../types';
+
+export type SystemWalletBalanceFund = 'PRODUCT_ESCROW' | 'SHIPPING';
+
+interface SystemWalletBalanceEntry {
+  orderId: string | null;
+  inspectionOrderId: string | null;
+  amount: number;
+  credited: number | null;
+  debited: number | null;
+}
+
+export interface SystemWalletBalanceDetails {
+  balance: number;
+  recordsTotal: number;
+  credited: number | null;
+  debited: number | null;
+  updatedAt: string;
+  entries: PageResponse<SystemWalletBalanceEntry>;
+}
 
 export const systemWalletService = {
   /**
@@ -13,6 +32,15 @@ export const systemWalletService = {
       requiresAuth: true,
     });
     return (res as any)?.data || res;
+  },
+
+  async getBalanceDetails(fund: SystemWalletBalanceFund, page = 0, signal?: AbortSignal): Promise<SystemWalletBalanceDetails> {
+    const query = new URLSearchParams({ fund, page: String(page), size: '20' });
+    const response = await request<SystemWalletBalanceDetails>('/admin/system-wallet/balance-details?' + query, {
+      requiresAuth: true,
+      signal,
+    });
+    return response.data;
   },
 
   /**
